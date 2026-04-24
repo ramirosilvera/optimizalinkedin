@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import './index.css'
 
-const GEMINI_MODEL = 'gemini-2.0-flash'
+const GEMINI_MODEL = 'gemini-2.5-flash'
 const geminiUrl = (key) =>
   `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${key}`
 
@@ -200,7 +200,7 @@ function BeforeAfter({ label, before, after }) {
 
 export default function App() {
   const [step, setStep] = useState(STEPS.WELCOME)
-  const [apiKey, setApiKey] = useState('')
+  const [apiKey, setApiKey] = useState('AIzaSyDhIvm_R3f6CwVc5HckBHNC3xpHKq1l0p8')
 
   // Dynamic Q&A
   const [qaHistory, setQaHistory] = useState([])
