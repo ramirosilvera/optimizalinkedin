@@ -71,8 +71,9 @@ async function fetchNextQuestion(history) {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify({
+      model: GEMINI_MODEL,
       system_instruction: { parts: [{ text: QUESTION_SYSTEM_PROMPT }] },
-      contents: [{ parts: [{ text: prompt }] }],
+      contents: [{ role: 'user', parts: [{ text: prompt }] }],
       generationConfig: { responseMimeType: 'application/json', maxOutputTokens: 512 },
     }),
   })
@@ -299,7 +300,9 @@ export default function App() {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({
+          model: GEMINI_MODEL,
           contents: [{
+            role: 'user',
             parts: [
               { inline_data: { mime_type: 'application/pdf', data: base64 } },
               { text: 'Extraé todo el contenido de texto de este perfil de LinkedIn en PDF. Incluí el titular, resumen/about, toda la experiencia laboral con fechas y descripciones, educación, skills y cualquier otra sección del perfil. Devolvé solo el texto extraído, organizado claramente.' },
@@ -365,8 +368,9 @@ Generá un análisis en este formato JSON exacto:
         method: 'POST',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({
+          model: GEMINI_MODEL,
           system_instruction: { parts: [{ text: ANALYSIS_SYSTEM_PROMPT }] },
-          contents: [{ parts: [{ text: userPrompt }] }],
+          contents: [{ role: 'user', parts: [{ text: userPrompt }] }],
           generationConfig: { responseMimeType: 'application/json', maxOutputTokens: 2048 },
         }),
       })
