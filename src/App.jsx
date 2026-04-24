@@ -183,7 +183,7 @@ function BeforeAfter({ label, before, after }) {
 
 export default function App() {
   const [step, setStep] = useState(STEPS.WELCOME)
-  const [apiKey, setApiKey] = useState('AIzaSyDhIvm_R3f6CwVc5HckBHNC3xpHKq1l0p8')
+  const [apiKey, setApiKey] = useState('')
 
   // Dynamic Q&A
   const [qaHistory, setQaHistory] = useState([])
