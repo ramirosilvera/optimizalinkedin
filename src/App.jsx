@@ -44,6 +44,8 @@ Sé directo, específico y orientado a resultados.
 Respondé SOLO en JSON válido, sin markdown, sin backticks.`
 
 async function fetchNextQuestion(history) {
+  if (!WORKER_URL) throw new Error('Worker URL no configurada. Verificá el secret VITE_WORKER_URL en GitHub.')
+
   const historyText = history
     .map((h, i) => `${i + 1}. ${h.question}\n   → ${h.answer}`)
     .join('\n\n')
@@ -56,7 +58,6 @@ async function fetchNextQuestion(history) {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify({
-      model: GEMINI_MODEL,
       system_instruction: { parts: [{ text: QUESTION_SYSTEM_PROMPT }] },
       contents: [{ parts: [{ text: prompt }] }],
       generationConfig: { responseMimeType: 'application/json', maxOutputTokens: 512 },
@@ -243,8 +244,8 @@ export default function App() {
         setCurrentQ({ question: next.question, options: next.options })
         setSelectedOption(null)
       }
-    } catch {
-      setQError('No se pudo cargar la siguiente pregunta. Intentá de nuevo.')
+    } catch (err) {
+      setQError(err.message || 'No se pudo cargar la siguiente pregunta. Intentá de nuevo.')
       setQaHistory(qaHistory) // rollback
       setSelectedOption(null)
     } finally {
@@ -280,11 +281,11 @@ export default function App() {
         reader.onerror = reject
         reader.readAsDataURL(file)
       })
+      if (!WORKER_URL) throw new Error('Worker URL no configurada. Verificá el secret VITE_WORKER_URL en GitHub.')
       const res = await fetch(WORKER_URL, {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({
-          model: GEMINI_MODEL,
           contents: [{
             parts: [
               { inline_data: { mime_type: 'application/pdf', data: base64 } },
@@ -342,11 +343,11 @@ Generá un análisis en este formato JSON exacto:
 }`
 
     try {
+      if (!WORKER_URL) throw new Error('Worker URL no configurada. Verificá el secret VITE_WORKER_URL en GitHub.')
       const res = await fetch(WORKER_URL, {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({
-          model: GEMINI_MODEL,
           system_instruction: { parts: [{ text: ANALYSIS_SYSTEM_PROMPT }] },
           contents: [{ parts: [{ text: userPrompt }] }],
           generationConfig: { responseMimeType: 'application/json', maxOutputTokens: 2048 },

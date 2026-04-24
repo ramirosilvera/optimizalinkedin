@@ -19,14 +19,15 @@ export default {
     const body = await request.json().catch(() => null)
     if (!body) return new Response('Invalid JSON', { status: 400 })
 
-    const model = body.model || 'gemini-2.5-flash-lite'
+    const { model: modelField, ...geminiBody } = body
+    const model = modelField || 'gemini-2.5-flash-lite'
 
     const res = await fetch(
       `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${env.GEMINI_API_KEY}`,
       {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify(body),
+        body: JSON.stringify(geminiBody),
       }
     )
 
