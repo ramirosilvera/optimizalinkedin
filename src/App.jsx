@@ -1,6 +1,9 @@
 import { useState } from 'react'
 import './index.css'
 
+const GEMINI_API_KEY = 'AIzaSyDWR0aTAR906NlXyXS6jKSf0cV5-n8dqK4'
+const GEMINI_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${GEMINI_API_KEY}`
+
 const STEPS = {
   WELCOME: 0,
   Q1: 1,
@@ -39,7 +42,6 @@ const Q3_OPTIONS = [
 ]
 
 const ORIENTACION_Q1 = `Si no sabés bien qué querés lograr, empezá por preguntarte: ¿estás cómodo en tu trabajo actual? ¿Hay algo que te falta lograr profesionalmente? Un perfil bien enfocado en un solo objetivo suele funcionar mejor que uno que intenta abarcar todo.`
-
 const ORIENTACION_Q3 = `Tu audiencia ideal depende de tu objetivo. Si buscás empleo, apuntá a reclutadores. Si querés proyectos, apuntá a clientes. Si querés posicionamiento, pensá en colegas y líderes de tu industria. Podés combinar, pero uno tiene que ser el principal.`
 
 const LinkedInIcon = ({ className }) => (
@@ -108,7 +110,6 @@ function ScoreRing({ score }) {
   const circ = 2 * Math.PI * radius
   const fill = circ - (circ * score) / 10
   const color = score >= 8 ? '#22c55e' : score >= 5 ? '#0077B5' : '#f59e0b'
-
   return (
     <div className="flex flex-col items-center shrink-0">
       <svg width="140" height="140" viewBox="0 0 140 140">
@@ -121,12 +122,8 @@ function ScoreRing({ score }) {
           strokeLinecap="round"
           style={{ transform: 'rotate(-90deg)', transformOrigin: '50% 50%', transition: 'stroke-dashoffset 1.2s ease-out' }}
         />
-        <text x="70" y="65" textAnchor="middle" fill="white" fontSize="32" fontWeight="700" dy="0.35em">
-          {score}
-        </text>
-        <text x="70" y="92" textAnchor="middle" fill="#94a3b8" fontSize="12">
-          / 10
-        </text>
+        <text x="70" y="65" textAnchor="middle" fill="white" fontSize="32" fontWeight="700" dy="0.35em">{score}</text>
+        <text x="70" y="92" textAnchor="middle" fill="#94a3b8" fontSize="12">/ 10</text>
       </svg>
       <p className="text-slate-400 text-sm mt-1">Puntaje general</p>
     </div>
@@ -146,9 +143,7 @@ function BeforeAfter({ label, before, after }) {
   return (
     <div className="space-y-3">
       <div className="rounded-xl p-4" style={{ backgroundColor: 'rgba(15,23,42,0.7)', border: '1px solid #334155' }}>
-        <div className="flex items-center justify-between mb-2">
-          <span className="text-xs text-slate-500 uppercase tracking-wide">Actual</span>
-        </div>
+        <span className="text-xs text-slate-500 uppercase tracking-wide block mb-2">Actual</span>
         <p className="text-slate-300 text-sm leading-relaxed">{before || `No tiene ${label.toLowerCase()}`}</p>
       </div>
       <div className="rounded-xl p-4" style={{ backgroundColor: 'rgba(0,119,181,0.06)', border: '1px solid rgba(0,119,181,0.3)' }}>
@@ -162,7 +157,7 @@ function BeforeAfter({ label, before, after }) {
   )
 }
 
-function NavButtons({ onBack, onNext, nextLabel = 'Siguiente →', nextDisabled = false }) {
+function NavButtons({ onBack, onNext, nextLabel = 'Siguiente →', nextDisabled = false, loading = false }) {
   return (
     <div className="flex gap-3">
       {onBack && (
@@ -174,39 +169,89 @@ function NavButtons({ onBack, onNext, nextLabel = 'Siguiente →', nextDisabled 
         </button>
       )}
       <button
-        disabled={nextDisabled}
+        disabled={nextDisabled || loading}
         onClick={onNext}
-        className="font-semibold py-3.5 rounded-xl transition-all duration-200 text-white"
-        style={{ flex: onBack ? 2 : 1, backgroundColor: nextDisabled ? '#334155' : '#0077B5', opacity: nextDisabled ? 0.5 : 1, cursor: nextDisabled ? 'not-allowed' : 'pointer' }}
+        className="font-semibold py-3.5 rounded-xl transition-all duration-200 text-white flex items-center justify-center gap-2"
+        style={{
+          flex: onBack ? 2 : 1,
+          backgroundColor: nextDisabled || loading ? '#334155' : '#0077B5',
+          opacity: nextDisabled || loading ? 0.6 : 1,
+          cursor: nextDisabled || loading ? 'not-allowed' : 'pointer',
+        }}
       >
+        {loading && (
+          <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+        )}
         {nextLabel}
       </button>
     </div>
   )
 }
 
+async function fetchLinkedInViaProxy(url) {
+  const proxy = `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`
+  const res = await fetch(proxy, { signal: AbortSignal.timeout(12000) })
+  const html = await res.text()
+
+  const blocked =
+    html.includes('authwall') ||
+    html.includes('uas/login') ||
+    html.includes('login-email') ||
+    html.length < 500
+
+  if (blocked) throw new Error('blocked')
+
+  const parser = new DOMParser()
+  const doc = parser.parseFromString(html, 'text/html')
+  doc.querySelectorAll('script, style, nav, footer, header').forEach(el => el.remove())
+  const text = (doc.body?.textContent || '').replace(/\s+/g, ' ').trim()
+
+  if (text.length < 300) throw new Error('blocked')
+  return text.slice(0, 7000)
+}
+
 export default function App() {
   const [step, setStep] = useState(STEPS.WELCOME)
   const [answers, setAnswers] = useState({ q1: '', q2: '', q3: '', q4: '', q5: '' })
   const [showHint, setShowHint] = useState({ q1: false, q3: false })
+
+  const [linkedinUrl, setLinkedinUrl] = useState('')
   const [profileText, setProfileText] = useState('')
+  const [fetchLoading, setFetchLoading] = useState(false)
+  const [fetchBlocked, setFetchBlocked] = useState(false)
+
   const [result, setResult] = useState(null)
   const [error, setError] = useState('')
 
-  const stepProgress = () => step >= STEPS.Q1 && step <= STEPS.PROFILE_INPUT
-    ? step - STEPS.Q1 + 1
-    : 0
+  const stepProgress = () =>
+    step >= STEPS.Q1 && step <= STEPS.PROFILE_INPUT ? step - STEPS.Q1 + 1 : 0
 
   const reset = () => {
     setStep(STEPS.WELCOME)
     setAnswers({ q1: '', q2: '', q3: '', q4: '', q5: '' })
     setShowHint({ q1: false, q3: false })
+    setLinkedinUrl('')
     setProfileText('')
+    setFetchBlocked(false)
     setResult(null)
     setError('')
   }
 
-  const callClaude = async () => {
+  const handleFetchProfile = async () => {
+    setFetchLoading(true)
+    setFetchBlocked(false)
+    setProfileText('')
+    try {
+      const text = await fetchLinkedInViaProxy(linkedinUrl)
+      setProfileText(text)
+    } catch {
+      setFetchBlocked(true)
+    } finally {
+      setFetchLoading(false)
+    }
+  }
+
+  const callGemini = async () => {
     setStep(STEPS.LOADING)
     setError('')
 
@@ -247,17 +292,16 @@ Generá un análisis en este formato JSON exacto:
 }`
 
     try {
-      const workerUrl = import.meta.env.VITE_WORKER_URL
-      const res = await fetch(workerUrl, {
+      const res = await fetch(GEMINI_URL, {
         method: 'POST',
-        headers: {
-          'content-type': 'application/json',
-        },
+        headers: { 'content-type': 'application/json' },
         body: JSON.stringify({
-          model: 'claude-sonnet-4-20250514',
-          max_tokens: 2048,
-          system: systemPrompt,
-          messages: [{ role: 'user', content: userPrompt }],
+          system_instruction: { parts: [{ text: systemPrompt }] },
+          contents: [{ parts: [{ text: userPrompt }] }],
+          generationConfig: {
+            responseMimeType: 'application/json',
+            maxOutputTokens: 2048,
+          },
         }),
       })
 
@@ -267,7 +311,7 @@ Generá un análisis en este formato JSON exacto:
       }
 
       const data = await res.json()
-      const raw = data.content?.[0]?.text || ''
+      const raw = data.candidates?.[0]?.content?.parts?.[0]?.text || ''
 
       let parsed
       try {
@@ -281,18 +325,18 @@ Generá un análisis en este formato JSON exacto:
       setResult(parsed)
       setStep(STEPS.RESULTS)
     } catch (err) {
-      setError(err.message || 'Ocurrió un error al conectar con Claude.')
+      setError(err.message || 'Ocurrió un error al conectar con Gemini.')
       setStep(STEPS.PROFILE_INPUT)
     }
   }
 
   const showProgress = step >= STEPS.Q1 && step <= STEPS.PROFILE_INPUT
+  const profileReady = profileText.trim().length >= 100
 
   return (
     <div className="min-h-dvh flex flex-col items-center px-4 py-8 sm:py-12" style={{ backgroundColor: '#0f172a' }}>
       <div className="w-full max-w-2xl">
 
-        {/* Logo header */}
         {step !== STEPS.RESULTS && step !== STEPS.LOADING && (
           <div className="flex items-center gap-2 mb-8 sm:mb-12">
             <div className="w-8 h-8 rounded flex items-center justify-center shrink-0 text-white" style={{ backgroundColor: '#0077B5' }}>
@@ -316,10 +360,9 @@ Generá un análisis en este formato JSON exacto:
                 <span style={{ color: '#0077B5' }}>de LinkedIn</span>
               </h1>
               <p className="text-slate-400 text-lg max-w-md mx-auto leading-relaxed">
-                Pegá tu perfil, respondé algunas preguntas y recibí un análisis estratégico personalizado para destacarte.
+                Ingresá la URL de tu perfil, respondé algunas preguntas y recibí un análisis estratégico personalizado.
               </p>
             </div>
-
             <div className="grid grid-cols-3 gap-4 text-center">
               {[
                 { icon: '🎯', text: 'Análisis personalizado' },
@@ -332,7 +375,6 @@ Generá un análisis en este formato JSON exacto:
                 </div>
               ))}
             </div>
-
             <button
               onClick={() => setStep(STEPS.Q1)}
               className="w-full text-white font-semibold py-4 px-8 rounded-xl transition-all duration-200 text-base"
@@ -352,13 +394,10 @@ Generá un análisis en este formato JSON exacto:
             </div>
             <div className="space-y-3">
               {Q1_OPTIONS.map((opt) => (
-                <OptionButton
-                  key={opt.value}
-                  label={opt.label}
-                  selected={answers.q1 === opt.value}
+                <OptionButton key={opt.value} label={opt.label} selected={answers.q1 === opt.value}
                   onClick={() => {
-                    setAnswers((p) => ({ ...p, q1: opt.value }))
-                    setShowHint((p) => ({ ...p, q1: opt.value === 'no_seguro' }))
+                    setAnswers(p => ({ ...p, q1: opt.value }))
+                    setShowHint(p => ({ ...p, q1: opt.value === 'no_seguro' }))
                   }}
                 />
               ))}
@@ -381,11 +420,8 @@ Generá un análisis en este formato JSON exacto:
             </div>
             <div className="space-y-3">
               {Q2_OPTIONS.map((opt) => (
-                <OptionButton
-                  key={opt.value}
-                  label={opt.label}
-                  selected={answers.q2 === opt.value}
-                  onClick={() => setAnswers((p) => ({ ...p, q2: opt.value }))}
+                <OptionButton key={opt.value} label={opt.label} selected={answers.q2 === opt.value}
+                  onClick={() => setAnswers(p => ({ ...p, q2: opt.value }))}
                 />
               ))}
             </div>
@@ -402,13 +438,10 @@ Generá un análisis en este formato JSON exacto:
             </div>
             <div className="space-y-3">
               {Q3_OPTIONS.map((opt) => (
-                <OptionButton
-                  key={opt.value}
-                  label={opt.label}
-                  selected={answers.q3 === opt.value}
+                <OptionButton key={opt.value} label={opt.label} selected={answers.q3 === opt.value}
                   onClick={() => {
-                    setAnswers((p) => ({ ...p, q3: opt.value }))
-                    setShowHint((p) => ({ ...p, q3: opt.value === 'no_claro' }))
+                    setAnswers(p => ({ ...p, q3: opt.value }))
+                    setShowHint(p => ({ ...p, q3: opt.value === 'no_claro' }))
                   }}
                 />
               ))}
@@ -433,8 +466,8 @@ Generá un análisis en este formato JSON exacto:
               type="text"
               placeholder="Ej: Tecnología, Marketing Digital, Finanzas, Salud..."
               value={answers.q4}
-              onChange={(e) => setAnswers((p) => ({ ...p, q4: e.target.value }))}
-              onKeyDown={(e) => e.key === 'Enter' && answers.q4.trim() && setStep(STEPS.Q5)}
+              onChange={e => setAnswers(p => ({ ...p, q4: e.target.value }))}
+              onKeyDown={e => e.key === 'Enter' && answers.q4.trim() && setStep(STEPS.Q5)}
               className="w-full rounded-xl px-5 py-4 text-white placeholder-slate-500 text-sm focus:outline-none transition-colors"
               style={{ backgroundColor: '#1e293b', border: `1px solid ${answers.q4 ? '#0077B5' : '#475569'}` }}
             />
@@ -454,7 +487,7 @@ Generá un análisis en este formato JSON exacto:
               rows={4}
               placeholder="Ej: 20 años en finanzas corporativas, especialista en turnaround de empresas"
               value={answers.q5}
-              onChange={(e) => setAnswers((p) => ({ ...p, q5: e.target.value }))}
+              onChange={e => setAnswers(p => ({ ...p, q5: e.target.value }))}
               className="w-full rounded-xl px-5 py-4 text-white placeholder-slate-500 text-sm focus:outline-none transition-colors resize-none"
               style={{ backgroundColor: '#1e293b', border: `1px solid ${answers.q5 ? '#0077B5' : '#475569'}` }}
             />
@@ -467,9 +500,9 @@ Generá un análisis en este formato JSON exacto:
           <div className="step-transition space-y-6">
             <div>
               <p className="text-slate-500 text-sm mb-1">Último paso</p>
-              <h2 className="text-2xl sm:text-3xl font-bold text-white">Pegá el contenido de tu perfil</h2>
+              <h2 className="text-2xl sm:text-3xl font-bold text-white">Ingresá la URL de tu perfil</h2>
               <p className="text-slate-400 text-sm mt-2 leading-relaxed">
-                Copiá y pegá tu titular, resumen (About), experiencia laboral y educación desde LinkedIn.
+                Pegá el link de tu perfil de LinkedIn y lo analizamos automáticamente.
               </p>
             </div>
 
@@ -479,26 +512,75 @@ Generá un análisis en este formato JSON exacto:
               </div>
             )}
 
-            <textarea
-              rows={12}
-              placeholder={`Titular: Senior Product Manager en TechCorp\n\nSobre mí:\nSoy PM con 6 años de experiencia en startups B2B...\n\nExperiencia:\nSenior PM | TechCorp | 2021 - presente\n...\n\nEducación:\nIngeniería Industrial | UBA | 2016`}
-              value={profileText}
-              onChange={(e) => setProfileText(e.target.value)}
-              className="w-full rounded-xl px-5 py-4 text-white placeholder-slate-500 text-sm focus:outline-none transition-colors resize-none leading-relaxed"
-              style={{ backgroundColor: '#1e293b', border: `1px solid ${profileText.trim().length >= 50 ? '#0077B5' : '#475569'}` }}
-            />
+            {/* URL input */}
+            <div className="flex gap-2">
+              <input
+                type="url"
+                placeholder="https://www.linkedin.com/in/tu-usuario"
+                value={linkedinUrl}
+                onChange={e => {
+                  setLinkedinUrl(e.target.value)
+                  setFetchBlocked(false)
+                  setProfileText('')
+                }}
+                className="flex-1 rounded-xl px-5 py-4 text-white placeholder-slate-500 text-sm focus:outline-none transition-colors"
+                style={{ backgroundColor: '#1e293b', border: `1px solid ${linkedinUrl ? '#0077B5' : '#475569'}` }}
+              />
+              <button
+                onClick={handleFetchProfile}
+                disabled={!linkedinUrl.trim() || fetchLoading}
+                className="px-5 py-4 rounded-xl font-semibold text-sm text-white transition-all shrink-0 flex items-center gap-2"
+                style={{
+                  backgroundColor: !linkedinUrl.trim() || fetchLoading ? '#334155' : '#0077B5',
+                  opacity: !linkedinUrl.trim() || fetchLoading ? 0.6 : 1,
+                  cursor: !linkedinUrl.trim() || fetchLoading ? 'not-allowed' : 'pointer',
+                }}
+              >
+                {fetchLoading
+                  ? <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                  : '→ Obtener'}
+              </button>
+            </div>
 
-            {profileText.trim().length > 0 && profileText.trim().length < 50 && (
-              <p className="text-slate-500 text-xs text-center -mt-3">
-                Necesitás pegar más contenido del perfil para un análisis preciso.
-              </p>
+            {/* Fetch success */}
+            {profileText && !fetchBlocked && (
+              <div className="rounded-xl p-4 text-sm flex items-start gap-3" style={{ backgroundColor: 'rgba(34,197,94,0.08)', border: '1px solid rgba(34,197,94,0.3)' }}>
+                <span className="text-green-400 text-base mt-0.5">✓</span>
+                <div>
+                  <p className="text-green-400 font-medium">Perfil obtenido correctamente</p>
+                  <p className="text-slate-400 text-xs mt-1">{profileText.length.toLocaleString()} caracteres extraídos. Podés proceder al análisis.</p>
+                </div>
+              </div>
+            )}
+
+            {/* LinkedIn blocked — fallback textarea */}
+            {fetchBlocked && (
+              <div className="space-y-4">
+                <div className="rounded-xl p-4 text-sm flex items-start gap-3" style={{ backgroundColor: 'rgba(245,158,11,0.08)', border: '1px solid rgba(245,158,11,0.3)' }}>
+                  <span className="text-amber-400 text-base mt-0.5">⚠️</span>
+                  <div>
+                    <p className="text-amber-400 font-medium">LinkedIn bloqueó el acceso automático</p>
+                    <p className="text-slate-400 text-xs mt-1">
+                      LinkedIn requiere login para acceder a perfiles. Copiá tu perfil desde LinkedIn y pegalo acá abajo.
+                    </p>
+                  </div>
+                </div>
+                <textarea
+                  rows={10}
+                  placeholder={`Titular: Senior Product Manager en TechCorp\n\nSobre mí:\nSoy PM con 6 años de experiencia...\n\nExperiencia:\nSenior PM | TechCorp | 2021 - presente\n\nEducación:\nIngeniería Industrial | UBA | 2016`}
+                  value={profileText}
+                  onChange={e => setProfileText(e.target.value)}
+                  className="w-full rounded-xl px-5 py-4 text-white placeholder-slate-500 text-sm focus:outline-none transition-colors resize-none leading-relaxed"
+                  style={{ backgroundColor: '#1e293b', border: `1px solid ${profileReady ? '#0077B5' : '#475569'}` }}
+                />
+              </div>
             )}
 
             <NavButtons
               onBack={() => setStep(STEPS.Q5)}
-              onNext={callClaude}
+              onNext={callGemini}
               nextLabel="Analizar mi perfil ✦"
-              nextDisabled={profileText.trim().length < 50}
+              nextDisabled={!profileReady}
             />
           </div>
         )}
@@ -508,7 +590,8 @@ Generá un análisis en este formato JSON exacto:
           <div className="step-transition flex flex-col items-center justify-center min-h-[60vh] space-y-8 text-center">
             <div className="relative w-20 h-20">
               <div className="absolute inset-0 rounded-full border-4 border-slate-700" />
-              <div className="absolute inset-0 rounded-full border-4 border-t-transparent animate-spin" style={{ borderColor: '#0077B5', borderTopColor: 'transparent' }} />
+              <div className="absolute inset-0 rounded-full border-4 border-t-transparent animate-spin"
+                style={{ borderColor: '#0077B5', borderTopColor: 'transparent' }} />
               <div className="absolute inset-0 flex items-center justify-center" style={{ color: '#0077B5' }}>
                 <LinkedInIcon className="w-8 h-8" />
               </div>
@@ -516,16 +599,13 @@ Generá un análisis en este formato JSON exacto:
             <div className="space-y-2">
               <h2 className="text-2xl font-bold text-white">Analizando tu perfil...</h2>
               <p className="text-slate-400 text-sm max-w-xs">
-                Claude está evaluando tu perfil y preparando recomendaciones personalizadas.
+                Gemini está evaluando tu perfil y preparando recomendaciones personalizadas.
               </p>
             </div>
             <div className="flex gap-1.5">
-              {[0, 1, 2].map((i) => (
-                <div
-                  key={i}
-                  className="w-2 h-2 rounded-full animate-bounce"
-                  style={{ backgroundColor: '#0077B5', animationDelay: `${i * 0.2}s` }}
-                />
+              {[0, 1, 2].map(i => (
+                <div key={i} className="w-2 h-2 rounded-full animate-bounce"
+                  style={{ backgroundColor: '#0077B5', animationDelay: `${i * 0.2}s` }} />
               ))}
             </div>
           </div>
@@ -541,7 +621,6 @@ Generá un análisis en este formato JSON exacto:
               <span className="text-slate-300 text-sm font-medium tracking-wide">LinkedIn Profile Optimizer</span>
             </div>
 
-            {/* S1: Diagnóstico */}
             <ResultCard title="Diagnóstico general">
               <div className="flex flex-col sm:flex-row items-center sm:items-start gap-6">
                 <ScoreRing score={result.puntaje_general} />
@@ -549,7 +628,6 @@ Generá un análisis en este formato JSON exacto:
               </div>
             </ResultCard>
 
-            {/* S2: Fortalezas y mejoras */}
             <ResultCard title="Fortalezas y áreas de mejora">
               <div className="grid sm:grid-cols-2 gap-6">
                 <div className="space-y-2">
@@ -573,17 +651,14 @@ Generá un análisis en este formato JSON exacto:
               </div>
             </ResultCard>
 
-            {/* S3: Titular */}
             <ResultCard title="Titular">
               <BeforeAfter label="Titular" before={result.titular_actual} after={result.titular_propuesto} />
             </ResultCard>
 
-            {/* S4: Resumen */}
             <ResultCard title="Resumen / About">
               <BeforeAfter label="Resumen" before={result.resumen_actual} after={result.resumen_propuesto} />
             </ResultCard>
 
-            {/* S5: Recomendaciones */}
             <ResultCard title="Recomendaciones">
               <div className="space-y-4">
                 {(result.recomendaciones || []).map((rec, i) => (
@@ -598,7 +673,6 @@ Generá un análisis en este formato JSON exacto:
               </div>
             </ResultCard>
 
-            {/* S6: Estrategia de contenido */}
             <div className="rounded-2xl p-6" style={{ backgroundColor: 'rgba(0,119,181,0.08)', border: '1px solid rgba(0,119,181,0.3)' }}>
               <p className="text-xs font-semibold uppercase tracking-wide mb-3" style={{ color: '#0077B5' }}>📣 Estrategia de contenido</p>
               <p className="text-slate-200 text-sm leading-relaxed">{result.estrategia_contenido}</p>
