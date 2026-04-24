@@ -71,23 +71,6 @@ async function fetchNextQuestion(history, apiKey) {
   return JSON.parse(raw)
 }
 
-async function fetchLinkedInViaProxy(url) {
-  const proxy = `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`
-  const res = await fetch(proxy, { signal: AbortSignal.timeout(12000) })
-  const html = await res.text()
-  if (
-    html.includes('authwall') ||
-    html.includes('uas/login') ||
-    html.includes('login-email') ||
-    html.length < 500
-  ) throw new Error('blocked')
-  const parser = new DOMParser()
-  const doc = parser.parseFromString(html, 'text/html')
-  doc.querySelectorAll('script, style, nav, footer, header').forEach(el => el.remove())
-  const text = (doc.body?.textContent || '').replace(/\s+/g, ' ').trim()
-  if (text.length < 300) throw new Error('blocked')
-  return text.slice(0, 7000)
-}
 
 // ── UI components ──────────────────────────────────────────────
 
@@ -210,10 +193,10 @@ export default function App() {
   const [qError, setQError] = useState('')
 
   // Profile input
-  const [linkedinUrl, setLinkedinUrl] = useState('')
   const [profileText, setProfileText] = useState('')
-  const [fetchLoading, setFetchLoading] = useState(false)
-  const [fetchBlocked, setFetchBlocked] = useState(false)
+  const [pdfFileName, setPdfFileName] = useState('')
+  const [pdfLoading, setPdfLoading] = useState(false)
+  const [pdfError, setPdfError] = useState('')
 
   // Results
   const [result, setResult] = useState(null)
@@ -227,9 +210,10 @@ export default function App() {
     setSelectedOption(null)
     setQLoading(false)
     setQError('')
-    setLinkedinUrl('')
     setProfileText('')
-    setFetchBlocked(false)
+    setPdfFileName('')
+    setPdfLoading(false)
+    setPdfError('')
     setResult(null)
     setAnalysisError('')
   }
@@ -281,18 +265,47 @@ export default function App() {
     setQError('')
   }
 
-  // ── Fetch LinkedIn profile ──
-  const handleFetchProfile = async () => {
-    setFetchLoading(true)
-    setFetchBlocked(false)
+  // ── Upload and extract PDF ──
+  const handlePdfUpload = async (e) => {
+    const file = e.target.files[0]
+    if (!file) return
+    setPdfLoading(true)
+    setPdfError('')
     setProfileText('')
+    setPdfFileName(file.name)
     try {
-      const text = await fetchLinkedInViaProxy(linkedinUrl)
+      const base64 = await new Promise((resolve, reject) => {
+        const reader = new FileReader()
+        reader.onload = () => resolve(reader.result.split(',')[1])
+        reader.onerror = reject
+        reader.readAsDataURL(file)
+      })
+      const res = await fetch(geminiUrl(apiKey), {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          contents: [{
+            parts: [
+              { inline_data: { mime_type: 'application/pdf', data: base64 } },
+              { text: 'Extraé todo el contenido de texto de este perfil de LinkedIn en PDF. Incluí el titular, resumen/about, toda la experiencia laboral con fechas y descripciones, educación, skills y cualquier otra sección del perfil. Devolvé solo el texto extraído, organizado claramente.' },
+            ],
+          }],
+          generationConfig: { maxOutputTokens: 3000 },
+        }),
+      })
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}))
+        throw new Error(parseGeminiError(res.status, body))
+      }
+      const data = await res.json()
+      const text = data.candidates?.[0]?.content?.parts?.[0]?.text || ''
+      if (text.length < 100) throw new Error('No se pudo extraer contenido del PDF. Verificá que sea el PDF de tu perfil de LinkedIn.')
       setProfileText(text)
-    } catch {
-      setFetchBlocked(true)
+    } catch (err) {
+      setPdfError(err.message || 'Error al procesar el PDF.')
+      setPdfFileName('')
     } finally {
-      setFetchLoading(false)
+      setPdfLoading(false)
     }
   }
 
@@ -354,7 +367,6 @@ Generá un análisis en este formato JSON exacto:
     }
   }
 
-  const profileReady = profileText.trim().length >= 100
   const qNum = qaHistory.length + 1
   const qProgress = Math.min(88, (qaHistory.length / 7) * 100)
 
@@ -506,16 +518,113 @@ Generá un análisis en este formato JSON exacto:
 
         {/* ── PROFILE INPUT ── */}
         {step === STEPS.PROFILE_INPUT && (
-          <div className="step-transition space-y-6">
+          <div className="step-transition space-y-5">
             <Logo />
             <div>
               <p className="text-slate-500 text-sm mb-1">Último paso</p>
-              <h2 className="text-2xl sm:text-3xl font-bold text-white">Ingresá la URL de tu perfil</h2>
-              <p className="text-slate-400 text-sm mt-2 leading-relaxed">
-                Pegá el link de tu perfil de LinkedIn y lo analizamos automáticamente.
+              <h2 className="text-2xl sm:text-3xl font-bold text-white">Subí tu perfil de LinkedIn</h2>
+            </div>
+
+            {/* Por qué PDF */}
+            <div className="rounded-xl p-4 text-sm space-y-1"
+              style={{ backgroundColor: 'rgba(245,158,11,0.07)', border: '1px solid rgba(245,158,11,0.25)' }}>
+              <p className="text-amber-400 font-semibold text-xs uppercase tracking-wide mb-2">¿Por qué no se puede hacer automáticamente?</p>
+              <p className="text-slate-300 leading-relaxed">
+                LinkedIn bloquea el acceso a perfiles desde apps externas para proteger la privacidad de sus usuarios.
+                No existe una API pública que permita leer perfiles completos — solo empresas con acuerdo comercial directo con LinkedIn pueden hacerlo.
+                Por eso, la forma más simple y confiable es descargar tu propio perfil como PDF directamente desde LinkedIn.
               </p>
             </div>
 
+            {/* Cómo descargar */}
+            <div className="rounded-xl p-5 space-y-3"
+              style={{ backgroundColor: 'rgba(30,41,59,0.7)', border: '1px solid #334155' }}>
+              <p className="font-semibold text-white text-sm">📄 Cómo descargar tu perfil en PDF</p>
+              <ol className="space-y-2">
+                {[
+                  'Abrí tu perfil de LinkedIn en el navegador',
+                  'Hacé clic en el botón "Más" (debajo de tu foto y nombre)',
+                  'Seleccioná "Guardar como PDF"',
+                  'El PDF se descarga automáticamente en segundos',
+                  'Subilo acá abajo ↓',
+                ].map((step, i) => (
+                  <li key={i} className="flex items-start gap-3 text-sm text-slate-300">
+                    <span className="w-5 h-5 rounded-full flex items-center justify-center text-xs font-bold shrink-0 mt-0.5"
+                      style={{ backgroundColor: 'rgba(0,119,181,0.2)', color: '#0077B5' }}>
+                      {i + 1}
+                    </span>
+                    {step}
+                  </li>
+                ))}
+              </ol>
+            </div>
+
+            {/* Resumen de respuestas */}
+            <div className="rounded-xl p-4 space-y-2"
+              style={{ backgroundColor: 'rgba(0,119,181,0.06)', border: '1px solid rgba(0,119,181,0.2)' }}>
+              <p className="text-xs uppercase tracking-wide mb-3" style={{ color: '#0077B5' }}>Tu contexto recopilado</p>
+              {qaHistory.map((h, i) => (
+                <div key={i} className="flex items-start gap-2 text-xs">
+                  <span className="text-slate-500 shrink-0 mt-0.5">{i + 1}.</span>
+                  <span className="text-slate-400 shrink-0">{h.question.replace('¿', '').replace('?', '')}:</span>
+                  <span className="text-slate-200 font-medium">{h.answer}</span>
+                </div>
+              ))}
+            </div>
+
+            {/* Upload area */}
+            <div>
+              <input
+                type="file"
+                accept="application/pdf"
+                id="pdf-upload"
+                className="hidden"
+                onChange={handlePdfUpload}
+              />
+              <label
+                htmlFor="pdf-upload"
+                className="flex flex-col items-center justify-center gap-3 w-full py-8 px-6 rounded-xl border-2 border-dashed cursor-pointer transition-all duration-200"
+                style={{
+                  borderColor: profileText ? '#22c55e' : pdfLoading ? '#0077B5' : '#475569',
+                  backgroundColor: profileText ? 'rgba(34,197,94,0.05)' : 'rgba(30,41,59,0.4)',
+                }}
+              >
+                {pdfLoading ? (
+                  <>
+                    <div className="w-8 h-8 rounded-full border-2 border-t-transparent animate-spin"
+                      style={{ borderColor: '#0077B5', borderTopColor: 'transparent' }} />
+                    <p className="text-slate-400 text-sm">Extrayendo contenido del PDF...</p>
+                  </>
+                ) : profileText ? (
+                  <>
+                    <span className="text-3xl">✅</span>
+                    <div className="text-center">
+                      <p className="text-green-400 font-semibold text-sm">{pdfFileName}</p>
+                      <p className="text-slate-400 text-xs mt-1">Perfil extraído correctamente · Hacé clic para cambiar el archivo</p>
+                    </div>
+                  </>
+                ) : (
+                  <>
+                    <span className="text-3xl">📄</span>
+                    <div className="text-center">
+                      <p className="text-white font-semibold text-sm">Subir PDF de LinkedIn</p>
+                      <p className="text-slate-400 text-xs mt-1">Hacé clic para seleccionar el archivo</p>
+                    </div>
+                  </>
+                )}
+              </label>
+            </div>
+
+            {/* PDF error */}
+            {pdfError && (
+              <div className="rounded-xl p-4 text-sm flex items-start gap-3"
+                style={{ backgroundColor: 'rgba(127,29,29,0.3)', border: '1px solid #b91c1c', color: '#fca5a5' }}>
+                <span className="shrink-0 mt-0.5">⚠️</span>
+                <span>{pdfError}</span>
+              </div>
+            )}
+
+            {/* Analysis error */}
             {analysisError && (
               <div className="rounded-xl p-4 text-sm"
                 style={{ backgroundColor: 'rgba(127,29,29,0.3)', border: '1px solid #b91c1c', color: '#fca5a5' }}>
@@ -523,94 +632,21 @@ Generá un análisis en este formato JSON exacto:
               </div>
             )}
 
-            {/* Resumen de respuestas */}
-            <div className="rounded-xl p-4 space-y-2"
-              style={{ backgroundColor: 'rgba(0,119,181,0.06)', border: '1px solid rgba(0,119,181,0.2)' }}>
-              <p className="text-xs uppercase tracking-wide mb-3" style={{ color: '#0077B5' }}>Tu contexto</p>
-              {qaHistory.map((h, i) => (
-                <div key={i} className="flex items-start gap-2 text-xs">
-                  <span className="text-slate-500 shrink-0 mt-0.5">{i + 1}.</span>
-                  <span className="text-slate-400">{h.question.replace('¿', '').replace('?', '')}:</span>
-                  <span className="text-slate-200 font-medium">{h.answer}</span>
-                </div>
-              ))}
-            </div>
-
-            {/* URL input */}
-            <div className="flex gap-2">
-              <input
-                type="url"
-                placeholder="https://www.linkedin.com/in/tu-usuario"
-                value={linkedinUrl}
-                onChange={e => { setLinkedinUrl(e.target.value); setFetchBlocked(false); setProfileText('') }}
-                className="flex-1 rounded-xl px-5 py-4 text-white placeholder-slate-500 text-sm focus:outline-none transition-colors"
-                style={{ backgroundColor: '#1e293b', border: `1px solid ${linkedinUrl ? '#0077B5' : '#475569'}` }}
-              />
+            <div className="flex gap-3 pt-1">
               <button
-                onClick={handleFetchProfile}
-                disabled={!linkedinUrl.trim() || fetchLoading}
-                className="px-5 py-4 rounded-xl font-semibold text-sm text-white transition-all shrink-0 flex items-center gap-2"
-                style={{
-                  backgroundColor: !linkedinUrl.trim() || fetchLoading ? '#334155' : '#0077B5',
-                  opacity: !linkedinUrl.trim() || fetchLoading ? 0.6 : 1,
-                  cursor: !linkedinUrl.trim() || fetchLoading ? 'not-allowed' : 'pointer',
-                }}
-              >
-                {fetchLoading ? <Spinner size={4} /> : '→ Obtener'}
-              </button>
-            </div>
-
-            {/* Fetch success */}
-            {profileText && !fetchBlocked && (
-              <div className="rounded-xl p-4 text-sm flex items-start gap-3"
-                style={{ backgroundColor: 'rgba(34,197,94,0.08)', border: '1px solid rgba(34,197,94,0.3)' }}>
-                <span className="text-green-400 text-base mt-0.5">✓</span>
-                <div>
-                  <p className="text-green-400 font-medium">Perfil obtenido correctamente</p>
-                  <p className="text-slate-400 text-xs mt-1">{profileText.length.toLocaleString()} caracteres extraídos.</p>
-                </div>
-              </div>
-            )}
-
-            {/* Fetch blocked — fallback textarea */}
-            {fetchBlocked && (
-              <div className="space-y-4">
-                <div className="rounded-xl p-4 text-sm flex items-start gap-3"
-                  style={{ backgroundColor: 'rgba(245,158,11,0.08)', border: '1px solid rgba(245,158,11,0.3)' }}>
-                  <span className="text-amber-400 text-base mt-0.5">⚠️</span>
-                  <div>
-                    <p className="text-amber-400 font-medium">LinkedIn bloqueó el acceso automático</p>
-                    <p className="text-slate-400 text-xs mt-1">
-                      Copiá el contenido de tu perfil desde LinkedIn (titular, sobre mí, experiencia) y pegalo acá.
-                    </p>
-                  </div>
-                </div>
-                <textarea
-                  rows={10}
-                  placeholder={'Titular: Senior PM en TechCorp\n\nSobre mí:\nSoy PM con 6 años de experiencia...\n\nExperiencia:\nSenior PM | TechCorp | 2021 - presente'}
-                  value={profileText}
-                  onChange={e => setProfileText(e.target.value)}
-                  className="w-full rounded-xl px-5 py-4 text-white placeholder-slate-500 text-sm focus:outline-none transition-colors resize-none leading-relaxed"
-                  style={{ backgroundColor: '#1e293b', border: `1px solid ${profileReady ? '#0077B5' : '#475569'}` }}
-                />
-              </div>
-            )}
-
-            <div className="flex gap-3 pt-2">
-              <button
-                onClick={() => { setStep(STEPS.QUESTIONS); setCurrentQ(qaHistory[qaHistory.length - 1] ? { question: qaHistory[qaHistory.length - 1].question, options: qaHistory[qaHistory.length - 1].options } : INITIAL_QUESTION) }}
+                onClick={() => setStep(STEPS.QUESTIONS)}
                 className="flex-1 border border-slate-600 text-slate-300 font-semibold py-3.5 rounded-xl transition-all duration-200 hover:border-slate-400"
               >
                 ← Atrás
               </button>
               <button
-                disabled={!profileReady}
+                disabled={!profileText}
                 onClick={callGemini}
                 className="flex-[2] font-semibold py-3.5 rounded-xl transition-all duration-200 text-white"
                 style={{
-                  backgroundColor: profileReady ? '#0077B5' : '#334155',
-                  opacity: profileReady ? 1 : 0.5,
-                  cursor: profileReady ? 'pointer' : 'not-allowed',
+                  backgroundColor: profileText ? '#0077B5' : '#334155',
+                  opacity: profileText ? 1 : 0.5,
+                  cursor: profileText ? 'pointer' : 'not-allowed',
                 }}
               >
                 Analizar mi perfil ✦
