@@ -1,8 +1,16 @@
 import { useState } from 'react'
 import './index.css'
 
-const GEMINI_API_KEY = 'AIzaSyDWR0aTAR906NlXyXS6jKSf0cV5-n8dqK4'
-const GEMINI_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${GEMINI_API_KEY}`
+const GEMINI_MODEL = 'gemini-2.0-flash'
+const geminiUrl = (key) =>
+  `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${key}`
+
+function parseGeminiError(status, body) {
+  if (status === 429) return 'Cuota de API agotada. Generá una nueva key en aistudio.google.com/apikey o esperá a que se resetee.'
+  if (status === 400) return 'API key inválida o solicitud incorrecta. Revisá la key ingresada.'
+  if (status === 403) return 'API key sin permisos. Verificá que esté habilitada en Google AI Studio.'
+  return `Error HTTP ${status}: ${body?.error?.message || 'Error desconocido'}`
+}
 
 const STEPS = { WELCOME: 0, QUESTIONS: 1, PROFILE_INPUT: 2, LOADING: 3, RESULTS: 4 }
 const MAX_QUESTIONS = 9
@@ -36,7 +44,7 @@ No uses lenguaje genérico ni de autoayuda.
 Sé directo, específico y orientado a resultados.
 Respondé SOLO en JSON válido, sin markdown, sin backticks.`
 
-async function fetchNextQuestion(history) {
+async function fetchNextQuestion(history, apiKey) {
   const historyText = history
     .map((h, i) => `${i + 1}. ${h.question}\n   → ${h.answer}`)
     .join('\n\n')
@@ -45,7 +53,7 @@ async function fetchNextQuestion(history) {
     ? `Respuestas del usuario hasta ahora:\n${historyText}\n\n¿Cuál es la siguiente pregunta más importante para entender su contexto y optimizar su perfil?\n\nRespondé en este formato JSON:\n{"done": false, "question": "la pregunta", "options": ["opción 1", "opción 2", "opción 3", "opción 4"]}`
     : `Respuestas del usuario hasta ahora:\n${historyText}\n\n¿Ya tenés suficiente información para hacer una optimización completa del perfil, o necesitás hacer una pregunta más?\n\nSi necesitás más info:\n{"done": false, "question": "la pregunta", "options": ["opción 1", "opción 2", "opción 3", "opción 4"]}\n\nSi ya tenés suficiente:\n{"done": true}`
 
-  const res = await fetch(GEMINI_URL, {
+  const res = await fetch(geminiUrl(apiKey), {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify({
@@ -54,7 +62,10 @@ async function fetchNextQuestion(history) {
       generationConfig: { responseMimeType: 'application/json', maxOutputTokens: 512 },
     }),
   })
-  if (!res.ok) throw new Error(`HTTP ${res.status}`)
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}))
+    throw new Error(parseGeminiError(res.status, body))
+  }
   const data = await res.json()
   const raw = data.candidates?.[0]?.content?.parts?.[0]?.text || '{}'
   return JSON.parse(raw)
@@ -189,6 +200,7 @@ function BeforeAfter({ label, before, after }) {
 
 export default function App() {
   const [step, setStep] = useState(STEPS.WELCOME)
+  const [apiKey, setApiKey] = useState('')
 
   // Dynamic Q&A
   const [qaHistory, setQaHistory] = useState([])
@@ -209,6 +221,7 @@ export default function App() {
 
   const reset = () => {
     setStep(STEPS.WELCOME)
+    setApiKey('')
     setQaHistory([])
     setCurrentQ(INITIAL_QUESTION)
     setSelectedOption(null)
@@ -239,7 +252,7 @@ export default function App() {
     }
 
     try {
-      const next = await fetchNextQuestion(newHistory)
+      const next = await fetchNextQuestion(newHistory, apiKey)
       if (next.done) {
         setStep(STEPS.PROFILE_INPUT)
       } else {
@@ -315,7 +328,7 @@ Generá un análisis en este formato JSON exacto:
 }`
 
     try {
-      const res = await fetch(GEMINI_URL, {
+      const res = await fetch(geminiUrl(apiKey), {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({
@@ -326,7 +339,7 @@ Generá un análisis en este formato JSON exacto:
       })
       if (!res.ok) {
         const e = await res.json().catch(() => ({}))
-        throw new Error(e?.error?.message || `Error HTTP ${res.status}`)
+        throw new Error(parseGeminiError(res.status, e))
       }
       const data = await res.json()
       const raw = data.candidates?.[0]?.content?.parts?.[0]?.text || ''
@@ -381,13 +394,33 @@ Generá un análisis en este formato JSON exacto:
                 </div>
               ))}
             </div>
-            <button
-              onClick={() => setStep(STEPS.QUESTIONS)}
-              className="w-full text-white font-semibold py-4 px-8 rounded-xl transition-all duration-200 text-base"
-              style={{ backgroundColor: '#0077B5' }}
-            >
-              Empezar →
-            </button>
+            <div className="space-y-3 text-left">
+              <label className="text-slate-400 text-sm block">Tu API Key de Google AI Studio</label>
+              <input
+                type="password"
+                placeholder="AIzaSy..."
+                value={apiKey}
+                onChange={e => setApiKey(e.target.value)}
+                className="w-full rounded-xl px-4 py-3 text-white placeholder-slate-500 text-sm focus:outline-none transition-colors"
+                style={{ backgroundColor: '#1e293b', border: `1px solid ${apiKey ? '#0077B5' : '#475569'}` }}
+              />
+              <p className="text-slate-500 text-xs">
+                Generá una key gratuita en{' '}
+                <span style={{ color: '#0077B5' }}>aistudio.google.com/apikey</span>. No se guarda en ningún lado.
+              </p>
+              <button
+                onClick={() => setStep(STEPS.QUESTIONS)}
+                disabled={!apiKey.trim()}
+                className="w-full text-white font-semibold py-4 px-8 rounded-xl transition-all duration-200 text-base"
+                style={{
+                  backgroundColor: apiKey.trim() ? '#0077B5' : '#334155',
+                  opacity: apiKey.trim() ? 1 : 0.5,
+                  cursor: apiKey.trim() ? 'pointer' : 'not-allowed',
+                }}
+              >
+                Empezar →
+              </button>
+            </div>
           </div>
         )}
 
