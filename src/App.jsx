@@ -2,8 +2,7 @@ import { useState } from 'react'
 import './index.css'
 
 const GEMINI_MODEL = 'gemini-2.5-flash-lite'
-const geminiUrl = (key) =>
-  `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${key}`
+const WORKER_URL = import.meta.env.VITE_WORKER_URL
 
 function parseGeminiError(status, body) {
   if (status === 429) return 'Cuota de API agotada. Generá una nueva key en aistudio.google.com/apikey o esperá a que se resetee.'
@@ -44,7 +43,7 @@ No uses lenguaje genérico ni de autoayuda.
 Sé directo, específico y orientado a resultados.
 Respondé SOLO en JSON válido, sin markdown, sin backticks.`
 
-async function fetchNextQuestion(history, apiKey) {
+async function fetchNextQuestion(history) {
   const historyText = history
     .map((h, i) => `${i + 1}. ${h.question}\n   → ${h.answer}`)
     .join('\n\n')
@@ -53,10 +52,11 @@ async function fetchNextQuestion(history, apiKey) {
     ? `Respuestas del usuario hasta ahora:\n${historyText}\n\n¿Cuál es la siguiente pregunta más importante para entender su contexto y optimizar su perfil?\n\nRespondé en este formato JSON:\n{"done": false, "question": "la pregunta", "options": ["opción 1", "opción 2", "opción 3", "opción 4"]}`
     : `Respuestas del usuario hasta ahora:\n${historyText}\n\n¿Ya tenés suficiente información para hacer una optimización completa del perfil, o necesitás hacer una pregunta más?\n\nSi necesitás más info:\n{"done": false, "question": "la pregunta", "options": ["opción 1", "opción 2", "opción 3", "opción 4"]}\n\nSi ya tenés suficiente:\n{"done": true}`
 
-  const res = await fetch(geminiUrl(apiKey), {
+  const res = await fetch(WORKER_URL, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify({
+      model: GEMINI_MODEL,
       system_instruction: { parts: [{ text: QUESTION_SYSTEM_PROMPT }] },
       contents: [{ parts: [{ text: prompt }] }],
       generationConfig: { responseMimeType: 'application/json', maxOutputTokens: 512 },
@@ -183,7 +183,6 @@ function BeforeAfter({ label, before, after }) {
 
 export default function App() {
   const [step, setStep] = useState(STEPS.WELCOME)
-  const [apiKey, setApiKey] = useState('')
 
   // Dynamic Q&A
   const [qaHistory, setQaHistory] = useState([])
@@ -205,7 +204,6 @@ export default function App() {
 
   const reset = () => {
     setStep(STEPS.WELCOME)
-    setApiKey('')
     setQaHistory([])
     setCurrentQ(INITIAL_QUESTION)
     setSelectedOption(null)
@@ -238,7 +236,7 @@ export default function App() {
     }
 
     try {
-      const next = await fetchNextQuestion(newHistory, apiKey)
+      const next = await fetchNextQuestion(newHistory)
       if (next.done) {
         setStep(STEPS.PROFILE_INPUT)
       } else {
@@ -282,10 +280,11 @@ export default function App() {
         reader.onerror = reject
         reader.readAsDataURL(file)
       })
-      const res = await fetch(geminiUrl(apiKey), {
+      const res = await fetch(WORKER_URL, {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({
+          model: GEMINI_MODEL,
           contents: [{
             parts: [
               { inline_data: { mime_type: 'application/pdf', data: base64 } },
@@ -343,10 +342,11 @@ Generá un análisis en este formato JSON exacto:
 }`
 
     try {
-      const res = await fetch(geminiUrl(apiKey), {
+      const res = await fetch(WORKER_URL, {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({
+          model: GEMINI_MODEL,
           system_instruction: { parts: [{ text: ANALYSIS_SYSTEM_PROMPT }] },
           contents: [{ parts: [{ text: userPrompt }] }],
           generationConfig: { responseMimeType: 'application/json', maxOutputTokens: 2048 },
@@ -408,33 +408,13 @@ Generá un análisis en este formato JSON exacto:
                 </div>
               ))}
             </div>
-            <div className="space-y-3 text-left">
-              <label className="text-slate-400 text-sm block">Tu API Key de Google AI Studio</label>
-              <input
-                type="password"
-                placeholder="AIzaSy..."
-                value={apiKey}
-                onChange={e => setApiKey(e.target.value)}
-                className="w-full rounded-xl px-4 py-3 text-white placeholder-slate-500 text-sm focus:outline-none transition-colors"
-                style={{ backgroundColor: '#1e293b', border: `1px solid ${apiKey ? '#0077B5' : '#475569'}` }}
-              />
-              <p className="text-slate-500 text-xs">
-                Generá una key gratuita en{' '}
-                <span style={{ color: '#0077B5' }}>aistudio.google.com/apikey</span>. No se guarda en ningún lado.
-              </p>
-              <button
-                onClick={() => setStep(STEPS.QUESTIONS)}
-                disabled={!apiKey.trim()}
-                className="w-full text-white font-semibold py-4 px-8 rounded-xl transition-all duration-200 text-base"
-                style={{
-                  backgroundColor: apiKey.trim() ? '#0077B5' : '#334155',
-                  opacity: apiKey.trim() ? 1 : 0.5,
-                  cursor: apiKey.trim() ? 'pointer' : 'not-allowed',
-                }}
-              >
-                Empezar →
-              </button>
-            </div>
+            <button
+              onClick={() => setStep(STEPS.QUESTIONS)}
+              className="w-full text-white font-semibold py-4 px-8 rounded-xl transition-all duration-200 text-base"
+              style={{ backgroundColor: '#0077B5' }}
+            >
+              Empezar →
+            </button>
           </div>
         )}
 
