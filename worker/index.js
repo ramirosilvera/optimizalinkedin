@@ -1,6 +1,6 @@
 export default {
   async fetch(request, env) {
-    const origin = 'https://ramirosilvera.github.io'
+    const origin = env.ALLOWED_ORIGIN || 'https://ramirosilvera.github.io'
 
     if (request.method === 'OPTIONS') {
       return new Response(null, {

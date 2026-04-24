@@ -1,16 +1,56 @@
-# React + Vite
+# LinkedIn Profile Optimizer
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+Aplicación web que usa IA (Google Gemini) para analizar perfiles de LinkedIn y generar recomendaciones estratégicas personalizadas.
 
-Currently, two official plugins are available:
+## ¿Qué hace?
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+1. Realiza un cuestionario adaptativo (hasta 9 preguntas) para entender el objetivo profesional del usuario.
+2. El usuario sube el PDF de su perfil de LinkedIn.
+3. Gemini extrae el contenido del PDF y genera un análisis con:
+   - Puntaje general (1–10)
+   - Titular y resumen mejorados
+   - Fortalezas y áreas de mejora
+   - Recomendaciones concretas
+   - Estrategia de contenido personalizada
 
-## React Compiler
+## Stack
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+- **Frontend**: React 19 + Vite + Tailwind CSS → desplegado en GitHub Pages
+- **Backend**: Cloudflare Worker (proxy para Gemini API)
+- **IA**: Google Gemini 2.5 Flash Lite
 
-## Expanding the ESLint configuration
+## Setup local
 
-If you are developing a production application, we recommend using TypeScript with type-aware lint rules enabled. Check out the [TS template](https://github.com/vitejs/vite/tree/main/packages/create-vite/template-react-ts) for information on how to integrate TypeScript and [`typescript-eslint`](https://typescript-eslint.io) in your project.
+```bash
+npm install
+```
+
+Creá un archivo `.env.local` con:
+
+```
+VITE_WORKER_URL=https://<tu-worker>.workers.dev
+```
+
+```bash
+npm run dev
+```
+
+## Deploy
+
+El deploy a GitHub Pages se hace automáticamente vía GitHub Actions al hacer push a `main`.
+
+La variable `VITE_WORKER_URL` debe estar configurada como secret en el repositorio de GitHub (`Settings > Secrets > Actions`).
+
+## Cloudflare Worker
+
+El Worker actúa como proxy CORS para llamadas a la Gemini API. Requiere:
+
+- Secret `GEMINI_API_KEY` configurado en el dashboard de Cloudflare.
+- Variable `ALLOWED_ORIGIN` (default: `https://ramirosilvera.github.io`) — se puede sobrescribir desde el dashboard o con `wrangler secret put ALLOWED_ORIGIN`.
+
+Para deployar el Worker:
+
+```bash
+cd worker
+npx wrangler deploy
+```
