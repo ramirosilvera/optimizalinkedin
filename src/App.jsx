@@ -4,45 +4,81 @@ import './index.css'
 const GEMINI_API_KEY = 'AIzaSyDWR0aTAR906NlXyXS6jKSf0cV5-n8dqK4'
 const GEMINI_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${GEMINI_API_KEY}`
 
-const STEPS = {
-  WELCOME: 0,
-  Q1: 1,
-  Q2: 2,
-  Q3: 3,
-  Q4: 4,
-  Q5: 5,
-  PROFILE_INPUT: 6,
-  LOADING: 7,
-  RESULTS: 8,
+const STEPS = { WELCOME: 0, QUESTIONS: 1, PROFILE_INPUT: 2, LOADING: 3, RESULTS: 4 }
+const MAX_QUESTIONS = 9
+
+const INITIAL_QUESTION = {
+  question: '¿Qué querés lograr con tu perfil de LinkedIn?',
+  options: [
+    'Conseguir un nuevo empleo',
+    'Atraer clientes o proyectos freelance',
+    'Posicionarme como referente en mi industria',
+    'Ampliar mi red de contactos',
+    'Varias cosas a la vez / No estoy seguro',
+  ],
 }
 
-const TOTAL_STEPS = 6
+const QUESTION_SYSTEM_PROMPT = `Sos un experto en optimización de perfiles de LinkedIn y posicionamiento profesional.
+Tu tarea es hacer preguntas estratégicas de múltiple choice para entender el contexto profesional del usuario y poder optimizar su perfil de forma personalizada.
+Reglas:
+- Cada pregunta debe tener entre 4 y 6 opciones concretas y relevantes
+- Las opciones deben cubrir los casos más comunes sin ser genéricas
+- Adaptá cada pregunta al contexto de las respuestas anteriores (si alguien busca empleo, preguntale cosas de empleo)
+- Después de 5 respuestas podés evaluar si ya tenés suficiente info. Con 8 respuestas siempre terminá.
+- Cuando tengas suficiente información para hacer una optimización completa y personalizada del perfil, respondé con done true
+- Respondé SIEMPRE en español rioplatense (Argentina)
+- Respondé SOLO en JSON válido, sin markdown, sin backticks`
 
-const Q1_OPTIONS = [
-  { value: 'Conseguir un nuevo empleo', label: 'Conseguir un nuevo empleo' },
-  { value: 'Atraer clientes o proyectos freelance', label: 'Atraer clientes o proyectos freelance' },
-  { value: 'Posicionarme como referente en mi industria', label: 'Posicionarme como referente en mi industria' },
-  { value: 'Ampliar mi red de contactos', label: 'Ampliar mi red de contactos' },
-  { value: 'no_seguro', label: 'No estoy seguro' },
-]
+const ANALYSIS_SYSTEM_PROMPT = `Sos un experto en posicionamiento profesional y LinkedIn con más de 15 años de experiencia.
+Tu tarea es analizar el perfil de LinkedIn de un profesional y generar una evaluación estratégica personalizada.
+Respondé siempre en español rioplatense (Argentina).
+No uses lenguaje genérico ni de autoayuda.
+Sé directo, específico y orientado a resultados.
+Respondé SOLO en JSON válido, sin markdown, sin backticks.`
 
-const Q2_OPTIONS = [
-  { value: 'Estoy empezando (0-3 años)', label: 'Estoy empezando (0-3 años)' },
-  { value: 'Tengo experiencia media (3-8 años)', label: 'Tengo experiencia media (3-8 años)' },
-  { value: 'Soy senior o directivo (+8 años)', label: 'Soy senior o directivo (+8 años)' },
-  { value: 'Estoy en transición o cambio de carrera', label: 'Estoy en transición o cambio de carrera' },
-]
+async function fetchNextQuestion(history) {
+  const historyText = history
+    .map((h, i) => `${i + 1}. ${h.question}\n   → ${h.answer}`)
+    .join('\n\n')
 
-const Q3_OPTIONS = [
-  { value: 'Reclutadores y empresas', label: 'Reclutadores y empresas' },
-  { value: 'Potenciales clientes', label: 'Potenciales clientes' },
-  { value: 'Colegas y pares de mi industria', label: 'Colegas y pares de mi industria' },
-  { value: 'Líderes y tomadores de decisión', label: 'Líderes y tomadores de decisión' },
-  { value: 'no_claro', label: 'No lo tengo claro' },
-]
+  const prompt = history.length < 5
+    ? `Respuestas del usuario hasta ahora:\n${historyText}\n\n¿Cuál es la siguiente pregunta más importante para entender su contexto y optimizar su perfil?\n\nRespondé en este formato JSON:\n{"done": false, "question": "la pregunta", "options": ["opción 1", "opción 2", "opción 3", "opción 4"]}`
+    : `Respuestas del usuario hasta ahora:\n${historyText}\n\n¿Ya tenés suficiente información para hacer una optimización completa del perfil, o necesitás hacer una pregunta más?\n\nSi necesitás más info:\n{"done": false, "question": "la pregunta", "options": ["opción 1", "opción 2", "opción 3", "opción 4"]}\n\nSi ya tenés suficiente:\n{"done": true}`
 
-const ORIENTACION_Q1 = `Si no sabés bien qué querés lograr, empezá por preguntarte: ¿estás cómodo en tu trabajo actual? ¿Hay algo que te falta lograr profesionalmente? Un perfil bien enfocado en un solo objetivo suele funcionar mejor que uno que intenta abarcar todo.`
-const ORIENTACION_Q3 = `Tu audiencia ideal depende de tu objetivo. Si buscás empleo, apuntá a reclutadores. Si querés proyectos, apuntá a clientes. Si querés posicionamiento, pensá en colegas y líderes de tu industria. Podés combinar, pero uno tiene que ser el principal.`
+  const res = await fetch(GEMINI_URL, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({
+      system_instruction: { parts: [{ text: QUESTION_SYSTEM_PROMPT }] },
+      contents: [{ parts: [{ text: prompt }] }],
+      generationConfig: { responseMimeType: 'application/json', maxOutputTokens: 512 },
+    }),
+  })
+  if (!res.ok) throw new Error(`HTTP ${res.status}`)
+  const data = await res.json()
+  const raw = data.candidates?.[0]?.content?.parts?.[0]?.text || '{}'
+  return JSON.parse(raw)
+}
+
+async function fetchLinkedInViaProxy(url) {
+  const proxy = `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`
+  const res = await fetch(proxy, { signal: AbortSignal.timeout(12000) })
+  const html = await res.text()
+  if (
+    html.includes('authwall') ||
+    html.includes('uas/login') ||
+    html.includes('login-email') ||
+    html.length < 500
+  ) throw new Error('blocked')
+  const parser = new DOMParser()
+  const doc = parser.parseFromString(html, 'text/html')
+  doc.querySelectorAll('script, style, nav, footer, header').forEach(el => el.remove())
+  const text = (doc.body?.textContent || '').replace(/\s+/g, ' ').trim()
+  if (text.length < 300) throw new Error('blocked')
+  return text.slice(0, 7000)
+}
+
+// ── UI components ──────────────────────────────────────────────
 
 const LinkedInIcon = ({ className }) => (
   <svg viewBox="0 0 24 24" fill="currentColor" className={className}>
@@ -50,32 +86,35 @@ const LinkedInIcon = ({ className }) => (
   </svg>
 )
 
-function ProgressBar({ current, total }) {
-  const pct = Math.round((current / total) * 100)
+function Logo() {
   return (
-    <div className="w-full mb-8">
-      <div className="flex justify-between text-xs text-slate-400 mb-2">
-        <span>Paso {current} de {total}</span>
-        <span>{pct}%</span>
+    <div className="flex items-center gap-2 mb-8 sm:mb-12">
+      <div className="w-8 h-8 rounded flex items-center justify-center shrink-0 text-white" style={{ backgroundColor: '#0077B5' }}>
+        <LinkedInIcon className="w-5 h-5" />
       </div>
-      <div className="w-full h-1.5 bg-slate-700 rounded-full overflow-hidden">
-        <div
-          className="h-full rounded-full transition-all duration-500 ease-out"
-          style={{ width: `${pct}%`, backgroundColor: '#0077B5' }}
-        />
-      </div>
+      <span className="text-slate-300 text-sm font-medium tracking-wide">LinkedIn Profile Optimizer</span>
     </div>
   )
 }
 
-function OptionButton({ label, selected, onClick }) {
+function Spinner({ size = 4 }) {
+  return (
+    <div
+      className={`w-${size} h-${size} rounded-full border-2 animate-spin shrink-0`}
+      style={{ borderColor: 'rgba(255,255,255,0.3)', borderTopColor: 'white' }}
+    />
+  )
+}
+
+function OptionButton({ label, selected, onClick, disabled }) {
   return (
     <button
       onClick={onClick}
+      disabled={disabled}
       className="w-full text-left px-5 py-4 rounded-xl border transition-all duration-200 text-sm sm:text-base"
       style={selected
-        ? { borderColor: '#0077B5', backgroundColor: 'rgba(0,119,181,0.12)', color: '#fff', fontWeight: 500 }
-        : { borderColor: '#475569', backgroundColor: 'rgba(30,41,59,0.6)', color: '#cbd5e1' }
+        ? { borderColor: '#0077B5', backgroundColor: 'rgba(0,119,181,0.14)', color: '#fff', fontWeight: 500 }
+        : { borderColor: '#475569', backgroundColor: 'rgba(30,41,59,0.6)', color: '#cbd5e1', cursor: disabled ? 'not-allowed' : 'pointer' }
       }
     >
       {label}
@@ -85,15 +124,9 @@ function OptionButton({ label, selected, onClick }) {
 
 function CopyButton({ text }) {
   const [copied, setCopied] = useState(false)
-  const handle = () => {
-    navigator.clipboard.writeText(text).then(() => {
-      setCopied(true)
-      setTimeout(() => setCopied(false), 2000)
-    })
-  }
   return (
     <button
-      onClick={handle}
+      onClick={() => navigator.clipboard.writeText(text).then(() => { setCopied(true); setTimeout(() => setCopied(false), 2000) })}
       className="text-xs px-3 py-1.5 rounded-lg border transition-all duration-200 shrink-0"
       style={copied
         ? { borderColor: '#22c55e', color: '#4ade80', backgroundColor: 'rgba(34,197,94,0.1)' }
@@ -106,19 +139,14 @@ function CopyButton({ text }) {
 }
 
 function ScoreRing({ score }) {
-  const radius = 52
-  const circ = 2 * Math.PI * radius
-  const fill = circ - (circ * score) / 10
+  const r = 52, circ = 2 * Math.PI * r
   const color = score >= 8 ? '#22c55e' : score >= 5 ? '#0077B5' : '#f59e0b'
   return (
     <div className="flex flex-col items-center shrink-0">
       <svg width="140" height="140" viewBox="0 0 140 140">
-        <circle cx="70" cy="70" r={radius} stroke="#1e293b" strokeWidth="12" fill="none" />
-        <circle
-          cx="70" cy="70" r={radius}
-          stroke={color} strokeWidth="12" fill="none"
-          strokeDasharray={circ}
-          strokeDashoffset={fill}
+        <circle cx="70" cy="70" r={r} stroke="#1e293b" strokeWidth="12" fill="none" />
+        <circle cx="70" cy="70" r={r} stroke={color} strokeWidth="12" fill="none"
+          strokeDasharray={circ} strokeDashoffset={circ - (circ * score) / 10}
           strokeLinecap="round"
           style={{ transform: 'rotate(-90deg)', transformOrigin: '50% 50%', transition: 'stroke-dashoffset 1.2s ease-out' }}
         />
@@ -157,86 +185,90 @@ function BeforeAfter({ label, before, after }) {
   )
 }
 
-function NavButtons({ onBack, onNext, nextLabel = 'Siguiente →', nextDisabled = false, loading = false }) {
-  return (
-    <div className="flex gap-3">
-      {onBack && (
-        <button
-          onClick={onBack}
-          className="flex-1 border border-slate-600 text-slate-300 font-semibold py-3.5 rounded-xl transition-all duration-200 hover:border-slate-400"
-        >
-          ← Atrás
-        </button>
-      )}
-      <button
-        disabled={nextDisabled || loading}
-        onClick={onNext}
-        className="font-semibold py-3.5 rounded-xl transition-all duration-200 text-white flex items-center justify-center gap-2"
-        style={{
-          flex: onBack ? 2 : 1,
-          backgroundColor: nextDisabled || loading ? '#334155' : '#0077B5',
-          opacity: nextDisabled || loading ? 0.6 : 1,
-          cursor: nextDisabled || loading ? 'not-allowed' : 'pointer',
-        }}
-      >
-        {loading && (
-          <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-        )}
-        {nextLabel}
-      </button>
-    </div>
-  )
-}
-
-async function fetchLinkedInViaProxy(url) {
-  const proxy = `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`
-  const res = await fetch(proxy, { signal: AbortSignal.timeout(12000) })
-  const html = await res.text()
-
-  const blocked =
-    html.includes('authwall') ||
-    html.includes('uas/login') ||
-    html.includes('login-email') ||
-    html.length < 500
-
-  if (blocked) throw new Error('blocked')
-
-  const parser = new DOMParser()
-  const doc = parser.parseFromString(html, 'text/html')
-  doc.querySelectorAll('script, style, nav, footer, header').forEach(el => el.remove())
-  const text = (doc.body?.textContent || '').replace(/\s+/g, ' ').trim()
-
-  if (text.length < 300) throw new Error('blocked')
-  return text.slice(0, 7000)
-}
+// ── Main App ───────────────────────────────────────────────────
 
 export default function App() {
   const [step, setStep] = useState(STEPS.WELCOME)
-  const [answers, setAnswers] = useState({ q1: '', q2: '', q3: '', q4: '', q5: '' })
-  const [showHint, setShowHint] = useState({ q1: false, q3: false })
 
+  // Dynamic Q&A
+  const [qaHistory, setQaHistory] = useState([])
+  const [currentQ, setCurrentQ] = useState(INITIAL_QUESTION)
+  const [selectedOption, setSelectedOption] = useState(null)
+  const [qLoading, setQLoading] = useState(false)
+  const [qError, setQError] = useState('')
+
+  // Profile input
   const [linkedinUrl, setLinkedinUrl] = useState('')
   const [profileText, setProfileText] = useState('')
   const [fetchLoading, setFetchLoading] = useState(false)
   const [fetchBlocked, setFetchBlocked] = useState(false)
 
+  // Results
   const [result, setResult] = useState(null)
-  const [error, setError] = useState('')
-
-  const stepProgress = () =>
-    step >= STEPS.Q1 && step <= STEPS.PROFILE_INPUT ? step - STEPS.Q1 + 1 : 0
+  const [analysisError, setAnalysisError] = useState('')
 
   const reset = () => {
     setStep(STEPS.WELCOME)
-    setAnswers({ q1: '', q2: '', q3: '', q4: '', q5: '' })
-    setShowHint({ q1: false, q3: false })
+    setQaHistory([])
+    setCurrentQ(INITIAL_QUESTION)
+    setSelectedOption(null)
+    setQLoading(false)
+    setQError('')
     setLinkedinUrl('')
     setProfileText('')
     setFetchBlocked(false)
     setResult(null)
-    setError('')
+    setAnalysisError('')
   }
 
+  // ── Answer a question and fetch next ──
+  const handleAnswer = async (answer) => {
+    if (qLoading) return
+    setSelectedOption(answer)
+
+    const newHistory = [...qaHistory, { question: currentQ.question, options: currentQ.options, answer }]
+    setQaHistory(newHistory)
+    setQLoading(true)
+    setQError('')
+
+    if (newHistory.length >= MAX_QUESTIONS) {
+      setQLoading(false)
+      setSelectedOption(null)
+      setStep(STEPS.PROFILE_INPUT)
+      return
+    }
+
+    try {
+      const next = await fetchNextQuestion(newHistory)
+      if (next.done) {
+        setStep(STEPS.PROFILE_INPUT)
+      } else {
+        setCurrentQ({ question: next.question, options: next.options })
+        setSelectedOption(null)
+      }
+    } catch {
+      setQError('No se pudo cargar la siguiente pregunta. Intentá de nuevo.')
+      setQaHistory(qaHistory) // rollback
+      setSelectedOption(null)
+    } finally {
+      setQLoading(false)
+    }
+  }
+
+  // ── Go back one question ──
+  const handleBack = () => {
+    if (qaHistory.length === 0) {
+      setStep(STEPS.WELCOME)
+      return
+    }
+    const prev = qaHistory[qaHistory.length - 1]
+    setQaHistory(h => h.slice(0, -1))
+    setCurrentQ({ question: prev.question, options: prev.options })
+    setSelectedOption(null)
+    setQError('')
+  }
+
+  // ── Fetch LinkedIn profile ──
   const handleFetchProfile = async () => {
     setFetchLoading(true)
     setFetchBlocked(false)
@@ -251,26 +283,17 @@ export default function App() {
     }
   }
 
+  // ── Call Gemini for analysis ──
   const callGemini = async () => {
     setStep(STEPS.LOADING)
-    setError('')
+    setAnalysisError('')
 
-    const systemPrompt = `Sos un experto en posicionamiento profesional y LinkedIn con más de 15 años de experiencia.
-Tu tarea es analizar el perfil de LinkedIn de un profesional y generar una evaluación estratégica personalizada.
-Respondé siempre en español rioplatense (Argentina).
-No uses lenguaje genérico ni de autoayuda.
-Sé directo, específico y orientado a resultados.
-Respondé SOLO en JSON válido, sin markdown, sin backticks.`
+    const contextText = qaHistory
+      .map((h, i) => `${i + 1}. ${h.question}\n   → ${h.answer}`)
+      .join('\n\n')
 
-    const q1Label = Q1_OPTIONS.find(o => o.value === answers.q1)?.label || answers.q1
-    const q3Label = Q3_OPTIONS.find(o => o.value === answers.q3)?.label || answers.q3
-
-    const userPrompt = `Contexto del usuario:
-- Objetivo: ${q1Label}
-- Etapa de carrera: ${answers.q2}
-- Audiencia target: ${q3Label}
-- Industria: ${answers.q4}
-- Diferencial que quiere comunicar: ${answers.q5}
+    const userPrompt = `Contexto del usuario (respuestas del cuestionario):
+${contextText}
 
 Perfil de LinkedIn:
 ${profileText}
@@ -296,63 +319,45 @@ Generá un análisis en este formato JSON exacto:
         method: 'POST',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({
-          system_instruction: { parts: [{ text: systemPrompt }] },
+          system_instruction: { parts: [{ text: ANALYSIS_SYSTEM_PROMPT }] },
           contents: [{ parts: [{ text: userPrompt }] }],
-          generationConfig: {
-            responseMimeType: 'application/json',
-            maxOutputTokens: 2048,
-          },
+          generationConfig: { responseMimeType: 'application/json', maxOutputTokens: 2048 },
         }),
       })
-
       if (!res.ok) {
-        const errData = await res.json().catch(() => ({}))
-        throw new Error(errData?.error?.message || `Error HTTP ${res.status}`)
+        const e = await res.json().catch(() => ({}))
+        throw new Error(e?.error?.message || `Error HTTP ${res.status}`)
       }
-
       const data = await res.json()
       const raw = data.candidates?.[0]?.content?.parts?.[0]?.text || ''
-
       let parsed
-      try {
-        parsed = JSON.parse(raw)
-      } catch {
-        const match = raw.match(/\{[\s\S]*\}/)
-        if (match) parsed = JSON.parse(match[0])
-        else throw new Error('La respuesta no es JSON válido. Intentá de nuevo.')
-      }
-
+      try { parsed = JSON.parse(raw) }
+      catch { const m = raw.match(/\{[\s\S]*\}/); if (m) parsed = JSON.parse(m[0]); else throw new Error('Respuesta inválida') }
       setResult(parsed)
       setStep(STEPS.RESULTS)
     } catch (err) {
-      setError(err.message || 'Ocurrió un error al conectar con Gemini.')
+      setAnalysisError(err.message || 'Error al conectar con Gemini.')
       setStep(STEPS.PROFILE_INPUT)
     }
   }
 
-  const showProgress = step >= STEPS.Q1 && step <= STEPS.PROFILE_INPUT
   const profileReady = profileText.trim().length >= 100
+  const qNum = qaHistory.length + 1
+  const qProgress = Math.min(88, (qaHistory.length / 7) * 100)
+
+  // ── Render ─────────────────────────────────────────────────
 
   return (
     <div className="min-h-dvh flex flex-col items-center px-4 py-8 sm:py-12" style={{ backgroundColor: '#0f172a' }}>
       <div className="w-full max-w-2xl">
 
-        {step !== STEPS.RESULTS && step !== STEPS.LOADING && (
-          <div className="flex items-center gap-2 mb-8 sm:mb-12">
-            <div className="w-8 h-8 rounded flex items-center justify-center shrink-0 text-white" style={{ backgroundColor: '#0077B5' }}>
-              <LinkedInIcon className="w-5 h-5" />
-            </div>
-            <span className="text-slate-300 text-sm font-medium tracking-wide">LinkedIn Profile Optimizer</span>
-          </div>
-        )}
-
-        {showProgress && <ProgressBar current={stepProgress()} total={TOTAL_STEPS} />}
-
         {/* ── WELCOME ── */}
         {step === STEPS.WELCOME && (
           <div className="step-transition text-center space-y-8">
+            <Logo />
             <div className="space-y-4">
-              <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full text-sm" style={{ backgroundColor: 'rgba(0,119,181,0.12)', border: '1px solid rgba(0,119,181,0.35)', color: '#0077B5' }}>
+              <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full text-sm"
+                style={{ backgroundColor: 'rgba(0,119,181,0.12)', border: '1px solid rgba(0,119,181,0.35)', color: '#0077B5' }}>
                 ✦ Análisis con IA
               </div>
               <h1 className="text-4xl sm:text-5xl font-bold text-white leading-tight">
@@ -360,23 +365,24 @@ Generá un análisis en este formato JSON exacto:
                 <span style={{ color: '#0077B5' }}>de LinkedIn</span>
               </h1>
               <p className="text-slate-400 text-lg max-w-md mx-auto leading-relaxed">
-                Ingresá la URL de tu perfil, respondé algunas preguntas y recibí un análisis estratégico personalizado.
+                Respondé algunas preguntas, ingresá la URL de tu perfil y recibí un análisis estratégico personalizado.
               </p>
             </div>
             <div className="grid grid-cols-3 gap-4 text-center">
               {[
-                { icon: '🎯', text: 'Análisis personalizado' },
+                { icon: '🤖', text: 'Preguntas adaptadas por IA' },
                 { icon: '✍️', text: 'Titular y resumen mejorado' },
                 { icon: '📈', text: 'Estrategia de contenido' },
-              ].map((item) => (
-                <div key={item.text} className="rounded-xl p-4" style={{ backgroundColor: 'rgba(30,41,59,0.5)', border: '1px solid #334155' }}>
+              ].map(item => (
+                <div key={item.text} className="rounded-xl p-4"
+                  style={{ backgroundColor: 'rgba(30,41,59,0.5)', border: '1px solid #334155' }}>
                   <div className="text-2xl mb-2">{item.icon}</div>
                   <p className="text-slate-400 text-xs leading-snug">{item.text}</p>
                 </div>
               ))}
             </div>
             <button
-              onClick={() => setStep(STEPS.Q1)}
+              onClick={() => setStep(STEPS.QUESTIONS)}
               className="w-full text-white font-semibold py-4 px-8 rounded-xl transition-all duration-200 text-base"
               style={{ backgroundColor: '#0077B5' }}
             >
@@ -385,119 +391,90 @@ Generá un análisis en este formato JSON exacto:
           </div>
         )}
 
-        {/* ── Q1 ── */}
-        {step === STEPS.Q1 && (
+        {/* ── QUESTIONS ── */}
+        {step === STEPS.QUESTIONS && (
           <div className="step-transition space-y-6">
-            <div>
-              <p className="text-slate-500 text-sm mb-1">Pregunta 1 de 5</p>
-              <h2 className="text-2xl sm:text-3xl font-bold text-white">¿Qué querés lograr con tu perfil de LinkedIn?</h2>
+            <Logo />
+
+            {/* Progress bar */}
+            <div className="w-full mb-2">
+              <div className="flex justify-between text-xs text-slate-400 mb-2">
+                <span>Pregunta {qNum}</span>
+                <span className="text-slate-500">La IA adapta las preguntas a tus respuestas</span>
+              </div>
+              <div className="w-full h-1.5 bg-slate-700 rounded-full overflow-hidden">
+                <div className="h-full rounded-full transition-all duration-700 ease-out"
+                  style={{ width: `${qLoading ? qProgress + 6 : qProgress}%`, backgroundColor: '#0077B5' }} />
+              </div>
             </div>
-            <div className="space-y-3">
-              {Q1_OPTIONS.map((opt) => (
-                <OptionButton key={opt.value} label={opt.label} selected={answers.q1 === opt.value}
-                  onClick={() => {
-                    setAnswers(p => ({ ...p, q1: opt.value }))
-                    setShowHint(p => ({ ...p, q1: opt.value === 'no_seguro' }))
-                  }}
-                />
-              ))}
+
+            {/* Question */}
+            <div className="min-h-[4rem]">
+              {qLoading && !currentQ ? (
+                <div className="flex items-center gap-3 text-slate-400">
+                  <div className="w-5 h-5 rounded-full border-2 animate-spin shrink-0"
+                    style={{ borderColor: '#334155', borderTopColor: '#0077B5' }} />
+                  <span className="text-sm">Generando siguiente pregunta...</span>
+                </div>
+              ) : (
+                <h2 className="text-2xl sm:text-3xl font-bold text-white leading-snug">
+                  {currentQ?.question}
+                </h2>
+              )}
             </div>
-            {showHint.q1 && (
-              <div className="rounded-xl p-4 text-slate-300 text-sm leading-relaxed" style={{ backgroundColor: 'rgba(30,41,59,0.8)', border: '1px solid #475569' }}>
-                💡 {ORIENTACION_Q1}
+
+            {/* Options */}
+            {currentQ && (
+              <div className="space-y-3">
+                {currentQ.options.map(opt => (
+                  <OptionButton
+                    key={opt}
+                    label={opt}
+                    selected={selectedOption === opt}
+                    disabled={qLoading}
+                    onClick={() => handleAnswer(opt)}
+                  />
+                ))}
               </div>
             )}
-            <NavButtons onNext={() => setStep(STEPS.Q2)} nextDisabled={!answers.q1} />
-          </div>
-        )}
 
-        {/* ── Q2 ── */}
-        {step === STEPS.Q2 && (
-          <div className="step-transition space-y-6">
-            <div>
-              <p className="text-slate-500 text-sm mb-1">Pregunta 2 de 5</p>
-              <h2 className="text-2xl sm:text-3xl font-bold text-white">¿En qué etapa de tu carrera estás?</h2>
-            </div>
-            <div className="space-y-3">
-              {Q2_OPTIONS.map((opt) => (
-                <OptionButton key={opt.value} label={opt.label} selected={answers.q2 === opt.value}
-                  onClick={() => setAnswers(p => ({ ...p, q2: opt.value }))}
-                />
-              ))}
-            </div>
-            <NavButtons onBack={() => setStep(STEPS.Q1)} onNext={() => setStep(STEPS.Q3)} nextDisabled={!answers.q2} />
-          </div>
-        )}
-
-        {/* ── Q3 ── */}
-        {step === STEPS.Q3 && (
-          <div className="step-transition space-y-6">
-            <div>
-              <p className="text-slate-500 text-sm mb-1">Pregunta 3 de 5</p>
-              <h2 className="text-2xl sm:text-3xl font-bold text-white">¿A quién querés llegar con tu perfil?</h2>
-            </div>
-            <div className="space-y-3">
-              {Q3_OPTIONS.map((opt) => (
-                <OptionButton key={opt.value} label={opt.label} selected={answers.q3 === opt.value}
-                  onClick={() => {
-                    setAnswers(p => ({ ...p, q3: opt.value }))
-                    setShowHint(p => ({ ...p, q3: opt.value === 'no_claro' }))
-                  }}
-                />
-              ))}
-            </div>
-            {showHint.q3 && (
-              <div className="rounded-xl p-4 text-slate-300 text-sm leading-relaxed" style={{ backgroundColor: 'rgba(30,41,59,0.8)', border: '1px solid #475569' }}>
-                💡 {ORIENTACION_Q3}
+            {/* Loading overlay after selection */}
+            {qLoading && selectedOption && (
+              <div className="flex items-center gap-3 py-2">
+                <div className="flex gap-1">
+                  {[0, 1, 2].map(i => (
+                    <div key={i} className="w-1.5 h-1.5 rounded-full animate-bounce"
+                      style={{ backgroundColor: '#0077B5', animationDelay: `${i * 0.15}s` }} />
+                  ))}
+                </div>
+                <span className="text-slate-400 text-sm">Analizando tu respuesta...</span>
               </div>
             )}
-            <NavButtons onBack={() => setStep(STEPS.Q2)} onNext={() => setStep(STEPS.Q4)} nextDisabled={!answers.q3} />
-          </div>
-        )}
 
-        {/* ── Q4 ── */}
-        {step === STEPS.Q4 && (
-          <div className="step-transition space-y-6">
-            <div>
-              <p className="text-slate-500 text-sm mb-1">Pregunta 4 de 5</p>
-              <h2 className="text-2xl sm:text-3xl font-bold text-white">¿Cuál es tu industria o área de expertise?</h2>
-            </div>
-            <input
-              type="text"
-              placeholder="Ej: Tecnología, Marketing Digital, Finanzas, Salud..."
-              value={answers.q4}
-              onChange={e => setAnswers(p => ({ ...p, q4: e.target.value }))}
-              onKeyDown={e => e.key === 'Enter' && answers.q4.trim() && setStep(STEPS.Q5)}
-              className="w-full rounded-xl px-5 py-4 text-white placeholder-slate-500 text-sm focus:outline-none transition-colors"
-              style={{ backgroundColor: '#1e293b', border: `1px solid ${answers.q4 ? '#0077B5' : '#475569'}` }}
-            />
-            <NavButtons onBack={() => setStep(STEPS.Q3)} onNext={() => setStep(STEPS.Q5)} nextDisabled={!answers.q4.trim()} />
-          </div>
-        )}
+            {/* Error */}
+            {qError && (
+              <div className="rounded-xl p-4 text-sm flex items-center justify-between gap-4"
+                style={{ backgroundColor: 'rgba(127,29,29,0.3)', border: '1px solid #b91c1c', color: '#fca5a5' }}>
+                <span>⚠️ {qError}</span>
+                <button onClick={() => setQError('')} className="text-xs underline shrink-0">Cerrar</button>
+              </div>
+            )}
 
-        {/* ── Q5 ── */}
-        {step === STEPS.Q5 && (
-          <div className="step-transition space-y-6">
-            <div>
-              <p className="text-slate-500 text-sm mb-1">Pregunta 5 de 5</p>
-              <h2 className="text-2xl sm:text-3xl font-bold text-white">¿Qué diferencial querés comunicar?</h2>
-              <p className="text-slate-400 text-sm mt-2">Lo que te hace único y diferente en tu campo.</p>
-            </div>
-            <textarea
-              rows={4}
-              placeholder="Ej: 20 años en finanzas corporativas, especialista en turnaround de empresas"
-              value={answers.q5}
-              onChange={e => setAnswers(p => ({ ...p, q5: e.target.value }))}
-              className="w-full rounded-xl px-5 py-4 text-white placeholder-slate-500 text-sm focus:outline-none transition-colors resize-none"
-              style={{ backgroundColor: '#1e293b', border: `1px solid ${answers.q5 ? '#0077B5' : '#475569'}` }}
-            />
-            <NavButtons onBack={() => setStep(STEPS.Q4)} onNext={() => setStep(STEPS.PROFILE_INPUT)} nextDisabled={!answers.q5.trim()} />
+            {/* Back button */}
+            <button
+              onClick={handleBack}
+              disabled={qLoading}
+              className="text-slate-500 text-sm hover:text-slate-300 transition-colors"
+            >
+              ← {qaHistory.length === 0 ? 'Volver al inicio' : 'Pregunta anterior'}
+            </button>
           </div>
         )}
 
         {/* ── PROFILE INPUT ── */}
         {step === STEPS.PROFILE_INPUT && (
           <div className="step-transition space-y-6">
+            <Logo />
             <div>
               <p className="text-slate-500 text-sm mb-1">Último paso</p>
               <h2 className="text-2xl sm:text-3xl font-bold text-white">Ingresá la URL de tu perfil</h2>
@@ -506,11 +483,25 @@ Generá un análisis en este formato JSON exacto:
               </p>
             </div>
 
-            {error && (
-              <div className="rounded-xl p-4 text-sm" style={{ backgroundColor: 'rgba(127,29,29,0.3)', border: '1px solid #b91c1c', color: '#fca5a5' }}>
-                ⚠️ {error}
+            {analysisError && (
+              <div className="rounded-xl p-4 text-sm"
+                style={{ backgroundColor: 'rgba(127,29,29,0.3)', border: '1px solid #b91c1c', color: '#fca5a5' }}>
+                ⚠️ {analysisError}
               </div>
             )}
+
+            {/* Resumen de respuestas */}
+            <div className="rounded-xl p-4 space-y-2"
+              style={{ backgroundColor: 'rgba(0,119,181,0.06)', border: '1px solid rgba(0,119,181,0.2)' }}>
+              <p className="text-xs uppercase tracking-wide mb-3" style={{ color: '#0077B5' }}>Tu contexto</p>
+              {qaHistory.map((h, i) => (
+                <div key={i} className="flex items-start gap-2 text-xs">
+                  <span className="text-slate-500 shrink-0 mt-0.5">{i + 1}.</span>
+                  <span className="text-slate-400">{h.question.replace('¿', '').replace('?', '')}:</span>
+                  <span className="text-slate-200 font-medium">{h.answer}</span>
+                </div>
+              ))}
+            </div>
 
             {/* URL input */}
             <div className="flex gap-2">
@@ -518,11 +509,7 @@ Generá un análisis en este formato JSON exacto:
                 type="url"
                 placeholder="https://www.linkedin.com/in/tu-usuario"
                 value={linkedinUrl}
-                onChange={e => {
-                  setLinkedinUrl(e.target.value)
-                  setFetchBlocked(false)
-                  setProfileText('')
-                }}
+                onChange={e => { setLinkedinUrl(e.target.value); setFetchBlocked(false); setProfileText('') }}
                 className="flex-1 rounded-xl px-5 py-4 text-white placeholder-slate-500 text-sm focus:outline-none transition-colors"
                 style={{ backgroundColor: '#1e293b', border: `1px solid ${linkedinUrl ? '#0077B5' : '#475569'}` }}
               />
@@ -536,38 +523,38 @@ Generá un análisis en este formato JSON exacto:
                   cursor: !linkedinUrl.trim() || fetchLoading ? 'not-allowed' : 'pointer',
                 }}
               >
-                {fetchLoading
-                  ? <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                  : '→ Obtener'}
+                {fetchLoading ? <Spinner size={4} /> : '→ Obtener'}
               </button>
             </div>
 
             {/* Fetch success */}
             {profileText && !fetchBlocked && (
-              <div className="rounded-xl p-4 text-sm flex items-start gap-3" style={{ backgroundColor: 'rgba(34,197,94,0.08)', border: '1px solid rgba(34,197,94,0.3)' }}>
+              <div className="rounded-xl p-4 text-sm flex items-start gap-3"
+                style={{ backgroundColor: 'rgba(34,197,94,0.08)', border: '1px solid rgba(34,197,94,0.3)' }}>
                 <span className="text-green-400 text-base mt-0.5">✓</span>
                 <div>
                   <p className="text-green-400 font-medium">Perfil obtenido correctamente</p>
-                  <p className="text-slate-400 text-xs mt-1">{profileText.length.toLocaleString()} caracteres extraídos. Podés proceder al análisis.</p>
+                  <p className="text-slate-400 text-xs mt-1">{profileText.length.toLocaleString()} caracteres extraídos.</p>
                 </div>
               </div>
             )}
 
-            {/* LinkedIn blocked — fallback textarea */}
+            {/* Fetch blocked — fallback textarea */}
             {fetchBlocked && (
               <div className="space-y-4">
-                <div className="rounded-xl p-4 text-sm flex items-start gap-3" style={{ backgroundColor: 'rgba(245,158,11,0.08)', border: '1px solid rgba(245,158,11,0.3)' }}>
+                <div className="rounded-xl p-4 text-sm flex items-start gap-3"
+                  style={{ backgroundColor: 'rgba(245,158,11,0.08)', border: '1px solid rgba(245,158,11,0.3)' }}>
                   <span className="text-amber-400 text-base mt-0.5">⚠️</span>
                   <div>
                     <p className="text-amber-400 font-medium">LinkedIn bloqueó el acceso automático</p>
                     <p className="text-slate-400 text-xs mt-1">
-                      LinkedIn requiere login para acceder a perfiles. Copiá tu perfil desde LinkedIn y pegalo acá abajo.
+                      Copiá el contenido de tu perfil desde LinkedIn (titular, sobre mí, experiencia) y pegalo acá.
                     </p>
                   </div>
                 </div>
                 <textarea
                   rows={10}
-                  placeholder={`Titular: Senior Product Manager en TechCorp\n\nSobre mí:\nSoy PM con 6 años de experiencia...\n\nExperiencia:\nSenior PM | TechCorp | 2021 - presente\n\nEducación:\nIngeniería Industrial | UBA | 2016`}
+                  placeholder={'Titular: Senior PM en TechCorp\n\nSobre mí:\nSoy PM con 6 años de experiencia...\n\nExperiencia:\nSenior PM | TechCorp | 2021 - presente'}
                   value={profileText}
                   onChange={e => setProfileText(e.target.value)}
                   className="w-full rounded-xl px-5 py-4 text-white placeholder-slate-500 text-sm focus:outline-none transition-colors resize-none leading-relaxed"
@@ -576,12 +563,26 @@ Generá un análisis en este formato JSON exacto:
               </div>
             )}
 
-            <NavButtons
-              onBack={() => setStep(STEPS.Q5)}
-              onNext={callGemini}
-              nextLabel="Analizar mi perfil ✦"
-              nextDisabled={!profileReady}
-            />
+            <div className="flex gap-3 pt-2">
+              <button
+                onClick={() => { setStep(STEPS.QUESTIONS); setCurrentQ(qaHistory[qaHistory.length - 1] ? { question: qaHistory[qaHistory.length - 1].question, options: qaHistory[qaHistory.length - 1].options } : INITIAL_QUESTION) }}
+                className="flex-1 border border-slate-600 text-slate-300 font-semibold py-3.5 rounded-xl transition-all duration-200 hover:border-slate-400"
+              >
+                ← Atrás
+              </button>
+              <button
+                disabled={!profileReady}
+                onClick={callGemini}
+                className="flex-[2] font-semibold py-3.5 rounded-xl transition-all duration-200 text-white"
+                style={{
+                  backgroundColor: profileReady ? '#0077B5' : '#334155',
+                  opacity: profileReady ? 1 : 0.5,
+                  cursor: profileReady ? 'pointer' : 'not-allowed',
+                }}
+              >
+                Analizar mi perfil ✦
+              </button>
+            </div>
           </div>
         )}
 
@@ -599,7 +600,7 @@ Generá un análisis en este formato JSON exacto:
             <div className="space-y-2">
               <h2 className="text-2xl font-bold text-white">Analizando tu perfil...</h2>
               <p className="text-slate-400 text-sm max-w-xs">
-                Gemini está evaluando tu perfil y preparando recomendaciones personalizadas.
+                Gemini está procesando tu perfil y las respuestas del cuestionario para generar recomendaciones personalizadas.
               </p>
             </div>
             <div className="flex gap-1.5">
@@ -614,12 +615,7 @@ Generá un análisis en este formato JSON exacto:
         {/* ── RESULTS ── */}
         {step === STEPS.RESULTS && result && (
           <div className="step-transition space-y-6">
-            <div className="flex items-center gap-2 mb-2">
-              <div className="w-8 h-8 rounded flex items-center justify-center shrink-0 text-white" style={{ backgroundColor: '#0077B5' }}>
-                <LinkedInIcon className="w-5 h-5" />
-              </div>
-              <span className="text-slate-300 text-sm font-medium tracking-wide">LinkedIn Profile Optimizer</span>
-            </div>
+            <Logo />
 
             <ResultCard title="Diagnóstico general">
               <div className="flex flex-col sm:flex-row items-center sm:items-start gap-6">
@@ -662,7 +658,8 @@ Generá un análisis en este formato JSON exacto:
             <ResultCard title="Recomendaciones">
               <div className="space-y-4">
                 {(result.recomendaciones || []).map((rec, i) => (
-                  <div key={i} className="rounded-xl p-4" style={{ backgroundColor: 'rgba(15,23,42,0.6)', border: '1px solid #334155' }}>
+                  <div key={i} className="rounded-xl p-4"
+                    style={{ backgroundColor: 'rgba(15,23,42,0.6)', border: '1px solid #334155' }}>
                     <p className="text-white font-semibold text-sm mb-1">
                       <span style={{ color: '#0077B5' }} className="mr-2">{i + 1}.</span>
                       {rec.titulo}
@@ -673,7 +670,8 @@ Generá un análisis en este formato JSON exacto:
               </div>
             </ResultCard>
 
-            <div className="rounded-2xl p-6" style={{ backgroundColor: 'rgba(0,119,181,0.08)', border: '1px solid rgba(0,119,181,0.3)' }}>
+            <div className="rounded-2xl p-6"
+              style={{ backgroundColor: 'rgba(0,119,181,0.08)', border: '1px solid rgba(0,119,181,0.3)' }}>
               <p className="text-xs font-semibold uppercase tracking-wide mb-3" style={{ color: '#0077B5' }}>📣 Estrategia de contenido</p>
               <p className="text-slate-200 text-sm leading-relaxed">{result.estrategia_contenido}</p>
             </div>
