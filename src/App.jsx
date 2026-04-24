@@ -197,6 +197,7 @@ export default function App() {
   const [pdfFileName, setPdfFileName] = useState('')
   const [pdfLoading, setPdfLoading] = useState(false)
   const [pdfError, setPdfError] = useState('')
+  const [instrTab, setInstrTab] = useState('desktop')
 
   // Results
   const [result, setResult] = useState(null)
@@ -214,6 +215,7 @@ export default function App() {
     setPdfFileName('')
     setPdfLoading(false)
     setPdfError('')
+    setInstrTab('desktop')
     setResult(null)
     setAnalysisError('')
   }
@@ -445,7 +447,8 @@ Generá un análisis en este formato JSON exacto:
             <div className="w-full mb-2">
               <div className="flex justify-between text-xs text-slate-400 mb-2">
                 <span>Pregunta {qNum}</span>
-                <span className="text-slate-500">La IA adapta las preguntas a tus respuestas</span>
+                <span className="text-slate-500 hidden sm:inline">La IA adapta las preguntas a tus respuestas</span>
+                <span className="text-slate-500 sm:hidden">Adaptada por IA</span>
               </div>
               <div className="w-full h-1.5 bg-slate-700 rounded-full overflow-hidden">
                 <div className="h-full rounded-full transition-all duration-700 ease-out"
@@ -536,40 +539,75 @@ Generá un análisis en este formato JSON exacto:
               </p>
             </div>
 
-            {/* Cómo descargar */}
-            <div className="rounded-xl p-5 space-y-3"
-              style={{ backgroundColor: 'rgba(30,41,59,0.7)', border: '1px solid #334155' }}>
-              <p className="font-semibold text-white text-sm">📄 Cómo descargar tu perfil en PDF</p>
-              <ol className="space-y-2">
+            {/* Cómo descargar — tabs desktop/celular */}
+            <div className="rounded-xl overflow-hidden"
+              style={{ border: '1px solid #334155' }}>
+              {/* Tab selector */}
+              <div className="flex" style={{ backgroundColor: 'rgba(15,23,42,0.8)' }}>
                 {[
-                  'Abrí tu perfil de LinkedIn en el navegador',
-                  'Hacé clic en el botón "Más" (debajo de tu foto y nombre)',
-                  'Seleccioná "Guardar como PDF"',
-                  'El PDF se descarga automáticamente en segundos',
-                  'Subilo acá abajo ↓',
-                ].map((step, i) => (
-                  <li key={i} className="flex items-start gap-3 text-sm text-slate-300">
-                    <span className="w-5 h-5 rounded-full flex items-center justify-center text-xs font-bold shrink-0 mt-0.5"
-                      style={{ backgroundColor: 'rgba(0,119,181,0.2)', color: '#0077B5' }}>
-                      {i + 1}
-                    </span>
-                    {step}
-                  </li>
+                  { id: 'desktop', label: '🖥️  Computadora' },
+                  { id: 'mobile', label: '📱  Celular' },
+                ].map(tab => (
+                  <button
+                    key={tab.id}
+                    onClick={() => setInstrTab(tab.id)}
+                    className="flex-1 py-2.5 text-xs font-semibold transition-all duration-200"
+                    style={instrTab === tab.id
+                      ? { backgroundColor: '#0077B5', color: '#fff' }
+                      : { color: '#64748b' }
+                    }
+                  >
+                    {tab.label}
+                  </button>
                 ))}
-              </ol>
+              </div>
+
+              {/* Steps */}
+              <div className="p-5 space-y-3" style={{ backgroundColor: 'rgba(30,41,59,0.7)' }}>
+                <p className="font-semibold text-white text-sm mb-1">
+                  {instrTab === 'desktop' ? '📄 Cómo descargar desde la computadora' : '📄 Cómo descargar desde el celular'}
+                </p>
+                <ol className="space-y-2.5">
+                  {(instrTab === 'desktop' ? [
+                    'Abrí tu perfil de LinkedIn en el navegador (Chrome, Safari, etc.)',
+                    'Hacé clic en el botón "Más" que aparece debajo de tu foto y nombre',
+                    'Seleccioná "Guardar como PDF"',
+                    'El PDF se descarga automáticamente — buscalo en tu carpeta de Descargas',
+                    'Volvé acá y subilo ↓',
+                  ] : [
+                    'Abrí la app de LinkedIn en tu celular',
+                    'Tocá tu foto de perfil (arriba a la izquierda) para ir a tu perfil',
+                    'Tocá los tres puntos (...) que aparecen arriba a la derecha',
+                    'Seleccioná "Guardar como PDF"',
+                    'Si no ves esa opción: abrí linkedin.com en Chrome o Safari, iniciá sesión, y repetí desde el paso 2 usando el navegador',
+                    'El PDF se guarda en tu teléfono — subilo acá ↓',
+                  ]).map((s, i) => (
+                    <li key={i} className="flex items-start gap-3 text-sm text-slate-300">
+                      <span className="w-5 h-5 rounded-full flex items-center justify-center text-xs font-bold shrink-0 mt-0.5"
+                        style={{ backgroundColor: 'rgba(0,119,181,0.2)', color: '#0077B5', minWidth: '1.25rem' }}>
+                        {i + 1}
+                      </span>
+                      <span className="leading-relaxed">{s}</span>
+                    </li>
+                  ))}
+                </ol>
+              </div>
             </div>
 
             {/* Resumen de respuestas */}
-            <div className="rounded-xl p-4 space-y-2"
+            <div className="rounded-xl p-4"
               style={{ backgroundColor: 'rgba(0,119,181,0.06)', border: '1px solid rgba(0,119,181,0.2)' }}>
               <p className="text-xs uppercase tracking-wide mb-3" style={{ color: '#0077B5' }}>Tu contexto recopilado</p>
-              {qaHistory.map((h, i) => (
-                <div key={i} className="flex items-start gap-2 text-xs">
-                  <span className="text-slate-500 shrink-0 mt-0.5">{i + 1}.</span>
-                  <span className="text-slate-400 shrink-0">{h.question.replace('¿', '').replace('?', '')}:</span>
-                  <span className="text-slate-200 font-medium">{h.answer}</span>
-                </div>
-              ))}
+              <div className="space-y-0">
+                {qaHistory.map((h, i) => (
+                  <div key={i} className="py-2 border-b last:border-0" style={{ borderColor: 'rgba(51,65,85,0.5)' }}>
+                    <p className="text-slate-500 text-xs leading-snug">
+                      {i + 1}. {h.question.replace(/^¿/, '').replace(/\?$/, '')}
+                    </p>
+                    <p className="text-white text-xs font-medium mt-0.5 pl-3">→ {h.answer}</p>
+                  </div>
+                ))}
+              </div>
             </div>
 
             {/* Upload area */}
