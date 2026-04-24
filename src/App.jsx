@@ -190,7 +190,6 @@ export default function App() {
   const [answers, setAnswers] = useState({ q1: '', q2: '', q3: '', q4: '', q5: '' })
   const [showHint, setShowHint] = useState({ q1: false, q3: false })
   const [profileText, setProfileText] = useState('')
-  const [apiKey, setApiKey] = useState('')
   const [result, setResult] = useState(null)
   const [error, setError] = useState('')
 
@@ -248,13 +247,11 @@ Generá un análisis en este formato JSON exacto:
 }`
 
     try {
-      const res = await fetch('https://api.anthropic.com/v1/messages', {
+      const workerUrl = import.meta.env.VITE_WORKER_URL
+      const res = await fetch(workerUrl, {
         method: 'POST',
         headers: {
-          'x-api-key': apiKey,
-          'anthropic-version': '2023-06-01',
           'content-type': 'application/json',
-          'anthropic-dangerous-direct-browser-calls': 'true',
         },
         body: JSON.stringify({
           model: 'claude-sonnet-4-20250514',
@@ -336,28 +333,13 @@ Generá un análisis en este formato JSON exacto:
               ))}
             </div>
 
-            <div className="space-y-3 text-left">
-              <label className="text-slate-400 text-sm block">Tu API Key de Anthropic</label>
-              <input
-                type="password"
-                placeholder="sk-ant-..."
-                value={apiKey}
-                onChange={(e) => setApiKey(e.target.value)}
-                className="w-full rounded-xl px-4 py-3 text-white placeholder-slate-500 text-sm focus:outline-none transition-colors"
-                style={{ backgroundColor: '#1e293b', border: `1px solid ${apiKey ? '#0077B5' : '#475569'}` }}
-              />
-              <p className="text-slate-500 text-xs">
-                Necesitás una API key de <span style={{ color: '#0077B5' }}>console.anthropic.com</span>. No se guarda en ningún lado.
-              </p>
-              <button
-                onClick={() => setStep(STEPS.Q1)}
-                disabled={!apiKey.trim()}
-                className="w-full text-white font-semibold py-4 px-8 rounded-xl transition-all duration-200 text-base mt-2"
-                style={{ backgroundColor: apiKey.trim() ? '#0077B5' : '#334155', opacity: apiKey.trim() ? 1 : 0.5, cursor: apiKey.trim() ? 'pointer' : 'not-allowed' }}
-              >
-                Empezar →
-              </button>
-            </div>
+            <button
+              onClick={() => setStep(STEPS.Q1)}
+              className="w-full text-white font-semibold py-4 px-8 rounded-xl transition-all duration-200 text-base"
+              style={{ backgroundColor: '#0077B5' }}
+            >
+              Empezar →
+            </button>
           </div>
         )}
 
