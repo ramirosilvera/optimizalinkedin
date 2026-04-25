@@ -471,7 +471,7 @@ Generá un análisis en este formato JSON exacto:
         body: JSON.stringify({
           system_instruction: { parts: [{ text: ANALYSIS_SYSTEM_PROMPT }] },
           contents: [{ parts: [{ text: userPrompt }] }],
-          generationConfig: { responseMimeType: 'application/json', maxOutputTokens: 1400 },
+          generationConfig: { responseMimeType: 'application/json', maxOutputTokens: 2200 },
         }),
       })
       if (!res.ok) {
@@ -479,10 +479,14 @@ Generá un análisis en este formato JSON exacto:
         throw new Error(parseGeminiError(res.status, e))
       }
       const data = await res.json()
-      const raw = data.candidates?.[0]?.content?.parts?.[0]?.text || ''
+      const candidate = data.candidates?.[0]
+      if (candidate?.finishReason === 'MAX_TOKENS') {
+        throw new Error('La respuesta fue demasiado larga. Intentá de nuevo — suele resolverse en el segundo intento.')
+      }
+      const raw = candidate?.content?.parts?.[0]?.text || ''
       let parsed
       try { parsed = JSON.parse(raw) }
-      catch { const m = raw.match(/\{[\s\S]*\}/); if (m) parsed = JSON.parse(m[0]); else throw new Error('Respuesta inválida') }
+      catch { const m = raw.match(/\{[\s\S]*\}/); if (m) parsed = JSON.parse(m[0]); else throw new Error('Error al procesar la respuesta. Intentá de nuevo.') }
       setResult(parsed)
       setStep(STEPS.RESULTS)
     } catch (err) {
