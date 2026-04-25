@@ -1,3 +1,7 @@
+const ALLOWED_MODELS = new Set(['gemini-2.5-flash-lite'])
+const DEFAULT_MODEL = 'gemini-2.5-flash-lite'
+const GEMINI_TIMEOUT_MS = 30_000
+
 export default {
   async fetch(request, env) {
     const origin = 'https://ramirosilvera.github.io'
@@ -21,18 +25,33 @@ export default {
     if (!body.contents) return new Response('Missing required field: contents', { status: 400 })
 
     const { model: modelField, ...geminiBody } = body
-    const model = modelField || 'gemini-2.5-flash-lite'
+    const model = ALLOWED_MODELS.has(modelField) ? modelField : DEFAULT_MODEL
 
-    const res = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${env.GEMINI_API_KEY}`,
-      {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify(geminiBody),
-      }
-    )
+    const controller = new AbortController()
+    const timeoutId = setTimeout(() => controller.abort(), GEMINI_TIMEOUT_MS)
 
-    const data = await res.json()
+    let res
+    try {
+      res = await fetch(
+        `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${env.GEMINI_API_KEY}`,
+        {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify(geminiBody),
+          signal: controller.signal,
+        }
+      )
+    } catch (err) {
+      clearTimeout(timeoutId)
+      const msg = err.name === 'AbortError' ? 'Upstream timeout' : 'Upstream fetch failed'
+      return new Response(JSON.stringify({ error: { message: msg } }), {
+        status: 504,
+        headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': origin },
+      })
+    }
+    clearTimeout(timeoutId)
+
+    const data = await res.json().catch(() => ({ error: { message: 'Invalid response from upstream' } }))
 
     return new Response(JSON.stringify(data), {
       status: res.status,

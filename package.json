@@ -1,5 +1,5 @@
 {
-  "name": "prueba",
+  "name": "optimizalinkedin",
   "private": true,
   "version": "0.0.0",
   "type": "module",
@@ -10,7 +10,6 @@
     "preview": "vite preview"
   },
   "dependencies": {
-    "@anthropic-ai/sdk": "^0.91.0",
     "react": "^19.2.5",
     "react-dom": "^19.2.5"
   },

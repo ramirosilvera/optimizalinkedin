@@ -197,15 +197,14 @@ function Spinner({ size = 4 }) {
   )
 }
 
-function OptionButton({ label, selected, onClick, disabled }) {
+function OptionButton({ label, selected, onClick }) {
   return (
     <button
       onClick={onClick}
-      disabled={disabled}
       className={`w-full text-left px-5 py-3.5 rounded-2xl border transition-all duration-200 text-sm sm:text-base flex items-center justify-between gap-3 ${selected ? 'option-glow' : ''}`}
       style={selected
         ? { borderColor: 'rgba(0,119,181,0.6)', background: 'rgba(0,119,181,0.12)', color: '#fff', fontWeight: 500 }
-        : { borderColor: 'rgba(255,255,255,0.07)', background: 'rgba(255,255,255,0.03)', color: '#cbd5e1', cursor: disabled ? 'not-allowed' : 'pointer' }
+        : { borderColor: 'rgba(255,255,255,0.07)', background: 'rgba(255,255,255,0.03)', color: '#cbd5e1' }
       }
     >
       <span>{label}</span>
@@ -307,6 +306,7 @@ export default function App() {
   // Results
   const [result, setResult] = useState(null)
   const [analysisError, setAnalysisError] = useState('')
+  const [analyzing, setAnalyzing] = useState(false)
 
   // Loading message rotation
   const [loadingMsgIdx, setLoadingMsgIdx] = useState(0)
@@ -317,6 +317,7 @@ export default function App() {
   }, [step])
 
   const reset = () => {
+    if (!window.confirm('¿Seguro? Se van a borrar los resultados del análisis actual.')) return
     setStep(STEPS.WELCOME)
     setQaHistory([])
     setCurrentQ(STATIC_QUESTIONS[0])
@@ -330,6 +331,7 @@ export default function App() {
     setIsDragging(false)
     setResult(null)
     setAnalysisError('')
+    setAnalyzing(false)
     setLoadingMsgIdx(0)
   }
 
@@ -425,6 +427,8 @@ export default function App() {
 
   // ── Call Gemini for analysis ──
   const callGemini = async () => {
+    if (analyzing) return
+    setAnalyzing(true)
     setStep(STEPS.LOADING)
     setAnalysisError('')
 
@@ -484,6 +488,8 @@ Generá un análisis en este formato JSON exacto:
     } catch (err) {
       setAnalysisError(err.message || 'Error al conectar con Gemini.')
       setStep(STEPS.PROFILE_INPUT)
+    } finally {
+      setAnalyzing(false)
     }
   }
 
@@ -512,7 +518,7 @@ Generá un análisis en este formato JSON exacto:
                 </span>
               </h1>
               <p className="text-slate-400 text-base max-w-sm mx-auto leading-relaxed">
-                Respondé el cuestionario, subí tu PDF y recibí un análisis con criterio de headhunter.
+                Respondé el cuestionario, luego subí tu PDF y recibí un análisis con criterio de headhunter.
               </p>
             </div>
 
@@ -589,7 +595,6 @@ Generá un análisis en este formato JSON exacto:
                     key={opt}
                     label={opt}
                     selected={selectedOption === opt}
-                    disabled={false}
                     onClick={() => { setSelectedOption(opt); handleAnswer(opt) }}
                   />
                 ))}
@@ -599,25 +604,32 @@ Generá un análisis en este formato JSON exacto:
             {/* Texto libre — opcional */}
             {currentQ.type === 'text' && (
               <div className="space-y-3">
-                <textarea
-                  value={textAnswer}
-                  onChange={e => setTextAnswer(e.target.value)}
-                  placeholder={currentQ.placeholder}
-                  rows={4}
-                  className="w-full rounded-2xl px-4 py-3 text-sm text-white resize-none outline-none transition-all duration-200"
-                  style={{
-                    background: 'rgba(255,255,255,0.04)',
-                    border: textAnswer.trim() ? '1px solid rgba(0,119,181,0.5)' : '1px solid rgba(255,255,255,0.08)',
-                    color: '#e2e8f0',
-                  }}
-                />
+                <div className="relative">
+                  <textarea
+                    value={textAnswer}
+                    onChange={e => setTextAnswer(e.target.value)}
+                    placeholder={currentQ.placeholder}
+                    rows={4}
+                    maxLength={600}
+                    className="w-full rounded-2xl px-4 py-3 text-sm text-white resize-none outline-none transition-all duration-200"
+                    style={{
+                      background: 'rgba(255,255,255,0.04)',
+                      border: textAnswer.trim() ? '1px solid rgba(0,119,181,0.5)' : '1px solid rgba(255,255,255,0.08)',
+                      color: '#e2e8f0',
+                    }}
+                  />
+                  <span className="absolute bottom-2.5 right-3 text-xs pointer-events-none"
+                    style={{ color: textAnswer.length > 550 ? '#f59e0b' : '#334155' }}>
+                    {textAnswer.length}/600
+                  </span>
+                </div>
                 <div className="flex gap-3">
                   <button
                     onClick={() => handleAnswer('')}
                     className="flex-1 font-medium py-3 rounded-2xl text-sm transition-colors"
                     style={{ border: '1px solid rgba(255,255,255,0.08)', color: '#475569', background: 'transparent' }}
                   >
-                    Saltearse
+                    Omitir
                   </button>
                   <button
                     onClick={() => handleAnswer(textAnswer.trim())}
@@ -803,17 +815,17 @@ Generá un análisis en este formato JSON exacto:
                 ← Atrás
               </button>
               <button
-                disabled={!profileText}
+                disabled={!profileText || analyzing}
                 onClick={callGemini}
-                className={`flex-[2] font-semibold py-3.5 rounded-2xl transition-all duration-200 text-white ${profileText ? 'btn-glow' : ''}`}
+                className={`flex-[2] font-semibold py-3.5 rounded-2xl transition-all duration-200 text-white ${profileText && !analyzing ? 'btn-glow' : ''}`}
                 style={{
-                  background: profileText ? 'linear-gradient(135deg,#0077B5,#0ea5e9)' : 'rgba(30,41,59,0.8)',
-                  opacity: profileText ? 1 : 0.5,
-                  cursor: profileText ? 'pointer' : 'not-allowed',
-                  border: profileText ? 'none' : '1px solid rgba(255,255,255,0.06)',
+                  background: profileText && !analyzing ? 'linear-gradient(135deg,#0077B5,#0ea5e9)' : 'rgba(30,41,59,0.8)',
+                  opacity: profileText && !analyzing ? 1 : 0.5,
+                  cursor: profileText && !analyzing ? 'pointer' : 'not-allowed',
+                  border: profileText && !analyzing ? 'none' : '1px solid rgba(255,255,255,0.06)',
                 }}
               >
-                Analizar mi perfil ✦
+                {analyzing ? 'Analizando...' : 'Analizar mi perfil ✦'}
               </button>
             </div>
           </div>
