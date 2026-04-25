@@ -66,11 +66,67 @@ const STATIC_QUESTIONS = [
     ],
   },
   {
-    id: 'logros',
-    question: '¿Cuáles son tus 2-3 logros o diferenciadores más importantes?',
-    type: 'text',
-    placeholder: 'Ej: Lideré un equipo de 8 personas y reduje tiempos de entrega un 40%. Generé $200k en nuevos contratos en 6 meses. Lancé un producto con 10.000 usuarios en 3 meses...',
-    hint: 'Cuanto más específico y con métricas, mejor será el análisis de tu perfil.',
+    id: 'area_impacto',
+    question: '¿En qué área generaste tu mayor impacto profesional?',
+    options: [
+      'Aumenté ventas, ingresos o captación de clientes',
+      'Reduje costos, tiempos o mejoré la eficiencia operativa',
+      'Lideré equipos o desarrollé personas',
+      'Lancé productos, servicios o proyectos nuevos',
+      'Implementé procesos, sistemas o transformaciones digitales',
+      'Asesoría, estrategia o consultoría de alto nivel',
+      'Estoy construyendo mi trayectoria, aún sin logros grandes',
+    ],
+  },
+  {
+    id: 'escala',
+    question: '¿A qué escala trabajaste o trabajás habitualmente?',
+    options: [
+      'De forma individual, sin equipo a cargo',
+      'Equipo pequeño (2 a 5 personas)',
+      'Equipo mediano (6 a 15 personas)',
+      'Equipos grandes o múltiples equipos (+15 personas)',
+      'A nivel de área o empresa completa',
+      'A nivel regional, multinacional o internacional',
+    ],
+  },
+  {
+    id: 'resultado',
+    question: '¿Qué tipo de resultado describe mejor tus logros más importantes?',
+    options: [
+      'Aumenté ventas o contratos en un porcentaje concreto (ej: 30%, $X)',
+      'Reduje costos, errores o tiempos en un % medible',
+      'Crecí una base de usuarios, clientes o audiencia',
+      'Entregué proyectos en tiempo y dentro del presupuesto',
+      'Implementé algo que no existía antes en la empresa',
+      'Mis logros son más cualitativos (cultura, relaciones, estrategia)',
+      'Todavía no tengo métricas concretas para mostrar',
+    ],
+  },
+  {
+    id: 'reconocimiento',
+    question: '¿Cuál de estas situaciones te representa mejor?',
+    options: [
+      'Me ascendieron o me dieron más responsabilidades recientemente',
+      'Trabajé en empresas o proyectos de renombre en mi industria',
+      'Tengo clientes que me recomiendan o vuelven a contratarme',
+      'Fui reconocido/a formalmente (premio, mención, certificación)',
+      'Participé en proyectos de alto impacto o visibilidad pública',
+      'Estoy construyendo mi reputación, sin reconocimientos formales aún',
+    ],
+  },
+  {
+    id: 'diferenciador',
+    question: '¿Qué es lo que más valoran de vos quienes trabajaron con vos?',
+    options: [
+      'Mi conocimiento técnico profundo y especializado',
+      'Mi capacidad de liderar, motivar y desarrollar equipos',
+      'Mi orientación a resultados y ejecución concreta',
+      'Mi visión estratégica y pensamiento de negocio',
+      'Mi creatividad, innovación o capacidad de resolver problemas',
+      'Mi facilidad para comunicar, vender ideas y generar confianza',
+      'Todavía estoy construyendo mi reputación profesional',
+    ],
   },
 ]
 
@@ -214,7 +270,6 @@ export default function App() {
   const [qaHistory, setQaHistory] = useState([])
   const [currentQ, setCurrentQ] = useState(STATIC_QUESTIONS[0])
   const [selectedOption, setSelectedOption] = useState(null)
-  const [textAnswer, setTextAnswer] = useState('')
 
   // Profile input
   const [profileText, setProfileText] = useState('')
@@ -241,7 +296,6 @@ export default function App() {
     setQaHistory([])
     setCurrentQ(STATIC_QUESTIONS[0])
     setSelectedOption(null)
-    setTextAnswer('')
     setProfileText('')
     setPdfFileName('')
     setPdfLoading(false)
@@ -258,7 +312,6 @@ export default function App() {
     const newHistory = [...qaHistory, { question: currentQ.question, answer }]
     setQaHistory(newHistory)
     setSelectedOption(null)
-    setTextAnswer('')
     const nextIndex = newHistory.length
     if (nextIndex < STATIC_QUESTIONS.length) {
       setCurrentQ(STATIC_QUESTIONS[nextIndex])
@@ -277,7 +330,6 @@ export default function App() {
     setQaHistory(newHistory)
     setCurrentQ(STATIC_QUESTIONS[newHistory.length])
     setSelectedOption(null)
-    setTextAnswer('')
   }
 
   // ── Upload and extract PDF ──
@@ -474,59 +526,22 @@ Generá un análisis en este formato JSON exacto:
             </div>
 
             {/* Question */}
-            <div>
-              <h2 className="text-2xl sm:text-3xl font-bold text-white leading-snug">
-                {currentQ.question}
-              </h2>
-              {currentQ.type === 'text' && (
-                <p className="text-slate-500 text-sm mt-2">{currentQ.hint}</p>
-              )}
-            </div>
+            <h2 className="text-2xl sm:text-3xl font-bold text-white leading-snug">
+              {currentQ.question}
+            </h2>
 
-            {/* Multiple choice options */}
-            {currentQ.type !== 'text' && (
-              <div className="space-y-3">
-                {currentQ.options.map(opt => (
-                  <OptionButton
-                    key={opt}
-                    label={opt}
-                    selected={selectedOption === opt}
-                    disabled={false}
-                    onClick={() => { setSelectedOption(opt); handleAnswer(opt) }}
-                  />
-                ))}
-              </div>
-            )}
-
-            {/* Text input (para logros) */}
-            {currentQ.type === 'text' && (
-              <div className="space-y-3">
-                <textarea
-                  value={textAnswer}
-                  onChange={e => setTextAnswer(e.target.value)}
-                  placeholder={currentQ.placeholder}
-                  rows={5}
-                  className="w-full rounded-xl px-4 py-3 text-sm text-white resize-none outline-none transition-all duration-200"
-                  style={{
-                    backgroundColor: 'rgba(30,41,59,0.7)',
-                    border: textAnswer.trim().length > 10 ? '1px solid rgba(0,119,181,0.5)' : '1px solid #475569',
-                    color: '#e2e8f0',
-                  }}
+            {/* Options */}
+            <div className="space-y-3">
+              {currentQ.options.map(opt => (
+                <OptionButton
+                  key={opt}
+                  label={opt}
+                  selected={selectedOption === opt}
+                  disabled={false}
+                  onClick={() => { setSelectedOption(opt); handleAnswer(opt) }}
                 />
-                <button
-                  onClick={() => { if (textAnswer.trim().length > 5) handleAnswer(textAnswer.trim()) }}
-                  disabled={textAnswer.trim().length <= 5}
-                  className="w-full font-semibold py-3.5 rounded-xl transition-all duration-200 text-white"
-                  style={{
-                    backgroundColor: textAnswer.trim().length > 5 ? '#0077B5' : '#334155',
-                    opacity: textAnswer.trim().length > 5 ? 1 : 0.5,
-                    cursor: textAnswer.trim().length > 5 ? 'pointer' : 'not-allowed',
-                  }}
-                >
-                  Continuar →
-                </button>
-              </div>
-            )}
+              ))}
+            </div>
 
             {/* Back button */}
             <button
