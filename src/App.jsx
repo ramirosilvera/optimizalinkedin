@@ -43,6 +43,19 @@ No uses lenguaje genérico ni de autoayuda.
 Sé directo, específico y orientado a resultados.
 Respondé SOLO en JSON válido, sin markdown, sin backticks.`
 
+async function fetchWithTimeout(url, options, timeoutMs = 30000) {
+  const controller = new AbortController()
+  const timer = setTimeout(() => controller.abort(), timeoutMs)
+  try {
+    return await fetch(url, { ...options, signal: controller.signal })
+  } catch (err) {
+    if (err.name === 'AbortError') throw new Error('La solicitud tardó demasiado. Verificá tu conexión e intentá de nuevo.')
+    throw err
+  } finally {
+    clearTimeout(timer)
+  }
+}
+
 async function fetchNextQuestion(history) {
   if (!WORKER_URL) throw new Error('Worker URL no configurada. Verificá el secret VITE_WORKER_URL en GitHub.')
 
@@ -54,17 +67,18 @@ async function fetchNextQuestion(history) {
     ? `Respuestas del usuario hasta ahora:\n${historyText}\n\n¿Cuál es la siguiente pregunta más importante para entender su contexto y optimizar su perfil?\n\nRespondé en este formato JSON:\n{"done": false, "question": "la pregunta", "options": ["opción 1", "opción 2", "opción 3", "opción 4"]}`
     : `Respuestas del usuario hasta ahora:\n${historyText}\n\n¿Ya tenés suficiente información para hacer una optimización completa del perfil, o necesitás hacer una pregunta más?\n\nSi necesitás más info:\n{"done": false, "question": "la pregunta", "options": ["opción 1", "opción 2", "opción 3", "opción 4"]}\n\nSi ya tenés suficiente:\n{"done": true}`
 
-  const res = await fetch(WORKER_URL, {
+  const res = await fetchWithTimeout(WORKER_URL, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify({
+      model: GEMINI_MODEL,
       system_instruction: { parts: [{ text: QUESTION_SYSTEM_PROMPT }] },
-      contents: [{ parts: [{ text: prompt }] }],
+      contents: [{ role: 'user', parts: [{ text: prompt }] }],
       generationConfig: { responseMimeType: 'application/json', maxOutputTokens: 512 },
     }),
   })
   if (!res.ok) {
-    const body = await res.json().catch(() => ({}))
+    const body = await res.json().catch((e) => { console.error('Error parseando respuesta de error:', e); return {} })
     throw new Error(parseGeminiError(res.status, body))
   }
   const data = await res.json()
@@ -282,11 +296,13 @@ export default function App() {
         reader.readAsDataURL(file)
       })
       if (!WORKER_URL) throw new Error('Worker URL no configurada. Verificá el secret VITE_WORKER_URL en GitHub.')
-      const res = await fetch(WORKER_URL, {
+      const res = await fetchWithTimeout(WORKER_URL, {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({
+          model: GEMINI_MODEL,
           contents: [{
+            role: 'user',
             parts: [
               { inline_data: { mime_type: 'application/pdf', data: base64 } },
               { text: 'Extraé todo el contenido de texto de este perfil de LinkedIn en PDF. Incluí el titular, resumen/about, toda la experiencia laboral con fechas y descripciones, educación, skills y cualquier otra sección del perfil. Devolvé solo el texto extraído, organizado claramente.' },
@@ -294,14 +310,18 @@ export default function App() {
           }],
           generationConfig: { maxOutputTokens: 3000 },
         }),
-      })
+      }, 60000)
       if (!res.ok) {
-        const body = await res.json().catch(() => ({}))
+        const body = await res.json().catch((e) => { console.error('Error parseando respuesta de error:', e); return {} })
         throw new Error(parseGeminiError(res.status, body))
       }
       const data = await res.json()
       const text = data.candidates?.[0]?.content?.parts?.[0]?.text || ''
       if (text.length < 100) throw new Error('No se pudo extraer contenido del PDF. Verificá que sea el PDF de tu perfil de LinkedIn.')
+      const linkedinKeywords = ['experience', 'education', 'skills', 'linkedin', 'experiencia', 'educación', 'habilidades', 'trabajo', 'work', 'profile']
+      const lowerText = text.toLowerCase()
+      const hasLinkedInContent = linkedinKeywords.some(kw => lowerText.includes(kw))
+      if (!hasLinkedInContent) throw new Error('El PDF no parece ser un perfil de LinkedIn. Descargá tu perfil desde LinkedIn usando "Guardar como PDF".')
       setProfileText(text)
     } catch (err) {
       setPdfError(err.message || 'Error al procesar el PDF.')
@@ -344,17 +364,18 @@ Generá un análisis en este formato JSON exacto:
 
     try {
       if (!WORKER_URL) throw new Error('Worker URL no configurada. Verificá el secret VITE_WORKER_URL en GitHub.')
-      const res = await fetch(WORKER_URL, {
+      const res = await fetchWithTimeout(WORKER_URL, {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({
+          model: GEMINI_MODEL,
           system_instruction: { parts: [{ text: ANALYSIS_SYSTEM_PROMPT }] },
-          contents: [{ parts: [{ text: userPrompt }] }],
+          contents: [{ role: 'user', parts: [{ text: userPrompt }] }],
           generationConfig: { responseMimeType: 'application/json', maxOutputTokens: 2048 },
         }),
       })
       if (!res.ok) {
-        const e = await res.json().catch(() => ({}))
+        const e = await res.json().catch((err) => { console.error('Error parseando respuesta de error:', err); return {} })
         throw new Error(parseGeminiError(res.status, e))
       }
       const data = await res.json()

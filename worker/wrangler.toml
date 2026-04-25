@@ -1,3 +1,7 @@
 name = "linkedin-optimizer-proxy"
 main = "index.js"
 compatibility_date = "2025-01-01"
+
+[vars]
+# Override via Cloudflare dashboard secret or wrangler secret put ALLOWED_ORIGIN
+ALLOWED_ORIGIN = "https://ramirosilvera.github.io"
