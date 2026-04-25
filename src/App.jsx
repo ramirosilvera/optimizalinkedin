@@ -255,19 +255,20 @@ function CopyButton({ text }) {
 }
 
 function ScoreRing({ score }) {
+  const s = Math.min(Math.max(Number(score) || 0, 0), 10)
   const r = 52, circ = 2 * Math.PI * r
-  const color = score >= 8 ? '#22c55e' : score >= 5 ? '#0ea5e9' : '#f59e0b'
-  const glowColor = score >= 8 ? 'rgba(34,197,94,0.3)' : score >= 5 ? 'rgba(14,165,233,0.3)' : 'rgba(245,158,11,0.3)'
+  const color = s >= 8 ? '#22c55e' : s >= 5 ? '#0ea5e9' : '#f59e0b'
+  const glowColor = s >= 8 ? 'rgba(34,197,94,0.3)' : s >= 5 ? 'rgba(14,165,233,0.3)' : 'rgba(245,158,11,0.3)'
   return (
     <div className="flex flex-col items-center shrink-0">
       <svg width="140" height="140" viewBox="0 0 140 140" style={{ filter: `drop-shadow(0 0 8px ${glowColor})` }}>
         <circle cx="70" cy="70" r={r} stroke="rgba(255,255,255,0.06)" strokeWidth="10" fill="none" />
         <circle cx="70" cy="70" r={r} stroke={color} strokeWidth="10" fill="none"
-          strokeDasharray={circ} strokeDashoffset={circ - (circ * score) / 10}
+          strokeDasharray={circ} strokeDashoffset={circ - (circ * s) / 10}
           strokeLinecap="round"
           style={{ transform: 'rotate(-90deg)', transformOrigin: '50% 50%', transition: 'stroke-dashoffset 1.3s cubic-bezier(0.16,1,0.3,1)' }}
         />
-        <text x="70" y="65" textAnchor="middle" fill="white" fontSize="34" fontWeight="700" dy="0.35em">{score}</text>
+        <text x="70" y="65" textAnchor="middle" fill="white" fontSize="34" fontWeight="700" dy="0.35em">{s}</text>
         <text x="70" y="93" textAnchor="middle" fill="#64748b" fontSize="11">/ 10</text>
       </svg>
       <p className="text-slate-500 text-xs mt-1 tracking-wide uppercase">Puntaje general</p>
@@ -704,7 +705,13 @@ Generá un análisis en este formato JSON exacto:
       let parsed
       try { parsed = JSON.parse(raw) }
       catch { const m = raw.match(/\{[\s\S]*\}/); if (m) parsed = JSON.parse(m[0]); else throw new Error('Error al procesar la respuesta. Intentá de nuevo.') }
-      setResult(parsed)
+      setResult({
+        ...parsed,
+        fortalezas: parsed.fortalezas || [],
+        areas_de_mejora: parsed.areas_de_mejora || [],
+        palabras_clave_sugeridas: parsed.palabras_clave_sugeridas || [],
+        recomendaciones: parsed.recomendaciones || [],
+      })
       setStep(STEPS.RESULTS)
     } catch (err) {
       setAnalysisError(err.message || 'Error al conectar con Gemini.')
@@ -714,27 +721,19 @@ Generá un análisis en este formato JSON exacto:
     }
   }
 
-  // ── Submit interview answer + optionally call AI for feedback ──
-  const handleInterviewNext = async (answer) => {
-    const newAnswers = [...interviewAnswers, { pregunta: INTERVIEW_QUESTIONS[interviewIdx].pregunta, respuesta: answer }]
-    setInterviewAnswers(newAnswers)
-    setInterviewAnswer('')
-
-    if (newAnswers.length < INTERVIEW_QUESTIONS.length) {
-      setInterviewIdx(interviewIdx + 1)
-      return
-    }
-
-    // Last question — call AI for feedback
+  // ── Call AI with completed interview answers ──
+  const callInterviewFeedback = async (answers) => {
+    if (interviewLoading) return
     setInterviewLoading(true)
     setStep(STEPS.INTERVIEW_FEEDBACK)
     setInterviewError('')
 
-    const transcripcion = newAnswers
+    const transcripcion = answers
       .map((a, i) => `Pregunta ${i + 1}: ${a.pregunta}\nRespuesta: ${a.respuesta}`)
       .join('\n\n')
 
     const contexto = qaHistory
+      .filter(h => h.answer.trim())
       .map(h => `- ${STATIC_QUESTIONS.find(q => q.question === h.question)?.id ?? 'dato'}: ${h.answer}`)
       .join('\n')
 
@@ -793,11 +792,25 @@ Generá el feedback en este JSON exacto:
     }
   }
 
+  // ── Avanzar en la entrevista ──
+  const handleInterviewNext = (answer) => {
+    if (interviewLoading) return
+    const newAnswers = [...interviewAnswers, { pregunta: INTERVIEW_QUESTIONS[interviewIdx].pregunta, respuesta: answer }]
+    setInterviewAnswers(newAnswers)
+    setInterviewAnswer('')
+    if (newAnswers.length < INTERVIEW_QUESTIONS.length) {
+      setInterviewIdx(interviewIdx + 1)
+    } else {
+      callInterviewFeedback(newAnswers)
+    }
+  }
+
   const handleInterviewBack = () => {
     if (interviewIdx === 0) { setStep(STEPS.INTERVIEW_INTRO); return }
-    setInterviewAnswers(prev => prev.slice(0, -1))
-    setInterviewIdx(interviewIdx - 1)
-    setInterviewAnswer(interviewAnswers[interviewIdx - 1]?.respuesta || '')
+    const newIdx = interviewIdx - 1
+    setInterviewAnswers(prev => prev.slice(0, newIdx))
+    setInterviewIdx(newIdx)
+    setInterviewAnswer(interviewAnswers[newIdx]?.respuesta || '')
   }
 
   const qNum = qaHistory.length + 1
@@ -1450,7 +1463,7 @@ Generá el feedback en este JSON exacto:
                   style={{ backgroundColor: 'rgba(127,29,29,0.3)', border: '1px solid #b91c1c', color: '#fca5a5' }}>
                   ⚠️ {interviewError}
                 </div>
-                <button onClick={() => { setInterviewError(''); setInterviewLoading(false); handleInterviewNext(interviewAnswers[interviewAnswers.length - 1]?.respuesta || '') }}
+                <button onClick={() => { setInterviewError(''); callInterviewFeedback(interviewAnswers) }}
                   className="btn-glow w-full font-semibold py-4 rounded-2xl text-white text-sm"
                   style={{ background: 'linear-gradient(135deg,#6366f1,#8b5cf6)' }}>
                   Reintentar
@@ -1499,7 +1512,7 @@ Generá el feedback en este JSON exacto:
                         <p className="text-xs font-semibold uppercase tracking-wide mb-2" style={{ color: '#a5b4fc' }}>
                           Pregunta {fb.numero}
                         </p>
-                        <p className="text-slate-500 text-xs italic mb-2 leading-relaxed">"{INTERVIEW_QUESTIONS[i]?.pregunta}"</p>
+                        <p className="text-slate-500 text-xs italic mb-2 leading-relaxed">"{INTERVIEW_QUESTIONS[fb.numero - 1]?.pregunta}"</p>
                         <div className="space-y-1.5">
                           <p className="text-sm text-slate-300"><span style={{ color: '#4ade80' }}>✅ </span>{fb.aspecto_positivo}</p>
                           <p className="text-sm text-slate-300"><span style={{ color: '#fbbf24' }}>💡 </span>{fb.sugerencia}</p>
