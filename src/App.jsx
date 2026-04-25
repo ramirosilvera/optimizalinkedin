@@ -152,7 +152,7 @@ const STATIC_QUESTIONS = [
 ]
 
 const INTERVIEW_QUESTIONS = [
-  { pregunta: '¿Hacé tu presentación profesional: quién sos, en qué destacás y qué buscás en este momento?', hint: 'Imaginá que tenés 2 minutos para causar una primera impresión.' },
+  { pregunta: 'Hacé tu presentación profesional: quién sos, en qué destacás y qué buscás en este momento.', hint: 'Imaginá que tenés 2 minutos para causar una primera impresión.' },
   { pregunta: 'Contame sobre tu mayor logro profesional: ¿qué hiciste, cómo lo hiciste y qué resultado concreto obtuviste?', hint: 'Si podés, mencioná números o métricas.' },
   { pregunta: '¿Cuál es tu mayor área de mejora y qué estás haciendo para trabajarla?', hint: 'Los reclutadores valoran la autoconciencia — sé honesto/a.' },
   { pregunta: '¿Qué te motiva a buscar un nuevo desafío en este momento de tu carrera?', hint: 'Enfocate en lo que te atrae, no en lo que dejás atrás.' },
@@ -324,6 +324,7 @@ function CommentsSection() {
   const [form, setForm] = useState({ nombre: '', titulo: '', linkedin_url: '', comentario: '' })
   const [submitting, setSubmitting] = useState(false)
   const [formError, setFormError] = useState('')
+  const [fetchError, setFetchError] = useState(false)
 
   useEffect(() => {
     if (!SUPABASE_URL) { setLoading(false); return }
@@ -331,9 +332,9 @@ function CommentsSection() {
       `${SUPABASE_URL}/rest/v1/comments?status=eq.approved&order=created_at.desc&limit=6`,
       { headers: { apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}` } }
     )
-      .then(r => r.ok ? r.json() : [])
+      .then(r => r.ok ? r.json() : Promise.reject())
       .then(data => setComments(Array.isArray(data) ? data : []))
-      .catch(() => {})
+      .catch(() => setFetchError(true))
       .finally(() => setLoading(false))
   }, [])
 
@@ -389,6 +390,10 @@ function CommentsSection() {
 
       {loading ? (
         <div className="flex justify-center py-6"><Spinner size={5} /></div>
+      ) : fetchError ? (
+        <p className="text-center text-slate-600 text-sm py-4">
+          No se pudieron cargar los comentarios.
+        </p>
       ) : comments.length === 0 ? (
         <p className="text-center text-slate-600 text-sm py-4">
           Aún no hay comentarios. ¡Sé el primero!
@@ -871,7 +876,7 @@ Generá el feedback en este JSON exacto:
               >
                 Empezar análisis →
               </button>
-              <p className="text-slate-600 text-xs">Gratis · Sin registro · 3 minutos</p>
+              <p className="text-slate-600 text-xs">Gratis · Sin registro · 5 minutos</p>
             </div>
 
             <CommentsSection />
@@ -971,7 +976,7 @@ Generá el feedback en este JSON exacto:
             )}
 
             {/* Back */}
-            <button onClick={handleBack} className="text-slate-600 text-sm hover:text-slate-400 transition-colors">
+            <button onClick={handleBack} className="text-slate-600 text-sm hover:text-slate-400 transition-colors py-2 px-1">
               ← {qaHistory.length === 0 ? 'Volver al inicio' : 'Anterior'}
             </button>
           </div>
@@ -1136,7 +1141,7 @@ Generá el feedback en este JSON exacto:
 
             <div className="flex gap-3 pt-1">
               <button
-                onClick={() => setStep(STEPS.QUESTIONS)}
+                onClick={() => { handleBack(); setStep(STEPS.QUESTIONS) }}
                 className="flex-1 font-semibold py-3.5 rounded-2xl transition-all duration-200"
                 style={{ border: '1px solid rgba(255,255,255,0.10)', color: '#94a3b8', background: 'rgba(255,255,255,0.03)' }}
               >
@@ -1431,7 +1436,7 @@ Generá el feedback en este JSON exacto:
               </button>
             </div>
 
-            <button onClick={handleInterviewBack} className="text-slate-600 text-sm hover:text-slate-400 transition-colors">
+            <button onClick={handleInterviewBack} className="text-slate-600 text-sm hover:text-slate-400 transition-colors py-2 px-1">
               ← {interviewIdx === 0 ? 'Volver al inicio' : 'Pregunta anterior'}
             </button>
           </div>
