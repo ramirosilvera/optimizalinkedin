@@ -12,7 +12,7 @@ function parseGeminiError(status, body) {
 }
 
 const STEPS = { WELCOME: 0, QUESTIONS: 1, PROFILE_INPUT: 2, LOADING: 3, RESULTS: 4 }
-const MAX_QUESTIONS = 9
+const MAX_FOLLOWUP_QUESTIONS = 4
 const MAX_PDF_SIZE = 15 * 1024 * 1024
 
 const INITIAL_QUESTION = {
@@ -36,17 +36,10 @@ const LOADING_MESSAGES = [
   'Perfiles con logros concretos y métricas generan 40% más solicitudes de conexión...',
 ]
 
-const QUESTION_SYSTEM_PROMPT = `Sos una consultora senior de RRHH y headhunter con 20 años de experiencia en selección ejecutiva, employer branding y posicionamiento profesional.
-Tu tarea es hacer preguntas estratégicas de múltiple choice para construir un perfil completo del usuario y poder optimizar su LinkedIn con precisión quirúrgica.
-Usá una metodología de embudo: comenzá con situación general → nivel de seniority → industria/rubro → audiencia objetivo → diferenciadores únicos → logros concretos.
-Reglas:
-- Cada pregunta debe tener entre 4 y 6 opciones concretas y relevantes
-- Las opciones deben cubrir los casos más comunes sin ser genéricas
-- Adaptá cada pregunta al contexto de las respuestas anteriores (si alguien busca empleo en tech, preguntale sobre stack, seniority, tipo de empresa target; si es freelancer, preguntale sobre nicho y tipo de cliente ideal)
-- Después de 5 respuestas podés evaluar si ya tenés suficiente info. Con 8 respuestas siempre terminá.
-- Cuando tengas suficiente información para hacer una optimización completa y personalizada del perfil, respondé con done true
-- Respondé SIEMPRE en español rioplatense (Argentina)
-- Respondé SOLO en JSON válido, sin markdown, sin backticks`
+const QUESTION_SYSTEM_PROMPT = `Sos una consultora senior de RRHH y headhunter especializada en posicionamiento profesional en LinkedIn.
+Generás preguntas estratégicas de múltiple choice para optimizar perfiles con precisión. Cada pregunta tiene 4-5 opciones concretas y no genéricas.
+Progresión: situación → seniority → industria/rubro → audiencia objetivo → logros/diferenciadores.
+Respondé en español rioplatense. SOLO JSON válido, sin markdown, sin backticks.`
 
 const ANALYSIS_SYSTEM_PROMPT = `Sos una consultora senior de RRHH y headhunter con 20 años de experiencia en selección ejecutiva y posicionamiento profesional en LinkedIn.
 Tu tarea es analizar el perfil de LinkedIn de un profesional y generar una evaluación estratégica con estándares de headhunter.
@@ -62,16 +55,15 @@ No usés lenguaje genérico ni de autoayuda.
 Sé directa, específica y orientada a resultados medibles.
 Respondé SOLO en JSON válido, sin markdown, sin backticks.`
 
-async function fetchNextQuestion(history) {
+async function fetchAllQuestions(firstAnswer) {
   if (!WORKER_URL) throw new Error('Worker URL no configurada. Verificá el secret VITE_WORKER_URL en GitHub.')
 
-  const historyText = history
-    .map((h, i) => `${i + 1}. ${h.question}\n   → ${h.answer}`)
-    .join('\n\n')
+  const prompt = `El usuario respondió a "¿Cuál es tu situación profesional actual?": "${firstAnswer}"
 
-  const prompt = history.length < 5
-    ? `Respuestas del usuario hasta ahora:\n${historyText}\n\n¿Cuál es la siguiente pregunta más importante para entender su contexto y optimizar su perfil?\n\nRespondé en este formato JSON:\n{"done": false, "question": "la pregunta", "options": ["opción 1", "opción 2", "opción 3", "opción 4"]}`
-    : `Respuestas del usuario hasta ahora:\n${historyText}\n\n¿Ya tenés suficiente información para hacer una optimización completa del perfil, o necesitás hacer una pregunta más?\n\nSi necesitás más info:\n{"done": false, "question": "la pregunta", "options": ["opción 1", "opción 2", "opción 3", "opción 4"]}\n\nSi ya tenés suficiente:\n{"done": true}`
+Generá exactamente ${MAX_FOLLOWUP_QUESTIONS} preguntas de seguimiento para optimizar su perfil de LinkedIn. Adaptá cada una a su situación específica.
+
+Respondé en este formato JSON:
+{"questions": [{"question": "...", "options": ["...","...","...","..."]}, ...]}`
 
   const res = await fetch(WORKER_URL, {
     method: 'POST',
@@ -79,7 +71,7 @@ async function fetchNextQuestion(history) {
     body: JSON.stringify({
       system_instruction: { parts: [{ text: QUESTION_SYSTEM_PROMPT }] },
       contents: [{ parts: [{ text: prompt }] }],
-      generationConfig: { responseMimeType: 'application/json', maxOutputTokens: 512 },
+      generationConfig: { responseMimeType: 'application/json', maxOutputTokens: 1024 },
     }),
   })
   if (!res.ok) {
@@ -88,7 +80,8 @@ async function fetchNextQuestion(history) {
   }
   const data = await res.json()
   const raw = data.candidates?.[0]?.content?.parts?.[0]?.text || '{}'
-  return JSON.parse(raw)
+  const parsed = JSON.parse(raw)
+  return Array.isArray(parsed.questions) ? parsed.questions : []
 }
 
 
@@ -207,6 +200,7 @@ export default function App() {
   // Dynamic Q&A
   const [qaHistory, setQaHistory] = useState([])
   const [currentQ, setCurrentQ] = useState(INITIAL_QUESTION)
+  const [questionQueue, setQuestionQueue] = useState([])
   const [selectedOption, setSelectedOption] = useState(null)
   const [qLoading, setQLoading] = useState(false)
   const [qError, setQError] = useState('')
@@ -238,6 +232,7 @@ export default function App() {
     setSelectedOption(null)
     setQLoading(false)
     setQError('')
+    setQuestionQueue([])
     setProfileText('')
     setPdfFileName('')
     setPdfLoading(false)
@@ -249,38 +244,49 @@ export default function App() {
     setLoadingMsgIdx(0)
   }
 
-  // ── Answer a question and fetch next ──
+  // ── Answer a question ──
   const handleAnswer = async (answer) => {
     if (qLoading) return
     setSelectedOption(answer)
 
     const newHistory = [...qaHistory, { question: currentQ.question, options: currentQ.options, answer }]
     setQaHistory(newHistory)
-    setQLoading(true)
     setQError('')
 
-    if (newHistory.length >= MAX_QUESTIONS) {
-      setQLoading(false)
+    // Si hay preguntas pre-generadas en la cola, usarlas sin llamar a la API
+    if (questionQueue.length > 0) {
+      const [next, ...rest] = questionQueue
+      setCurrentQ(next)
+      setQuestionQueue(rest)
       setSelectedOption(null)
-      setStep(STEPS.PROFILE_INPUT)
       return
     }
 
-    try {
-      const next = await fetchNextQuestion(newHistory)
-      if (next.done) {
-        setStep(STEPS.PROFILE_INPUT)
-      } else {
-        setCurrentQ({ question: next.question, options: next.options })
+    // Después de la primera respuesta: generar todas las preguntas restantes en una sola llamada
+    if (newHistory.length === 1) {
+      setQLoading(true)
+      try {
+        const questions = await fetchAllQuestions(answer)
+        if (questions.length > 0) {
+          const [next, ...rest] = questions
+          setCurrentQ(next)
+          setQuestionQueue(rest)
+        } else {
+          setStep(STEPS.PROFILE_INPUT)
+        }
         setSelectedOption(null)
+      } catch (err) {
+        setQError(err.message || 'No se pudo cargar las preguntas. Intentá de nuevo.')
+        setQaHistory(prev => prev.slice(0, -1))
+        setSelectedOption(null)
+      } finally {
+        setQLoading(false)
       }
-    } catch (err) {
-      setQError(err.message || 'No se pudo cargar la siguiente pregunta. Intentá de nuevo.')
-      setQaHistory(prev => prev.slice(0, -1))
-      setSelectedOption(null)
-    } finally {
-      setQLoading(false)
+      return
     }
+
+    // Sin más preguntas → avanzar
+    setStep(STEPS.PROFILE_INPUT)
   }
 
   // ── Go back one question ──
@@ -290,8 +296,17 @@ export default function App() {
       return
     }
     const prev = qaHistory[qaHistory.length - 1]
-    setQaHistory(h => h.slice(0, -1))
-    setCurrentQ({ question: prev.question, options: prev.options })
+    const newHistory = qaHistory.slice(0, -1)
+
+    if (newHistory.length === 0) {
+      // Volviendo a la pregunta inicial — descartar preguntas generadas
+      setQuestionQueue([])
+      setCurrentQ(INITIAL_QUESTION)
+    } else {
+      setQuestionQueue(q => [currentQ, ...q])
+      setCurrentQ({ question: prev.question, options: prev.options })
+    }
+    setQaHistory(newHistory)
     setSelectedOption(null)
     setQError('')
   }
@@ -330,7 +345,7 @@ export default function App() {
               { text: 'Extraé todo el contenido de texto de este perfil de LinkedIn en PDF. Incluí el titular, resumen/about, toda la experiencia laboral con fechas y descripciones, educación, skills, certificaciones, voluntariado y cualquier otra sección del perfil. Devolvé solo el texto extraído, organizado claramente.' },
             ],
           }],
-          generationConfig: { maxOutputTokens: 3000 },
+          generationConfig: { maxOutputTokens: 1800 },
         }),
       })
       if (!res.ok) {
@@ -372,7 +387,7 @@ export default function App() {
 ${contextText}
 
 Perfil de LinkedIn:
-${profileText}
+${profileText.slice(0, 4000)}
 
 Generá un análisis en este formato JSON exacto:
 {
@@ -388,7 +403,9 @@ Generá un análisis en este formato JSON exacto:
   "resumen_actual": "el resumen actual o No tiene resumen",
   "resumen_propuesto": "un resumen reescrito de máximo 5 oraciones con propuesta de valor, logros y CTA",
   "recomendaciones": [
-    {"titulo": "nombre de la recomendación", "descripcion": "explicación concreta de qué cambiar y cómo, con ejemplos si aplica"}
+    {"titulo": "nombre de la recomendación", "descripcion": "explicación concreta de qué cambiar y cómo, con ejemplos si aplica"},
+    {"titulo": "...", "descripcion": "..."},
+    {"titulo": "...", "descripcion": "..."}
   ],
   "estrategia_contenido": "sugerencia de 2-3 oraciones sobre qué tipo de contenido publicar para lograr el objetivo declarado"
 }`
@@ -401,7 +418,7 @@ Generá un análisis en este formato JSON exacto:
         body: JSON.stringify({
           system_instruction: { parts: [{ text: ANALYSIS_SYSTEM_PROMPT }] },
           contents: [{ parts: [{ text: userPrompt }] }],
-          generationConfig: { responseMimeType: 'application/json', maxOutputTokens: 2048 },
+          generationConfig: { responseMimeType: 'application/json', maxOutputTokens: 1400 },
         }),
       })
       if (!res.ok) {
@@ -422,7 +439,7 @@ Generá un análisis en este formato JSON exacto:
   }
 
   const qNum = qaHistory.length + 1
-  const qProgress = Math.min(88, (qaHistory.length / 7) * 100)
+  const qProgress = Math.min(90, (qaHistory.length / (1 + MAX_FOLLOWUP_QUESTIONS)) * 100)
 
   // ── Render ─────────────────────────────────────────────────
 
