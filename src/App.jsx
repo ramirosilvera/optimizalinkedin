@@ -16,6 +16,13 @@ const MAX_PDF_SIZE = 15 * 1024 * 1024
 
 const STATIC_QUESTIONS = [
   {
+    id: 'profesion',
+    question: '¿A qué te dedicás?',
+    type: 'text',
+    placeholder: 'Ej: Desarrollador web freelance, Gerente de marketing en empresa de retail, Psicóloga clínica independiente...',
+    hint: 'Escribí tu profesión o rol actual con el mayor detalle que puedas.',
+  },
+  {
     id: 'situacion',
     question: '¿Cuál es tu situación profesional actual?',
     options: [
