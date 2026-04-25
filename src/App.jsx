@@ -409,11 +409,13 @@ function CommentsSection() {
                       <p className="text-white text-sm font-semibold leading-tight">{c.nombre}</p>
                       <p className="text-slate-500 text-xs mt-0.5">{c.titulo}</p>
                     </div>
-                    <a href={c.linkedin_url} target="_blank" rel="noopener noreferrer"
-                      className="shrink-0 mt-0.5 transition-opacity hover:opacity-70"
-                      style={{ color: '#0077B5' }} title="Ver perfil de LinkedIn">
-                      <LinkedInIcon className="w-4 h-4" />
-                    </a>
+                    {isValidLinkedIn(c.linkedin_url) && (
+                      <a href={c.linkedin_url} target="_blank" rel="noopener noreferrer"
+                        className="shrink-0 mt-0.5 transition-opacity hover:opacity-70"
+                        style={{ color: '#0077B5' }} title="Ver perfil de LinkedIn">
+                        <LinkedInIcon className="w-4 h-4" />
+                      </a>
+                    )}
                   </div>
                   <p className="text-slate-300 text-sm mt-2 leading-relaxed">"{c.comentario}"</p>
                 </div>
@@ -528,6 +530,15 @@ export default function App() {
     return () => clearInterval(id)
   }, [step])
 
+  const resetInterview = () => {
+    setInterviewAnswers([])
+    setInterviewIdx(0)
+    setInterviewAnswer('')
+    setInterviewFeedback(null)
+    setInterviewLoading(false)
+    setInterviewError('')
+  }
+
   const reset = () => {
     if (!window.confirm('¿Seguro? Se van a borrar los resultados del análisis actual.')) return
     setStep(STEPS.WELCOME)
@@ -545,12 +556,7 @@ export default function App() {
     setAnalysisError('')
     setAnalyzing(false)
     setLoadingMsgIdx(0)
-    setInterviewAnswers([])
-    setInterviewIdx(0)
-    setInterviewAnswer('')
-    setInterviewFeedback(null)
-    setInterviewLoading(false)
-    setInterviewError('')
+    resetInterview()
   }
 
   // ── Avanzar al siguiente paso del cuestionario ──
@@ -1293,7 +1299,7 @@ Generá el feedback en este JSON exacto:
             </div>
 
             <button
-              onClick={() => { setInterviewAnswers([]); setInterviewIdx(0); setInterviewAnswer(''); setInterviewFeedback(null); setInterviewError(''); setStep(STEPS.INTERVIEW_INTRO) }}
+              onClick={() => { resetInterview(); setStep(STEPS.INTERVIEW_INTRO) }}
               className="btn-glow w-full font-semibold py-4 rounded-2xl text-white text-sm"
               style={{ background: 'linear-gradient(135deg,#6366f1,#8b5cf6)' }}
             >
@@ -1469,7 +1475,16 @@ Generá el feedback en este JSON exacto:
                   Reintentar
                 </button>
               </div>
-            ) : interviewFeedback && (
+            ) : !interviewFeedback ? (
+              <div className="flex flex-col items-center justify-center min-h-[55vh] gap-5 text-center">
+                <p className="text-slate-500 text-sm">No hay datos de entrevista. Completá la simulación primero.</p>
+                <button onClick={() => setStep(STEPS.INTERVIEW_INTRO)}
+                  className="btn-glow font-semibold px-6 py-3 rounded-2xl text-white text-sm"
+                  style={{ background: 'linear-gradient(135deg,#6366f1,#8b5cf6)' }}>
+                  ← Ir a la entrevista
+                </button>
+              </div>
+            ) : (
               <>
                 {/* Score */}
                 <ResultCard title="Resultado de la entrevista" accent="#6366f1">
@@ -1512,7 +1527,7 @@ Generá el feedback en este JSON exacto:
                         <p className="text-xs font-semibold uppercase tracking-wide mb-2" style={{ color: '#a5b4fc' }}>
                           Pregunta {fb.numero}
                         </p>
-                        <p className="text-slate-500 text-xs italic mb-2 leading-relaxed">"{INTERVIEW_QUESTIONS[fb.numero - 1]?.pregunta}"</p>
+                        <p className="text-slate-500 text-xs italic mb-2 leading-relaxed">"{INTERVIEW_QUESTIONS[fb.numero - 1]?.pregunta ?? `Pregunta ${fb.numero}`}"</p>
                         <div className="space-y-1.5">
                           <p className="text-sm text-slate-300"><span style={{ color: '#4ade80' }}>✅ </span>{fb.aspecto_positivo}</p>
                           <p className="text-sm text-slate-300"><span style={{ color: '#fbbf24' }}>💡 </span>{fb.sugerencia}</p>
