@@ -178,11 +178,12 @@ const LinkedInIcon = ({ className }) => (
 
 function Logo() {
   return (
-    <div className="flex items-center gap-2 mb-8 sm:mb-12">
-      <div className="w-8 h-8 rounded flex items-center justify-center shrink-0 text-white" style={{ backgroundColor: '#0077B5' }}>
-        <LinkedInIcon className="w-5 h-5" />
+    <div className="flex items-center gap-2.5 mb-8 sm:mb-10">
+      <div className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0 text-white"
+        style={{ background: 'linear-gradient(135deg, #0077B5 0%, #0ea5e9 100%)', boxShadow: '0 2px 10px rgba(0,119,181,0.4)' }}>
+        <LinkedInIcon className="w-4.5 h-4.5" />
       </div>
-      <span className="text-slate-300 text-sm font-medium tracking-wide">LinkedIn Profile Optimizer</span>
+      <span className="text-slate-400 text-sm font-medium tracking-wide">LinkedIn Profile Optimizer</span>
     </div>
   )
 }
@@ -201,13 +202,17 @@ function OptionButton({ label, selected, onClick, disabled }) {
     <button
       onClick={onClick}
       disabled={disabled}
-      className="w-full text-left px-5 py-4 rounded-xl border transition-all duration-200 text-sm sm:text-base"
+      className={`w-full text-left px-5 py-3.5 rounded-2xl border transition-all duration-200 text-sm sm:text-base flex items-center justify-between gap-3 ${selected ? 'option-glow' : ''}`}
       style={selected
-        ? { borderColor: '#0077B5', backgroundColor: 'rgba(0,119,181,0.14)', color: '#fff', fontWeight: 500 }
-        : { borderColor: '#475569', backgroundColor: 'rgba(30,41,59,0.6)', color: '#cbd5e1', cursor: disabled ? 'not-allowed' : 'pointer' }
+        ? { borderColor: 'rgba(0,119,181,0.6)', background: 'rgba(0,119,181,0.12)', color: '#fff', fontWeight: 500 }
+        : { borderColor: 'rgba(255,255,255,0.07)', background: 'rgba(255,255,255,0.03)', color: '#cbd5e1', cursor: disabled ? 'not-allowed' : 'pointer' }
       }
     >
-      {label}
+      <span>{label}</span>
+      {selected && (
+        <span className="shrink-0 w-5 h-5 rounded-full flex items-center justify-center text-xs font-bold"
+          style={{ background: 'linear-gradient(135deg,#0077B5,#0ea5e9)', color: '#fff' }}>✓</span>
+      )}
     </button>
   )
 }
@@ -217,10 +222,10 @@ function CopyButton({ text }) {
   return (
     <button
       onClick={() => navigator.clipboard.writeText(text).then(() => { setCopied(true); setTimeout(() => setCopied(false), 2000) })}
-      className="text-xs px-3 py-1.5 rounded-lg border transition-all duration-200 shrink-0"
+      className={`text-xs px-3 py-1.5 rounded-lg border transition-all duration-200 shrink-0 ${copied ? 'copy-btn-success' : ''}`}
       style={copied
-        ? { borderColor: '#22c55e', color: '#4ade80', backgroundColor: 'rgba(34,197,94,0.1)' }
-        : { borderColor: '#475569', color: '#94a3b8' }
+        ? { borderColor: '#22c55e', color: '#4ade80', background: 'rgba(34,197,94,0.1)' }
+        : { borderColor: 'rgba(255,255,255,0.12)', color: '#64748b', background: 'rgba(255,255,255,0.03)' }
       }
     >
       {copied ? '✓ Copiado' : 'Copiar'}
@@ -230,28 +235,32 @@ function CopyButton({ text }) {
 
 function ScoreRing({ score }) {
   const r = 52, circ = 2 * Math.PI * r
-  const color = score >= 8 ? '#22c55e' : score >= 5 ? '#0077B5' : '#f59e0b'
+  const color = score >= 8 ? '#22c55e' : score >= 5 ? '#0ea5e9' : '#f59e0b'
+  const glowColor = score >= 8 ? 'rgba(34,197,94,0.3)' : score >= 5 ? 'rgba(14,165,233,0.3)' : 'rgba(245,158,11,0.3)'
   return (
     <div className="flex flex-col items-center shrink-0">
-      <svg width="140" height="140" viewBox="0 0 140 140">
-        <circle cx="70" cy="70" r={r} stroke="#1e293b" strokeWidth="12" fill="none" />
-        <circle cx="70" cy="70" r={r} stroke={color} strokeWidth="12" fill="none"
+      <svg width="140" height="140" viewBox="0 0 140 140" style={{ filter: `drop-shadow(0 0 8px ${glowColor})` }}>
+        <circle cx="70" cy="70" r={r} stroke="rgba(255,255,255,0.06)" strokeWidth="10" fill="none" />
+        <circle cx="70" cy="70" r={r} stroke={color} strokeWidth="10" fill="none"
           strokeDasharray={circ} strokeDashoffset={circ - (circ * score) / 10}
           strokeLinecap="round"
-          style={{ transform: 'rotate(-90deg)', transformOrigin: '50% 50%', transition: 'stroke-dashoffset 1.2s ease-out' }}
+          style={{ transform: 'rotate(-90deg)', transformOrigin: '50% 50%', transition: 'stroke-dashoffset 1.3s cubic-bezier(0.16,1,0.3,1)' }}
         />
-        <text x="70" y="65" textAnchor="middle" fill="white" fontSize="32" fontWeight="700" dy="0.35em">{score}</text>
-        <text x="70" y="92" textAnchor="middle" fill="#94a3b8" fontSize="12">/ 10</text>
+        <text x="70" y="65" textAnchor="middle" fill="white" fontSize="34" fontWeight="700" dy="0.35em">{score}</text>
+        <text x="70" y="93" textAnchor="middle" fill="#64748b" fontSize="11">/ 10</text>
       </svg>
-      <p className="text-slate-400 text-sm mt-1">Puntaje general</p>
+      <p className="text-slate-500 text-xs mt-1 tracking-wide uppercase">Puntaje general</p>
     </div>
   )
 }
 
-function ResultCard({ title, children }) {
+function ResultCard({ title, children, accent = '#0077B5' }) {
   return (
-    <div className="rounded-2xl p-6" style={{ backgroundColor: 'rgba(30,41,59,0.6)', border: '1px solid #334155' }}>
-      <h3 className="font-semibold text-xs mb-4 uppercase tracking-wider" style={{ color: '#0077B5' }}>{title}</h3>
+    <div className="rounded-2xl p-6 relative overflow-hidden card-accent-line"
+      style={{ background: 'rgba(255,255,255,0.03)', backdropFilter: 'blur(20px)', border: '1px solid rgba(255,255,255,0.08)' }}>
+      <div className="absolute top-0 left-0 right-0 h-px"
+        style={{ background: `linear-gradient(90deg, transparent 0%, ${accent}60 50%, transparent 100%)` }} />
+      <h3 className="font-semibold text-xs mb-4 uppercase tracking-widest" style={{ color: accent }}>{title}</h3>
       {children}
     </div>
   )
@@ -259,14 +268,15 @@ function ResultCard({ title, children }) {
 
 function BeforeAfter({ label, before, after }) {
   return (
-    <div className="space-y-3">
-      <div className="rounded-xl p-4" style={{ backgroundColor: 'rgba(15,23,42,0.7)', border: '1px solid #334155' }}>
-        <span className="text-xs text-slate-500 uppercase tracking-wide block mb-2">Actual</span>
-        <p className="text-slate-300 text-sm leading-relaxed">{before || `No tiene ${label.toLowerCase()}`}</p>
+    <div className="space-y-2">
+      <div className="rounded-xl p-4" style={{ background: 'rgba(0,0,0,0.25)', border: '1px solid rgba(255,255,255,0.06)' }}>
+        <span className="text-xs text-slate-600 uppercase tracking-widest block mb-2">Actual</span>
+        <p className="text-slate-400 text-sm leading-relaxed">{before || `No tiene ${label.toLowerCase()}`}</p>
       </div>
-      <div className="rounded-xl p-4" style={{ backgroundColor: 'rgba(0,119,181,0.06)', border: '1px solid rgba(0,119,181,0.3)' }}>
+      <div className="rounded-xl p-4 relative overflow-hidden"
+        style={{ background: 'rgba(0,119,181,0.07)', border: '1px solid rgba(0,119,181,0.25)' }}>
         <div className="flex items-center justify-between mb-2">
-          <span className="text-xs uppercase tracking-wide" style={{ color: '#0077B5' }}>Propuesto</span>
+          <span className="text-xs uppercase tracking-widest font-semibold" style={{ color: '#0ea5e9' }}>Propuesto</span>
           <CopyButton text={after} />
         </div>
         <p className="text-white text-sm leading-relaxed">{after}</p>
@@ -483,79 +493,97 @@ Generá un análisis en este formato JSON exacto:
   // ── Render ─────────────────────────────────────────────────
 
   return (
-    <div className="min-h-dvh flex flex-col items-center px-4 py-8 sm:py-12" style={{ backgroundColor: '#0f172a' }}>
-      <div className="w-full max-w-2xl">
+    <div className="min-h-dvh flex flex-col items-center px-4 py-8 sm:py-14">
+      <div className="w-full max-w-xl">
 
         {/* ── WELCOME ── */}
         {step === STEPS.WELCOME && (
           <div className="step-transition text-center space-y-8">
             <Logo />
-            <div className="space-y-4">
-              <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full text-sm"
-                style={{ backgroundColor: 'rgba(0,119,181,0.12)', border: '1px solid rgba(0,119,181,0.35)', color: '#0077B5' }}>
-                ✦ Análisis con IA
+            <div className="space-y-5">
+              <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full text-xs font-semibold tracking-wide badge-shimmer"
+                style={{ border: '1px solid rgba(0,119,181,0.4)', color: '#7dd3fc' }}>
+                ✦ &nbsp;Análisis profesional con IA
               </div>
-              <h1 className="text-4xl sm:text-5xl font-bold text-white leading-tight">
-                Optimizá tu perfil<br />
-                <span style={{ color: '#0077B5' }}>de LinkedIn</span>
+              <h1 className="text-4xl sm:text-5xl font-bold leading-tight tracking-tight" style={{ letterSpacing: '-0.02em' }}>
+                <span className="text-white">Optimizá tu perfil</span><br />
+                <span style={{ background: 'linear-gradient(135deg, #0ea5e9 0%, #6366f1 100%)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent' }}>
+                  de LinkedIn
+                </span>
               </h1>
-              <p className="text-slate-400 text-lg max-w-md mx-auto leading-relaxed">
-                Respondé algunas preguntas, descargá el PDF de tu perfil y recibí un análisis estratégico con criterio de headhunter.
+              <p className="text-slate-400 text-base max-w-sm mx-auto leading-relaxed">
+                Respondé el cuestionario, subí tu PDF y recibí un análisis con criterio de headhunter.
               </p>
             </div>
-            <div className="grid grid-cols-3 gap-4 text-center">
+
+            <div className="grid grid-cols-3 gap-3">
               {[
-                { icon: '🎯', text: 'Diagnóstico con criterio de headhunter' },
-                { icon: '🔍', text: 'SEO para aparecer en búsquedas de reclutadores' },
-                { icon: '⚡', text: 'Titular que supera el test de 6 segundos' },
+                { icon: '🎯', label: 'Headhunter', text: 'Diagnóstico profesional real', accent: '#0ea5e9' },
+                { icon: '🔍', label: 'SEO',         text: 'Aparecer en búsquedas clave',  accent: '#6366f1' },
+                { icon: '⚡', label: '6 segundos',  text: 'Test de primer impacto',        accent: '#0d9488' },
               ].map(item => (
-                <div key={item.text} className="rounded-xl p-4"
-                  style={{ backgroundColor: 'rgba(30,41,59,0.5)', border: '1px solid #334155' }}>
+                <div key={item.label} className="rounded-2xl p-4 text-center relative overflow-hidden"
+                  style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.07)' }}>
                   <div className="text-2xl mb-2">{item.icon}</div>
-                  <p className="text-slate-400 text-xs leading-snug">{item.text}</p>
+                  <p className="text-xs font-semibold mb-1" style={{ color: item.accent }}>{item.label}</p>
+                  <p className="text-slate-500 text-xs leading-snug">{item.text}</p>
                 </div>
               ))}
             </div>
-            <button
-              onClick={() => setStep(STEPS.QUESTIONS)}
-              className="w-full text-white font-semibold py-4 px-8 rounded-xl transition-all duration-200 text-base"
-              style={{ backgroundColor: '#0077B5' }}
-            >
-              Empezar →
-            </button>
+
+            <div className="space-y-3">
+              <button
+                onClick={() => setStep(STEPS.QUESTIONS)}
+                className="btn-glow w-full text-white font-semibold py-4 px-8 rounded-2xl text-base"
+                style={{ background: 'linear-gradient(135deg, #0077B5 0%, #0ea5e9 100%)' }}
+              >
+                Empezar análisis →
+              </button>
+              <p className="text-slate-600 text-xs">Gratis · Sin registro · 3 minutos</p>
+            </div>
           </div>
         )}
 
         {/* ── QUESTIONS ── */}
         {step === STEPS.QUESTIONS && (
-          <div className="step-transition space-y-6">
+          <div className="step-transition space-y-7">
             <Logo />
 
-            {/* Progress bar */}
-            <div className="w-full mb-2">
-              <div className="flex justify-between text-xs text-slate-400 mb-2">
-                <span>Pregunta {qNum} de {STATIC_QUESTIONS.length}</span>
-                <span className="text-slate-500">{Math.round(qProgress)}% completado</span>
-              </div>
-              <div className="w-full h-1.5 bg-slate-700 rounded-full overflow-hidden">
-                <div className="h-full rounded-full transition-all duration-500 ease-out"
-                  style={{ width: `${qProgress}%`, backgroundColor: '#0077B5' }} />
-              </div>
+            {/* Stepper de puntos */}
+            <div className="flex items-center gap-1.5">
+              {STATIC_QUESTIONS.map((_, i) => {
+                const done = i < qaHistory.length
+                const active = i === qaHistory.length
+                return (
+                  <div key={i} className="h-1.5 rounded-full transition-all duration-500 flex-1"
+                    style={{
+                      background: done
+                        ? 'linear-gradient(90deg,#0077B5,#0ea5e9)'
+                        : active
+                          ? 'rgba(0,119,181,0.5)'
+                          : 'rgba(255,255,255,0.07)',
+                    }} />
+                )
+              })}
             </div>
+            <p className="text-xs text-slate-500 -mt-4">
+              Paso {qNum} de {STATIC_QUESTIONS.length}
+              {currentQ.id && <span className="ml-2 opacity-60">· {currentQ.id.replace(/_/g,' ')}</span>}
+            </p>
 
             {/* Question */}
             <div>
-              <h2 className="text-2xl sm:text-3xl font-bold text-white leading-snug">
+              <h2 className="text-2xl sm:text-3xl font-bold text-white leading-snug" style={{ letterSpacing: '-0.01em' }}>
                 {currentQ.question}
               </h2>
-              {currentQ.type === 'text' && (
-                <p className="text-slate-500 text-sm mt-2">{currentQ.hint}</p>
+              {currentQ.type === 'text' && currentQ.hint && (
+                <p className="text-slate-500 text-sm mt-2 leading-relaxed">{currentQ.hint}</p>
               )}
             </div>
 
             {/* Multiple choice */}
             {currentQ.type !== 'text' && (
-              <div className="space-y-3">
+              <div className="space-y-2.5">
                 {currentQ.options.map(opt => (
                   <OptionButton
                     key={opt}
@@ -576,24 +604,25 @@ Generá un análisis en este formato JSON exacto:
                   onChange={e => setTextAnswer(e.target.value)}
                   placeholder={currentQ.placeholder}
                   rows={4}
-                  className="w-full rounded-xl px-4 py-3 text-sm text-white resize-none outline-none transition-all duration-200"
+                  className="w-full rounded-2xl px-4 py-3 text-sm text-white resize-none outline-none transition-all duration-200"
                   style={{
-                    backgroundColor: 'rgba(30,41,59,0.7)',
-                    border: textAnswer.trim() ? '1px solid rgba(0,119,181,0.5)' : '1px solid #475569',
+                    background: 'rgba(255,255,255,0.04)',
+                    border: textAnswer.trim() ? '1px solid rgba(0,119,181,0.5)' : '1px solid rgba(255,255,255,0.08)',
                     color: '#e2e8f0',
                   }}
                 />
                 <div className="flex gap-3">
                   <button
                     onClick={() => handleAnswer('')}
-                    className="flex-1 border border-slate-600 text-slate-400 font-medium py-3 rounded-xl text-sm hover:border-slate-400 transition-colors"
+                    className="flex-1 font-medium py-3 rounded-2xl text-sm transition-colors"
+                    style={{ border: '1px solid rgba(255,255,255,0.08)', color: '#475569', background: 'transparent' }}
                   >
                     Saltearse
                   </button>
                   <button
                     onClick={() => handleAnswer(textAnswer.trim())}
-                    className="flex-[2] font-semibold py-3 rounded-xl transition-all duration-200 text-white text-sm"
-                    style={{ backgroundColor: '#0077B5' }}
+                    className="btn-glow flex-[2] font-semibold py-3 rounded-2xl text-white text-sm"
+                    style={{ background: 'linear-gradient(135deg,#0077B5,#0ea5e9)' }}
                   >
                     Continuar →
                   </button>
@@ -601,12 +630,9 @@ Generá un análisis en este formato JSON exacto:
               </div>
             )}
 
-            {/* Back button */}
-            <button
-              onClick={handleBack}
-              className="text-slate-500 text-sm hover:text-slate-300 transition-colors"
-            >
-              ← {qaHistory.length === 0 ? 'Volver al inicio' : 'Pregunta anterior'}
+            {/* Back */}
+            <button onClick={handleBack} className="text-slate-600 text-sm hover:text-slate-400 transition-colors">
+              ← {qaHistory.length === 0 ? 'Volver al inicio' : 'Anterior'}
             </button>
           </div>
         )}
@@ -632,10 +658,10 @@ Generá un análisis en este formato JSON exacto:
             </div>
 
             {/* Cómo descargar — tabs desktop/celular */}
-            <div className="rounded-xl overflow-hidden"
-              style={{ border: '1px solid #334155' }}>
+            <div className="rounded-2xl overflow-hidden"
+              style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.08)' }}>
               {/* Tab selector */}
-              <div className="flex" style={{ backgroundColor: 'rgba(15,23,42,0.8)' }}>
+              <div className="flex border-b" style={{ borderColor: 'rgba(255,255,255,0.07)' }}>
                 {[
                   { id: 'desktop', label: '🖥️  Computadora' },
                   { id: 'mobile', label: '📱  Celular' },
@@ -643,10 +669,10 @@ Generá un análisis en este formato JSON exacto:
                   <button
                     key={tab.id}
                     onClick={() => setInstrTab(tab.id)}
-                    className="flex-1 py-2.5 text-xs font-semibold transition-all duration-200"
+                    className="flex-1 py-3 text-xs font-semibold transition-all duration-200"
                     style={instrTab === tab.id
-                      ? { backgroundColor: '#0077B5', color: '#fff' }
-                      : { color: '#64748b' }
+                      ? { background: 'linear-gradient(135deg,#0077B5,#0ea5e9)', color: '#fff' }
+                      : { color: '#475569', background: 'transparent' }
                     }
                   >
                     {tab.label}
@@ -655,7 +681,7 @@ Generá un análisis en este formato JSON exacto:
               </div>
 
               {/* Steps */}
-              <div className="p-5 space-y-3" style={{ backgroundColor: 'rgba(30,41,59,0.7)' }}>
+              <div className="p-5 space-y-3">
                 <p className="font-semibold text-white text-sm mb-1">
                   {instrTab === 'desktop' ? '📄 Cómo descargar desde la computadora' : '📄 Cómo descargar desde el celular'}
                 </p>
@@ -717,10 +743,10 @@ Generá un análisis en este formato JSON exacto:
                 onDragOver={handleDragOver}
                 onDragLeave={handleDragLeave}
                 onDrop={handleDrop}
-                className="flex flex-col items-center justify-center gap-3 w-full py-8 px-6 rounded-xl border-2 border-dashed cursor-pointer transition-all duration-200"
+                className="flex flex-col items-center justify-center gap-3 w-full py-10 px-6 rounded-2xl border-2 border-dashed cursor-pointer transition-all duration-300"
                 style={{
-                  borderColor: profileText ? '#22c55e' : isDragging ? '#0a91d4' : pdfLoading ? '#0077B5' : '#475569',
-                  backgroundColor: profileText ? 'rgba(34,197,94,0.05)' : isDragging ? 'rgba(0,119,181,0.08)' : 'rgba(30,41,59,0.4)',
+                  borderColor: profileText ? 'rgba(34,197,94,0.6)' : isDragging ? '#0a91d4' : pdfLoading ? '#0077B5' : 'rgba(255,255,255,0.12)',
+                  background: profileText ? 'rgba(34,197,94,0.05)' : isDragging ? 'rgba(0,119,181,0.08)' : 'rgba(255,255,255,0.02)',
                 }}
               >
                 {pdfLoading ? (
@@ -771,18 +797,20 @@ Generá un análisis en este formato JSON exacto:
             <div className="flex gap-3 pt-1">
               <button
                 onClick={() => setStep(STEPS.QUESTIONS)}
-                className="flex-1 border border-slate-600 text-slate-300 font-semibold py-3.5 rounded-xl transition-all duration-200 hover:border-slate-400"
+                className="flex-1 font-semibold py-3.5 rounded-2xl transition-all duration-200"
+                style={{ border: '1px solid rgba(255,255,255,0.10)', color: '#94a3b8', background: 'rgba(255,255,255,0.03)' }}
               >
                 ← Atrás
               </button>
               <button
                 disabled={!profileText}
                 onClick={callGemini}
-                className="flex-[2] font-semibold py-3.5 rounded-xl transition-all duration-200 text-white"
+                className={`flex-[2] font-semibold py-3.5 rounded-2xl transition-all duration-200 text-white ${profileText ? 'btn-glow' : ''}`}
                 style={{
-                  backgroundColor: profileText ? '#0077B5' : '#334155',
+                  background: profileText ? 'linear-gradient(135deg,#0077B5,#0ea5e9)' : 'rgba(30,41,59,0.8)',
                   opacity: profileText ? 1 : 0.5,
                   cursor: profileText ? 'pointer' : 'not-allowed',
+                  border: profileText ? 'none' : '1px solid rgba(255,255,255,0.06)',
                 }}
               >
                 Analizar mi perfil ✦
@@ -794,24 +822,32 @@ Generá un análisis en este formato JSON exacto:
         {/* ── LOADING ── */}
         {step === STEPS.LOADING && (
           <div className="step-transition flex flex-col items-center justify-center min-h-[60vh] space-y-8 text-center">
-            <div className="relative w-20 h-20">
-              <div className="absolute inset-0 rounded-full border-4 border-slate-700" />
-              <div className="absolute inset-0 rounded-full border-4 border-t-transparent animate-spin"
-                style={{ borderColor: '#0077B5', borderTopColor: 'transparent' }} />
-              <div className="absolute inset-0 flex items-center justify-center" style={{ color: '#0077B5' }}>
-                <LinkedInIcon className="w-8 h-8" />
+            <div className="relative w-28 h-28">
+              {/* outer glow halo */}
+              <div className="absolute inset-0 rounded-full"
+                style={{ boxShadow: '0 0 50px rgba(0,119,181,0.25), 0 0 80px rgba(14,165,233,0.1)' }} />
+              {/* track */}
+              <div className="absolute inset-3 rounded-full"
+                style={{ border: '2px solid rgba(255,255,255,0.05)' }} />
+              {/* spinner */}
+              <div className="absolute inset-3 rounded-full border-2 animate-spin"
+                style={{ borderColor: 'rgba(0,119,181,0.3)', borderTopColor: '#0ea5e9' }} />
+              {/* inner icon */}
+              <div className="absolute inset-0 flex items-center justify-center"
+                style={{ color: '#0ea5e9', filter: 'drop-shadow(0 0 6px rgba(14,165,233,0.5))' }}>
+                <LinkedInIcon className="w-9 h-9" />
               </div>
             </div>
-            <div className="space-y-2">
-              <h2 className="text-2xl font-bold text-white">Analizando tu perfil...</h2>
-              <p className="text-slate-400 text-sm max-w-xs mx-auto leading-relaxed transition-all duration-500">
+            <div className="space-y-3 max-w-xs">
+              <h2 className="text-2xl font-bold text-white" style={{ letterSpacing: '-0.02em' }}>Analizando tu perfil...</h2>
+              <p className="text-slate-400 text-sm leading-relaxed transition-all duration-700">
                 {LOADING_MESSAGES[loadingMsgIdx]}
               </p>
             </div>
-            <div className="flex gap-1.5">
+            <div className="flex gap-2">
               {[0, 1, 2].map(i => (
-                <div key={i} className="w-2 h-2 rounded-full animate-bounce"
-                  style={{ backgroundColor: '#0077B5', animationDelay: `${i * 0.2}s` }} />
+                <div key={i} className="w-1.5 h-1.5 rounded-full animate-bounce"
+                  style={{ backgroundColor: '#0ea5e9', animationDelay: `${i * 0.15}s` }} />
               ))}
             </div>
           </div>
@@ -901,13 +937,16 @@ Generá un análisis en este formato JSON exacto:
             <ResultCard title="Recomendaciones">
               <div className="space-y-4">
                 {(result.recomendaciones || []).map((rec, i) => (
-                  <div key={i} className="rounded-xl p-4"
-                    style={{ backgroundColor: 'rgba(15,23,42,0.6)', border: '1px solid #334155' }}>
-                    <p className="text-white font-semibold text-sm mb-1">
-                      <span style={{ color: '#0077B5' }} className="mr-2">{i + 1}.</span>
-                      {rec.titulo}
-                    </p>
-                    <p className="text-slate-400 text-sm leading-relaxed">{rec.descripcion}</p>
+                  <div key={i} className="rounded-xl p-4 flex gap-4 items-start"
+                    style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.07)' }}>
+                    <span className="w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold shrink-0 mt-0.5"
+                      style={{ background: 'linear-gradient(135deg,#0077B5,#0ea5e9)', color: '#fff' }}>
+                      {i + 1}
+                    </span>
+                    <div>
+                      <p className="text-white font-semibold text-sm mb-1">{rec.titulo}</p>
+                      <p className="text-slate-400 text-sm leading-relaxed">{rec.descripcion}</p>
+                    </div>
                   </div>
                 ))}
               </div>
@@ -921,7 +960,8 @@ Generá un análisis en este formato JSON exacto:
 
             <button
               onClick={reset}
-              className="w-full border border-slate-600 text-slate-300 font-semibold py-4 rounded-xl transition-all duration-200 text-sm hover:border-slate-400"
+              className="w-full font-semibold py-4 rounded-2xl transition-all duration-200 text-sm"
+              style={{ border: '1px solid rgba(255,255,255,0.10)', color: '#94a3b8', background: 'rgba(255,255,255,0.03)' }}
             >
               ↺ Analizar otro perfil
             </button>
