@@ -867,7 +867,7 @@ Generá el feedback en este JSON exacto:
   // ── Render ─────────────────────────────────────────────────
 
   return (
-    <div className="min-h-dvh flex flex-col items-center px-4 py-8 sm:py-14">
+    <main className="min-h-dvh flex flex-col items-center px-4 py-8 sm:py-14">
       <div className="w-full max-w-xl">
 
         {/* ── WELCOME ── */}
@@ -1657,6 +1657,6 @@ Generá el feedback en este JSON exacto:
         )}
 
       </div>
-    </div>
+    </main>
   )
 }
