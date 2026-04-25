@@ -128,6 +128,13 @@ const STATIC_QUESTIONS = [
       'Todavía estoy construyendo mi reputación profesional',
     ],
   },
+  {
+    id: 'contexto_adicional',
+    question: '¿Hay algo más que quieras agregar sobre tu perfil o situación?',
+    type: 'text',
+    placeholder: 'Ej: Estoy cambiando de industria luego de 10 años en finanzas. Tengo un proyecto personal en IA. Quiero enfocarme en el mercado de EEUU...',
+    hint: 'Opcional — cualquier detalle que las preguntas anteriores no hayan cubierto y que sea relevante para tu perfil.',
+  },
 ]
 
 const LOADING_MESSAGES = [
@@ -270,6 +277,7 @@ export default function App() {
   const [qaHistory, setQaHistory] = useState([])
   const [currentQ, setCurrentQ] = useState(STATIC_QUESTIONS[0])
   const [selectedOption, setSelectedOption] = useState(null)
+  const [textAnswer, setTextAnswer] = useState('')
 
   // Profile input
   const [profileText, setProfileText] = useState('')
@@ -296,6 +304,7 @@ export default function App() {
     setQaHistory([])
     setCurrentQ(STATIC_QUESTIONS[0])
     setSelectedOption(null)
+    setTextAnswer('')
     setProfileText('')
     setPdfFileName('')
     setPdfLoading(false)
@@ -312,6 +321,7 @@ export default function App() {
     const newHistory = [...qaHistory, { question: currentQ.question, answer }]
     setQaHistory(newHistory)
     setSelectedOption(null)
+    setTextAnswer('')
     const nextIndex = newHistory.length
     if (nextIndex < STATIC_QUESTIONS.length) {
       setCurrentQ(STATIC_QUESTIONS[nextIndex])
@@ -330,6 +340,7 @@ export default function App() {
     setQaHistory(newHistory)
     setCurrentQ(STATIC_QUESTIONS[newHistory.length])
     setSelectedOption(null)
+    setTextAnswer('')
   }
 
   // ── Upload and extract PDF ──
@@ -526,22 +537,62 @@ Generá un análisis en este formato JSON exacto:
             </div>
 
             {/* Question */}
-            <h2 className="text-2xl sm:text-3xl font-bold text-white leading-snug">
-              {currentQ.question}
-            </h2>
-
-            {/* Options */}
-            <div className="space-y-3">
-              {currentQ.options.map(opt => (
-                <OptionButton
-                  key={opt}
-                  label={opt}
-                  selected={selectedOption === opt}
-                  disabled={false}
-                  onClick={() => { setSelectedOption(opt); handleAnswer(opt) }}
-                />
-              ))}
+            <div>
+              <h2 className="text-2xl sm:text-3xl font-bold text-white leading-snug">
+                {currentQ.question}
+              </h2>
+              {currentQ.type === 'text' && (
+                <p className="text-slate-500 text-sm mt-2">{currentQ.hint}</p>
+              )}
             </div>
+
+            {/* Multiple choice */}
+            {currentQ.type !== 'text' && (
+              <div className="space-y-3">
+                {currentQ.options.map(opt => (
+                  <OptionButton
+                    key={opt}
+                    label={opt}
+                    selected={selectedOption === opt}
+                    disabled={false}
+                    onClick={() => { setSelectedOption(opt); handleAnswer(opt) }}
+                  />
+                ))}
+              </div>
+            )}
+
+            {/* Texto libre — opcional */}
+            {currentQ.type === 'text' && (
+              <div className="space-y-3">
+                <textarea
+                  value={textAnswer}
+                  onChange={e => setTextAnswer(e.target.value)}
+                  placeholder={currentQ.placeholder}
+                  rows={4}
+                  className="w-full rounded-xl px-4 py-3 text-sm text-white resize-none outline-none transition-all duration-200"
+                  style={{
+                    backgroundColor: 'rgba(30,41,59,0.7)',
+                    border: textAnswer.trim() ? '1px solid rgba(0,119,181,0.5)' : '1px solid #475569',
+                    color: '#e2e8f0',
+                  }}
+                />
+                <div className="flex gap-3">
+                  <button
+                    onClick={() => handleAnswer('')}
+                    className="flex-1 border border-slate-600 text-slate-400 font-medium py-3 rounded-xl text-sm hover:border-slate-400 transition-colors"
+                  >
+                    Saltearse
+                  </button>
+                  <button
+                    onClick={() => handleAnswer(textAnswer.trim())}
+                    className="flex-[2] font-semibold py-3 rounded-xl transition-all duration-200 text-white text-sm"
+                    style={{ backgroundColor: '#0077B5' }}
+                  >
+                    Continuar →
+                  </button>
+                </div>
+              </div>
+            )}
 
             {/* Back button */}
             <button
