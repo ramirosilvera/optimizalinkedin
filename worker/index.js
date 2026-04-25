@@ -4,7 +4,7 @@ const GEMINI_TIMEOUT_MS = 30_000
 
 export default {
   async fetch(request, env) {
-    const origin = 'https://ramirosilvera.github.io'
+    const origin = 'https://optimizalinkedin.com'
 
     if (request.method === 'OPTIONS') {
       return new Response(null, {
