@@ -1540,6 +1540,26 @@ Generá el feedback en este JSON exacto:
                   </a>
                 </div>
 
+                {/* Card colaboración */}
+                <div className="rounded-2xl p-6 text-center"
+                  style={{ background: 'rgba(0,180,150,0.07)', border: '1px solid rgba(0,180,150,0.25)' }}>
+                  <div className="text-3xl mb-3">🙌</div>
+                  <p className="text-white font-semibold">¿Te fue útil la app?</p>
+                  <p className="text-slate-300 text-sm mt-3 leading-relaxed max-w-xs mx-auto">
+                    Esta herramienta tiene costos reales de mantenimiento. Si te ayudó y querés colaborar para que siga funcionando y mejorando, podés hacerlo con una pequeña contribución mensual.
+                  </p>
+                  <a
+                    href="https://www.mercadopago.com.ar/subscriptions/checkout?preapproval_plan_id=0922af414b854dabb5942e3291b2b5cb"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-2 mt-4 px-6 py-3 rounded-2xl text-white font-semibold text-sm transition-all duration-200"
+                    style={{ background: 'linear-gradient(135deg,#00b496,#00d4aa)', boxShadow: '0 0 20px rgba(0,180,150,0.3)' }}
+                  >
+                    💙 &nbsp;Colaborar con la app
+                  </a>
+                  <p className="text-slate-600 text-xs mt-3">Seguro · Mercado Pago · Cancelable cuando quieras</p>
+                </div>
+
                 <button
                   onClick={() => setStep(STEPS.RESULTS)}
                   className="w-full font-semibold py-4 rounded-2xl text-sm"
