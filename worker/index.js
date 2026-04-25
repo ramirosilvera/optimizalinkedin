@@ -18,6 +18,7 @@ export default {
 
     const body = await request.json().catch(() => null)
     if (!body) return new Response('Invalid JSON', { status: 400 })
+    if (!body.contents) return new Response('Missing required field: contents', { status: 400 })
 
     const { model: modelField, ...geminiBody } = body
     const model = modelField || 'gemini-2.5-flash-lite'

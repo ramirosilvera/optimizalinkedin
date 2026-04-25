@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import './index.css'
 
 const GEMINI_MODEL = 'gemini-2.5-flash-lite'
@@ -13,34 +13,53 @@ function parseGeminiError(status, body) {
 
 const STEPS = { WELCOME: 0, QUESTIONS: 1, PROFILE_INPUT: 2, LOADING: 3, RESULTS: 4 }
 const MAX_QUESTIONS = 9
+const MAX_PDF_SIZE = 15 * 1024 * 1024
 
 const INITIAL_QUESTION = {
-  question: '¿Qué querés lograr con tu perfil de LinkedIn?',
+  question: '¿Cuál es tu situación profesional actual?',
   options: [
-    'Conseguir un nuevo empleo',
-    'Atraer clientes o proyectos freelance',
-    'Posicionarme como referente en mi industria',
-    'Ampliar mi red de contactos',
-    'Varias cosas a la vez / No estoy seguro',
+    'Empleado/a en relación de dependencia buscando nuevo trabajo',
+    'Freelancer o consultor/a independiente buscando más clientes',
+    'Emprendedor/a o dueño/a de negocio buscando visibilidad',
+    'Profesional buscando crecer o ascender en mi empresa actual',
+    'En transición de carrera o reingresando al mercado laboral',
   ],
 }
 
-const QUESTION_SYSTEM_PROMPT = `Sos un experto en optimización de perfiles de LinkedIn y posicionamiento profesional.
-Tu tarea es hacer preguntas estratégicas de múltiple choice para entender el contexto profesional del usuario y poder optimizar su perfil de forma personalizada.
+const LOADING_MESSAGES = [
+  'Los reclutadores pasan apenas 6 segundos en el primer vistazo de un perfil...',
+  'El 87% de los reclutadores usa LinkedIn para encontrar candidatos activamente...',
+  'Los perfiles con foto reciben 21× más visitas que los que no la tienen...',
+  'Un titular optimizado puede triplicar tus apariciones en búsquedas de reclutadores...',
+  'El resumen es el único espacio donde podés hablarle directamente a tu audiencia ideal...',
+  'Los perfiles con habilidades validadas tienen 17× más chances de ser vistos por reclutadores...',
+  'Perfiles con logros concretos y métricas generan 40% más solicitudes de conexión...',
+]
+
+const QUESTION_SYSTEM_PROMPT = `Sos una consultora senior de RRHH y headhunter con 20 años de experiencia en selección ejecutiva, employer branding y posicionamiento profesional.
+Tu tarea es hacer preguntas estratégicas de múltiple choice para construir un perfil completo del usuario y poder optimizar su LinkedIn con precisión quirúrgica.
+Usá una metodología de embudo: comenzá con situación general → nivel de seniority → industria/rubro → audiencia objetivo → diferenciadores únicos → logros concretos.
 Reglas:
 - Cada pregunta debe tener entre 4 y 6 opciones concretas y relevantes
 - Las opciones deben cubrir los casos más comunes sin ser genéricas
-- Adaptá cada pregunta al contexto de las respuestas anteriores (si alguien busca empleo, preguntale cosas de empleo)
+- Adaptá cada pregunta al contexto de las respuestas anteriores (si alguien busca empleo en tech, preguntale sobre stack, seniority, tipo de empresa target; si es freelancer, preguntale sobre nicho y tipo de cliente ideal)
 - Después de 5 respuestas podés evaluar si ya tenés suficiente info. Con 8 respuestas siempre terminá.
 - Cuando tengas suficiente información para hacer una optimización completa y personalizada del perfil, respondé con done true
 - Respondé SIEMPRE en español rioplatense (Argentina)
 - Respondé SOLO en JSON válido, sin markdown, sin backticks`
 
-const ANALYSIS_SYSTEM_PROMPT = `Sos un experto en posicionamiento profesional y LinkedIn con más de 15 años de experiencia.
-Tu tarea es analizar el perfil de LinkedIn de un profesional y generar una evaluación estratégica personalizada.
+const ANALYSIS_SYSTEM_PROMPT = `Sos una consultora senior de RRHH y headhunter con 20 años de experiencia en selección ejecutiva y posicionamiento profesional en LinkedIn.
+Tu tarea es analizar el perfil de LinkedIn de un profesional y generar una evaluación estratégica con estándares de headhunter.
+Aplicá estos frameworks en tu análisis:
+- Test de 6 segundos: ¿el titular y la foto comunican quién es y para quién es relevante en menos de 6 segundos?
+- SEO de LinkedIn: ¿aparecerá en las búsquedas correctas de reclutadores y potenciales clientes?
+- Compliance ATS: ¿el perfil pasará los filtros automáticos de los sistemas de tracking de candidatos?
+- Propuesta de valor: ¿está claro qué problema resuelve este profesional y para quién específicamente?
+- Prueba social: ¿hay métricas, logros concretos, recomendaciones o validaciones externas?
+- CTA: ¿hay una llamada a la acción clara para el visitante ideal del perfil?
 Respondé siempre en español rioplatense (Argentina).
-No uses lenguaje genérico ni de autoayuda.
-Sé directo, específico y orientado a resultados.
+No usés lenguaje genérico ni de autoayuda.
+Sé directa, específica y orientada a resultados medibles.
 Respondé SOLO en JSON válido, sin markdown, sin backticks.`
 
 async function fetchNextQuestion(history) {
@@ -198,10 +217,19 @@ export default function App() {
   const [pdfLoading, setPdfLoading] = useState(false)
   const [pdfError, setPdfError] = useState('')
   const [instrTab, setInstrTab] = useState('desktop')
+  const [isDragging, setIsDragging] = useState(false)
 
   // Results
   const [result, setResult] = useState(null)
   const [analysisError, setAnalysisError] = useState('')
+
+  // Loading message rotation
+  const [loadingMsgIdx, setLoadingMsgIdx] = useState(0)
+  useEffect(() => {
+    if (step !== STEPS.LOADING) return
+    const id = setInterval(() => setLoadingMsgIdx(i => (i + 1) % LOADING_MESSAGES.length), 3500)
+    return () => clearInterval(id)
+  }, [step])
 
   const reset = () => {
     setStep(STEPS.WELCOME)
@@ -215,8 +243,10 @@ export default function App() {
     setPdfLoading(false)
     setPdfError('')
     setInstrTab('desktop')
+    setIsDragging(false)
     setResult(null)
     setAnalysisError('')
+    setLoadingMsgIdx(0)
   }
 
   // ── Answer a question and fetch next ──
@@ -246,7 +276,7 @@ export default function App() {
       }
     } catch (err) {
       setQError(err.message || 'No se pudo cargar la siguiente pregunta. Intentá de nuevo.')
-      setQaHistory(qaHistory) // rollback
+      setQaHistory(prev => prev.slice(0, -1))
       setSelectedOption(null)
     } finally {
       setQLoading(false)
@@ -267,9 +297,17 @@ export default function App() {
   }
 
   // ── Upload and extract PDF ──
-  const handlePdfUpload = async (e) => {
-    const file = e.target.files[0]
+  const processPdfFile = useCallback(async (file) => {
     if (!file) return
+    if (file.type !== 'application/pdf') {
+      setPdfError('El archivo debe ser un PDF. Descargá tu perfil de LinkedIn como PDF y volvé a intentarlo.')
+      return
+    }
+    if (file.size > MAX_PDF_SIZE) {
+      setPdfError('El archivo es demasiado grande. El PDF debe pesar menos de 15 MB.')
+      setPdfFileName('')
+      return
+    }
     setPdfLoading(true)
     setPdfError('')
     setProfileText('')
@@ -289,7 +327,7 @@ export default function App() {
           contents: [{
             parts: [
               { inline_data: { mime_type: 'application/pdf', data: base64 } },
-              { text: 'Extraé todo el contenido de texto de este perfil de LinkedIn en PDF. Incluí el titular, resumen/about, toda la experiencia laboral con fechas y descripciones, educación, skills y cualquier otra sección del perfil. Devolvé solo el texto extraído, organizado claramente.' },
+              { text: 'Extraé todo el contenido de texto de este perfil de LinkedIn en PDF. Incluí el titular, resumen/about, toda la experiencia laboral con fechas y descripciones, educación, skills, certificaciones, voluntariado y cualquier otra sección del perfil. Devolvé solo el texto extraído, organizado claramente.' },
             ],
           }],
           generationConfig: { maxOutputTokens: 3000 },
@@ -301,7 +339,7 @@ export default function App() {
       }
       const data = await res.json()
       const text = data.candidates?.[0]?.content?.parts?.[0]?.text || ''
-      if (text.length < 100) throw new Error('No se pudo extraer contenido del PDF. Verificá que sea el PDF de tu perfil de LinkedIn.')
+      if (text.length < 100) throw new Error('No se pudo extraer contenido del PDF. Verificá que sea el PDF de tu perfil de LinkedIn y que no esté protegido con contraseña.')
       setProfileText(text)
     } catch (err) {
       setPdfError(err.message || 'Error al procesar el PDF.')
@@ -309,6 +347,16 @@ export default function App() {
     } finally {
       setPdfLoading(false)
     }
+  }, [])
+
+  const handlePdfUpload = (e) => processPdfFile(e.target.files[0])
+
+  const handleDragOver = (e) => { e.preventDefault(); setIsDragging(true) }
+  const handleDragLeave = (e) => { e.preventDefault(); setIsDragging(false) }
+  const handleDrop = (e) => {
+    e.preventDefault()
+    setIsDragging(false)
+    processPdfFile(e.dataTransfer.files[0])
   }
 
   // ── Call Gemini for analysis ──
@@ -329,17 +377,20 @@ ${profileText}
 Generá un análisis en este formato JSON exacto:
 {
   "puntaje_general": número del 1 al 10,
-  "resumen_diagnostico": "2-3 oraciones directas sobre el estado actual del perfil",
+  "nivel_seo": "Alto" o "Medio" o "Bajo",
+  "resumen_diagnostico": "2-3 oraciones directas sobre el estado actual del perfil aplicando los frameworks de headhunter",
+  "accion_prioritaria": "la UNA acción más impactante que puede hacer HOY para mejorar su perfil, explicada en 1-2 oraciones concretas",
   "fortalezas": ["fortaleza 1", "fortaleza 2", "fortaleza 3"],
   "areas_de_mejora": ["area 1", "area 2", "area 3"],
+  "palabras_clave_sugeridas": ["keyword 1", "keyword 2", "keyword 3", "keyword 4", "keyword 5", "keyword 6", "keyword 7", "keyword 8"],
   "titular_actual": "el titular actual",
-  "titular_propuesto": "un titular mejorado y específico",
+  "titular_propuesto": "un titular mejorado, específico, con keywords y propuesta de valor clara",
   "resumen_actual": "el resumen actual o No tiene resumen",
-  "resumen_propuesto": "un resumen reescrito de máximo 5 oraciones",
+  "resumen_propuesto": "un resumen reescrito de máximo 5 oraciones con propuesta de valor, logros y CTA",
   "recomendaciones": [
-    {"titulo": "nombre de la recomendación", "descripcion": "explicación concreta de qué cambiar y cómo"}
+    {"titulo": "nombre de la recomendación", "descripcion": "explicación concreta de qué cambiar y cómo, con ejemplos si aplica"}
   ],
-  "estrategia_contenido": "sugerencia de 2-3 oraciones sobre qué tipo de contenido publicar para lograr el objetivo"
+  "estrategia_contenido": "sugerencia de 2-3 oraciones sobre qué tipo de contenido publicar para lograr el objetivo declarado"
 }`
 
     try {
@@ -393,14 +444,14 @@ Generá un análisis en este formato JSON exacto:
                 <span style={{ color: '#0077B5' }}>de LinkedIn</span>
               </h1>
               <p className="text-slate-400 text-lg max-w-md mx-auto leading-relaxed">
-                Respondé algunas preguntas, ingresá la URL de tu perfil y recibí un análisis estratégico personalizado.
+                Respondé algunas preguntas, descargá el PDF de tu perfil y recibí un análisis estratégico con criterio de headhunter.
               </p>
             </div>
             <div className="grid grid-cols-3 gap-4 text-center">
               {[
-                { icon: '🤖', text: 'Preguntas adaptadas por IA' },
-                { icon: '✍️', text: 'Titular y resumen mejorado' },
-                { icon: '📈', text: 'Estrategia de contenido' },
+                { icon: '🎯', text: 'Diagnóstico con criterio de headhunter' },
+                { icon: '🔍', text: 'SEO para aparecer en búsquedas de reclutadores' },
+                { icon: '⚡', text: 'Titular que supera el test de 6 segundos' },
               ].map(item => (
                 <div key={item.text} className="rounded-xl p-4"
                   style={{ backgroundColor: 'rgba(30,41,59,0.5)', border: '1px solid #334155' }}>
@@ -550,17 +601,18 @@ Generá un análisis en este formato JSON exacto:
                 </p>
                 <ol className="space-y-2.5">
                   {(instrTab === 'desktop' ? [
-                    'Abrí tu perfil de LinkedIn en el navegador (Chrome, Safari, etc.)',
-                    'Hacé clic en el botón "Más" que aparece debajo de tu foto y nombre',
-                    'Seleccioná "Guardar como PDF"',
+                    'Abrí linkedin.com en tu navegador e iniciá sesión',
+                    'Hacé clic en tu foto de perfil (arriba a la derecha) y seleccioná "Ver perfil"',
+                    'En tu perfil, hacé clic en el botón "Más" (debajo de tu foto y nombre)',
+                    'Seleccioná "Guardar como PDF" en el menú desplegable',
                     'El PDF se descarga automáticamente — buscalo en tu carpeta de Descargas',
-                    'Volvé acá y subilo ↓',
+                    'Volvé acá y arrastrá el archivo o hacé clic para subirlo ↓',
                   ] : [
-                    'Abrí la app de LinkedIn en tu celular',
+                    'Abrí la app de LinkedIn en tu celular e iniciá sesión',
                     'Tocá tu foto de perfil (arriba a la izquierda) para ir a tu perfil',
-                    'Tocá los tres puntos (...) que aparecen arriba a la derecha',
+                    'Tocá los tres puntos (...) que aparecen arriba a la derecha de tu perfil',
                     'Seleccioná "Guardar como PDF"',
-                    'Si no ves esa opción: abrí linkedin.com en Chrome o Safari, iniciá sesión, y repetí desde el paso 2 usando el navegador',
+                    'Si no ves esa opción: abrí linkedin.com en Chrome o Safari, iniciá sesión, y repetí desde el paso 2',
                     'El PDF se guarda en tu teléfono — subilo acá ↓',
                   ]).map((s, i) => (
                     <li key={i} className="flex items-start gap-3 text-sm text-slate-300">
@@ -602,10 +654,13 @@ Generá un análisis en este formato JSON exacto:
               />
               <label
                 htmlFor="pdf-upload"
+                onDragOver={handleDragOver}
+                onDragLeave={handleDragLeave}
+                onDrop={handleDrop}
                 className="flex flex-col items-center justify-center gap-3 w-full py-8 px-6 rounded-xl border-2 border-dashed cursor-pointer transition-all duration-200"
                 style={{
-                  borderColor: profileText ? '#22c55e' : pdfLoading ? '#0077B5' : '#475569',
-                  backgroundColor: profileText ? 'rgba(34,197,94,0.05)' : 'rgba(30,41,59,0.4)',
+                  borderColor: profileText ? '#22c55e' : isDragging ? '#0a91d4' : pdfLoading ? '#0077B5' : '#475569',
+                  backgroundColor: profileText ? 'rgba(34,197,94,0.05)' : isDragging ? 'rgba(0,119,181,0.08)' : 'rgba(30,41,59,0.4)',
                 }}
               >
                 {pdfLoading ? (
@@ -624,10 +679,12 @@ Generá un análisis en este formato JSON exacto:
                   </>
                 ) : (
                   <>
-                    <span className="text-3xl">📄</span>
+                    <span className="text-3xl">{isDragging ? '📂' : '📄'}</span>
                     <div className="text-center">
-                      <p className="text-white font-semibold text-sm">Subir PDF de LinkedIn</p>
-                      <p className="text-slate-400 text-xs mt-1">Hacé clic para seleccionar el archivo</p>
+                      <p className="text-white font-semibold text-sm">
+                        {isDragging ? 'Soltá el PDF acá' : 'Subir PDF de LinkedIn'}
+                      </p>
+                      <p className="text-slate-400 text-xs mt-1">Arrastrá el archivo o hacé clic para seleccionarlo · Máx. 15 MB</p>
                     </div>
                   </>
                 )}
@@ -687,8 +744,8 @@ Generá un análisis en este formato JSON exacto:
             </div>
             <div className="space-y-2">
               <h2 className="text-2xl font-bold text-white">Analizando tu perfil...</h2>
-              <p className="text-slate-400 text-sm max-w-xs">
-                Gemini está procesando tu perfil y las respuestas del cuestionario para generar recomendaciones personalizadas.
+              <p className="text-slate-400 text-sm max-w-xs mx-auto leading-relaxed transition-all duration-500">
+                {LOADING_MESSAGES[loadingMsgIdx]}
               </p>
             </div>
             <div className="flex gap-1.5">
@@ -705,9 +762,32 @@ Generá un análisis en este formato JSON exacto:
           <div className="step-transition space-y-6">
             <Logo />
 
+            {/* Acción prioritaria — destacada arriba */}
+            {result.accion_prioritaria && (
+              <div className="rounded-2xl p-5"
+                style={{ backgroundColor: 'rgba(245,158,11,0.08)', border: '1px solid rgba(245,158,11,0.35)' }}>
+                <p className="text-xs font-semibold uppercase tracking-wide mb-2" style={{ color: '#f59e0b' }}>
+                  ⚡ Acción prioritaria — hacé esto hoy
+                </p>
+                <p className="text-white text-sm leading-relaxed">{result.accion_prioritaria}</p>
+              </div>
+            )}
+
             <ResultCard title="Diagnóstico general">
               <div className="flex flex-col sm:flex-row items-center sm:items-start gap-6">
-                <ScoreRing score={result.puntaje_general} />
+                <div className="flex flex-col items-center gap-3">
+                  <ScoreRing score={result.puntaje_general} />
+                  {result.nivel_seo && (
+                    <span className="text-xs font-semibold px-3 py-1 rounded-full"
+                      style={{
+                        backgroundColor: result.nivel_seo === 'Alto' ? 'rgba(34,197,94,0.12)' : result.nivel_seo === 'Medio' ? 'rgba(0,119,181,0.12)' : 'rgba(245,158,11,0.12)',
+                        color: result.nivel_seo === 'Alto' ? '#4ade80' : result.nivel_seo === 'Medio' ? '#38bdf8' : '#f59e0b',
+                        border: `1px solid ${result.nivel_seo === 'Alto' ? 'rgba(34,197,94,0.3)' : result.nivel_seo === 'Medio' ? 'rgba(0,119,181,0.3)' : 'rgba(245,158,11,0.3)'}`,
+                      }}>
+                      SEO: {result.nivel_seo}
+                    </span>
+                  )}
+                </div>
                 <p className="text-slate-300 text-sm leading-relaxed sm:pt-4">{result.resumen_diagnostico}</p>
               </div>
             </ResultCard>
@@ -734,6 +814,21 @@ Generá un análisis en este formato JSON exacto:
                 </div>
               </div>
             </ResultCard>
+
+            {/* Palabras clave SEO */}
+            {result.palabras_clave_sugeridas?.length > 0 && (
+              <ResultCard title="Palabras clave para SEO de LinkedIn">
+                <div className="flex flex-wrap gap-2">
+                  {result.palabras_clave_sugeridas.map((kw, i) => (
+                    <span key={i} className="text-xs px-3 py-1.5 rounded-full font-medium"
+                      style={{ backgroundColor: 'rgba(0,119,181,0.12)', border: '1px solid rgba(0,119,181,0.3)', color: '#7dd3fc' }}>
+                      {kw}
+                    </span>
+                  ))}
+                </div>
+                <p className="text-slate-500 text-xs mt-3">Incluí estas palabras en tu titular, resumen y experiencias para aparecer en más búsquedas.</p>
+              </ResultCard>
+            )}
 
             <ResultCard title="Titular">
               <BeforeAfter label="Titular" before={result.titular_actual} after={result.titular_propuesto} />
