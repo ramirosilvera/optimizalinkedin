@@ -13,7 +13,12 @@ function parseGeminiError(status, body) {
   return `Error HTTP ${status}: ${body?.error?.message || 'Error desconocido'}`
 }
 
-const STEPS = { WELCOME: 0, QUESTIONS: 1, PROFILE_INPUT: 2, LOADING: 3, RESULTS: 4 }
+const STEPS = {
+  WELCOME: 0, QUESTIONS: 1, PROFILE_INPUT: 2, LOADING: 3, RESULTS: 4,
+  INTERVIEW_INTRO: 5, INTERVIEW: 6, INTERVIEW_FEEDBACK: 7,
+}
+
+const RAMIRO_LINKEDIN_URL = 'https://www.linkedin.com/in/ramiro-silvera-b0819459'
 const MAX_PDF_SIZE = 15 * 1024 * 1024
 
 const STATIC_QUESTIONS = [
@@ -145,6 +150,21 @@ const STATIC_QUESTIONS = [
     hint: 'Opcional — cualquier detalle que las preguntas anteriores no hayan cubierto y que sea relevante para tu perfil.',
   },
 ]
+
+const INTERVIEW_QUESTIONS = [
+  { pregunta: '¿Hacé tu presentación profesional: quién sos, en qué destacás y qué buscás en este momento?', hint: 'Imaginá que tenés 2 minutos para causar una primera impresión.' },
+  { pregunta: 'Contame sobre tu mayor logro profesional: ¿qué hiciste, cómo lo hiciste y qué resultado concreto obtuviste?', hint: 'Si podés, mencioná números o métricas.' },
+  { pregunta: '¿Cuál es tu mayor área de mejora y qué estás haciendo para trabajarla?', hint: 'Los reclutadores valoran la autoconciencia — sé honesto/a.' },
+  { pregunta: '¿Qué te motiva a buscar un nuevo desafío en este momento de tu carrera?', hint: 'Enfocate en lo que te atrae, no en lo que dejás atrás.' },
+  { pregunta: '¿Qué te diferencia de otros profesionales con tu mismo perfil y experiencia?', hint: 'Pensá en tu propuesta de valor única.' },
+]
+
+const INTERVIEW_SYSTEM_PROMPT = `Sos una entrevistadora senior de RRHH y headhunter con 20 años de experiencia en selección ejecutiva.
+Tu tarea es evaluar las respuestas de una entrevista inicial y dar feedback constructivo y profesional.
+Aplicá estos criterios: claridad del mensaje, método STAR en logros, nivel de autoconciencia, capacidad de comunicar propuesta de valor, autenticidad y solidez de los argumentos.
+Respondé siempre en español rioplatense (Argentina).
+No usés lenguaje genérico ni de autoayuda. Sé directa, específica y orientada a la mejora concreta.
+Respondé SOLO en JSON válido, sin markdown, sin backticks.`
 
 const LOADING_MESSAGES = [
   'Los reclutadores pasan apenas 6 segundos en el primer vistazo de un perfil...',
@@ -491,6 +511,14 @@ export default function App() {
   const [analysisError, setAnalysisError] = useState('')
   const [analyzing, setAnalyzing] = useState(false)
 
+  // Interview
+  const [interviewAnswers, setInterviewAnswers] = useState([])
+  const [interviewIdx, setInterviewIdx] = useState(0)
+  const [interviewAnswer, setInterviewAnswer] = useState('')
+  const [interviewFeedback, setInterviewFeedback] = useState(null)
+  const [interviewLoading, setInterviewLoading] = useState(false)
+  const [interviewError, setInterviewError] = useState('')
+
   // Loading message rotation
   const [loadingMsgIdx, setLoadingMsgIdx] = useState(0)
   useEffect(() => {
@@ -516,6 +544,12 @@ export default function App() {
     setAnalysisError('')
     setAnalyzing(false)
     setLoadingMsgIdx(0)
+    setInterviewAnswers([])
+    setInterviewIdx(0)
+    setInterviewAnswer('')
+    setInterviewFeedback(null)
+    setInterviewLoading(false)
+    setInterviewError('')
   }
 
   // ── Avanzar al siguiente paso del cuestionario ──
@@ -678,6 +712,92 @@ Generá un análisis en este formato JSON exacto:
     } finally {
       setAnalyzing(false)
     }
+  }
+
+  // ── Submit interview answer + optionally call AI for feedback ──
+  const handleInterviewNext = async (answer) => {
+    const newAnswers = [...interviewAnswers, { pregunta: INTERVIEW_QUESTIONS[interviewIdx].pregunta, respuesta: answer }]
+    setInterviewAnswers(newAnswers)
+    setInterviewAnswer('')
+
+    if (newAnswers.length < INTERVIEW_QUESTIONS.length) {
+      setInterviewIdx(interviewIdx + 1)
+      return
+    }
+
+    // Last question — call AI for feedback
+    setInterviewLoading(true)
+    setStep(STEPS.INTERVIEW_FEEDBACK)
+    setInterviewError('')
+
+    const transcripcion = newAnswers
+      .map((a, i) => `Pregunta ${i + 1}: ${a.pregunta}\nRespuesta: ${a.respuesta}`)
+      .join('\n\n')
+
+    const contexto = qaHistory
+      .map(h => `- ${STATIC_QUESTIONS.find(q => q.question === h.question)?.id ?? 'dato'}: ${h.answer}`)
+      .join('\n')
+
+    const prompt = `Contexto del profesional (cuestionario previo):
+${contexto}
+
+Análisis de perfil (puntaje: ${result?.puntaje_general ?? 'N/D'}/10):
+${result?.resumen_diagnostico ?? ''}
+
+Transcripción de la entrevista:
+${transcripcion}
+
+Generá el feedback en este JSON exacto:
+{
+  "puntaje_entrevista": número del 1 al 10,
+  "evaluacion_general": "2-3 oraciones directas sobre la performance general en la entrevista",
+  "fortalezas_entrevista": ["fortaleza 1", "fortaleza 2", "fortaleza 3"],
+  "areas_de_mejora_entrevista": ["area 1", "area 2", "area 3"],
+  "feedback_por_respuesta": [
+    { "numero": 1, "aspecto_positivo": "qué estuvo bien", "sugerencia": "cómo mejorar esta respuesta concretamente" },
+    { "numero": 2, "aspecto_positivo": "...", "sugerencia": "..." },
+    { "numero": 3, "aspecto_positivo": "...", "sugerencia": "..." },
+    { "numero": 4, "aspecto_positivo": "...", "sugerencia": "..." },
+    { "numero": 5, "aspecto_positivo": "...", "sugerencia": "..." }
+  ],
+  "recomendacion_final": "el consejo más importante para su próxima entrevista real, en 1-2 oraciones concretas"
+}`
+
+    try {
+      if (!WORKER_URL) throw new Error('Worker URL no configurada.')
+      const res = await fetch(WORKER_URL, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          system_instruction: { parts: [{ text: INTERVIEW_SYSTEM_PROMPT }] },
+          contents: [{ parts: [{ text: prompt }] }],
+          generationConfig: { responseMimeType: 'application/json', maxOutputTokens: 1800 },
+        }),
+      })
+      if (!res.ok) {
+        const e = await res.json().catch(() => ({}))
+        throw new Error(parseGeminiError(res.status, e))
+      }
+      const data = await res.json()
+      const candidate = data.candidates?.[0]
+      if (candidate?.finishReason === 'MAX_TOKENS') throw new Error('Respuesta demasiado larga. Intentá de nuevo.')
+      const raw = candidate?.content?.parts?.[0]?.text || ''
+      let parsed
+      try { parsed = JSON.parse(raw) }
+      catch { const m = raw.match(/\{[\s\S]*\}/); if (m) parsed = JSON.parse(m[0]); else throw new Error('Error al procesar el feedback. Intentá de nuevo.') }
+      setInterviewFeedback(parsed)
+    } catch (err) {
+      setInterviewError(err.message || 'Error al generar el feedback.')
+    } finally {
+      setInterviewLoading(false)
+    }
+  }
+
+  const handleInterviewBack = () => {
+    if (interviewIdx === 0) { setStep(STEPS.INTERVIEW_INTRO); return }
+    setInterviewAnswers(prev => prev.slice(0, -1))
+    setInterviewIdx(interviewIdx - 1)
+    setInterviewAnswer(interviewAnswers[interviewIdx - 1]?.respuesta || '')
   }
 
   const qNum = qaHistory.length + 1
@@ -1160,12 +1280,275 @@ Generá un análisis en este formato JSON exacto:
             </div>
 
             <button
+              onClick={() => { setInterviewAnswers([]); setInterviewIdx(0); setInterviewAnswer(''); setInterviewFeedback(null); setInterviewError(''); setStep(STEPS.INTERVIEW_INTRO) }}
+              className="btn-glow w-full font-semibold py-4 rounded-2xl text-white text-sm"
+              style={{ background: 'linear-gradient(135deg,#6366f1,#8b5cf6)' }}
+            >
+              🎙️ Simulá una entrevista inicial →
+            </button>
+
+            <button
               onClick={reset}
               className="w-full font-semibold py-4 rounded-2xl transition-all duration-200 text-sm"
               style={{ border: '1px solid rgba(255,255,255,0.10)', color: '#94a3b8', background: 'rgba(255,255,255,0.03)' }}
             >
               ↺ Analizar otro perfil
             </button>
+          </div>
+        )}
+
+        {/* ── INTERVIEW INTRO ── */}
+        {step === STEPS.INTERVIEW_INTRO && (
+          <div className="step-transition text-center space-y-8">
+            <Logo />
+            <div className="space-y-5">
+              <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full text-xs font-semibold tracking-wide"
+                style={{ border: '1px solid rgba(99,102,241,0.4)', color: '#a5b4fc', background: 'rgba(99,102,241,0.08)' }}>
+                🎙️ &nbsp;Entrevistador IA
+              </div>
+              <h2 className="text-3xl sm:text-4xl font-bold text-white leading-tight" style={{ letterSpacing: '-0.02em' }}>
+                Simulación de<br />
+                <span style={{ background: 'linear-gradient(135deg,#6366f1,#8b5cf6)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent' }}>
+                  entrevista inicial
+                </span>
+              </h2>
+              <p className="text-slate-400 text-base max-w-sm mx-auto leading-relaxed">
+                5 preguntas típicas de selección. Al final recibís feedback personalizado basado en tu perfil y tus respuestas.
+              </p>
+            </div>
+
+            <div className="grid grid-cols-3 gap-3">
+              {[
+                { icon: '❓', label: '5 preguntas', text: 'Pre-armadas por RRHH', accent: '#6366f1' },
+                { icon: '🧠', label: 'Feedback IA', text: 'Análisis de cada respuesta', accent: '#8b5cf6' },
+                { icon: '🎯', label: 'Criterio real', text: 'Estándares de headhunter', accent: '#a855f7' },
+              ].map(item => (
+                <div key={item.label} className="rounded-2xl p-4 text-center"
+                  style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.07)' }}>
+                  <div className="text-2xl mb-2">{item.icon}</div>
+                  <p className="text-xs font-semibold mb-1" style={{ color: item.accent }}>{item.label}</p>
+                  <p className="text-slate-500 text-xs leading-snug">{item.text}</p>
+                </div>
+              ))}
+            </div>
+
+            <div className="space-y-3">
+              <button
+                onClick={() => setStep(STEPS.INTERVIEW)}
+                className="btn-glow w-full text-white font-semibold py-4 rounded-2xl text-base"
+                style={{ background: 'linear-gradient(135deg,#6366f1,#8b5cf6)' }}
+              >
+                Empezar entrevista →
+              </button>
+              <button
+                onClick={() => setStep(STEPS.RESULTS)}
+                className="w-full font-medium py-3 rounded-2xl text-sm transition-all"
+                style={{ border: '1px solid rgba(255,255,255,0.08)', color: '#64748b', background: 'transparent' }}
+              >
+                ← Volver a mis resultados
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* ── INTERVIEW ── */}
+        {step === STEPS.INTERVIEW && (
+          <div className="step-transition space-y-7">
+            <Logo />
+
+            {/* Progress */}
+            <div className="flex items-center gap-1.5">
+              {INTERVIEW_QUESTIONS.map((_, i) => (
+                <div key={i} className="h-1.5 rounded-full transition-all duration-500 flex-1"
+                  style={{
+                    background: i < interviewIdx
+                      ? 'linear-gradient(90deg,#6366f1,#8b5cf6)'
+                      : i === interviewIdx
+                        ? 'rgba(99,102,241,0.5)'
+                        : 'rgba(255,255,255,0.07)',
+                  }} />
+              ))}
+            </div>
+            <p className="text-xs text-slate-500 -mt-4">
+              Pregunta {interviewIdx + 1} de {INTERVIEW_QUESTIONS.length}
+            </p>
+
+            <div>
+              <h2 className="text-2xl sm:text-3xl font-bold text-white leading-snug" style={{ letterSpacing: '-0.01em' }}>
+                {INTERVIEW_QUESTIONS[interviewIdx].pregunta}
+              </h2>
+              <p className="text-slate-500 text-sm mt-2 leading-relaxed">
+                {INTERVIEW_QUESTIONS[interviewIdx].hint}
+              </p>
+            </div>
+
+            <div className="space-y-3">
+              <div className="relative">
+                <textarea
+                  value={interviewAnswer}
+                  onChange={e => setInterviewAnswer(e.target.value)}
+                  placeholder="Escribí tu respuesta acá..."
+                  rows={6}
+                  maxLength={800}
+                  className="w-full rounded-2xl px-4 py-3 text-sm text-white resize-none outline-none transition-all duration-200"
+                  style={{
+                    background: 'rgba(255,255,255,0.04)',
+                    border: interviewAnswer.trim() ? '1px solid rgba(99,102,241,0.5)' : '1px solid rgba(255,255,255,0.08)',
+                    color: '#e2e8f0',
+                  }}
+                />
+                <span className="absolute bottom-2.5 right-3 text-xs pointer-events-none"
+                  style={{ color: interviewAnswer.length > 720 ? '#f59e0b' : '#334155' }}>
+                  {interviewAnswer.length}/800
+                </span>
+              </div>
+              <button
+                disabled={!interviewAnswer.trim()}
+                onClick={() => handleInterviewNext(interviewAnswer.trim())}
+                className={`btn-glow w-full font-semibold py-4 rounded-2xl text-white text-sm ${!interviewAnswer.trim() ? 'opacity-40 cursor-not-allowed' : ''}`}
+                style={{ background: 'linear-gradient(135deg,#6366f1,#8b5cf6)' }}
+              >
+                {interviewIdx < INTERVIEW_QUESTIONS.length - 1 ? 'Siguiente →' : 'Ver mi feedback →'}
+              </button>
+            </div>
+
+            <button onClick={handleInterviewBack} className="text-slate-600 text-sm hover:text-slate-400 transition-colors">
+              ← {interviewIdx === 0 ? 'Volver al inicio' : 'Pregunta anterior'}
+            </button>
+          </div>
+        )}
+
+        {/* ── INTERVIEW FEEDBACK ── */}
+        {step === STEPS.INTERVIEW_FEEDBACK && (
+          <div className="step-transition space-y-6">
+            <Logo />
+
+            {interviewLoading ? (
+              <div className="flex flex-col items-center justify-center min-h-[55vh] space-y-8 text-center">
+                <div className="relative w-28 h-28">
+                  <div className="absolute inset-0 rounded-full"
+                    style={{ boxShadow: '0 0 50px rgba(99,102,241,0.25), 0 0 80px rgba(139,92,246,0.1)' }} />
+                  <div className="absolute inset-3 rounded-full" style={{ border: '2px solid rgba(255,255,255,0.05)' }} />
+                  <div className="absolute inset-3 rounded-full border-2 animate-spin"
+                    style={{ borderColor: 'rgba(99,102,241,0.3)', borderTopColor: '#8b5cf6' }} />
+                  <div className="absolute inset-0 flex items-center justify-center text-2xl">🎙️</div>
+                </div>
+                <div className="space-y-2 max-w-xs">
+                  <h2 className="text-2xl font-bold text-white" style={{ letterSpacing: '-0.02em' }}>Evaluando tu entrevista...</h2>
+                  <p className="text-slate-400 text-sm leading-relaxed">Analizando tus respuestas con criterio de headhunter.</p>
+                </div>
+                <div className="flex gap-2">
+                  {[0, 1, 2].map(i => (
+                    <div key={i} className="w-1.5 h-1.5 rounded-full animate-bounce"
+                      style={{ backgroundColor: '#8b5cf6', animationDelay: `${i * 0.15}s` }} />
+                  ))}
+                </div>
+              </div>
+            ) : interviewError ? (
+              <div className="space-y-4">
+                <div className="rounded-xl p-4 text-sm"
+                  style={{ backgroundColor: 'rgba(127,29,29,0.3)', border: '1px solid #b91c1c', color: '#fca5a5' }}>
+                  ⚠️ {interviewError}
+                </div>
+                <button onClick={() => { setInterviewError(''); setInterviewLoading(false); handleInterviewNext(interviewAnswers[interviewAnswers.length - 1]?.respuesta || '') }}
+                  className="btn-glow w-full font-semibold py-4 rounded-2xl text-white text-sm"
+                  style={{ background: 'linear-gradient(135deg,#6366f1,#8b5cf6)' }}>
+                  Reintentar
+                </button>
+              </div>
+            ) : interviewFeedback && (
+              <>
+                {/* Score */}
+                <ResultCard title="Resultado de la entrevista" accent="#6366f1">
+                  <div className="flex flex-col sm:flex-row items-center sm:items-start gap-6">
+                    <ScoreRing score={interviewFeedback.puntaje_entrevista} />
+                    <p className="text-slate-300 text-sm leading-relaxed sm:pt-4">{interviewFeedback.evaluacion_general}</p>
+                  </div>
+                </ResultCard>
+
+                {/* Fortalezas / áreas */}
+                <ResultCard title="Fortalezas y áreas de mejora" accent="#6366f1">
+                  <div className="grid sm:grid-cols-2 gap-6">
+                    <div className="space-y-2">
+                      <p className="text-xs font-semibold uppercase tracking-wide mb-3" style={{ color: '#4ade80' }}>✅ Fortalezas</p>
+                      {(interviewFeedback.fortalezas_entrevista || []).map((f, i) => (
+                        <div key={i} className="flex items-start gap-2">
+                          <span className="mt-0.5 shrink-0" style={{ color: '#4ade80' }}>•</span>
+                          <p className="text-slate-300 text-sm">{f}</p>
+                        </div>
+                      ))}
+                    </div>
+                    <div className="space-y-2">
+                      <p className="text-xs font-semibold uppercase tracking-wide mb-3" style={{ color: '#fbbf24' }}>⚠️ Áreas de mejora</p>
+                      {(interviewFeedback.areas_de_mejora_entrevista || []).map((a, i) => (
+                        <div key={i} className="flex items-start gap-2">
+                          <span className="mt-0.5 shrink-0" style={{ color: '#fbbf24' }}>•</span>
+                          <p className="text-slate-300 text-sm">{a}</p>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                </ResultCard>
+
+                {/* Feedback por respuesta */}
+                <ResultCard title="Feedback por respuesta" accent="#6366f1">
+                  <div className="space-y-4">
+                    {(interviewFeedback.feedback_por_respuesta || []).map((fb, i) => (
+                      <div key={i} className="rounded-xl p-4"
+                        style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.07)' }}>
+                        <p className="text-xs font-semibold uppercase tracking-wide mb-2" style={{ color: '#a5b4fc' }}>
+                          Pregunta {fb.numero}
+                        </p>
+                        <p className="text-slate-500 text-xs italic mb-2 leading-relaxed">"{INTERVIEW_QUESTIONS[i]?.pregunta}"</p>
+                        <div className="space-y-1.5">
+                          <p className="text-sm text-slate-300"><span style={{ color: '#4ade80' }}>✅ </span>{fb.aspecto_positivo}</p>
+                          <p className="text-sm text-slate-300"><span style={{ color: '#fbbf24' }}>💡 </span>{fb.sugerencia}</p>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </ResultCard>
+
+                {/* Recomendación final */}
+                <div className="rounded-2xl p-5"
+                  style={{ background: 'rgba(99,102,241,0.08)', border: '1px solid rgba(99,102,241,0.3)' }}>
+                  <p className="text-xs font-semibold uppercase tracking-wide mb-2" style={{ color: '#a5b4fc' }}>⚡ Recomendación final</p>
+                  <p className="text-white text-sm leading-relaxed">{interviewFeedback.recomendacion_final}</p>
+                </div>
+
+                {/* Card Ramiro */}
+                <div className="rounded-2xl p-6 text-center"
+                  style={{ background: 'rgba(0,119,181,0.08)', border: '1px solid rgba(0,119,181,0.3)' }}>
+                  <div className="w-12 h-12 rounded-full mx-auto mb-3 flex items-center justify-center text-white font-bold text-sm"
+                    style={{ background: 'linear-gradient(135deg,#0077B5,#0ea5e9)' }}>
+                    RS
+                  </div>
+                  <p className="text-white font-semibold">Ramiro Silvera</p>
+                  <p className="text-slate-400 text-sm mt-0.5">Gerente de RRHH · Creador de esta herramienta</p>
+                  <p className="text-slate-300 text-sm mt-3 leading-relaxed max-w-xs mx-auto">
+                    Si querés feedback personalizado o ayuda concreta con tu búsqueda, escribime en LinkedIn.
+                  </p>
+                  <a
+                    href={RAMIRO_LINKEDIN_URL}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="btn-glow inline-flex items-center gap-2 mt-4 px-6 py-3 rounded-2xl text-white font-semibold text-sm"
+                    style={{ background: 'linear-gradient(135deg,#0077B5,#0ea5e9)' }}
+                  >
+                    <LinkedInIcon className="w-4 h-4" />
+                    Conectar con Ramiro
+                  </a>
+                </div>
+
+                <button
+                  onClick={() => setStep(STEPS.RESULTS)}
+                  className="w-full font-semibold py-4 rounded-2xl text-sm"
+                  style={{ border: '1px solid rgba(255,255,255,0.10)', color: '#94a3b8', background: 'rgba(255,255,255,0.03)' }}
+                >
+                  ← Volver a mi análisis
+                </button>
+              </>
+            )}
           </div>
         )}
 
