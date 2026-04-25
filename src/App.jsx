@@ -527,6 +527,10 @@ export default function App() {
   const [interviewLoading, setInterviewLoading] = useState(false)
   const [interviewError, setInterviewError] = useState('')
 
+  // Contacto con Ramiro
+  const [leadSaving, setLeadSaving] = useState(false)
+  const [leadSent, setLeadSent] = useState(false)
+
   // Loading message rotation
   const [loadingMsgIdx, setLoadingMsgIdx] = useState(0)
   useEffect(() => {
@@ -542,6 +546,8 @@ export default function App() {
     setInterviewFeedback(null)
     setInterviewLoading(false)
     setInterviewError('')
+    setLeadSaving(false)
+    setLeadSent(false)
   }
 
   const reset = () => {
@@ -729,6 +735,37 @@ Generá un análisis en este formato JSON exacto:
       setStep(STEPS.PROFILE_INPUT)
     } finally {
       setAnalyzing(false)
+    }
+  }
+
+  // ── Guardar lead y abrir LinkedIn de Ramiro ──
+  const saveAndConnectRamiro = async () => {
+    if (leadSaving || leadSent) return
+    setLeadSaving(true)
+    try {
+      if (SUPABASE_URL) {
+        await fetch(`${SUPABASE_URL}/rest/v1/leads`, {
+          method: 'POST',
+          headers: {
+            apikey: SUPABASE_KEY,
+            Authorization: `Bearer ${SUPABASE_KEY}`,
+            'Content-Type': 'application/json',
+            Prefer: 'return=minimal',
+          },
+          body: JSON.stringify({
+            qa_history: qaHistory,
+            resultado_analisis: result || {},
+            respuestas_entrevista: interviewAnswers,
+            feedback_entrevista: interviewFeedback || {},
+          }),
+        })
+      }
+    } catch {
+      // Si falla, abrimos LinkedIn igual — nunca bloqueamos al usuario
+    } finally {
+      setLeadSaving(false)
+      setLeadSent(true)
+      window.open(RAMIRO_LINKEDIN_URL, '_blank', 'noopener,noreferrer')
     }
   }
 
@@ -1561,16 +1598,30 @@ Generá el feedback en este JSON exacto:
                   <p className="text-slate-300 text-sm mt-3 leading-relaxed max-w-xs mx-auto">
                     Si querés feedback personalizado o ayuda concreta con tu búsqueda, escribime en LinkedIn.
                   </p>
-                  <a
-                    href={RAMIRO_LINKEDIN_URL}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="btn-glow inline-flex items-center gap-2 mt-4 px-6 py-3 rounded-2xl text-white font-semibold text-sm"
-                    style={{ background: 'linear-gradient(135deg,#0077B5,#0ea5e9)' }}
+                  <p className="text-slate-500 text-xs mt-3 max-w-xs mx-auto leading-relaxed">
+                    Al conectar, tu análisis de perfil y tus respuestas de entrevista serán enviados al administrador de la app para que pueda orientarte desde el primer mensaje.
+                  </p>
+                  <button
+                    onClick={saveAndConnectRamiro}
+                    disabled={leadSaving || leadSent}
+                    className={`inline-flex items-center gap-2 mt-4 px-6 py-3 rounded-2xl text-white font-semibold text-sm ${!leadSent ? 'btn-glow' : ''}`}
+                    style={{
+                      background: leadSent
+                        ? 'rgba(34,197,94,0.15)'
+                        : 'linear-gradient(135deg,#0077B5,#0ea5e9)',
+                      border: leadSent ? '1px solid rgba(34,197,94,0.4)' : 'none',
+                      color: leadSent ? '#4ade80' : '#fff',
+                      cursor: leadSaving || leadSent ? 'default' : 'pointer',
+                    }}
                   >
-                    <LinkedInIcon className="w-4 h-4" />
-                    Conectar con Ramiro
-                  </a>
+                    {leadSaving ? (
+                      <><Spinner size={4} /> Enviando datos...</>
+                    ) : leadSent ? (
+                      '✓ Datos enviados — LinkedIn abierto'
+                    ) : (
+                      <><LinkedInIcon className="w-4 h-4" /> Conectar con Ramiro</>
+                    )}
+                  </button>
                 </div>
 
                 {/* Card colaboración */}
