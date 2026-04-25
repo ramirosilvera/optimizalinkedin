@@ -12,19 +12,67 @@ function parseGeminiError(status, body) {
 }
 
 const STEPS = { WELCOME: 0, QUESTIONS: 1, PROFILE_INPUT: 2, LOADING: 3, RESULTS: 4 }
-const MAX_FOLLOWUP_QUESTIONS = 4
 const MAX_PDF_SIZE = 15 * 1024 * 1024
 
-const INITIAL_QUESTION = {
-  question: '¿Cuál es tu situación profesional actual?',
-  options: [
-    'Empleado/a en relación de dependencia buscando nuevo trabajo',
-    'Freelancer o consultor/a independiente buscando más clientes',
-    'Emprendedor/a o dueño/a de negocio buscando visibilidad',
-    'Profesional buscando crecer o ascender en mi empresa actual',
-    'En transición de carrera o reingresando al mercado laboral',
-  ],
-}
+const STATIC_QUESTIONS = [
+  {
+    id: 'situacion',
+    question: '¿Cuál es tu situación profesional actual?',
+    options: [
+      'Empleado/a buscando un nuevo trabajo',
+      'Freelancer o consultor/a buscando más clientes',
+      'Emprendedor/a o dueño/a de negocio buscando visibilidad',
+      'Profesional buscando crecer o ascender en mi empresa',
+      'En transición de carrera o reingresando al mercado',
+    ],
+  },
+  {
+    id: 'industria',
+    question: '¿En qué industria o rubro trabajás?',
+    options: [
+      'Tecnología / Software / IT',
+      'Marketing / Comunicación / Publicidad',
+      'Finanzas / Contabilidad / Auditoría',
+      'Recursos Humanos / Consultoría',
+      'Salud / Medicina / Bienestar',
+      'Educación / Capacitación',
+      'Ventas / Comercial / Business Development',
+      'Diseño / UX / Creatividad',
+      'Otro rubro',
+    ],
+  },
+  {
+    id: 'seniority',
+    question: '¿Cuál es tu nivel de experiencia?',
+    options: [
+      'Junior — menos de 2 años',
+      'Semi-senior — entre 2 y 5 años',
+      'Senior — entre 5 y 10 años',
+      'Lead / Manager / Coordinador de equipo',
+      'Director / Gerente / Head of',
+      'C-Level / Fundador / Socio',
+    ],
+  },
+  {
+    id: 'audiencia',
+    question: '¿A quién querés llegar principalmente con tu perfil?',
+    options: [
+      'Reclutadores de empresas medianas y grandes',
+      'Startups y empresas de tecnología',
+      'Clientes corporativos (B2B)',
+      'Clientes individuales o pymes (freelance / consultoría)',
+      'Inversores, socios o co-fundadores',
+      'Comunidad y red de contactos profesionales',
+    ],
+  },
+  {
+    id: 'logros',
+    question: '¿Cuáles son tus 2-3 logros o diferenciadores más importantes?',
+    type: 'text',
+    placeholder: 'Ej: Lideré un equipo de 8 personas y reduje tiempos de entrega un 40%. Generé $200k en nuevos contratos en 6 meses. Lancé un producto con 10.000 usuarios en 3 meses...',
+    hint: 'Cuanto más específico y con métricas, mejor será el análisis de tu perfil.',
+  },
+]
 
 const LOADING_MESSAGES = [
   'Los reclutadores pasan apenas 6 segundos en el primer vistazo de un perfil...',
@@ -35,11 +83,6 @@ const LOADING_MESSAGES = [
   'Los perfiles con habilidades validadas tienen 17× más chances de ser vistos por reclutadores...',
   'Perfiles con logros concretos y métricas generan 40% más solicitudes de conexión...',
 ]
-
-const QUESTION_SYSTEM_PROMPT = `Sos una consultora senior de RRHH y headhunter especializada en posicionamiento profesional en LinkedIn.
-Generás preguntas estratégicas de múltiple choice para optimizar perfiles con precisión. Cada pregunta tiene 4-5 opciones concretas y no genéricas.
-Progresión: situación → seniority → industria/rubro → audiencia objetivo → logros/diferenciadores.
-Respondé en español rioplatense. SOLO JSON válido, sin markdown, sin backticks.`
 
 const ANALYSIS_SYSTEM_PROMPT = `Sos una consultora senior de RRHH y headhunter con 20 años de experiencia en selección ejecutiva y posicionamiento profesional en LinkedIn.
 Tu tarea es analizar el perfil de LinkedIn de un profesional y generar una evaluación estratégica con estándares de headhunter.
@@ -54,36 +97,6 @@ Respondé siempre en español rioplatense (Argentina).
 No usés lenguaje genérico ni de autoayuda.
 Sé directa, específica y orientada a resultados medibles.
 Respondé SOLO en JSON válido, sin markdown, sin backticks.`
-
-async function fetchAllQuestions(firstAnswer) {
-  if (!WORKER_URL) throw new Error('Worker URL no configurada. Verificá el secret VITE_WORKER_URL en GitHub.')
-
-  const prompt = `El usuario respondió a "¿Cuál es tu situación profesional actual?": "${firstAnswer}"
-
-Generá exactamente ${MAX_FOLLOWUP_QUESTIONS} preguntas de seguimiento para optimizar su perfil de LinkedIn. Adaptá cada una a su situación específica.
-
-Respondé en este formato JSON:
-{"questions": [{"question": "...", "options": ["...","...","...","..."]}, ...]}`
-
-  const res = await fetch(WORKER_URL, {
-    method: 'POST',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({
-      system_instruction: { parts: [{ text: QUESTION_SYSTEM_PROMPT }] },
-      contents: [{ parts: [{ text: prompt }] }],
-      generationConfig: { responseMimeType: 'application/json', maxOutputTokens: 1024 },
-    }),
-  })
-  if (!res.ok) {
-    const body = await res.json().catch(() => ({}))
-    throw new Error(parseGeminiError(res.status, body))
-  }
-  const data = await res.json()
-  const raw = data.candidates?.[0]?.content?.parts?.[0]?.text || '{}'
-  const parsed = JSON.parse(raw)
-  return Array.isArray(parsed.questions) ? parsed.questions : []
-}
-
 
 // ── UI components ──────────────────────────────────────────────
 
@@ -197,13 +210,11 @@ function BeforeAfter({ label, before, after }) {
 export default function App() {
   const [step, setStep] = useState(STEPS.WELCOME)
 
-  // Dynamic Q&A
+  // Cuestionario estático
   const [qaHistory, setQaHistory] = useState([])
-  const [currentQ, setCurrentQ] = useState(INITIAL_QUESTION)
-  const [questionQueue, setQuestionQueue] = useState([])
+  const [currentQ, setCurrentQ] = useState(STATIC_QUESTIONS[0])
   const [selectedOption, setSelectedOption] = useState(null)
-  const [qLoading, setQLoading] = useState(false)
-  const [qError, setQError] = useState('')
+  const [textAnswer, setTextAnswer] = useState('')
 
   // Profile input
   const [profileText, setProfileText] = useState('')
@@ -228,11 +239,9 @@ export default function App() {
   const reset = () => {
     setStep(STEPS.WELCOME)
     setQaHistory([])
-    setCurrentQ(INITIAL_QUESTION)
+    setCurrentQ(STATIC_QUESTIONS[0])
     setSelectedOption(null)
-    setQLoading(false)
-    setQError('')
-    setQuestionQueue([])
+    setTextAnswer('')
     setProfileText('')
     setPdfFileName('')
     setPdfLoading(false)
@@ -244,71 +253,31 @@ export default function App() {
     setLoadingMsgIdx(0)
   }
 
-  // ── Answer a question ──
-  const handleAnswer = async (answer) => {
-    if (qLoading) return
-    setSelectedOption(answer)
-
-    const newHistory = [...qaHistory, { question: currentQ.question, options: currentQ.options, answer }]
+  // ── Avanzar al siguiente paso del cuestionario ──
+  const handleAnswer = (answer) => {
+    const newHistory = [...qaHistory, { question: currentQ.question, answer }]
     setQaHistory(newHistory)
-    setQError('')
-
-    // Si hay preguntas pre-generadas en la cola, usarlas sin llamar a la API
-    if (questionQueue.length > 0) {
-      const [next, ...rest] = questionQueue
-      setCurrentQ(next)
-      setQuestionQueue(rest)
-      setSelectedOption(null)
-      return
+    setSelectedOption(null)
+    setTextAnswer('')
+    const nextIndex = newHistory.length
+    if (nextIndex < STATIC_QUESTIONS.length) {
+      setCurrentQ(STATIC_QUESTIONS[nextIndex])
+    } else {
+      setStep(STEPS.PROFILE_INPUT)
     }
-
-    // Después de la primera respuesta: generar todas las preguntas restantes en una sola llamada
-    if (newHistory.length === 1) {
-      setQLoading(true)
-      try {
-        const questions = await fetchAllQuestions(answer)
-        if (questions.length > 0) {
-          const [next, ...rest] = questions
-          setCurrentQ(next)
-          setQuestionQueue(rest)
-        } else {
-          setStep(STEPS.PROFILE_INPUT)
-        }
-        setSelectedOption(null)
-      } catch (err) {
-        setQError(err.message || 'No se pudo cargar las preguntas. Intentá de nuevo.')
-        setQaHistory(prev => prev.slice(0, -1))
-        setSelectedOption(null)
-      } finally {
-        setQLoading(false)
-      }
-      return
-    }
-
-    // Sin más preguntas → avanzar
-    setStep(STEPS.PROFILE_INPUT)
   }
 
-  // ── Go back one question ──
+  // ── Volver a la pregunta anterior ──
   const handleBack = () => {
     if (qaHistory.length === 0) {
       setStep(STEPS.WELCOME)
       return
     }
-    const prev = qaHistory[qaHistory.length - 1]
     const newHistory = qaHistory.slice(0, -1)
-
-    if (newHistory.length === 0) {
-      // Volviendo a la pregunta inicial — descartar preguntas generadas
-      setQuestionQueue([])
-      setCurrentQ(INITIAL_QUESTION)
-    } else {
-      setQuestionQueue(q => [currentQ, ...q])
-      setCurrentQ({ question: prev.question, options: prev.options })
-    }
     setQaHistory(newHistory)
+    setCurrentQ(STATIC_QUESTIONS[newHistory.length])
     setSelectedOption(null)
-    setQError('')
+    setTextAnswer('')
   }
 
   // ── Upload and extract PDF ──
@@ -380,10 +349,10 @@ export default function App() {
     setAnalysisError('')
 
     const contextText = qaHistory
-      .map((h, i) => `${i + 1}. ${h.question}\n   → ${h.answer}`)
-      .join('\n\n')
+      .map(h => `- ${STATIC_QUESTIONS.find(q => q.question === h.question)?.id ?? 'dato'}: ${h.answer}`)
+      .join('\n')
 
-    const userPrompt = `Contexto del usuario (respuestas del cuestionario):
+    const userPrompt = `Perfil del usuario:
 ${contextText}
 
 Perfil de LinkedIn:
@@ -439,7 +408,7 @@ Generá un análisis en este formato JSON exacto:
   }
 
   const qNum = qaHistory.length + 1
-  const qProgress = Math.min(90, (qaHistory.length / (1 + MAX_FOLLOWUP_QUESTIONS)) * 100)
+  const qProgress = Math.round((qaHistory.length / STATIC_QUESTIONS.length) * 100)
 
   // ── Render ─────────────────────────────────────────────────
 
@@ -495,72 +464,73 @@ Generá un análisis en este formato JSON exacto:
             {/* Progress bar */}
             <div className="w-full mb-2">
               <div className="flex justify-between text-xs text-slate-400 mb-2">
-                <span>Pregunta {qNum}</span>
-                <span className="text-slate-500 hidden sm:inline">La IA adapta las preguntas a tus respuestas</span>
-                <span className="text-slate-500 sm:hidden">Adaptada por IA</span>
+                <span>Pregunta {qNum} de {STATIC_QUESTIONS.length}</span>
+                <span className="text-slate-500">{Math.round(qProgress)}% completado</span>
               </div>
               <div className="w-full h-1.5 bg-slate-700 rounded-full overflow-hidden">
-                <div className="h-full rounded-full transition-all duration-700 ease-out"
-                  style={{ width: `${qLoading ? qProgress + 6 : qProgress}%`, backgroundColor: '#0077B5' }} />
+                <div className="h-full rounded-full transition-all duration-500 ease-out"
+                  style={{ width: `${qProgress}%`, backgroundColor: '#0077B5' }} />
               </div>
             </div>
 
             {/* Question */}
-            <div className="min-h-[4rem]">
-              {qLoading && !currentQ ? (
-                <div className="flex items-center gap-3 text-slate-400">
-                  <div className="w-5 h-5 rounded-full border-2 animate-spin shrink-0"
-                    style={{ borderColor: '#334155', borderTopColor: '#0077B5' }} />
-                  <span className="text-sm">Generando siguiente pregunta...</span>
-                </div>
-              ) : (
-                <h2 className="text-2xl sm:text-3xl font-bold text-white leading-snug">
-                  {currentQ?.question}
-                </h2>
+            <div>
+              <h2 className="text-2xl sm:text-3xl font-bold text-white leading-snug">
+                {currentQ.question}
+              </h2>
+              {currentQ.type === 'text' && (
+                <p className="text-slate-500 text-sm mt-2">{currentQ.hint}</p>
               )}
             </div>
 
-            {/* Options */}
-            {currentQ && (
+            {/* Multiple choice options */}
+            {currentQ.type !== 'text' && (
               <div className="space-y-3">
                 {currentQ.options.map(opt => (
                   <OptionButton
                     key={opt}
                     label={opt}
                     selected={selectedOption === opt}
-                    disabled={qLoading}
-                    onClick={() => handleAnswer(opt)}
+                    disabled={false}
+                    onClick={() => { setSelectedOption(opt); handleAnswer(opt) }}
                   />
                 ))}
               </div>
             )}
 
-            {/* Loading overlay after selection */}
-            {qLoading && selectedOption && (
-              <div className="flex items-center gap-3 py-2">
-                <div className="flex gap-1">
-                  {[0, 1, 2].map(i => (
-                    <div key={i} className="w-1.5 h-1.5 rounded-full animate-bounce"
-                      style={{ backgroundColor: '#0077B5', animationDelay: `${i * 0.15}s` }} />
-                  ))}
-                </div>
-                <span className="text-slate-400 text-sm">Analizando tu respuesta...</span>
-              </div>
-            )}
-
-            {/* Error */}
-            {qError && (
-              <div className="rounded-xl p-4 text-sm flex items-center justify-between gap-4"
-                style={{ backgroundColor: 'rgba(127,29,29,0.3)', border: '1px solid #b91c1c', color: '#fca5a5' }}>
-                <span>⚠️ {qError}</span>
-                <button onClick={() => setQError('')} className="text-xs underline shrink-0">Cerrar</button>
+            {/* Text input (para logros) */}
+            {currentQ.type === 'text' && (
+              <div className="space-y-3">
+                <textarea
+                  value={textAnswer}
+                  onChange={e => setTextAnswer(e.target.value)}
+                  placeholder={currentQ.placeholder}
+                  rows={5}
+                  className="w-full rounded-xl px-4 py-3 text-sm text-white resize-none outline-none transition-all duration-200"
+                  style={{
+                    backgroundColor: 'rgba(30,41,59,0.7)',
+                    border: textAnswer.trim().length > 10 ? '1px solid rgba(0,119,181,0.5)' : '1px solid #475569',
+                    color: '#e2e8f0',
+                  }}
+                />
+                <button
+                  onClick={() => { if (textAnswer.trim().length > 5) handleAnswer(textAnswer.trim()) }}
+                  disabled={textAnswer.trim().length <= 5}
+                  className="w-full font-semibold py-3.5 rounded-xl transition-all duration-200 text-white"
+                  style={{
+                    backgroundColor: textAnswer.trim().length > 5 ? '#0077B5' : '#334155',
+                    opacity: textAnswer.trim().length > 5 ? 1 : 0.5,
+                    cursor: textAnswer.trim().length > 5 ? 'pointer' : 'not-allowed',
+                  }}
+                >
+                  Continuar →
+                </button>
               </div>
             )}
 
             {/* Back button */}
             <button
               onClick={handleBack}
-              disabled={qLoading}
               className="text-slate-500 text-sm hover:text-slate-300 transition-colors"
             >
               ← {qaHistory.length === 0 ? 'Volver al inicio' : 'Pregunta anterior'}
@@ -652,9 +622,9 @@ Generá un análisis en este formato JSON exacto:
                 {qaHistory.map((h, i) => (
                   <div key={i} className="py-2 border-b last:border-0" style={{ borderColor: 'rgba(51,65,85,0.5)' }}>
                     <p className="text-slate-500 text-xs leading-snug">
-                      {i + 1}. {h.question.replace(/^¿/, '').replace(/\?$/, '')}
+                      {STATIC_QUESTIONS[i]?.id ?? `Pregunta ${i + 1}`}
                     </p>
-                    <p className="text-white text-xs font-medium mt-0.5 pl-3">→ {h.answer}</p>
+                    <p className="text-white text-xs font-medium mt-0.5 pl-3 leading-relaxed">→ {h.answer}</p>
                   </div>
                 ))}
               </div>
