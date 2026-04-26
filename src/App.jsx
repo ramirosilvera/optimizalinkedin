@@ -1,7 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import './index.css'
 
-const GEMINI_MODEL = 'gemini-2.5-flash-lite'
 const WORKER_URL = import.meta.env.VITE_WORKER_URL
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL || ''
 const SUPABASE_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY || ''
@@ -17,6 +16,14 @@ const STEPS = {
   WELCOME: 0, QUESTIONS: 1, PROFILE_INPUT: 2, LOADING: 3, RESULTS: 4,
   INTERVIEW_INTRO: 5, INTERVIEW: 6, INTERVIEW_FEEDBACK: 7,
 }
+
+// ── Shared style tokens ─────────────────────────────────────────
+const LI_GRADIENT = LI_GRADIENT
+const CARD_STYLE = CARD_STYLE
+const INPUT_STYLE = INPUT_STYLE
+const INPUT_ALT_STYLE = INPUT_ALT_STYLE
+const BTN_BACK_STYLE = BTN_BACK_STYLE
+const BTN_GHOST_STYLE = BTN_GHOST_STYLE
 
 const RAMIRO_LINKEDIN_URL = 'https://www.linkedin.com/in/ramiro-silvera-b0819459'
 const MAX_PDF_SIZE = 15 * 1024 * 1024
@@ -242,7 +249,7 @@ function OptionButton({ label, selected, onClick }) {
       <span>{label}</span>
       {selected && (
         <span className="shrink-0 w-5 h-5 rounded-full flex items-center justify-center text-xs font-bold"
-          style={{ background: 'linear-gradient(135deg,#0077B5,#0ea5e9)', color: '#fff' }}>✓</span>
+          style={{ background: LI_GRADIENT, color: '#fff' }}>✓</span>
       )}
     </button>
   )
@@ -320,7 +327,7 @@ function BeforeAfter({ label, before, after }) {
 // ── Comments section ──────────────────────────────────────────
 
 const AVATAR_GRADS = [
-  'linear-gradient(135deg,#0077B5,#0ea5e9)',
+  LI_GRADIENT,
   'linear-gradient(135deg,#6366f1,#8b5cf6)',
   'linear-gradient(135deg,#0d9488,#14b8a6)',
   'linear-gradient(135deg,#f59e0b,#ea580c)',
@@ -338,14 +345,16 @@ function CommentsSection() {
 
   useEffect(() => {
     if (!SUPABASE_URL) { setLoading(false); return }
+    const controller = new AbortController()
     fetch(
       `${SUPABASE_URL}/rest/v1/comments?status=eq.approved&order=created_at.desc&limit=6`,
-      { headers: { apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}` } }
+      { headers: { apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}` }, signal: controller.signal }
     )
       .then(r => r.ok ? r.json() : Promise.reject())
       .then(data => setComments(Array.isArray(data) ? data : []))
-      .catch(() => setFetchError(true))
+      .catch(err => { if (err.name !== 'AbortError') setFetchError(true) })
       .finally(() => setLoading(false))
+    return () => controller.abort()
   }, [])
 
   const initials = (name) => {
@@ -484,12 +493,12 @@ function CommentsSection() {
             <button type="button"
               onClick={() => { setShowForm(false); setFormError('') }}
               className="flex-1 py-2.5 rounded-xl text-sm font-medium"
-              style={{ border: '1px solid rgba(0,119,181,0.15)', color: '#3d5a73', background: '#f0f4f8' }}>
+              style={BTN_BACK_STYLE}>
               Cancelar
             </button>
             <button type="submit" disabled={submitting}
               className={`flex-[2] py-2.5 rounded-xl text-sm font-semibold text-white ${!submitting ? 'btn-glow' : ''}`}
-              style={{ background: submitting ? 'rgba(0,119,181,0.15)' : 'linear-gradient(135deg,#0077B5,#0ea5e9)', color: submitting ? '#64748b' : '#fff' }}>
+              style={{ background: submitting ? 'rgba(0,119,181,0.15)' : LI_GRADIENT, color: submitting ? '#64748b' : '#fff' }}>
               {submitting ? 'Enviando...' : 'Enviar comentario'}
             </button>
           </div>
@@ -638,11 +647,18 @@ export default function App() {
       setStep(STEPS.WELCOME)
       return
     }
+    const prev = qaHistory[qaHistory.length - 1]
     const newHistory = qaHistory.slice(0, -1)
     setQaHistory(newHistory)
-    setCurrentQ(STATIC_QUESTIONS[newHistory.length])
-    setSelectedOption(null)
-    setTextAnswer('')
+    const prevQ = STATIC_QUESTIONS[newHistory.length]
+    setCurrentQ(prevQ)
+    if (prevQ?.type === 'text') {
+      setTextAnswer(prev.answer)
+      setSelectedOption(null)
+    } else {
+      setSelectedOption(prev.answer)
+      setTextAnswer('')
+    }
   }
 
   // ── Switch input mode (pdf / form) ──
@@ -1150,7 +1166,7 @@ Generá el feedback en este JSON exacto:
                   <button
                     onClick={() => handleAnswer(textAnswer.trim())}
                     className="btn-glow flex-[2] font-semibold py-3 rounded-2xl text-white text-sm"
-                    style={{ background: 'linear-gradient(135deg,#0077B5,#0ea5e9)' }}
+                    style={{ background: LI_GRADIENT }}
                   >
                     Continuar →
                   </button>
@@ -1197,25 +1213,27 @@ Generá el feedback en este JSON exacto:
                   disabled={!linkedinUrl.trim() || urlLoading}
                   className="shrink-0 px-4 py-2.5 rounded-xl text-sm font-semibold transition-all duration-200 flex items-center gap-2"
                   style={linkedinUrl.trim() && !urlLoading
-                    ? { background: 'linear-gradient(135deg,#0077B5,#0ea5e9)', color: '#fff' }
+                    ? { background: LI_GRADIENT, color: '#fff' }
                     : { background: 'rgba(0,119,181,0.07)', color: '#94a3b8', border: '1px solid rgba(0,119,181,0.12)', cursor: 'not-allowed' }
                   }
                 >
                   {urlLoading ? <><Spinner size={4} /><span>Accediendo...</span></> : 'Intentar →'}
                 </button>
               </div>
-              {urlAttempted && profileText && !pdfFileName && !formConfirmed && (
-                <p className="text-green-600 text-xs font-medium">✅ Perfil accedido correctamente — podés analizar tu perfil.</p>
-              )}
-              {urlAttempted && !profileText && linkedinUrl.trim() && !linkedinUrl.trim().match(/^https?:\/\/(www\.)?linkedin\.com\/in\//) && (
-                <p className="text-red-500 text-xs">La URL debe ser de linkedin.com/in/tu-usuario</p>
-              )}
-              {urlAttempted && !profileText && linkedinUrl.trim().match(/^https?:\/\/(www\.)?linkedin\.com\/in\//) && (
-                <p className="text-amber-600 text-xs">LinkedIn bloqueó el acceso automático — es su política de privacidad. Usá una de las opciones de abajo.</p>
-              )}
-              {urlAttempted && !profileText && !linkedinUrl.trim() && (
-                <p className="text-slate-500 text-xs">Elegí cómo compartir tu perfil:</p>
-              )}
+              <div aria-live="polite" aria-atomic="true" className="text-xs">
+                {urlAttempted && profileText && !pdfFileName && !formConfirmed && (
+                  <p className="text-green-600 font-medium">✅ Perfil accedido correctamente — podés analizar tu perfil.</p>
+                )}
+                {urlAttempted && !profileText && linkedinUrl.trim() && !linkedinUrl.trim().match(/^https?:\/\/(www\.)?linkedin\.com\/in\//) && (
+                  <p role="alert" className="text-red-500">La URL debe ser de linkedin.com/in/tu-usuario</p>
+                )}
+                {urlAttempted && !profileText && linkedinUrl.trim().match(/^https?:\/\/(www\.)?linkedin\.com\/in\//) && (
+                  <p className="text-amber-600">LinkedIn bloqueó el acceso automático — es su política de privacidad. Usá una de las opciones de abajo.</p>
+                )}
+                {urlAttempted && !profileText && !linkedinUrl.trim() && (
+                  <p className="text-slate-500">Elegí cómo compartir tu perfil:</p>
+                )}
+              </div>
               <button
                 onClick={() => { setUrlAttempted(true); setInputMode('pdf') }}
                 className="text-xs text-slate-400 hover:text-slate-600 transition-colors"
@@ -1237,7 +1255,7 @@ Generá el feedback en este JSON exacto:
                       onClick={() => handleInputModeSwitch(tab.id)}
                       className="flex-1 py-3 text-xs font-semibold transition-all duration-200"
                       style={inputMode === tab.id
-                        ? { background: 'linear-gradient(135deg,#0077B5,#0ea5e9)', color: '#fff' }
+                        ? { background: LI_GRADIENT, color: '#fff' }
                         : { color: '#475569', background: 'transparent' }
                       }
                     >
@@ -1255,7 +1273,7 @@ Generá el feedback en este JSON exacto:
                       <p className="text-slate-600 text-xs leading-relaxed">Es la forma más completa de compartir tu perfil. LinkedIn lo genera en segundos con toda tu información.</p>
                     </div>
                     <div className="rounded-2xl overflow-hidden"
-                      style={{ background: 'white', border: '1px solid rgba(0,119,181,0.12)', boxShadow: '0 2px 12px rgba(0,0,0,0.06)' }}>
+                      style={CARD_STYLE}>
                       <div className="flex border-b" style={{ borderColor: 'rgba(0,119,181,0.12)' }}>
                         {[
                           { id: 'desktop', label: '🖥️  Computadora' },
@@ -1264,7 +1282,7 @@ Generá el feedback en este JSON exacto:
                           <button key={tab.id} onClick={() => setInstrTab(tab.id)}
                             className="flex-1 py-3 text-xs font-semibold transition-all duration-200"
                             style={instrTab === tab.id
-                              ? { background: 'linear-gradient(135deg,#0077B5,#0ea5e9)', color: '#fff' }
+                              ? { background: LI_GRADIENT, color: '#fff' }
                               : { color: '#475569', background: 'transparent' }
                             }>{tab.label}</button>
                         ))}
@@ -1328,7 +1346,7 @@ Generá el feedback en este JSON exacto:
                       </label>
                     </div>
                     {pdfError && (
-                      <div className="rounded-xl p-4 text-sm flex items-start gap-3"
+                      <div role="alert" className="rounded-xl p-4 text-sm flex items-start gap-3"
                         style={{ backgroundColor: 'rgba(254,226,226,0.8)', border: '1px solid #fca5a5', color: '#b91c1c' }}>
                         <span className="shrink-0 mt-0.5">⚠️</span><span>{pdfError}</span>
                       </div>
@@ -1380,7 +1398,7 @@ Generá el feedback en este JSON exacto:
                         placeholder="Ej: Desarrollador Frontend Senior | React & TypeScript | 10 años"
                         maxLength={220}
                         className="w-full rounded-xl px-4 py-3 text-sm outline-none"
-                        style={{ background: 'white', border: '1px solid rgba(0,119,181,0.20)', color: '#0d2137' }} />
+                        style={INPUT_STYLE} />
                       <p className="text-slate-400 text-xs mt-1">El texto que aparece debajo de tu nombre en LinkedIn</p>
                     </div>
 
@@ -1395,7 +1413,7 @@ Generá el feedback en este JSON exacto:
                         placeholder={'Pegá el texto de tu sección "Acerca de" en LinkedIn...'}
                         rows={4} maxLength={2600}
                         className="w-full rounded-xl px-4 py-3 text-sm outline-none resize-none"
-                        style={{ background: 'white', border: '1px solid rgba(0,119,181,0.20)', color: '#0d2137' }} />
+                        style={INPUT_STYLE} />
                     </div>
 
                     {/* Experiencias */}
@@ -1405,7 +1423,7 @@ Generá el feedback en este JSON exacto:
                         <button
                           onClick={() => { setFormExperiencias(p => [...p, { cargo: '', empresa: '', periodo: '', descripcion: '' }]); setFormConfirmed(false); setProfileText('') }}
                           className="text-xs px-3 py-1 rounded-lg transition-all duration-200"
-                          style={{ color: '#0077B5', background: 'rgba(0,119,181,0.08)', border: '1px solid rgba(0,119,181,0.2)' }}>
+                          style={BTN_GHOST_STYLE}>
                           + Agregar
                         </button>
                       </div>
@@ -1424,24 +1442,24 @@ Generá el feedback en este JSON exacto:
                               onChange={e => { setFormExperiencias(p => p.map((x, j) => j === i ? { ...x, cargo: e.target.value } : x)); setFormConfirmed(false); setProfileText('') }}
                               placeholder="Cargo" maxLength={120}
                               className="w-full rounded-xl px-3 py-2.5 text-sm outline-none"
-                              style={{ background: '#f8fafc', border: '1px solid rgba(0,119,181,0.15)', color: '#0d2137' }} />
+                              style={INPUT_ALT_STYLE} />
                             <input value={exp.empresa}
                               onChange={e => { setFormExperiencias(p => p.map((x, j) => j === i ? { ...x, empresa: e.target.value } : x)); setFormConfirmed(false); setProfileText('') }}
                               placeholder="Empresa" maxLength={120}
                               className="w-full rounded-xl px-3 py-2.5 text-sm outline-none"
-                              style={{ background: '#f8fafc', border: '1px solid rgba(0,119,181,0.15)', color: '#0d2137' }} />
+                              style={INPUT_ALT_STYLE} />
                           </div>
                           <input value={exp.periodo}
                             onChange={e => { setFormExperiencias(p => p.map((x, j) => j === i ? { ...x, periodo: e.target.value } : x)); setFormConfirmed(false); setProfileText('') }}
                             placeholder="Período (Ej: Mar 2021 – Presente)" maxLength={60}
                             className="w-full rounded-xl px-3 py-2.5 text-sm outline-none"
-                            style={{ background: '#f8fafc', border: '1px solid rgba(0,119,181,0.15)', color: '#0d2137' }} />
+                            style={INPUT_ALT_STYLE} />
                           <textarea value={exp.descripcion}
                             onChange={e => { setFormExperiencias(p => p.map((x, j) => j === i ? { ...x, descripcion: e.target.value } : x)); setFormConfirmed(false); setProfileText('') }}
                             placeholder="Descripción de responsabilidades y logros (opcional)"
                             rows={2} maxLength={500}
                             className="w-full rounded-xl px-3 py-2.5 text-sm outline-none resize-none"
-                            style={{ background: '#f8fafc', border: '1px solid rgba(0,119,181,0.15)', color: '#0d2137' }} />
+                            style={INPUT_ALT_STYLE} />
                         </div>
                       ))}
                     </div>
@@ -1453,7 +1471,7 @@ Generá el feedback en este JSON exacto:
                         <button
                           onClick={() => { setFormEducacion(p => [...p, { institucion: '', titulo: '', periodo: '' }]); setFormConfirmed(false); setProfileText('') }}
                           className="text-xs px-3 py-1 rounded-lg transition-all duration-200"
-                          style={{ color: '#0077B5', background: 'rgba(0,119,181,0.08)', border: '1px solid rgba(0,119,181,0.2)' }}>
+                          style={BTN_GHOST_STYLE}>
                           + Agregar
                         </button>
                       </div>
@@ -1472,18 +1490,18 @@ Generá el feedback en este JSON exacto:
                               onChange={e => { setFormEducacion(p => p.map((x, j) => j === i ? { ...x, institucion: e.target.value } : x)); setFormConfirmed(false); setProfileText('') }}
                               placeholder="Institución" maxLength={120}
                               className="w-full rounded-xl px-3 py-2.5 text-sm outline-none"
-                              style={{ background: '#f8fafc', border: '1px solid rgba(0,119,181,0.15)', color: '#0d2137' }} />
+                              style={INPUT_ALT_STYLE} />
                             <input value={edu.titulo}
                               onChange={e => { setFormEducacion(p => p.map((x, j) => j === i ? { ...x, titulo: e.target.value } : x)); setFormConfirmed(false); setProfileText('') }}
                               placeholder="Título / Carrera / Curso" maxLength={120}
                               className="w-full rounded-xl px-3 py-2.5 text-sm outline-none"
-                              style={{ background: '#f8fafc', border: '1px solid rgba(0,119,181,0.15)', color: '#0d2137' }} />
+                              style={INPUT_ALT_STYLE} />
                           </div>
                           <input value={edu.periodo}
                             onChange={e => { setFormEducacion(p => p.map((x, j) => j === i ? { ...x, periodo: e.target.value } : x)); setFormConfirmed(false); setProfileText('') }}
                             placeholder="Período (Ej: 2015 – 2019)" maxLength={60}
                             className="w-full rounded-xl px-3 py-2.5 text-sm outline-none"
-                            style={{ background: '#f8fafc', border: '1px solid rgba(0,119,181,0.15)', color: '#0d2137' }} />
+                            style={INPUT_ALT_STYLE} />
                         </div>
                       ))}
                     </div>
@@ -1499,7 +1517,7 @@ Generá el feedback en este JSON exacto:
                         placeholder="Ej: React, Gestión de equipos, Análisis de datos, Inglés avanzado"
                         maxLength={400}
                         className="w-full rounded-xl px-4 py-3 text-sm outline-none"
-                        style={{ background: 'white', border: '1px solid rgba(0,119,181,0.20)', color: '#0d2137' }} />
+                        style={INPUT_STYLE} />
                     </div>
 
                     {/* Botón confirmar */}
@@ -1510,7 +1528,7 @@ Generá el feedback en este JSON exacto:
                       style={formConfirmed
                         ? { background: 'rgba(34,197,94,0.08)', border: '1px solid rgba(34,197,94,0.35)', color: '#16a34a', cursor: 'default' }
                         : formTitular.trim()
-                          ? { background: 'linear-gradient(135deg,#0077B5,#0ea5e9)', color: '#fff', cursor: 'pointer' }
+                          ? { background: LI_GRADIENT, color: '#fff', cursor: 'pointer' }
                           : { background: 'rgba(0,119,181,0.06)', border: '1px solid rgba(0,119,181,0.12)', color: '#94a3b8', cursor: 'not-allowed' }
                       }
                     >
@@ -1539,7 +1557,7 @@ Generá el feedback en este JSON exacto:
 
             {/* Analysis error */}
             {analysisError && (
-              <div className="rounded-xl p-4 text-sm space-y-2"
+              <div role="alert" className="rounded-xl p-4 text-sm space-y-2"
                 style={{ backgroundColor: 'rgba(254,226,226,0.8)', border: '1px solid #fca5a5', color: '#b91c1c' }}>
                 <p>⚠️ {analysisError}</p>
                 <button
@@ -1563,7 +1581,7 @@ Generá el feedback en este JSON exacto:
               <button
                 onClick={() => { handleBack(); setStep(STEPS.QUESTIONS) }}
                 className="flex-1 font-semibold py-3.5 rounded-2xl transition-all duration-200"
-                style={{ border: '1px solid rgba(0,119,181,0.15)', color: '#3d5a73', background: '#f0f4f8' }}
+                style={BTN_BACK_STYLE}
               >
                 ← Atrás
               </button>
@@ -1572,7 +1590,7 @@ Generá el feedback en este JSON exacto:
                 onClick={callGemini}
                 className={`flex-[2] font-semibold py-3.5 rounded-2xl transition-all duration-200 text-white ${profileText && !analyzing ? 'btn-glow' : ''}`}
                 style={{
-                  background: profileText && !analyzing ? 'linear-gradient(135deg,#0077B5,#0ea5e9)' : 'rgba(0,119,181,0.08)',
+                  background: profileText && !analyzing ? LI_GRADIENT : 'rgba(0,119,181,0.08)',
                   opacity: profileText && !analyzing ? 1 : 0.5,
                   cursor: profileText && !analyzing ? 'pointer' : 'not-allowed',
                   border: profileText && !analyzing ? 'none' : '1px solid rgba(0,119,181,0.12)',
@@ -1719,7 +1737,7 @@ Generá el feedback en este JSON exacto:
                   <div key={i} className="rounded-xl p-4 flex gap-4 items-start"
                     style={{ background: '#f8fafc', border: '1px solid rgba(0,119,181,0.12)' }}>
                     <span className="w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold shrink-0 mt-0.5"
-                      style={{ background: 'linear-gradient(135deg,#0077B5,#0ea5e9)', color: '#fff' }}>
+                      style={{ background: LI_GRADIENT, color: '#fff' }}>
                       {i + 1}
                     </span>
                     <div>
@@ -1747,7 +1765,7 @@ Generá el feedback en este JSON exacto:
               <button
                 onClick={() => setShowLeadModal(true)}
                 className="btn-glow inline-flex items-center gap-2 px-5 py-2.5 rounded-xl text-white text-sm font-semibold"
-                style={{ background: 'linear-gradient(135deg,#0077B5,#0ea5e9)' }}
+                style={{ background: LI_GRADIENT }}
               >
                 <LinkedInIcon className="w-4 h-4" /> Hablar con Ramiro →
               </button>
@@ -1783,7 +1801,7 @@ Generá el feedback en este JSON exacto:
             <button
               onClick={reset}
               className="w-full font-semibold py-4 rounded-2xl transition-all duration-200 text-sm"
-              style={{ border: '1px solid rgba(0,119,181,0.15)', color: '#3d5a73', background: '#f0f4f8' }}
+              style={BTN_BACK_STYLE}
             >
               ↺ Analizar otro perfil
             </button>
@@ -1836,7 +1854,7 @@ Generá el feedback en este JSON exacto:
               <button
                 onClick={() => setStep(STEPS.RESULTS)}
                 className="w-full font-medium py-3 rounded-2xl text-sm transition-all"
-                style={{ border: '1px solid rgba(0,119,181,0.15)', color: '#3d5a73', background: '#f0f4f8' }}
+                style={BTN_BACK_STYLE}
               >
                 ← Volver a mis resultados
               </button>
@@ -2033,7 +2051,7 @@ Generá el feedback en este JSON exacto:
                 <div className="rounded-2xl p-6 text-center"
                   style={{ background: 'rgba(0,119,181,0.08)', border: '1px solid rgba(0,119,181,0.3)' }}>
                   <div className="w-12 h-12 rounded-full mx-auto mb-3 flex items-center justify-center text-white font-bold text-sm"
-                    style={{ background: 'linear-gradient(135deg,#0077B5,#0ea5e9)' }}>
+                    style={{ background: LI_GRADIENT }}>
                     RS
                   </div>
                   <p className="text-slate-900 font-semibold">Ramiro Silvera</p>
@@ -2051,7 +2069,7 @@ Generá el feedback en este JSON exacto:
                     style={{
                       background: leadSent
                         ? 'rgba(34,197,94,0.15)'
-                        : 'linear-gradient(135deg,#0077B5,#0ea5e9)',
+                        : LI_GRADIENT,
                       border: leadSent ? '1px solid rgba(34,197,94,0.4)' : 'none',
                       color: leadSent ? '#4ade80' : '#fff',
                       cursor: leadSaving || leadSent ? 'default' : 'pointer',
@@ -2090,7 +2108,7 @@ Generá el feedback en este JSON exacto:
                 <button
                   onClick={() => setStep(STEPS.RESULTS)}
                   className="w-full font-semibold py-4 rounded-2xl text-sm"
-                  style={{ border: '1px solid rgba(0,119,181,0.15)', color: '#3d5a73', background: '#f0f4f8' }}
+                  style={BTN_BACK_STYLE}
                 >
                   ← Volver a mi análisis
                 </button>
