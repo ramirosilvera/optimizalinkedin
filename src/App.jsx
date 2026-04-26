@@ -526,6 +526,9 @@ export default function App() {
   // Contacto con Ramiro
   const [leadSaving, setLeadSaving] = useState(false)
   const [leadSent, setLeadSent] = useState(false)
+  const [showLeadModal, setShowLeadModal] = useState(false)
+  const [leadNombre, setLeadNombre] = useState('')
+  const [leadApellido, setLeadApellido] = useState('')
 
   // Loading message rotation
   const [loadingMsgIdx, setLoadingMsgIdx] = useState(0)
@@ -735,9 +738,10 @@ Generá un análisis en este formato JSON exacto:
   }
 
   // ── Guardar lead y abrir LinkedIn de Ramiro ──
-  const saveAndConnectRamiro = async () => {
+  const saveAndConnectRamiro = async (nombre, apellido) => {
     if (leadSaving || leadSent) return
     setLeadSaving(true)
+    setShowLeadModal(false)
     try {
       if (SUPABASE_URL) {
         await fetch(`${SUPABASE_URL}/rest/v1/leads`, {
@@ -749,6 +753,8 @@ Generá un análisis en este formato JSON exacto:
             Prefer: 'return=minimal',
           },
           body: JSON.stringify({
+            nombre: nombre.trim(),
+            apellido: apellido.trim(),
             qa_history: qaHistory,
             resultado_analisis: result || {},
             respuestas_entrevista: interviewAnswers,
@@ -1599,7 +1605,7 @@ Generá el feedback en este JSON exacto:
                     Al conectar, tu análisis de perfil y tus respuestas de entrevista serán enviados al administrador de la app para que pueda orientarte desde el primer mensaje.
                   </p>
                   <button
-                    onClick={saveAndConnectRamiro}
+                    onClick={() => !leadSaving && !leadSent && setShowLeadModal(true)}
                     disabled={leadSaving || leadSent}
                     className={`inline-flex items-center gap-2 mt-4 px-6 py-3 rounded-2xl text-white font-semibold text-sm ${!leadSent ? 'btn-glow' : ''}`}
                     style={{
@@ -1654,6 +1660,73 @@ Generá el feedback en este JSON exacto:
         )}
 
       </div>
+
+      {/* ── Modal nombre para lead ── */}
+      {showLeadModal && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center px-4"
+          style={{ background: 'rgba(0,0,0,0.35)', backdropFilter: 'blur(4px)' }}
+          onClick={e => { if (e.target === e.currentTarget) setShowLeadModal(false) }}
+        >
+          <div className="w-full max-w-sm rounded-2xl p-6 space-y-5 step-transition"
+            style={{ background: 'white', boxShadow: '0 20px 60px rgba(0,0,0,0.18)', border: '1px solid rgba(0,119,181,0.15)' }}>
+            <div>
+              <h3 className="text-lg font-bold text-slate-900">Antes de conectar</h3>
+              <p className="text-slate-500 text-sm mt-1 leading-relaxed">
+                Ingresá tu nombre para que Ramiro sepa quién le escribe y pueda revisar tu análisis de antemano.
+              </p>
+            </div>
+            <div className="space-y-3">
+              <input
+                type="text"
+                placeholder="Nombre"
+                value={leadNombre}
+                onChange={e => setLeadNombre(e.target.value)}
+                maxLength={60}
+                className="w-full rounded-xl px-4 py-3 text-sm outline-none transition-all duration-200"
+                style={{
+                  background: '#f8fafc',
+                  border: leadNombre.trim() ? '1px solid rgba(0,119,181,0.5)' : '1px solid rgba(0,119,181,0.15)',
+                  color: '#0d2137',
+                }}
+              />
+              <input
+                type="text"
+                placeholder="Apellido"
+                value={leadApellido}
+                onChange={e => setLeadApellido(e.target.value)}
+                maxLength={60}
+                className="w-full rounded-xl px-4 py-3 text-sm outline-none transition-all duration-200"
+                style={{
+                  background: '#f8fafc',
+                  border: leadApellido.trim() ? '1px solid rgba(0,119,181,0.5)' : '1px solid rgba(0,119,181,0.15)',
+                  color: '#0d2137',
+                }}
+              />
+            </div>
+            <p className="text-slate-400 text-xs leading-relaxed">
+              Tu nombre, análisis de perfil y respuestas de entrevista serán enviados a Ramiro para que pueda orientarte desde el primer mensaje.
+            </p>
+            <div className="flex gap-3">
+              <button
+                onClick={() => setShowLeadModal(false)}
+                className="flex-1 py-3 rounded-xl text-sm font-medium"
+                style={{ border: '1px solid rgba(0,119,181,0.15)', color: '#3d5a73', background: '#f0f4f8' }}
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={() => saveAndConnectRamiro(leadNombre, leadApellido)}
+                disabled={!leadNombre.trim() || !leadApellido.trim()}
+                className={`flex-[2] py-3 rounded-xl text-sm font-semibold text-white transition-all ${leadNombre.trim() && leadApellido.trim() ? 'btn-glow' : 'opacity-40 cursor-not-allowed'}`}
+                style={{ background: 'linear-gradient(135deg,#0077B5,#0ea5e9)' }}
+              >
+                <LinkedInIcon className="w-4 h-4 inline mr-1.5" /> Enviar y conectar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </main>
   )
 }
