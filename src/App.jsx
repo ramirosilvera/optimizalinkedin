@@ -221,10 +221,11 @@ function Logo() {
 }
 
 function Spinner({ size = 4 }) {
+  const px = size * 4
   return (
     <div
-      className={`w-${size} h-${size} rounded-full border-2 animate-spin shrink-0`}
-      style={{ borderColor: 'rgba(0,119,181,0.25)', borderTopColor: '#0077B5' }}
+      className="rounded-full border-2 animate-spin shrink-0"
+      style={{ width: px, height: px, borderColor: 'rgba(0,119,181,0.25)', borderTopColor: '#0077B5' }}
     />
   )
 }
@@ -250,10 +251,15 @@ function OptionButton({ label, selected, onClick }) {
 
 function CopyButton({ text }) {
   const [copied, setCopied] = useState(false)
+  useEffect(() => {
+    if (!copied) return
+    const t = setTimeout(() => setCopied(false), 2000)
+    return () => clearTimeout(t)
+  }, [copied])
   return (
     <button
-      onClick={() => navigator.clipboard.writeText(text).then(() => { setCopied(true); setTimeout(() => setCopied(false), 2000) })}
-      className={`text-xs px-3 py-1.5 rounded-lg border transition-all duration-200 shrink-0 ${copied ? 'copy-btn-success' : ''}`}
+      onClick={() => navigator.clipboard.writeText(text).then(() => setCopied(true))}
+      className={`text-xs px-3 py-1.5 rounded-lg border transition-all duration-200 shrink-0 whitespace-nowrap ${copied ? 'copy-btn-success' : ''}`}
       style={copied
         ? { borderColor: '#22c55e', color: '#16a34a', background: 'rgba(34,197,94,0.08)' }
         : { borderColor: 'rgba(0,119,181,0.2)', color: '#3d5a73', background: '#f8fafc' }
@@ -523,7 +529,9 @@ export default function App() {
   const [pdfFileName, setPdfFileName] = useState('')
   const [pdfLoading, setPdfLoading] = useState(false)
   const [pdfError, setPdfError] = useState('')
-  const [instrTab, setInstrTab] = useState('desktop')
+  const [instrTab, setInstrTab] = useState(() =>
+    /iPhone|iPad|iPod|Android/i.test(navigator.userAgent) ? 'mobile' : 'desktop'
+  )
   const [isDragging, setIsDragging] = useState(false)
   const [inputMode, setInputMode] = useState('pdf') // 'pdf' | 'form'
   const [linkedinUrl, setLinkedinUrl] = useState('')
@@ -559,6 +567,17 @@ export default function App() {
   const [showLeadModal, setShowLeadModal] = useState(false)
   const [leadNombre, setLeadNombre] = useState('')
   const [leadApellido, setLeadApellido] = useState('')
+
+  // Scroll al tope en cada cambio de paso (crítico en mobile)
+  useEffect(() => { window.scrollTo({ top: 0, behavior: 'instant' }) }, [step])
+
+  // Aviso antes de cerrar pestaña si hay resultados
+  useEffect(() => {
+    if (step < STEPS.RESULTS) return
+    const handler = (e) => { e.preventDefault(); e.returnValue = '' }
+    window.addEventListener('beforeunload', handler)
+    return () => window.removeEventListener('beforeunload', handler)
+  }, [step])
 
   // Revocar object URL de foto al cambiar o desmontar (evita memory leak)
   useEffect(() => {
@@ -656,9 +675,11 @@ export default function App() {
 
   // ── Switch input mode (pdf / form) ──
   const handleInputModeSwitch = (mode) => {
+    if (mode === inputMode) return
     setInputMode(mode)
     setProfileText('')
-    setFormConfirmed(false)
+    // Preserve form data when switching back to form tab; only clear PDF state
+    if (mode === 'pdf') setFormConfirmed(false)
     setPdfFileName('')
     setPdfError('')
   }
@@ -965,6 +986,8 @@ Generá el feedback en este JSON exacto:
   "recomendacion_final": "el consejo más importante para su próxima entrevista real, en 1-2 oraciones concretas"
 }`
 
+    const controller = new AbortController()
+    const timeoutId = setTimeout(() => controller.abort(), 58000)
     try {
       if (!WORKER_URL) throw new Error('Worker URL no configurada.')
       const res = await fetch(WORKER_URL, {
@@ -975,6 +998,7 @@ Generá el feedback en este JSON exacto:
           contents: [{ parts: [{ text: prompt }] }],
           generationConfig: { responseMimeType: 'application/json', maxOutputTokens: 1800 },
         }),
+        signal: controller.signal,
       })
       if (!res.ok) {
         const e = await res.json().catch(() => ({}))
@@ -989,8 +1013,10 @@ Generá el feedback en este JSON exacto:
       catch { const m = raw.match(/\{[\s\S]*\}/); if (m) parsed = JSON.parse(m[0]); else throw new Error('Error al procesar el feedback. Intentá de nuevo.') }
       setInterviewFeedback(parsed)
     } catch (err) {
-      setInterviewError(err.message || 'Error al generar el feedback.')
+      const msg = err.name === 'AbortError' ? 'El análisis tardó demasiado. Intentá de nuevo.' : err.message || 'Error al generar el feedback.'
+      setInterviewError(msg)
     } finally {
+      clearTimeout(timeoutId)
       setInterviewLoading(false)
     }
   }
