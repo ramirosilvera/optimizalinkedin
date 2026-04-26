@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import './index.css'
 
 const GEMINI_MODEL = 'gemini-2.5-flash-lite'
@@ -274,7 +274,7 @@ function ScoreRing({ score }) {
 
 function ResultCard({ title, children, accent = '#0077B5' }) {
   return (
-    <div className="rounded-2xl p-6 relative overflow-hidden card-accent-line"
+    <div className="rounded-2xl p-4 sm:p-6 relative overflow-hidden card-accent-line"
       style={{ background: 'white', border: `1px solid rgba(0,119,181,0.12)`, boxShadow: '0 2px 12px rgba(0,0,0,0.06)' }}>
       <div className="absolute top-0 left-0 right-0 h-px"
         style={{ background: `linear-gradient(90deg, transparent 0%, ${accent}50 50%, transparent 100%)` }} />
@@ -295,9 +295,9 @@ function BeforeAfter({ label, before, after }) {
         style={{ background: 'rgba(0,119,181,0.06)', border: '1px solid rgba(0,119,181,0.22)' }}>
         <div className="flex items-center justify-between mb-2">
           <span className="text-xs uppercase tracking-widest font-semibold" style={{ color: '#0077B5' }}>Propuesto</span>
-          <CopyButton text={after} />
+          <CopyButton text={after || ''} />
         </div>
-        <p className="text-slate-900 text-sm leading-relaxed">{after}</p>
+        <p className="text-slate-900 text-sm leading-relaxed">{after || '—'}</p>
       </div>
     </div>
   )
@@ -514,6 +514,7 @@ export default function App() {
   const [result, setResult] = useState(null)
   const [analysisError, setAnalysisError] = useState('')
   const [analyzing, setAnalyzing] = useState(false)
+  const analysisAbortRef = useRef(null)
 
   // Interview
   const [interviewAnswers, setInterviewAnswers] = useState([])
@@ -547,10 +548,13 @@ export default function App() {
     setInterviewError('')
     setLeadSaving(false)
     setLeadSent(false)
+    setShowLeadModal(false)
+    setLeadNombre('')
+    setLeadApellido('')
   }
 
   const reset = () => {
-    if (!window.confirm('¿Seguro? Se van a borrar los resultados del análisis actual.')) return
+    if (!window.confirm('¿Seguro? Perderás el análisis, la entrevista y el feedback. Volvés al inicio.')) return
     setStep(STEPS.WELCOME)
     setQaHistory([])
     setCurrentQ(STATIC_QUESTIONS[0])
@@ -697,11 +701,15 @@ Generá un análisis en este formato JSON exacto:
   "estrategia_contenido": "sugerencia de 2-3 oraciones sobre qué tipo de contenido publicar para lograr el objetivo declarado"
 }`
 
+    const controller = new AbortController()
+    analysisAbortRef.current = controller
+    const timeoutId = setTimeout(() => controller.abort(), 90000)
     try {
       if (!WORKER_URL) throw new Error('Worker URL no configurada. Verificá el secret VITE_WORKER_URL en GitHub.')
       const res = await fetch(WORKER_URL, {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
+        signal: controller.signal,
         body: JSON.stringify({
           system_instruction: { parts: [{ text: ANALYSIS_SYSTEM_PROMPT }] },
           contents: [{ parts: [{ text: userPrompt }] }],
@@ -730,9 +738,14 @@ Generá un análisis en este formato JSON exacto:
       })
       setStep(STEPS.RESULTS)
     } catch (err) {
-      setAnalysisError(err.message || 'Error al conectar con Gemini.')
+      if (err.name === 'AbortError') {
+        setAnalysisError('El análisis fue cancelado o tardó demasiado (90 s). Revisá tu conexión e intentá de nuevo.')
+      } else {
+        setAnalysisError(err.message || 'Error al conectar con Gemini.')
+      }
       setStep(STEPS.PROFILE_INPUT)
     } finally {
+      clearTimeout(timeoutId)
       setAnalyzing(false)
     }
   }
@@ -856,7 +869,7 @@ Generá el feedback en este JSON exacto:
   }
 
   const handleInterviewBack = () => {
-    if (interviewIdx === 0) { setStep(STEPS.INTERVIEW_INTRO); return }
+    if (interviewIdx === 0) { setInterviewAnswer(''); setStep(STEPS.INTERVIEW_INTRO); return }
     const newIdx = interviewIdx - 1
     setInterviewAnswers(prev => prev.slice(0, newIdx))
     setInterviewIdx(newIdx)
@@ -892,7 +905,7 @@ Generá el feedback en este JSON exacto:
               </p>
             </div>
 
-            <div className="grid grid-cols-3 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
               {[
                 { icon: '🎯', label: 'Headhunter', text: 'Diagnóstico profesional real', accent: '#0ea5e9' },
                 { icon: '🔍', label: 'SEO',         text: 'Aparecer en búsquedas clave',  accent: '#6366f1' },
@@ -915,7 +928,7 @@ Generá el feedback en este JSON exacto:
               >
                 Empezar análisis →
               </button>
-              <p className="text-slate-600 text-xs">Gratis · Sin registro · 5 minutos</p>
+              <p className="text-slate-600 text-xs">Gratis · Sin registro · 10-15 minutos</p>
             </div>
 
             <CommentsSection />
@@ -1172,9 +1185,23 @@ Generá el feedback en este JSON exacto:
 
             {/* Analysis error */}
             {analysisError && (
-              <div className="rounded-xl p-4 text-sm"
+              <div className="rounded-xl p-4 text-sm space-y-2"
                 style={{ backgroundColor: 'rgba(254,226,226,0.8)', border: '1px solid #fca5a5', color: '#b91c1c' }}>
-                ⚠️ {analysisError}
+                <p>⚠️ {analysisError}</p>
+                <button
+                  onClick={callGemini}
+                  disabled={!profileText || analyzing}
+                  className="text-xs font-semibold px-3 py-1.5 rounded-lg transition-all duration-200"
+                  style={{
+                    background: 'rgba(185,28,28,0.1)',
+                    border: '1px solid rgba(185,28,28,0.3)',
+                    color: '#b91c1c',
+                    opacity: profileText && !analyzing ? 1 : 0.5,
+                    cursor: profileText && !analyzing ? 'pointer' : 'not-allowed',
+                  }}
+                >
+                  ↺ Reintentar análisis
+                </button>
               </div>
             )}
 
@@ -1235,6 +1262,13 @@ Generá el feedback en este JSON exacto:
                   style={{ backgroundColor: '#0ea5e9', animationDelay: `${i * 0.15}s` }} />
               ))}
             </div>
+            <button
+              onClick={() => { analysisAbortRef.current?.abort(); setAnalyzing(false); setStep(STEPS.PROFILE_INPUT) }}
+              className="text-slate-500 text-xs hover:text-slate-700 transition-colors py-2 px-4 rounded-xl"
+              style={{ border: '1px solid rgba(0,119,181,0.12)', background: '#f8fafc' }}
+            >
+              Cancelar análisis
+            </button>
           </div>
         )}
 
@@ -1257,7 +1291,7 @@ Generá el feedback en este JSON exacto:
             <ResultCard title="Diagnóstico general">
               <div className="flex flex-col sm:flex-row items-center sm:items-start gap-6">
                 <div className="flex flex-col items-center gap-3">
-                  <ScoreRing score={result.puntaje_general} />
+                  <ScoreRing score={result.puntaje_general ?? 0} />
                   {result.nivel_seo && (
                     <span className="text-xs font-semibold px-3 py-1 rounded-full"
                       style={{
@@ -1269,7 +1303,7 @@ Generá el feedback en este JSON exacto:
                     </span>
                   )}
                 </div>
-                <p className="text-slate-600 text-sm leading-relaxed sm:pt-4">{result.resumen_diagnostico}</p>
+                <p className="text-slate-600 text-sm leading-relaxed sm:pt-4">{result.resumen_diagnostico || 'Sin información disponible.'}</p>
               </div>
             </ResultCard>
 
@@ -1340,7 +1374,7 @@ Generá el feedback en este JSON exacto:
             <div className="rounded-2xl p-6"
               style={{ backgroundColor: 'rgba(0,119,181,0.08)', border: '1px solid rgba(0,119,181,0.3)' }}>
               <p className="text-xs font-semibold uppercase tracking-wide mb-3" style={{ color: '#0077B5' }}>📣 Estrategia de contenido</p>
-              <p className="text-slate-700 text-sm leading-relaxed">{result.estrategia_contenido}</p>
+              <p className="text-slate-700 text-sm leading-relaxed">{result.estrategia_contenido || 'Sin información disponible.'}</p>
             </div>
 
             <button
@@ -1381,7 +1415,7 @@ Generá el feedback en este JSON exacto:
               </p>
             </div>
 
-            <div className="grid grid-cols-3 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
               {[
                 { icon: '❓', label: '5 preguntas', text: 'Pre-armadas por RRHH', accent: '#6366f1' },
                 { icon: '🧠', label: 'Feedback IA', text: 'Análisis de cada respuesta', accent: '#8b5cf6' },
@@ -1682,6 +1716,7 @@ Generá el feedback en este JSON exacto:
                 placeholder="Nombre"
                 value={leadNombre}
                 onChange={e => setLeadNombre(e.target.value)}
+                onKeyDown={e => { if (e.key === 'Enter' && leadNombre.trim() && leadApellido.trim()) saveAndConnectRamiro(leadNombre, leadApellido) }}
                 maxLength={60}
                 className="w-full rounded-xl px-4 py-3 text-sm outline-none transition-all duration-200"
                 style={{
@@ -1695,6 +1730,7 @@ Generá el feedback en este JSON exacto:
                 placeholder="Apellido"
                 value={leadApellido}
                 onChange={e => setLeadApellido(e.target.value)}
+                onKeyDown={e => { if (e.key === 'Enter' && leadNombre.trim() && leadApellido.trim()) saveAndConnectRamiro(leadNombre, leadApellido) }}
                 maxLength={60}
                 className="w-full rounded-xl px-4 py-3 text-sm outline-none transition-all duration-200"
                 style={{
