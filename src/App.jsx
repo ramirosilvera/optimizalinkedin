@@ -345,6 +345,7 @@ function CommentsSection() {
   useEffect(() => {
     if (!SUPABASE_URL) { setLoading(false); return }
     const controller = new AbortController()
+    const timeoutId = setTimeout(() => controller.abort(), 5000)
     fetch(
       `${SUPABASE_URL}/rest/v1/comments?status=eq.approved&order=created_at.desc&limit=6`,
       { headers: { apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}` }, signal: controller.signal }
@@ -352,8 +353,8 @@ function CommentsSection() {
       .then(r => r.ok ? r.json() : Promise.reject())
       .then(data => setComments(Array.isArray(data) ? data : []))
       .catch(err => { if (err.name !== 'AbortError') setFetchError(true) })
-      .finally(() => setLoading(false))
-    return () => controller.abort()
+      .finally(() => { clearTimeout(timeoutId); setLoading(false) })
+    return () => { clearTimeout(timeoutId); controller.abort() }
   }, [])
 
   const initials = (name) => {
@@ -362,10 +363,11 @@ function CommentsSection() {
   }
   const avatarGrad = (name) => AVATAR_GRADS[name.charCodeAt(0) % AVATAR_GRADS.length]
   const isValidLinkedIn = (url) =>
-    /^https?:\/\/(www\.)?linkedin\.com\/in\/[\w%-]+\/?$/.test(url.trim())
+    /^https?:\/\/(www\.)?linkedin\.com\/in\/[\w%-]+/i.test(url.trim())
 
   const handleSubmit = async (e) => {
     e.preventDefault()
+    if (submitting) return
     if (!isValidLinkedIn(form.linkedin_url)) {
       setFormError('La URL debe tener el formato: https://linkedin.com/in/tu-usuario')
       return
@@ -617,7 +619,7 @@ export default function App() {
     setPdfFileName('')
     setPdfLoading(false)
     setPdfError('')
-    setInstrTab('desktop')
+    setInstrTab(/iPhone|iPad|iPod|Android/i.test(navigator.userAgent) ? 'mobile' : 'desktop')
     setIsDragging(false)
     setInputMode('pdf')
     setLinkedinUrl('')
@@ -1982,13 +1984,13 @@ Generá el feedback en este JSON exacto:
                 <textarea
                   value={interviewAnswer}
                   onChange={e => setInterviewAnswer(e.target.value)}
-                  placeholder="Escribí tu respuesta acá..."
+                  placeholder="Escribí tu respuesta acá... (mínimo 20 caracteres)"
                   rows={6}
                   maxLength={800}
                   className="w-full rounded-2xl px-4 py-3 text-sm resize-none outline-none transition-all duration-200"
                   style={{
                     background: '#f8fafc',
-                    border: interviewAnswer.trim() ? '1px solid rgba(99,102,241,0.5)' : '1px solid rgba(0,119,181,0.15)',
+                    border: interviewAnswer.trim().length >= 20 ? '1px solid rgba(99,102,241,0.5)' : '1px solid rgba(0,119,181,0.15)',
                     color: '#0d2137',
                   }}
                 />
@@ -1997,10 +1999,13 @@ Generá el feedback en este JSON exacto:
                   {interviewAnswer.length}/800
                 </span>
               </div>
+              {interviewAnswer.trim().length > 0 && interviewAnswer.trim().length < 20 && (
+                <p className="text-xs text-amber-600">Escribí al menos {20 - interviewAnswer.trim().length} caracteres más para continuar.</p>
+              )}
               <button
-                disabled={!interviewAnswer.trim()}
+                disabled={interviewAnswer.trim().length < 20}
                 onClick={() => handleInterviewNext(interviewAnswer.trim())}
-                className={`btn-glow w-full font-semibold py-4 rounded-2xl text-white text-sm ${!interviewAnswer.trim() ? 'opacity-40 cursor-not-allowed' : ''}`}
+                className={`btn-glow w-full font-semibold py-4 rounded-2xl text-white text-sm ${interviewAnswer.trim().length < 20 ? 'opacity-40 cursor-not-allowed' : ''}`}
                 style={{ background: 'linear-gradient(135deg,#6366f1,#8b5cf6)' }}
               >
                 {interviewIdx < INTERVIEW_QUESTIONS.length - 1 ? 'Siguiente →' : 'Ver mi feedback →'}
