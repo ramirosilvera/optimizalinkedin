@@ -215,7 +215,7 @@ function Logo() {
         style={{
           height: '80px',
           width: '80px',
-          backgroundImage: 'url(/logo.png)',
+          backgroundImage: 'url(/logo.PNG)',
           backgroundSize: 'contain',
           backgroundRepeat: 'no-repeat',
           backgroundPosition: 'center',
