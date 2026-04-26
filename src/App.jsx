@@ -201,7 +201,11 @@ const LinkedInIcon = ({ className }) => (
 function Logo() {
   return (
     <div className="mb-8 sm:mb-10">
-      <img src="/logo.png" alt="OptimizaLinkedin" style={{ height: '72px', width: 'auto' }} />
+      <img
+        src="/logo.png"
+        alt="OptimizaLinkedin"
+        style={{ height: '72px', width: 'auto', mixBlendMode: 'multiply' }}
+      />
     </div>
   )
 }
