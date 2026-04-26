@@ -175,13 +175,60 @@ Respondé siempre en español rioplatense (Argentina).
 No usés lenguaje genérico ni de autoayuda. Sé directa, específica y orientada a la mejora concreta.
 Respondé SOLO en JSON válido, sin markdown, sin backticks.`
 
-const LOADING_MESSAGES = [
+const LOADING_MESSAGES_BY_SITUACION = {
+  'Empleado/a buscando un nuevo trabajo': [
+    'Los reclutadores pasan apenas 6 segundos en el primer vistazo de un perfil...',
+    'El 87% de los reclutadores usa LinkedIn para encontrar candidatos activamente...',
+    'Un titular optimizado puede triplicar tus apariciones en búsquedas de reclutadores...',
+    'Los perfiles con foto reciben 21× más visitas que los que no la tienen...',
+    'El resumen es tu única oportunidad de hablarle directamente al reclutador que te busca...',
+    'Las habilidades validadas por colegas aumentan 17× tu visibilidad ante empresas...',
+    'Perfiles con logros concretos y métricas generan 40% más entrevistas...',
+  ],
+  'Freelancer o consultor/a buscando más clientes': [
+    'El 80% de los clientes B2B revisa LinkedIn antes de contratar a un consultor...',
+    'Un perfil con propuesta de valor específica duplica las consultas entrantes...',
+    'Tu titular es tu pitch de ventas — tiene 3 segundos para convencer a un cliente potencial...',
+    'Los freelancers con recomendaciones visibles generan más confianza que los que no las tienen...',
+    'Los perfiles con foto profesional reciben 21× más visitas...',
+    'Un resumen orientado a resultados convierte más visitas en consultas reales...',
+    'Las palabras clave correctas hacen que tus clientes ideales te encuentren a vos...',
+  ],
+  'Emprendedor/a o dueño/a de negocio buscando visibilidad': [
+    'Los fundadores con perfil activo en LinkedIn generan más partnerships y oportunidades...',
+    'Tu perfil es tu carta de presentación ante inversores, socios y clientes potenciales...',
+    'El 60% de las decisiones de negocio B2B involucra una búsqueda en LinkedIn...',
+    'Los emprendedores que publican contenido son 3× más visibles en su industria...',
+    'Un titular que comunica tu visión atrae a las personas correctas...',
+    'La sección Acerca de es tu oportunidad de contar por qué tu empresa existe...',
+    'Los perfiles con foto reciben 21× más visitas que los que no la tienen...',
+  ],
+  'Profesional buscando crecer o ascender en mi empresa': [
+    'Los profesionales con perfil optimizado son 40% más considerados para ascensos internos...',
+    'Tu visibilidad en LinkedIn influye en cómo te perciben dentro y fuera de tu empresa...',
+    'Un perfil que muestra logros concretos refuerza tu reputación ante líderes de área...',
+    'Las habilidades validadas por colegas aumentan tu credibilidad ante decisores...',
+    'El resumen es tu oportunidad de comunicar tu propuesta de valor hacia adentro...',
+    'Publicar contenido de tu industria posiciona tu expertise frente a quienes toman decisiones...',
+    'Los perfiles con foto profesional proyectan más confianza y seriedad...',
+  ],
+  'En transición de carrera o reingresando al mercado': [
+    'Los perfiles que narran bien una transición generan más confianza en reclutadores...',
+    'Tu experiencia previa es un activo — la clave está en cómo la reencuadrás...',
+    'Un titular que comunica hacia dónde vas (no solo de dónde venís) abre más puertas...',
+    'El resumen es el lugar ideal para contar tu historia de transición con claridad...',
+    'Las habilidades transferibles bien documentadas acortan el tiempo de búsqueda...',
+    'Más del 70% de los empleos se consiguen por red de contactos — LinkedIn es esa red...',
+    'Los perfiles con foto reciben 21× más visitas que los que no la tienen...',
+  ],
+}
+const LOADING_MESSAGES_DEFAULT = [
   'Los reclutadores pasan apenas 6 segundos en el primer vistazo de un perfil...',
   'El 87% de los reclutadores usa LinkedIn para encontrar candidatos activamente...',
   'Los perfiles con foto reciben 21× más visitas que los que no la tienen...',
-  'Un titular optimizado puede triplicar tus apariciones en búsquedas de reclutadores...',
+  'Un titular optimizado puede triplicar tus apariciones en búsquedas...',
   'El resumen es el único espacio donde podés hablarle directamente a tu audiencia ideal...',
-  'Los perfiles con habilidades validadas tienen 17× más chances de ser vistos por reclutadores...',
+  'Los perfiles con habilidades validadas tienen 17× más chances de ser vistos...',
   'Perfiles con logros concretos y métricas generan 40% más solicitudes de conexión...',
 ]
 
@@ -588,11 +635,12 @@ export default function App() {
 
   // Loading message rotation
   const [loadingMsgIdx, setLoadingMsgIdx] = useState(0)
+  const loadingMsgs = LOADING_MESSAGES_BY_SITUACION[qaHistory[1]?.answer] ?? LOADING_MESSAGES_DEFAULT
   useEffect(() => {
     if (step !== STEPS.LOADING) return
-    const id = setInterval(() => setLoadingMsgIdx(i => (i + 1) % LOADING_MESSAGES.length), 3500)
+    const id = setInterval(() => setLoadingMsgIdx(i => (i + 1) % loadingMsgs.length), 3500)
     return () => clearInterval(id)
-  }, [step])
+  }, [step, loadingMsgs.length])
 
   const resetInterview = () => {
     setInterviewAnswers([])
@@ -1646,7 +1694,7 @@ Generá el feedback en este JSON exacto:
             <div className="space-y-3 max-w-xs">
               <h2 className="text-2xl font-bold text-slate-900" style={{ letterSpacing: '-0.02em' }}>Analizando tu perfil...</h2>
               <p className="text-slate-500 text-sm leading-relaxed transition-all duration-700">
-                {LOADING_MESSAGES[loadingMsgIdx]}
+                {loadingMsgs[loadingMsgIdx % loadingMsgs.length]}
               </p>
             </div>
             <div className="flex gap-2">
@@ -1854,12 +1902,12 @@ Generá el feedback en este JSON exacto:
               <div className="px-5 py-3 flex items-center justify-between gap-3"
                 style={{ borderTop: '1px solid rgba(0,119,181,0.08)', background: 'rgba(0,119,181,0.02)' }}>
                 <p className="text-slate-500 text-xs leading-snug">
-                  ¿Querés sostener el servicio gratuito? Un aporte de única vez ayuda a cubrir los costos de IA.
+                  ☕ $5.000 únicos — el precio de un café para mantener esto gratis para todos.
                 </p>
                 <a href={MP_URL} target="_blank" rel="noopener noreferrer"
                   className="shrink-0 inline-flex items-center gap-1.5 px-4 py-2 rounded-xl text-white text-xs font-semibold transition-all duration-200"
                   style={{ background: 'linear-gradient(135deg,#00b496,#00d4aa)' }}>
-                  💙 Colaborar
+                  ☕ Apoyar · $5.000
                 </a>
               </div>
 
@@ -1942,7 +1990,7 @@ Generá el feedback en este JSON exacto:
                 rel="noopener noreferrer"
                 className="underline hover:text-slate-600 transition-colors"
               >
-                Apoyar la app 🙌
+                ☕ Apoyar · $5.000
               </a>
             </p>
           </div>
@@ -2245,12 +2293,12 @@ Generá el feedback en este JSON exacto:
                 <div className="flex items-center justify-between gap-3 px-4 py-3 rounded-2xl"
                   style={{ background: 'rgba(0,180,150,0.05)', border: '1px solid rgba(0,180,150,0.18)' }}>
                   <p className="text-slate-500 text-xs leading-snug">
-                    ¿Te aportó valor? Podés colaborar con un aporte de única vez para sostener la herramienta gratuita.
+                    ☕ $5.000 únicos — el precio de un café para mantener esto gratis para todos.
                   </p>
                   <a href={MP_URL} target="_blank" rel="noopener noreferrer"
                     className="shrink-0 inline-flex items-center gap-1.5 px-4 py-2 rounded-xl text-white text-xs font-semibold transition-all duration-200"
                     style={{ background: 'linear-gradient(135deg,#00b496,#00d4aa)' }}>
-                    💙 Colaborar
+                    ☕ Apoyar · $5.000
                   </a>
                 </div>
 
@@ -2281,9 +2329,9 @@ Generá el feedback en este JSON exacto:
             {/* Sección nombre */}
             <div className="p-6 space-y-4">
               <div>
-                <h3 className="text-lg font-bold text-slate-900">Antes de conectar con Ramiro</h3>
+                <h3 className="text-lg font-bold text-slate-900">Conectate con Ramiro</h3>
                 <p className="text-slate-500 text-sm mt-1 leading-relaxed">
-                  Ingresá tu nombre para que sepa quién le escribe y pueda revisar tu análisis de antemano.
+                  Ingresá tu nombre para que Ramiro pueda revisar tu análisis antes del primer mensaje.
                 </p>
               </div>
               <div className="space-y-2.5">
@@ -2317,7 +2365,10 @@ Generá el feedback en este JSON exacto:
                 />
               </div>
               <p className="text-slate-400 text-xs leading-relaxed">
-                Tu nombre, análisis y respuestas de entrevista serán enviados a Ramiro para orientarte desde el primer mensaje. La consulta personalizada tiene un costo que se cotizará en el momento.
+                Tu nombre y análisis serán compartidos con Ramiro para que pueda orientarte desde el inicio.
+              </p>
+              <p className="text-slate-400 text-xs">
+                La consultoría personalizada tiene costo — se cotiza en el momento.
               </p>
             </div>
 
@@ -2327,9 +2378,9 @@ Generá el feedback en este JSON exacto:
               <div className="flex items-start gap-3 pt-4">
                 <span className="text-2xl shrink-0">🙌</span>
                 <div>
-                  <p className="text-sm font-semibold text-slate-800">¿Querés apoyar la app?</p>
+                  <p className="text-sm font-semibold text-slate-800">¿Te aportó valor? Invitame un cafecito ☕</p>
                   <p className="text-slate-500 text-xs mt-1 leading-relaxed">
-                    Esta herramienta tiene costos reales. Si te fue útil, podés colaborar con un aporte de <strong>única vez</strong> — no es una suscripción mensual. Es totalmente optativo y me ayuda a sostenerla y seguir mejorándola.
+                    $5.000 de única vez — no es suscripción, es totalmente optativo. Me ayuda a sostener la herramienta gratuita.
                   </p>
                 </div>
               </div>
@@ -2339,7 +2390,7 @@ Generá el feedback en este JSON exacto:
                 className={`w-full py-3 rounded-xl text-white text-sm font-semibold transition-all ${leadNombre.trim() && leadApellido.trim() ? '' : 'opacity-40 cursor-not-allowed'}`}
                 style={{ background: leadNombre.trim() && leadApellido.trim() ? 'linear-gradient(135deg,#00b496,#00d4aa)' : 'rgba(0,180,150,0.3)', boxShadow: leadNombre.trim() && leadApellido.trim() ? '0 0 18px rgba(0,180,150,0.3)' : 'none' }}
               >
-                💙 Colaborar y conectar con Ramiro
+                ☕ Apoyar ($5.000) y conectar con Ramiro
               </button>
               <button
                 onClick={() => saveAndConnectRamiro(leadNombre, leadApellido, false)}
