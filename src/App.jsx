@@ -201,10 +201,19 @@ const LinkedInIcon = ({ className }) => (
 function Logo() {
   return (
     <div className="mb-8 sm:mb-10">
-      <img
-        src="/logo.png"
-        alt="OptimizaLinkedin"
-        style={{ height: '72px', width: 'auto', mixBlendMode: 'multiply' }}
+      <div
+        role="img"
+        aria-label="OptimizaLinkedin"
+        style={{
+          height: '80px',
+          width: '80px',
+          backgroundImage: 'url(/logo.png)',
+          backgroundSize: 'contain',
+          backgroundRepeat: 'no-repeat',
+          backgroundPosition: 'center',
+          backgroundColor: '#f0f4f8',
+          backgroundBlendMode: 'multiply',
+        }}
       />
     </div>
   )
