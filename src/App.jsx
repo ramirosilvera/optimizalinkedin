@@ -209,19 +209,10 @@ const LinkedInIcon = ({ className }) => (
 function Logo() {
   return (
     <div className="mb-8 sm:mb-10">
-      <div
-        role="img"
-        aria-label="OptimizaLinkedin"
-        style={{
-          height: '80px',
-          width: '80px',
-          backgroundImage: 'url(/logo.PNG)',
-          backgroundSize: 'contain',
-          backgroundRepeat: 'no-repeat',
-          backgroundPosition: 'center',
-          backgroundColor: '#f0f4f8',
-          backgroundBlendMode: 'multiply',
-        }}
+      <img
+        src="/logo.PNG"
+        alt="OptimizaLinkedin"
+        style={{ height: '80px', width: 'auto', display: 'block', mixBlendMode: 'multiply' }}
       />
     </div>
   )
@@ -1368,11 +1359,11 @@ Generá el feedback en este JSON exacto:
                         <span className="text-slate-400 font-normal normal-case tracking-normal">(opcional — se analiza calidad)</span>
                       </label>
                       <div className="flex items-center gap-4">
-                        <div className="w-16 h-16 rounded-full overflow-hidden shrink-0 border-2 flex items-center justify-center"
-                          style={{ borderColor: 'rgba(0,119,181,0.2)', background: '#f0f4f8' }}>
+                        <div className="w-16 h-16 rounded-full overflow-hidden shrink-0 relative"
+                          style={{ border: '2px solid rgba(0,119,181,0.3)', background: '#dce8f0' }}>
                           {profilePhotoPreview
-                            ? <img src={profilePhotoPreview} alt="preview" className="w-full h-full object-cover" />
-                            : <span className="text-2xl">👤</span>
+                            ? <img src={profilePhotoPreview} alt="preview" style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover' }} />
+                            : <span className="text-2xl absolute inset-0 flex items-center justify-center">👤</span>
                           }
                         </div>
                         <label htmlFor="photo-upload"
