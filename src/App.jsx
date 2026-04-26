@@ -18,12 +18,12 @@ const STEPS = {
 }
 
 // ── Shared style tokens ─────────────────────────────────────────
-const LI_GRADIENT = LI_GRADIENT
-const CARD_STYLE = CARD_STYLE
-const INPUT_STYLE = INPUT_STYLE
-const INPUT_ALT_STYLE = INPUT_ALT_STYLE
-const BTN_BACK_STYLE = BTN_BACK_STYLE
-const BTN_GHOST_STYLE = BTN_GHOST_STYLE
+const LI_GRADIENT = 'linear-gradient(135deg,#0077B5,#0ea5e9)'
+const CARD_STYLE = { background: 'white', border: '1px solid rgba(0,119,181,0.12)', boxShadow: '0 2px 12px rgba(0,0,0,0.06)' }
+const INPUT_STYLE = { background: 'white', border: '1px solid rgba(0,119,181,0.20)', color: '#0d2137' }
+const INPUT_ALT_STYLE = { background: '#f8fafc', border: '1px solid rgba(0,119,181,0.15)', color: '#0d2137' }
+const BTN_BACK_STYLE = { border: '1px solid rgba(0,119,181,0.15)', color: '#3d5a73', background: '#f0f4f8' }
+const BTN_GHOST_STYLE = { color: '#0077B5', background: 'rgba(0,119,181,0.08)', border: '1px solid rgba(0,119,181,0.2)' }
 
 const RAMIRO_LINKEDIN_URL = 'https://www.linkedin.com/in/ramiro-silvera-b0819459'
 const MAX_PDF_SIZE = 15 * 1024 * 1024
