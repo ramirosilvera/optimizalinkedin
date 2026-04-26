@@ -200,12 +200,8 @@ const LinkedInIcon = ({ className }) => (
 
 function Logo() {
   return (
-    <div className="flex items-center gap-2.5 mb-8 sm:mb-10">
-      <div className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0 text-white"
-        style={{ background: 'linear-gradient(135deg, #0077B5 0%, #0ea5e9 100%)', boxShadow: '0 2px 10px rgba(0,119,181,0.4)' }}>
-        <LinkedInIcon className="w-4.5 h-4.5" />
-      </div>
-      <span className="text-slate-400 text-sm font-medium tracking-wide">LinkedIn Profile Optimizer</span>
+    <div className="mb-8 sm:mb-10">
+      <img src="/logo.png" alt="OptimizaLinkedin" style={{ height: '72px', width: 'auto' }} />
     </div>
   )
 }
@@ -214,7 +210,7 @@ function Spinner({ size = 4 }) {
   return (
     <div
       className={`w-${size} h-${size} rounded-full border-2 animate-spin shrink-0`}
-      style={{ borderColor: 'rgba(255,255,255,0.3)', borderTopColor: 'white' }}
+      style={{ borderColor: 'rgba(0,119,181,0.25)', borderTopColor: '#0077B5' }}
     />
   )
 }
@@ -225,8 +221,8 @@ function OptionButton({ label, selected, onClick }) {
       onClick={onClick}
       className={`w-full text-left px-5 py-3.5 rounded-2xl border transition-all duration-200 text-sm sm:text-base flex items-center justify-between gap-3 ${selected ? 'option-glow' : ''}`}
       style={selected
-        ? { borderColor: 'rgba(0,119,181,0.6)', background: 'rgba(0,119,181,0.12)', color: '#fff', fontWeight: 500 }
-        : { borderColor: 'rgba(255,255,255,0.07)', background: 'rgba(255,255,255,0.03)', color: '#cbd5e1' }
+        ? { borderColor: 'rgba(0,119,181,0.6)', background: 'rgba(0,119,181,0.10)', color: '#0d2137', fontWeight: 500 }
+        : { borderColor: 'rgba(0,119,181,0.15)', background: '#f8fafc', color: '#374151' }
       }
     >
       <span>{label}</span>
@@ -245,8 +241,8 @@ function CopyButton({ text }) {
       onClick={() => navigator.clipboard.writeText(text).then(() => { setCopied(true); setTimeout(() => setCopied(false), 2000) })}
       className={`text-xs px-3 py-1.5 rounded-lg border transition-all duration-200 shrink-0 ${copied ? 'copy-btn-success' : ''}`}
       style={copied
-        ? { borderColor: '#22c55e', color: '#4ade80', background: 'rgba(34,197,94,0.1)' }
-        : { borderColor: 'rgba(255,255,255,0.12)', color: '#64748b', background: 'rgba(255,255,255,0.03)' }
+        ? { borderColor: '#22c55e', color: '#16a34a', background: 'rgba(34,197,94,0.08)' }
+        : { borderColor: 'rgba(0,119,181,0.2)', color: '#3d5a73', background: '#f8fafc' }
       }
     >
       {copied ? '✓ Copiado' : 'Copiar'}
@@ -262,13 +258,13 @@ function ScoreRing({ score }) {
   return (
     <div className="flex flex-col items-center shrink-0">
       <svg width="140" height="140" viewBox="0 0 140 140" style={{ filter: `drop-shadow(0 0 8px ${glowColor})` }}>
-        <circle cx="70" cy="70" r={r} stroke="rgba(255,255,255,0.06)" strokeWidth="10" fill="none" />
+        <circle cx="70" cy="70" r={r} stroke="rgba(0,119,181,0.12)" strokeWidth="10" fill="none" />
         <circle cx="70" cy="70" r={r} stroke={color} strokeWidth="10" fill="none"
           strokeDasharray={circ} strokeDashoffset={circ - (circ * s) / 10}
           strokeLinecap="round"
           style={{ transform: 'rotate(-90deg)', transformOrigin: '50% 50%', transition: 'stroke-dashoffset 1.3s cubic-bezier(0.16,1,0.3,1)' }}
         />
-        <text x="70" y="65" textAnchor="middle" fill="white" fontSize="34" fontWeight="700" dy="0.35em">{s}</text>
+        <text x="70" y="65" textAnchor="middle" fill="#0d2137" fontSize="34" fontWeight="700" dy="0.35em">{s}</text>
         <text x="70" y="93" textAnchor="middle" fill="#64748b" fontSize="11">/ 10</text>
       </svg>
       <p className="text-slate-500 text-xs mt-1 tracking-wide uppercase">Puntaje general</p>
@@ -279,9 +275,9 @@ function ScoreRing({ score }) {
 function ResultCard({ title, children, accent = '#0077B5' }) {
   return (
     <div className="rounded-2xl p-6 relative overflow-hidden card-accent-line"
-      style={{ background: 'rgba(255,255,255,0.03)', backdropFilter: 'blur(20px)', border: '1px solid rgba(255,255,255,0.08)' }}>
+      style={{ background: 'white', border: `1px solid rgba(0,119,181,0.12)`, boxShadow: '0 2px 12px rgba(0,0,0,0.06)' }}>
       <div className="absolute top-0 left-0 right-0 h-px"
-        style={{ background: `linear-gradient(90deg, transparent 0%, ${accent}60 50%, transparent 100%)` }} />
+        style={{ background: `linear-gradient(90deg, transparent 0%, ${accent}50 50%, transparent 100%)` }} />
       <h3 className="font-semibold text-xs mb-4 uppercase tracking-widest" style={{ color: accent }}>{title}</h3>
       {children}
     </div>
@@ -291,17 +287,17 @@ function ResultCard({ title, children, accent = '#0077B5' }) {
 function BeforeAfter({ label, before, after }) {
   return (
     <div className="space-y-2">
-      <div className="rounded-xl p-4" style={{ background: 'rgba(0,0,0,0.25)', border: '1px solid rgba(255,255,255,0.06)' }}>
-        <span className="text-xs text-slate-600 uppercase tracking-widest block mb-2">Actual</span>
-        <p className="text-slate-400 text-sm leading-relaxed">{before || `No tiene ${label.toLowerCase()}`}</p>
+      <div className="rounded-xl p-4" style={{ background: '#f8fafc', border: '1px solid rgba(0,119,181,0.10)' }}>
+        <span className="text-xs text-slate-500 uppercase tracking-widest block mb-2">Actual</span>
+        <p className="text-slate-600 text-sm leading-relaxed">{before || `No tiene ${label.toLowerCase()}`}</p>
       </div>
       <div className="rounded-xl p-4 relative overflow-hidden"
-        style={{ background: 'rgba(0,119,181,0.07)', border: '1px solid rgba(0,119,181,0.25)' }}>
+        style={{ background: 'rgba(0,119,181,0.06)', border: '1px solid rgba(0,119,181,0.22)' }}>
         <div className="flex items-center justify-between mb-2">
-          <span className="text-xs uppercase tracking-widest font-semibold" style={{ color: '#0ea5e9' }}>Propuesto</span>
+          <span className="text-xs uppercase tracking-widest font-semibold" style={{ color: '#0077B5' }}>Propuesto</span>
           <CopyButton text={after} />
         </div>
-        <p className="text-white text-sm leading-relaxed">{after}</p>
+        <p className="text-slate-900 text-sm leading-relaxed">{after}</p>
       </div>
     </div>
   )
@@ -381,11 +377,11 @@ function CommentsSection() {
   return (
     <div className="pt-10 text-left">
       <div className="flex items-center gap-3 mb-7">
-        <div className="flex-1 h-px" style={{ background: 'rgba(255,255,255,0.06)' }} />
-        <p className="text-xs font-medium tracking-widest uppercase" style={{ color: '#334155' }}>
+        <div className="flex-1 h-px" style={{ background: 'rgba(0,119,181,0.15)' }} />
+        <p className="text-xs font-medium tracking-widest uppercase" style={{ color: '#3d5a73' }}>
           Experiencias reales
         </p>
-        <div className="flex-1 h-px" style={{ background: 'rgba(255,255,255,0.06)' }} />
+        <div className="flex-1 h-px" style={{ background: 'rgba(0,119,181,0.15)' }} />
       </div>
 
       {loading ? (
@@ -402,7 +398,7 @@ function CommentsSection() {
         <div className="space-y-3">
           {comments.map(c => (
             <div key={c.id} className="rounded-2xl p-4"
-              style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.07)' }}>
+              style={{ background: 'white', border: '1px solid rgba(0,119,181,0.12)', boxShadow: '0 1px 6px rgba(0,0,0,0.05)' }}>
               <div className="flex items-start gap-3">
                 <div className="w-9 h-9 rounded-full flex items-center justify-center text-white text-xs font-bold shrink-0"
                   style={{ background: avatarGrad(c.nombre) }}>
@@ -411,7 +407,7 @@ function CommentsSection() {
                 <div className="flex-1 min-w-0">
                   <div className="flex items-start justify-between gap-2">
                     <div>
-                      <p className="text-white text-sm font-semibold leading-tight">{c.nombre}</p>
+                      <p className="text-slate-900 text-sm font-semibold leading-tight">{c.nombre}</p>
                       <p className="text-slate-500 text-xs mt-0.5">{c.titulo}</p>
                     </div>
                     {isValidLinkedIn(c.linkedin_url) && (
@@ -422,7 +418,7 @@ function CommentsSection() {
                       </a>
                     )}
                   </div>
-                  <p className="text-slate-300 text-sm mt-2 leading-relaxed">"{c.comentario}"</p>
+                  <p className="text-slate-600 text-sm mt-2 leading-relaxed">"{c.comentario}"</p>
                 </div>
               </div>
             </div>
@@ -437,8 +433,8 @@ function CommentsSection() {
         </p>
       ) : showForm ? (
         <form onSubmit={handleSubmit} className="mt-5 space-y-3 rounded-2xl p-5"
-          style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.08)' }}>
-          <p className="text-white font-semibold text-sm">Compartí tu experiencia</p>
+          style={{ background: 'white', border: '1px solid rgba(0,119,181,0.15)', boxShadow: '0 2px 12px rgba(0,0,0,0.06)' }}>
+          <p className="text-slate-900 font-semibold text-sm">Compartí tu experiencia</p>
           {[
             { key: 'nombre',       placeholder: 'Nombre completo',                               max: 80  },
             { key: 'titulo',       placeholder: 'Título profesional · Empresa',                  max: 100 },
@@ -452,7 +448,7 @@ function CommentsSection() {
               onChange={e => setForm(f => ({ ...f, [key]: e.target.value }))}
               placeholder={placeholder}
               className="w-full rounded-xl px-4 py-2.5 text-sm outline-none"
-              style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)', color: '#e2e8f0' }}
+              style={{ background: '#f8fafc', border: '1px solid rgba(0,119,181,0.18)', color: '#0d2137' }}
             />
           ))}
           <div className="relative">
@@ -462,24 +458,24 @@ function CommentsSection() {
               placeholder="Contá cómo te ayudó la app..."
               rows={3} maxLength={300}
               className="w-full rounded-xl px-4 py-2.5 text-sm outline-none resize-none"
-              style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)', color: '#e2e8f0' }}
+              style={{ background: '#f8fafc', border: '1px solid rgba(0,119,181,0.18)', color: '#0d2137' }}
             />
             <span className="absolute bottom-2 right-3 text-xs pointer-events-none"
-              style={{ color: form.comentario.length > 260 ? '#f59e0b' : '#334155' }}>
+              style={{ color: form.comentario.length > 260 ? '#f59e0b' : '#94a3b8' }}>
               {form.comentario.length}/300
             </span>
           </div>
-          {formError && <p className="text-xs" style={{ color: '#fca5a5' }}>{formError}</p>}
+          {formError && <p className="text-xs" style={{ color: '#dc2626' }}>{formError}</p>}
           <div className="flex gap-2 pt-1">
             <button type="button"
               onClick={() => { setShowForm(false); setFormError('') }}
               className="flex-1 py-2.5 rounded-xl text-sm font-medium"
-              style={{ border: '1px solid rgba(255,255,255,0.08)', color: '#475569', background: 'transparent' }}>
+              style={{ border: '1px solid rgba(0,119,181,0.15)', color: '#3d5a73', background: '#f0f4f8' }}>
               Cancelar
             </button>
             <button type="submit" disabled={submitting}
               className={`flex-[2] py-2.5 rounded-xl text-sm font-semibold text-white ${!submitting ? 'btn-glow' : ''}`}
-              style={{ background: submitting ? 'rgba(30,41,59,0.8)' : 'linear-gradient(135deg,#0077B5,#0ea5e9)' }}>
+              style={{ background: submitting ? 'rgba(0,119,181,0.15)' : 'linear-gradient(135deg,#0077B5,#0ea5e9)', color: submitting ? '#64748b' : '#fff' }}>
               {submitting ? 'Enviando...' : 'Enviar comentario'}
             </button>
           </div>
@@ -487,7 +483,7 @@ function CommentsSection() {
       ) : (
         <button onClick={() => setShowForm(true)}
           className="w-full mt-5 py-3 rounded-2xl text-sm font-medium transition-all duration-200"
-          style={{ border: '1px solid rgba(255,255,255,0.08)', color: '#64748b', background: 'rgba(255,255,255,0.02)' }}>
+          style={{ border: '1px solid rgba(0,119,181,0.15)', color: '#3d5a73', background: '#f8fafc' }}>
           ✍️ &nbsp;Compartí tu experiencia
         </button>
       )}
@@ -876,16 +872,16 @@ Generá el feedback en este JSON exacto:
             <Logo />
             <div className="space-y-5">
               <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full text-xs font-semibold tracking-wide badge-shimmer"
-                style={{ border: '1px solid rgba(0,119,181,0.4)', color: '#7dd3fc' }}>
+                style={{ border: '1px solid rgba(0,119,181,0.4)', color: '#0077B5' }}>
                 ✦ &nbsp;Análisis profesional con IA
               </div>
               <h1 className="text-4xl sm:text-5xl font-bold leading-tight tracking-tight" style={{ letterSpacing: '-0.02em' }}>
-                <span className="text-white">Optimizá tu perfil</span><br />
+                <span className="text-slate-900">Optimizá tu perfil</span><br />
                 <span style={{ background: 'linear-gradient(135deg, #0ea5e9 0%, #6366f1 100%)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent' }}>
                   de LinkedIn
                 </span>
               </h1>
-              <p className="text-slate-400 text-base max-w-sm mx-auto leading-relaxed">
+              <p className="text-slate-600 text-base max-w-sm mx-auto leading-relaxed">
                 Respondé el cuestionario, luego subí tu PDF y recibí un análisis con criterio de headhunter.
               </p>
             </div>
@@ -897,7 +893,7 @@ Generá el feedback en este JSON exacto:
                 { icon: '⚡', label: '6 segundos',  text: 'Test de primer impacto',        accent: '#0d9488' },
               ].map(item => (
                 <div key={item.label} className="rounded-2xl p-4 text-center relative overflow-hidden"
-                  style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.07)' }}>
+                  style={{ background: 'white', border: '1px solid rgba(0,119,181,0.12)', boxShadow: '0 2px 8px rgba(0,0,0,0.05)' }}>
                   <div className="text-2xl mb-2">{item.icon}</div>
                   <p className="text-xs font-semibold mb-1" style={{ color: item.accent }}>{item.label}</p>
                   <p className="text-slate-500 text-xs leading-snug">{item.text}</p>
@@ -937,7 +933,7 @@ Generá el feedback en este JSON exacto:
                         ? 'linear-gradient(90deg,#0077B5,#0ea5e9)'
                         : active
                           ? 'rgba(0,119,181,0.5)'
-                          : 'rgba(255,255,255,0.07)',
+                          : 'rgba(0,119,181,0.12)',
                     }} />
                 )
               })}
@@ -949,7 +945,7 @@ Generá el feedback en este JSON exacto:
 
             {/* Question */}
             <div>
-              <h2 className="text-2xl sm:text-3xl font-bold text-white leading-snug" style={{ letterSpacing: '-0.01em' }}>
+              <h2 className="text-2xl sm:text-3xl font-bold text-slate-900 leading-snug" style={{ letterSpacing: '-0.01em' }}>
                 {currentQ.question}
               </h2>
               {currentQ.type === 'text' && currentQ.hint && (
@@ -981,11 +977,11 @@ Generá el feedback en este JSON exacto:
                     placeholder={currentQ.placeholder}
                     rows={4}
                     maxLength={600}
-                    className="w-full rounded-2xl px-4 py-3 text-sm text-white resize-none outline-none transition-all duration-200"
+                    className="w-full rounded-2xl px-4 py-3 text-sm resize-none outline-none transition-all duration-200"
                     style={{
-                      background: 'rgba(255,255,255,0.04)',
-                      border: textAnswer.trim() ? '1px solid rgba(0,119,181,0.5)' : '1px solid rgba(255,255,255,0.08)',
-                      color: '#e2e8f0',
+                      background: '#f8fafc',
+                      border: textAnswer.trim() ? '1px solid rgba(0,119,181,0.5)' : '1px solid rgba(0,119,181,0.15)',
+                      color: '#0d2137',
                     }}
                   />
                   <span className="absolute bottom-2.5 right-3 text-xs pointer-events-none"
@@ -997,7 +993,7 @@ Generá el feedback en este JSON exacto:
                   <button
                     onClick={() => handleAnswer('')}
                     className="flex-1 font-medium py-3 rounded-2xl text-sm transition-colors"
-                    style={{ border: '1px solid rgba(255,255,255,0.08)', color: '#475569', background: 'transparent' }}
+                    style={{ border: '1px solid rgba(0,119,181,0.15)', color: '#475569', background: '#f8fafc' }}
                   >
                     Omitir
                   </button>
@@ -1025,14 +1021,14 @@ Generá el feedback en este JSON exacto:
             <Logo />
             <div>
               <p className="text-slate-500 text-sm mb-1">Último paso</p>
-              <h2 className="text-2xl sm:text-3xl font-bold text-white">Subí tu perfil de LinkedIn</h2>
+              <h2 className="text-2xl sm:text-3xl font-bold text-slate-900">Subí tu perfil de LinkedIn</h2>
             </div>
 
             {/* Por qué PDF */}
             <div className="rounded-xl p-4 text-sm space-y-1"
               style={{ backgroundColor: 'rgba(245,158,11,0.07)', border: '1px solid rgba(245,158,11,0.25)' }}>
               <p className="text-amber-400 font-semibold text-xs uppercase tracking-wide mb-2">¿Por qué no se puede hacer automáticamente?</p>
-              <p className="text-slate-300 leading-relaxed">
+              <p className="text-slate-600 leading-relaxed">
                 LinkedIn bloquea el acceso a perfiles desde apps externas para proteger la privacidad de sus usuarios.
                 No existe una API pública que permita leer perfiles completos — solo empresas con acuerdo comercial directo con LinkedIn pueden hacerlo.
                 Por eso, la forma más simple y confiable es descargar tu propio perfil como PDF directamente desde LinkedIn.
@@ -1041,9 +1037,9 @@ Generá el feedback en este JSON exacto:
 
             {/* Cómo descargar — tabs desktop/celular */}
             <div className="rounded-2xl overflow-hidden"
-              style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.08)' }}>
+              style={{ background: 'white', border: '1px solid rgba(0,119,181,0.12)', boxShadow: '0 2px 12px rgba(0,0,0,0.06)' }}>
               {/* Tab selector */}
-              <div className="flex border-b" style={{ borderColor: 'rgba(255,255,255,0.07)' }}>
+              <div className="flex border-b" style={{ borderColor: 'rgba(0,119,181,0.12)' }}>
                 {[
                   { id: 'desktop', label: '🖥️  Computadora' },
                   { id: 'mobile', label: '📱  Celular' },
@@ -1064,7 +1060,7 @@ Generá el feedback en este JSON exacto:
 
               {/* Steps */}
               <div className="p-5 space-y-3">
-                <p className="font-semibold text-white text-sm mb-1">
+                <p className="font-semibold text-slate-900 text-sm mb-1">
                   {instrTab === 'desktop' ? '📄 Cómo descargar desde la computadora' : '📄 Cómo descargar desde el celular'}
                 </p>
                 <ol className="space-y-2.5">
@@ -1083,7 +1079,7 @@ Generá el feedback en este JSON exacto:
                     'Si no ves esa opción: abrí linkedin.com en Chrome o Safari, iniciá sesión, y repetí desde el paso 2',
                     'El PDF se guarda en tu teléfono — subilo acá ↓',
                   ]).map((s, i) => (
-                    <li key={i} className="flex items-start gap-3 text-sm text-slate-300">
+                    <li key={i} className="flex items-start gap-3 text-sm text-slate-600">
                       <span className="w-5 h-5 rounded-full flex items-center justify-center text-xs font-bold shrink-0 mt-0.5"
                         style={{ backgroundColor: 'rgba(0,119,181,0.2)', color: '#0077B5', minWidth: '1.25rem' }}>
                         {i + 1}
@@ -1101,11 +1097,11 @@ Generá el feedback en este JSON exacto:
               <p className="text-xs uppercase tracking-wide mb-3" style={{ color: '#0077B5' }}>Tu contexto recopilado</p>
               <div className="space-y-0">
                 {qaHistory.map((h, i) => (
-                  <div key={i} className="py-2 border-b last:border-0" style={{ borderColor: 'rgba(51,65,85,0.5)' }}>
+                  <div key={i} className="py-2 border-b last:border-0" style={{ borderColor: 'rgba(0,119,181,0.10)' }}>
                     <p className="text-slate-500 text-xs leading-snug">
                       {STATIC_QUESTIONS[i]?.id ?? `Pregunta ${i + 1}`}
                     </p>
-                    <p className="text-white text-xs font-medium mt-0.5 pl-3 leading-relaxed">→ {h.answer}</p>
+                    <p className="text-slate-900 text-xs font-medium mt-0.5 pl-3 leading-relaxed">→ {h.answer}</p>
                   </div>
                 ))}
               </div>
@@ -1127,32 +1123,32 @@ Generá el feedback en este JSON exacto:
                 onDrop={handleDrop}
                 className="flex flex-col items-center justify-center gap-3 w-full py-10 px-6 rounded-2xl border-2 border-dashed cursor-pointer transition-all duration-300"
                 style={{
-                  borderColor: profileText ? 'rgba(34,197,94,0.6)' : isDragging ? '#0a91d4' : pdfLoading ? '#0077B5' : 'rgba(255,255,255,0.12)',
-                  background: profileText ? 'rgba(34,197,94,0.05)' : isDragging ? 'rgba(0,119,181,0.08)' : 'rgba(255,255,255,0.02)',
+                  borderColor: profileText ? 'rgba(34,197,94,0.6)' : isDragging ? '#0a91d4' : pdfLoading ? '#0077B5' : 'rgba(0,119,181,0.20)',
+                  background: profileText ? 'rgba(34,197,94,0.05)' : isDragging ? 'rgba(0,119,181,0.08)' : '#f8fafc',
                 }}
               >
                 {pdfLoading ? (
                   <>
                     <div className="w-8 h-8 rounded-full border-2 border-t-transparent animate-spin"
                       style={{ borderColor: '#0077B5', borderTopColor: 'transparent' }} />
-                    <p className="text-slate-400 text-sm">Extrayendo contenido del PDF...</p>
+                    <p className="text-slate-500 text-sm">Extrayendo contenido del PDF...</p>
                   </>
                 ) : profileText ? (
                   <>
                     <span className="text-3xl">✅</span>
                     <div className="text-center">
-                      <p className="text-green-400 font-semibold text-sm">{pdfFileName}</p>
-                      <p className="text-slate-400 text-xs mt-1">Perfil extraído correctamente · Hacé clic para cambiar el archivo</p>
+                      <p className="text-green-600 font-semibold text-sm">{pdfFileName}</p>
+                      <p className="text-slate-500 text-xs mt-1">Perfil extraído correctamente · Hacé clic para cambiar el archivo</p>
                     </div>
                   </>
                 ) : (
                   <>
                     <span className="text-3xl">{isDragging ? '📂' : '📄'}</span>
                     <div className="text-center">
-                      <p className="text-white font-semibold text-sm">
+                      <p className="text-slate-900 font-semibold text-sm">
                         {isDragging ? 'Soltá el PDF acá' : 'Subir PDF de LinkedIn'}
                       </p>
-                      <p className="text-slate-400 text-xs mt-1">Arrastrá el archivo o hacé clic para seleccionarlo · Máx. 15 MB</p>
+                      <p className="text-slate-500 text-xs mt-1">Arrastrá el archivo o hacé clic para seleccionarlo · Máx. 15 MB</p>
                     </div>
                   </>
                 )}
@@ -1162,7 +1158,7 @@ Generá el feedback en este JSON exacto:
             {/* PDF error */}
             {pdfError && (
               <div className="rounded-xl p-4 text-sm flex items-start gap-3"
-                style={{ backgroundColor: 'rgba(127,29,29,0.3)', border: '1px solid #b91c1c', color: '#fca5a5' }}>
+                style={{ backgroundColor: 'rgba(254,226,226,0.8)', border: '1px solid #fca5a5', color: '#b91c1c' }}>
                 <span className="shrink-0 mt-0.5">⚠️</span>
                 <span>{pdfError}</span>
               </div>
@@ -1171,7 +1167,7 @@ Generá el feedback en este JSON exacto:
             {/* Analysis error */}
             {analysisError && (
               <div className="rounded-xl p-4 text-sm"
-                style={{ backgroundColor: 'rgba(127,29,29,0.3)', border: '1px solid #b91c1c', color: '#fca5a5' }}>
+                style={{ backgroundColor: 'rgba(254,226,226,0.8)', border: '1px solid #fca5a5', color: '#b91c1c' }}>
                 ⚠️ {analysisError}
               </div>
             )}
@@ -1180,7 +1176,7 @@ Generá el feedback en este JSON exacto:
               <button
                 onClick={() => { handleBack(); setStep(STEPS.QUESTIONS) }}
                 className="flex-1 font-semibold py-3.5 rounded-2xl transition-all duration-200"
-                style={{ border: '1px solid rgba(255,255,255,0.10)', color: '#94a3b8', background: 'rgba(255,255,255,0.03)' }}
+                style={{ border: '1px solid rgba(0,119,181,0.15)', color: '#3d5a73', background: '#f0f4f8' }}
               >
                 ← Atrás
               </button>
@@ -1189,10 +1185,11 @@ Generá el feedback en este JSON exacto:
                 onClick={callGemini}
                 className={`flex-[2] font-semibold py-3.5 rounded-2xl transition-all duration-200 text-white ${profileText && !analyzing ? 'btn-glow' : ''}`}
                 style={{
-                  background: profileText && !analyzing ? 'linear-gradient(135deg,#0077B5,#0ea5e9)' : 'rgba(30,41,59,0.8)',
+                  background: profileText && !analyzing ? 'linear-gradient(135deg,#0077B5,#0ea5e9)' : 'rgba(0,119,181,0.08)',
                   opacity: profileText && !analyzing ? 1 : 0.5,
                   cursor: profileText && !analyzing ? 'pointer' : 'not-allowed',
-                  border: profileText && !analyzing ? 'none' : '1px solid rgba(255,255,255,0.06)',
+                  border: profileText && !analyzing ? 'none' : '1px solid rgba(0,119,181,0.12)',
+                  color: profileText && !analyzing ? '#fff' : '#64748b',
                 }}
               >
                 {analyzing ? 'Analizando...' : 'Analizar mi perfil ✦'}
@@ -1210,19 +1207,19 @@ Generá el feedback en este JSON exacto:
                 style={{ boxShadow: '0 0 50px rgba(0,119,181,0.25), 0 0 80px rgba(14,165,233,0.1)' }} />
               {/* track */}
               <div className="absolute inset-3 rounded-full"
-                style={{ border: '2px solid rgba(255,255,255,0.05)' }} />
+                style={{ border: '2px solid rgba(0,119,181,0.08)' }} />
               {/* spinner */}
               <div className="absolute inset-3 rounded-full border-2 animate-spin"
-                style={{ borderColor: 'rgba(0,119,181,0.3)', borderTopColor: '#0ea5e9' }} />
+                style={{ borderColor: 'rgba(0,119,181,0.25)', borderTopColor: '#0ea5e9' }} />
               {/* inner icon */}
               <div className="absolute inset-0 flex items-center justify-center"
-                style={{ color: '#0ea5e9', filter: 'drop-shadow(0 0 6px rgba(14,165,233,0.5))' }}>
+                style={{ color: '#0077B5', filter: 'drop-shadow(0 0 6px rgba(0,119,181,0.4))' }}>
                 <LinkedInIcon className="w-9 h-9" />
               </div>
             </div>
             <div className="space-y-3 max-w-xs">
-              <h2 className="text-2xl font-bold text-white" style={{ letterSpacing: '-0.02em' }}>Analizando tu perfil...</h2>
-              <p className="text-slate-400 text-sm leading-relaxed transition-all duration-700">
+              <h2 className="text-2xl font-bold text-slate-900" style={{ letterSpacing: '-0.02em' }}>Analizando tu perfil...</h2>
+              <p className="text-slate-500 text-sm leading-relaxed transition-all duration-700">
                 {LOADING_MESSAGES[loadingMsgIdx]}
               </p>
             </div>
@@ -1247,7 +1244,7 @@ Generá el feedback en este JSON exacto:
                 <p className="text-xs font-semibold uppercase tracking-wide mb-2" style={{ color: '#f59e0b' }}>
                   ⚡ Acción prioritaria — hacé esto hoy
                 </p>
-                <p className="text-white text-sm leading-relaxed">{result.accion_prioritaria}</p>
+                <p className="text-slate-800 text-sm leading-relaxed">{result.accion_prioritaria}</p>
               </div>
             )}
 
@@ -1259,14 +1256,14 @@ Generá el feedback en este JSON exacto:
                     <span className="text-xs font-semibold px-3 py-1 rounded-full"
                       style={{
                         backgroundColor: result.nivel_seo === 'Alto' ? 'rgba(34,197,94,0.12)' : result.nivel_seo === 'Medio' ? 'rgba(0,119,181,0.12)' : 'rgba(245,158,11,0.12)',
-                        color: result.nivel_seo === 'Alto' ? '#4ade80' : result.nivel_seo === 'Medio' ? '#38bdf8' : '#f59e0b',
+                        color: result.nivel_seo === 'Alto' ? '#16a34a' : result.nivel_seo === 'Medio' ? '#0077B5' : '#d97706',
                         border: `1px solid ${result.nivel_seo === 'Alto' ? 'rgba(34,197,94,0.3)' : result.nivel_seo === 'Medio' ? 'rgba(0,119,181,0.3)' : 'rgba(245,158,11,0.3)'}`,
                       }}>
                       SEO: {result.nivel_seo}
                     </span>
                   )}
                 </div>
-                <p className="text-slate-300 text-sm leading-relaxed sm:pt-4">{result.resumen_diagnostico}</p>
+                <p className="text-slate-600 text-sm leading-relaxed sm:pt-4">{result.resumen_diagnostico}</p>
               </div>
             </ResultCard>
 
@@ -1276,17 +1273,17 @@ Generá el feedback en este JSON exacto:
                   <p className="text-xs font-semibold uppercase tracking-wide mb-3" style={{ color: '#4ade80' }}>✅ Fortalezas</p>
                   {(result.fortalezas || []).map((f, i) => (
                     <div key={i} className="flex items-start gap-2">
-                      <span className="mt-0.5 shrink-0" style={{ color: '#4ade80' }}>•</span>
-                      <p className="text-slate-300 text-sm">{f}</p>
+                      <span className="mt-0.5 shrink-0" style={{ color: '#16a34a' }}>•</span>
+                      <p className="text-slate-600 text-sm">{f}</p>
                     </div>
                   ))}
                 </div>
                 <div className="space-y-2">
-                  <p className="text-xs font-semibold uppercase tracking-wide mb-3" style={{ color: '#fbbf24' }}>⚠️ Áreas de mejora</p>
+                  <p className="text-xs font-semibold uppercase tracking-wide mb-3" style={{ color: '#d97706' }}>⚠️ Áreas de mejora</p>
                   {(result.areas_de_mejora || []).map((a, i) => (
                     <div key={i} className="flex items-start gap-2">
-                      <span className="mt-0.5 shrink-0" style={{ color: '#fbbf24' }}>•</span>
-                      <p className="text-slate-300 text-sm">{a}</p>
+                      <span className="mt-0.5 shrink-0" style={{ color: '#d97706' }}>•</span>
+                      <p className="text-slate-600 text-sm">{a}</p>
                     </div>
                   ))}
                 </div>
@@ -1299,7 +1296,7 @@ Generá el feedback en este JSON exacto:
                 <div className="flex flex-wrap gap-2">
                   {result.palabras_clave_sugeridas.map((kw, i) => (
                     <span key={i} className="text-xs px-3 py-1.5 rounded-full font-medium"
-                      style={{ backgroundColor: 'rgba(0,119,181,0.12)', border: '1px solid rgba(0,119,181,0.3)', color: '#7dd3fc' }}>
+                      style={{ backgroundColor: 'rgba(0,119,181,0.08)', border: '1px solid rgba(0,119,181,0.25)', color: '#0077B5' }}>
                       {kw}
                     </span>
                   ))}
@@ -1320,14 +1317,14 @@ Generá el feedback en este JSON exacto:
               <div className="space-y-4">
                 {(result.recomendaciones || []).map((rec, i) => (
                   <div key={i} className="rounded-xl p-4 flex gap-4 items-start"
-                    style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.07)' }}>
+                    style={{ background: '#f8fafc', border: '1px solid rgba(0,119,181,0.12)' }}>
                     <span className="w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold shrink-0 mt-0.5"
                       style={{ background: 'linear-gradient(135deg,#0077B5,#0ea5e9)', color: '#fff' }}>
                       {i + 1}
                     </span>
                     <div>
-                      <p className="text-white font-semibold text-sm mb-1">{rec.titulo}</p>
-                      <p className="text-slate-400 text-sm leading-relaxed">{rec.descripcion}</p>
+                      <p className="text-slate-900 font-semibold text-sm mb-1">{rec.titulo}</p>
+                      <p className="text-slate-600 text-sm leading-relaxed">{rec.descripcion}</p>
                     </div>
                   </div>
                 ))}
@@ -1337,7 +1334,7 @@ Generá el feedback en este JSON exacto:
             <div className="rounded-2xl p-6"
               style={{ backgroundColor: 'rgba(0,119,181,0.08)', border: '1px solid rgba(0,119,181,0.3)' }}>
               <p className="text-xs font-semibold uppercase tracking-wide mb-3" style={{ color: '#0077B5' }}>📣 Estrategia de contenido</p>
-              <p className="text-slate-200 text-sm leading-relaxed">{result.estrategia_contenido}</p>
+              <p className="text-slate-700 text-sm leading-relaxed">{result.estrategia_contenido}</p>
             </div>
 
             <button
@@ -1351,7 +1348,7 @@ Generá el feedback en este JSON exacto:
             <button
               onClick={reset}
               className="w-full font-semibold py-4 rounded-2xl transition-all duration-200 text-sm"
-              style={{ border: '1px solid rgba(255,255,255,0.10)', color: '#94a3b8', background: 'rgba(255,255,255,0.03)' }}
+              style={{ border: '1px solid rgba(0,119,181,0.15)', color: '#3d5a73', background: '#f0f4f8' }}
             >
               ↺ Analizar otro perfil
             </button>
@@ -1364,16 +1361,16 @@ Generá el feedback en este JSON exacto:
             <Logo />
             <div className="space-y-5">
               <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full text-xs font-semibold tracking-wide"
-                style={{ border: '1px solid rgba(99,102,241,0.4)', color: '#a5b4fc', background: 'rgba(99,102,241,0.08)' }}>
+                style={{ border: '1px solid rgba(99,102,241,0.4)', color: '#6366f1', background: 'rgba(99,102,241,0.07)' }}>
                 🎙️ &nbsp;Entrevistador IA
               </div>
-              <h2 className="text-3xl sm:text-4xl font-bold text-white leading-tight" style={{ letterSpacing: '-0.02em' }}>
+              <h2 className="text-3xl sm:text-4xl font-bold text-slate-900 leading-tight" style={{ letterSpacing: '-0.02em' }}>
                 Simulación de<br />
                 <span style={{ background: 'linear-gradient(135deg,#6366f1,#8b5cf6)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent' }}>
                   entrevista inicial
                 </span>
               </h2>
-              <p className="text-slate-400 text-base max-w-sm mx-auto leading-relaxed">
+              <p className="text-slate-600 text-base max-w-sm mx-auto leading-relaxed">
                 5 preguntas típicas de selección. Al final recibís feedback personalizado basado en tu perfil y tus respuestas.
               </p>
             </div>
@@ -1385,7 +1382,7 @@ Generá el feedback en este JSON exacto:
                 { icon: '🎯', label: 'Criterio real', text: 'Estándares de headhunter', accent: '#a855f7' },
               ].map(item => (
                 <div key={item.label} className="rounded-2xl p-4 text-center"
-                  style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.07)' }}>
+                  style={{ background: 'white', border: '1px solid rgba(0,119,181,0.12)', boxShadow: '0 2px 8px rgba(0,0,0,0.05)' }}>
                   <div className="text-2xl mb-2">{item.icon}</div>
                   <p className="text-xs font-semibold mb-1" style={{ color: item.accent }}>{item.label}</p>
                   <p className="text-slate-500 text-xs leading-snug">{item.text}</p>
@@ -1404,7 +1401,7 @@ Generá el feedback en este JSON exacto:
               <button
                 onClick={() => setStep(STEPS.RESULTS)}
                 className="w-full font-medium py-3 rounded-2xl text-sm transition-all"
-                style={{ border: '1px solid rgba(255,255,255,0.08)', color: '#64748b', background: 'transparent' }}
+                style={{ border: '1px solid rgba(0,119,181,0.15)', color: '#3d5a73', background: '#f0f4f8' }}
               >
                 ← Volver a mis resultados
               </button>
@@ -1426,7 +1423,7 @@ Generá el feedback en este JSON exacto:
                       ? 'linear-gradient(90deg,#6366f1,#8b5cf6)'
                       : i === interviewIdx
                         ? 'rgba(99,102,241,0.5)'
-                        : 'rgba(255,255,255,0.07)',
+                        : 'rgba(0,119,181,0.12)',
                   }} />
               ))}
             </div>
@@ -1435,7 +1432,7 @@ Generá el feedback en este JSON exacto:
             </p>
 
             <div>
-              <h2 className="text-2xl sm:text-3xl font-bold text-white leading-snug" style={{ letterSpacing: '-0.01em' }}>
+              <h2 className="text-2xl sm:text-3xl font-bold text-slate-900 leading-snug" style={{ letterSpacing: '-0.01em' }}>
                 {INTERVIEW_QUESTIONS[interviewIdx].pregunta}
               </h2>
               <p className="text-slate-500 text-sm mt-2 leading-relaxed">
@@ -1451,15 +1448,15 @@ Generá el feedback en este JSON exacto:
                   placeholder="Escribí tu respuesta acá..."
                   rows={6}
                   maxLength={800}
-                  className="w-full rounded-2xl px-4 py-3 text-sm text-white resize-none outline-none transition-all duration-200"
+                  className="w-full rounded-2xl px-4 py-3 text-sm resize-none outline-none transition-all duration-200"
                   style={{
-                    background: 'rgba(255,255,255,0.04)',
-                    border: interviewAnswer.trim() ? '1px solid rgba(99,102,241,0.5)' : '1px solid rgba(255,255,255,0.08)',
-                    color: '#e2e8f0',
+                    background: '#f8fafc',
+                    border: interviewAnswer.trim() ? '1px solid rgba(99,102,241,0.5)' : '1px solid rgba(0,119,181,0.15)',
+                    color: '#0d2137',
                   }}
                 />
                 <span className="absolute bottom-2.5 right-3 text-xs pointer-events-none"
-                  style={{ color: interviewAnswer.length > 720 ? '#f59e0b' : '#334155' }}>
+                  style={{ color: interviewAnswer.length > 720 ? '#f59e0b' : '#94a3b8' }}>
                   {interviewAnswer.length}/800
                 </span>
               </div>
@@ -1489,14 +1486,14 @@ Generá el feedback en este JSON exacto:
                 <div className="relative w-28 h-28">
                   <div className="absolute inset-0 rounded-full"
                     style={{ boxShadow: '0 0 50px rgba(99,102,241,0.25), 0 0 80px rgba(139,92,246,0.1)' }} />
-                  <div className="absolute inset-3 rounded-full" style={{ border: '2px solid rgba(255,255,255,0.05)' }} />
+                  <div className="absolute inset-3 rounded-full" style={{ border: '2px solid rgba(99,102,241,0.10)' }} />
                   <div className="absolute inset-3 rounded-full border-2 animate-spin"
-                    style={{ borderColor: 'rgba(99,102,241,0.3)', borderTopColor: '#8b5cf6' }} />
+                    style={{ borderColor: 'rgba(99,102,241,0.25)', borderTopColor: '#8b5cf6' }} />
                   <div className="absolute inset-0 flex items-center justify-center text-2xl">🎙️</div>
                 </div>
                 <div className="space-y-2 max-w-xs">
-                  <h2 className="text-2xl font-bold text-white" style={{ letterSpacing: '-0.02em' }}>Evaluando tu entrevista...</h2>
-                  <p className="text-slate-400 text-sm leading-relaxed">Analizando tus respuestas con criterio de headhunter.</p>
+                  <h2 className="text-2xl font-bold text-slate-900" style={{ letterSpacing: '-0.02em' }}>Evaluando tu entrevista...</h2>
+                  <p className="text-slate-500 text-sm leading-relaxed">Analizando tus respuestas con criterio de headhunter.</p>
                 </div>
                 <div className="flex gap-2">
                   {[0, 1, 2].map(i => (
@@ -1508,7 +1505,7 @@ Generá el feedback en este JSON exacto:
             ) : interviewError ? (
               <div className="space-y-4">
                 <div className="rounded-xl p-4 text-sm"
-                  style={{ backgroundColor: 'rgba(127,29,29,0.3)', border: '1px solid #b91c1c', color: '#fca5a5' }}>
+                  style={{ backgroundColor: 'rgba(254,226,226,0.8)', border: '1px solid #fca5a5', color: '#b91c1c' }}>
                   ⚠️ {interviewError}
                 </div>
                 <button onClick={() => { setInterviewError(''); callInterviewFeedback(interviewAnswers) }}
@@ -1532,7 +1529,7 @@ Generá el feedback en este JSON exacto:
                 <ResultCard title="Resultado de la entrevista" accent="#6366f1">
                   <div className="flex flex-col sm:flex-row items-center sm:items-start gap-6">
                     <ScoreRing score={interviewFeedback.puntaje_entrevista} />
-                    <p className="text-slate-300 text-sm leading-relaxed sm:pt-4">{interviewFeedback.evaluacion_general}</p>
+                    <p className="text-slate-600 text-sm leading-relaxed sm:pt-4">{interviewFeedback.evaluacion_general}</p>
                   </div>
                 </ResultCard>
 
@@ -1543,17 +1540,17 @@ Generá el feedback en este JSON exacto:
                       <p className="text-xs font-semibold uppercase tracking-wide mb-3" style={{ color: '#4ade80' }}>✅ Fortalezas</p>
                       {(interviewFeedback.fortalezas_entrevista || []).map((f, i) => (
                         <div key={i} className="flex items-start gap-2">
-                          <span className="mt-0.5 shrink-0" style={{ color: '#4ade80' }}>•</span>
-                          <p className="text-slate-300 text-sm">{f}</p>
+                          <span className="mt-0.5 shrink-0" style={{ color: '#16a34a' }}>•</span>
+                          <p className="text-slate-600 text-sm">{f}</p>
                         </div>
                       ))}
                     </div>
                     <div className="space-y-2">
-                      <p className="text-xs font-semibold uppercase tracking-wide mb-3" style={{ color: '#fbbf24' }}>⚠️ Áreas de mejora</p>
+                      <p className="text-xs font-semibold uppercase tracking-wide mb-3" style={{ color: '#d97706' }}>⚠️ Áreas de mejora</p>
                       {(interviewFeedback.areas_de_mejora_entrevista || []).map((a, i) => (
                         <div key={i} className="flex items-start gap-2">
-                          <span className="mt-0.5 shrink-0" style={{ color: '#fbbf24' }}>•</span>
-                          <p className="text-slate-300 text-sm">{a}</p>
+                          <span className="mt-0.5 shrink-0" style={{ color: '#d97706' }}>•</span>
+                          <p className="text-slate-600 text-sm">{a}</p>
                         </div>
                       ))}
                     </div>
@@ -1565,14 +1562,14 @@ Generá el feedback en este JSON exacto:
                   <div className="space-y-4">
                     {(interviewFeedback.feedback_por_respuesta || []).map((fb, i) => (
                       <div key={i} className="rounded-xl p-4"
-                        style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.07)' }}>
-                        <p className="text-xs font-semibold uppercase tracking-wide mb-2" style={{ color: '#a5b4fc' }}>
+                        style={{ background: '#f8fafc', border: '1px solid rgba(0,119,181,0.12)' }}>
+                        <p className="text-xs font-semibold uppercase tracking-wide mb-2" style={{ color: '#6366f1' }}>
                           Pregunta {fb.numero}
                         </p>
                         <p className="text-slate-500 text-xs italic mb-2 leading-relaxed">"{INTERVIEW_QUESTIONS[fb.numero - 1]?.pregunta ?? `Pregunta ${fb.numero}`}"</p>
                         <div className="space-y-1.5">
-                          <p className="text-sm text-slate-300"><span style={{ color: '#4ade80' }}>✅ </span>{fb.aspecto_positivo}</p>
-                          <p className="text-sm text-slate-300"><span style={{ color: '#fbbf24' }}>💡 </span>{fb.sugerencia}</p>
+                          <p className="text-sm text-slate-600"><span style={{ color: '#16a34a' }}>✅ </span>{fb.aspecto_positivo}</p>
+                          <p className="text-sm text-slate-600"><span style={{ color: '#d97706' }}>💡 </span>{fb.sugerencia}</p>
                         </div>
                       </div>
                     ))}
@@ -1582,8 +1579,8 @@ Generá el feedback en este JSON exacto:
                 {/* Recomendación final */}
                 <div className="rounded-2xl p-5"
                   style={{ background: 'rgba(99,102,241,0.08)', border: '1px solid rgba(99,102,241,0.3)' }}>
-                  <p className="text-xs font-semibold uppercase tracking-wide mb-2" style={{ color: '#a5b4fc' }}>⚡ Recomendación final</p>
-                  <p className="text-white text-sm leading-relaxed">{interviewFeedback.recomendacion_final}</p>
+                  <p className="text-xs font-semibold uppercase tracking-wide mb-2" style={{ color: '#6366f1' }}>⚡ Recomendación final</p>
+                  <p className="text-slate-800 text-sm leading-relaxed">{interviewFeedback.recomendacion_final}</p>
                 </div>
 
                 {/* Card Ramiro */}
@@ -1593,9 +1590,9 @@ Generá el feedback en este JSON exacto:
                     style={{ background: 'linear-gradient(135deg,#0077B5,#0ea5e9)' }}>
                     RS
                   </div>
-                  <p className="text-white font-semibold">Ramiro Silvera</p>
-                  <p className="text-slate-400 text-sm mt-0.5">Gerente de RRHH · Creador de esta herramienta</p>
-                  <p className="text-slate-300 text-sm mt-3 leading-relaxed max-w-xs mx-auto">
+                  <p className="text-slate-900 font-semibold">Ramiro Silvera</p>
+                  <p className="text-slate-500 text-sm mt-0.5">Gerente de RRHH · Creador de esta herramienta</p>
+                  <p className="text-slate-600 text-sm mt-3 leading-relaxed max-w-xs mx-auto">
                     Si querés feedback personalizado o ayuda concreta con tu búsqueda, escribime en LinkedIn.
                   </p>
                   <p className="text-slate-500 text-xs mt-3 max-w-xs mx-auto leading-relaxed">
@@ -1628,8 +1625,8 @@ Generá el feedback en este JSON exacto:
                 <div className="rounded-2xl p-6 text-center"
                   style={{ background: 'rgba(0,180,150,0.07)', border: '1px solid rgba(0,180,150,0.25)' }}>
                   <div className="text-3xl mb-3">🙌</div>
-                  <p className="text-white font-semibold">¿Te fue útil la app?</p>
-                  <p className="text-slate-300 text-sm mt-3 leading-relaxed max-w-xs mx-auto">
+                  <p className="text-slate-900 font-semibold">¿Te fue útil la app?</p>
+                  <p className="text-slate-600 text-sm mt-3 leading-relaxed max-w-xs mx-auto">
                     Esta herramienta tiene costos reales de mantenimiento. Si te ayudó y querés colaborar para que siga funcionando y mejorando, podés hacerlo con una pequeña contribución mensual.
                   </p>
                   <a
@@ -1647,7 +1644,7 @@ Generá el feedback en este JSON exacto:
                 <button
                   onClick={() => setStep(STEPS.RESULTS)}
                   className="w-full font-semibold py-4 rounded-2xl text-sm"
-                  style={{ border: '1px solid rgba(255,255,255,0.10)', color: '#94a3b8', background: 'rgba(255,255,255,0.03)' }}
+                  style={{ border: '1px solid rgba(0,119,181,0.15)', color: '#3d5a73', background: '#f0f4f8' }}
                 >
                   ← Volver a mi análisis
                 </button>
