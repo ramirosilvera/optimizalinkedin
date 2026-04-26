@@ -929,7 +929,7 @@ Generá el feedback en este JSON exacto:
               >
                 Empezar análisis →
               </button>
-              <p className="text-slate-600 text-xs">Gratis · Sin registro · 10-15 minutos</p>
+              <p className="text-slate-500 text-xs">Gratis · Sin registro · Sostenida por la comunidad 🙌</p>
             </div>
 
             <CommentsSection />
@@ -1378,6 +1378,41 @@ Generá el feedback en este JSON exacto:
               <p className="text-slate-700 text-sm leading-relaxed">{result.estrategia_contenido || 'Sin información disponible.'}</p>
             </div>
 
+            {/* Card consulta personalizada */}
+            <div className="rounded-2xl p-5"
+              style={{ background: 'rgba(0,119,181,0.06)', border: '1px solid rgba(0,119,181,0.20)' }}>
+              <p className="text-xs font-semibold uppercase tracking-wide mb-2" style={{ color: '#0077B5' }}>🎯 ¿Querés implementar estos cambios?</p>
+              <p className="text-slate-700 text-sm leading-relaxed mb-3">
+                Ramiro puede guiarte paso a paso: revisar tu perfil en vivo, reescribir tu titular y resumen, y armar tu estrategia de búsqueda. Consulta con costo — se cotiza en el momento.
+              </p>
+              <button
+                onClick={() => setShowLeadModal(true)}
+                className="btn-glow inline-flex items-center gap-2 px-5 py-2.5 rounded-xl text-white text-sm font-semibold"
+                style={{ background: 'linear-gradient(135deg,#0077B5,#0ea5e9)' }}
+              >
+                <LinkedInIcon className="w-4 h-4" /> Hablar con Ramiro →
+              </button>
+            </div>
+
+            {/* Card colaboración */}
+            <div className="rounded-2xl p-5 flex items-center gap-4"
+              style={{ background: 'rgba(0,180,150,0.05)', border: '1px solid rgba(0,180,150,0.22)' }}>
+              <span className="text-2xl shrink-0">🙌</span>
+              <div className="flex-1 min-w-0">
+                <p className="text-slate-800 text-sm font-semibold">¿Te sirvió el análisis?</p>
+                <p className="text-slate-500 text-xs mt-0.5 leading-snug">Podés apoyar la app con un aporte de única vez — no es suscripción, es totalmente optativo.</p>
+              </div>
+              <a
+                href="https://www.mercadopago.com.ar/subscriptions/checkout?preapproval_plan_id=0922af414b854dabb5942e3291b2b5cb"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="shrink-0 px-4 py-2 rounded-xl text-white text-xs font-semibold transition-all"
+                style={{ background: 'linear-gradient(135deg,#00b496,#00d4aa)', boxShadow: '0 0 12px rgba(0,180,150,0.25)' }}
+              >
+                💙 Colaborar
+              </a>
+            </div>
+
             <button
               onClick={() => { resetInterview(); setStep(STEPS.INTERVIEW_INTRO) }}
               className="btn-glow w-full font-semibold py-4 rounded-2xl text-white text-sm"
@@ -1447,6 +1482,17 @@ Generá el feedback en este JSON exacto:
                 ← Volver a mis resultados
               </button>
             </div>
+            <p className="text-slate-400 text-xs text-center">
+              Simulación gratuita ·{' '}
+              <a
+                href="https://www.mercadopago.com.ar/subscriptions/checkout?preapproval_plan_id=0922af414b854dabb5942e3291b2b5cb"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="underline hover:text-slate-600 transition-colors"
+              >
+                Apoyar la app 🙌
+              </a>
+            </p>
           </div>
         )}
 
