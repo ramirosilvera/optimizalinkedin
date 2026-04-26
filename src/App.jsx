@@ -751,7 +751,7 @@ Generá un análisis en este formato JSON exacto:
   }
 
   // ── Guardar lead y abrir LinkedIn de Ramiro ──
-  const saveAndConnectRamiro = async (nombre, apellido) => {
+  const saveAndConnectRamiro = async (nombre, apellido, colaborar = false) => {
     if (leadSaving || leadSent) return
     setLeadSaving(true)
     setShowLeadModal(false)
@@ -780,6 +780,7 @@ Generá un análisis en este formato JSON exacto:
     } finally {
       setLeadSaving(false)
       setLeadSent(true)
+      if (colaborar) window.open('https://www.mercadopago.com.ar/subscriptions/checkout?preapproval_plan_id=0922af414b854dabb5942e3291b2b5cb', '_blank', 'noopener,noreferrer')
       window.open(RAMIRO_LINKEDIN_URL, '_blank', 'noopener,noreferrer')
     }
   }
@@ -1667,7 +1668,7 @@ Generá el feedback en este JSON exacto:
                   <div className="text-3xl mb-3">🙌</div>
                   <p className="text-slate-900 font-semibold">¿Te fue útil la app?</p>
                   <p className="text-slate-600 text-sm mt-3 leading-relaxed max-w-xs mx-auto">
-                    Esta herramienta tiene costos reales de mantenimiento. Si te ayudó y querés colaborar para que siga funcionando y mejorando, podés hacerlo con una pequeña contribución mensual.
+                    Esta herramienta tiene costos reales de mantenimiento. Si te fue útil, podés colaborar con un aporte de <strong>única vez</strong> — no es una suscripción. Es totalmente optativo y me ayuda a sostenerla y seguir mejorándola.
                   </p>
                   <a
                     href="https://www.mercadopago.com.ar/subscriptions/checkout?preapproval_plan_id=0922af414b854dabb5942e3291b2b5cb"
@@ -1678,7 +1679,7 @@ Generá el feedback en este JSON exacto:
                   >
                     💙 &nbsp;Colaborar con la app
                   </a>
-                  <p className="text-slate-600 text-xs mt-3">Seguro · Mercado Pago · Cancelable cuando quieras</p>
+                  <p className="text-slate-600 text-xs mt-3">Pago único · Seguro · Mercado Pago</p>
                 </div>
 
                 <button
@@ -1695,69 +1696,92 @@ Generá el feedback en este JSON exacto:
 
       </div>
 
-      {/* ── Modal nombre para lead ── */}
+      {/* ── Modal nombre + colaboración ── */}
       {showLeadModal && (
         <div
-          className="fixed inset-0 z-50 flex items-center justify-center px-4"
-          style={{ background: 'rgba(0,0,0,0.35)', backdropFilter: 'blur(4px)' }}
+          className="fixed inset-0 z-50 flex items-center justify-center px-4 py-6 overflow-y-auto"
+          style={{ background: 'rgba(0,0,0,0.40)', backdropFilter: 'blur(4px)' }}
           onClick={e => { if (e.target === e.currentTarget) setShowLeadModal(false) }}
         >
-          <div className="w-full max-w-sm rounded-2xl p-6 space-y-5 step-transition"
-            style={{ background: 'white', boxShadow: '0 20px 60px rgba(0,0,0,0.18)', border: '1px solid rgba(0,119,181,0.15)' }}>
-            <div>
-              <h3 className="text-lg font-bold text-slate-900">Antes de conectar</h3>
-              <p className="text-slate-500 text-sm mt-1 leading-relaxed">
-                Ingresá tu nombre para que Ramiro sepa quién le escribe y pueda revisar tu análisis de antemano.
+          <div className="w-full max-w-sm rounded-2xl step-transition overflow-hidden"
+            style={{ background: 'white', boxShadow: '0 20px 60px rgba(0,0,0,0.20)', border: '1px solid rgba(0,119,181,0.15)' }}>
+
+            {/* Sección nombre */}
+            <div className="p-6 space-y-4">
+              <div>
+                <h3 className="text-lg font-bold text-slate-900">Antes de conectar con Ramiro</h3>
+                <p className="text-slate-500 text-sm mt-1 leading-relaxed">
+                  Ingresá tu nombre para que sepa quién le escribe y pueda revisar tu análisis de antemano.
+                </p>
+              </div>
+              <div className="space-y-2.5">
+                <input
+                  type="text"
+                  placeholder="Nombre"
+                  value={leadNombre}
+                  onChange={e => setLeadNombre(e.target.value)}
+                  onKeyDown={e => { if (e.key === 'Enter' && leadNombre.trim() && leadApellido.trim()) saveAndConnectRamiro(leadNombre, leadApellido) }}
+                  maxLength={60}
+                  className="w-full rounded-xl px-4 py-3 text-sm outline-none transition-all duration-200"
+                  style={{
+                    background: '#f8fafc',
+                    border: leadNombre.trim() ? '1px solid rgba(0,119,181,0.5)' : '1px solid rgba(0,119,181,0.15)',
+                    color: '#0d2137',
+                  }}
+                />
+                <input
+                  type="text"
+                  placeholder="Apellido"
+                  value={leadApellido}
+                  onChange={e => setLeadApellido(e.target.value)}
+                  onKeyDown={e => { if (e.key === 'Enter' && leadNombre.trim() && leadApellido.trim()) saveAndConnectRamiro(leadNombre, leadApellido) }}
+                  maxLength={60}
+                  className="w-full rounded-xl px-4 py-3 text-sm outline-none transition-all duration-200"
+                  style={{
+                    background: '#f8fafc',
+                    border: leadApellido.trim() ? '1px solid rgba(0,119,181,0.5)' : '1px solid rgba(0,119,181,0.15)',
+                    color: '#0d2137',
+                  }}
+                />
+              </div>
+              <p className="text-slate-400 text-xs leading-relaxed">
+                Tu nombre, análisis y respuestas de entrevista serán enviados a Ramiro para orientarte desde el primer mensaje. La consulta personalizada tiene un costo que se cotizará en el momento.
               </p>
             </div>
-            <div className="space-y-3">
-              <input
-                type="text"
-                placeholder="Nombre"
-                value={leadNombre}
-                onChange={e => setLeadNombre(e.target.value)}
-                onKeyDown={e => { if (e.key === 'Enter' && leadNombre.trim() && leadApellido.trim()) saveAndConnectRamiro(leadNombre, leadApellido) }}
-                maxLength={60}
-                className="w-full rounded-xl px-4 py-3 text-sm outline-none transition-all duration-200"
-                style={{
-                  background: '#f8fafc',
-                  border: leadNombre.trim() ? '1px solid rgba(0,119,181,0.5)' : '1px solid rgba(0,119,181,0.15)',
-                  color: '#0d2137',
-                }}
-              />
-              <input
-                type="text"
-                placeholder="Apellido"
-                value={leadApellido}
-                onChange={e => setLeadApellido(e.target.value)}
-                onKeyDown={e => { if (e.key === 'Enter' && leadNombre.trim() && leadApellido.trim()) saveAndConnectRamiro(leadNombre, leadApellido) }}
-                maxLength={60}
-                className="w-full rounded-xl px-4 py-3 text-sm outline-none transition-all duration-200"
-                style={{
-                  background: '#f8fafc',
-                  border: leadApellido.trim() ? '1px solid rgba(0,119,181,0.5)' : '1px solid rgba(0,119,181,0.15)',
-                  color: '#0d2137',
-                }}
-              />
-            </div>
-            <p className="text-slate-400 text-xs leading-relaxed">
-              Tu nombre, análisis de perfil y respuestas de entrevista serán enviados a Ramiro para que pueda orientarte desde el primer mensaje.
-            </p>
-            <div className="flex gap-3">
+
+            {/* Sección colaboración */}
+            <div className="px-6 pb-2 pt-1 space-y-3"
+              style={{ borderTop: '1px solid rgba(0,180,150,0.18)', background: 'rgba(0,180,150,0.04)' }}>
+              <div className="flex items-start gap-3 pt-4">
+                <span className="text-2xl shrink-0">🙌</span>
+                <div>
+                  <p className="text-sm font-semibold text-slate-800">¿Querés apoyar la app?</p>
+                  <p className="text-slate-500 text-xs mt-1 leading-relaxed">
+                    Esta herramienta tiene costos reales. Si te fue útil, podés colaborar con un aporte de <strong>única vez</strong> — no es una suscripción mensual. Es totalmente optativo y me ayuda a sostenerla y seguir mejorándola.
+                  </p>
+                </div>
+              </div>
               <button
-                onClick={() => setShowLeadModal(false)}
-                className="flex-1 py-3 rounded-xl text-sm font-medium"
-                style={{ border: '1px solid rgba(0,119,181,0.15)', color: '#3d5a73', background: '#f0f4f8' }}
+                onClick={() => saveAndConnectRamiro(leadNombre, leadApellido, true)}
+                disabled={!leadNombre.trim() || !leadApellido.trim()}
+                className={`w-full py-3 rounded-xl text-white text-sm font-semibold transition-all ${leadNombre.trim() && leadApellido.trim() ? '' : 'opacity-40 cursor-not-allowed'}`}
+                style={{ background: leadNombre.trim() && leadApellido.trim() ? 'linear-gradient(135deg,#00b496,#00d4aa)' : 'rgba(0,180,150,0.3)', boxShadow: leadNombre.trim() && leadApellido.trim() ? '0 0 18px rgba(0,180,150,0.3)' : 'none' }}
               >
-                Cancelar
+                💙 Colaborar y conectar con Ramiro
               </button>
               <button
-                onClick={() => saveAndConnectRamiro(leadNombre, leadApellido)}
+                onClick={() => saveAndConnectRamiro(leadNombre, leadApellido, false)}
                 disabled={!leadNombre.trim() || !leadApellido.trim()}
-                className={`flex-[2] py-3 rounded-xl text-sm font-semibold text-white transition-all ${leadNombre.trim() && leadApellido.trim() ? 'btn-glow' : 'opacity-40 cursor-not-allowed'}`}
-                style={{ background: 'linear-gradient(135deg,#0077B5,#0ea5e9)' }}
+                className={`w-full py-3 rounded-xl text-sm font-semibold transition-all ${leadNombre.trim() && leadApellido.trim() ? '' : 'opacity-40 cursor-not-allowed'}`}
+                style={{ border: '1px solid rgba(0,119,181,0.2)', color: '#0077B5', background: 'white' }}
               >
-                <LinkedInIcon className="w-4 h-4 inline mr-1.5" /> Enviar y conectar
+                <LinkedInIcon className="w-4 h-4 inline mr-1.5" /> Solo conectar con Ramiro →
+              </button>
+              <button
+                onClick={() => setShowLeadModal(false)}
+                className="w-full py-2 text-slate-400 text-xs hover:text-slate-600 transition-colors pb-5"
+              >
+                Cancelar
               </button>
             </div>
           </div>
