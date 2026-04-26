@@ -185,6 +185,7 @@ Aplicá estos frameworks en tu análisis:
 - Propuesta de valor: ¿está claro qué problema resuelve este profesional y para quién específicamente?
 - Prueba social: ¿hay métricas, logros concretos, recomendaciones o validaciones externas?
 - CTA: ¿hay una llamada a la acción clara para el visitante ideal del perfil?
+- Foto de perfil: si se incluye una imagen, evaluá profesionalismo, encuadre tipo headshot (hombros + cara), fondo limpio o neutro, iluminación, expresión y si comunica el rol profesional del candidato.
 Respondé siempre en español rioplatense (Argentina).
 No usés lenguaje genérico ni de autoayuda.
 Sé directa, específica y orientada a resultados medibles.
@@ -522,12 +523,18 @@ export default function App() {
   const [pdfError, setPdfError] = useState('')
   const [instrTab, setInstrTab] = useState('desktop')
   const [isDragging, setIsDragging] = useState(false)
-  const [inputMode, setInputMode] = useState('form') // 'form' | 'pdf'
+  const [inputMode, setInputMode] = useState('pdf') // 'pdf' | 'form'
+  const [linkedinUrl, setLinkedinUrl] = useState('')
+  const [urlLoading, setUrlLoading] = useState(false)
+  const [urlAttempted, setUrlAttempted] = useState(false)
+  const [profilePhoto, setProfilePhoto] = useState(null)
+  const [profilePhotoMime, setProfilePhotoMime] = useState('image/jpeg')
+  const [profilePhotoPreview, setProfilePhotoPreview] = useState(null)
   const [formTitular, setFormTitular] = useState('')
   const [formResumen, setFormResumen] = useState('')
-  const [formCargo, setFormCargo] = useState('')
-  const [formEmpresa, setFormEmpresa] = useState('')
   const [formHabilidades, setFormHabilidades] = useState('')
+  const [formExperiencias, setFormExperiencias] = useState([{ cargo: '', empresa: '', periodo: '', descripcion: '' }])
+  const [formEducacion, setFormEducacion] = useState([{ institucion: '', titulo: '', periodo: '' }])
   const [formConfirmed, setFormConfirmed] = useState(false)
 
   // Results
@@ -586,12 +593,18 @@ export default function App() {
     setPdfError('')
     setInstrTab('desktop')
     setIsDragging(false)
-    setInputMode('form')
+    setInputMode('pdf')
+    setLinkedinUrl('')
+    setUrlLoading(false)
+    setUrlAttempted(false)
+    setProfilePhoto(null)
+    setProfilePhotoMime('image/jpeg')
+    setProfilePhotoPreview(null)
     setFormTitular('')
     setFormResumen('')
-    setFormCargo('')
-    setFormEmpresa('')
     setFormHabilidades('')
+    setFormExperiencias([{ cargo: '', empresa: '', periodo: '', descripcion: '' }])
+    setFormEducacion([{ institucion: '', titulo: '', periodo: '' }])
     setFormConfirmed(false)
     setResult(null)
     setAnalysisError('')
@@ -627,7 +640,7 @@ export default function App() {
     setTextAnswer('')
   }
 
-  // ── Switch input mode (form / pdf) ──
+  // ── Switch input mode (pdf / form) ──
   const handleInputModeSwitch = (mode) => {
     setInputMode(mode)
     setProfileText('')
@@ -639,15 +652,65 @@ export default function App() {
   // ── Confirm form data → build profileText ──
   const handleFormConfirm = () => {
     if (!formTitular.trim()) return
+    const expLines = formExperiencias
+      .filter(e => e.cargo.trim() || e.empresa.trim())
+      .map(e =>
+        `• ${[e.cargo.trim(), e.empresa.trim()].filter(Boolean).join(' en ')}${e.periodo.trim() ? ` | ${e.periodo.trim()}` : ''}${e.descripcion.trim() ? `\n  ${e.descripcion.trim()}` : ''}`
+      )
+      .join('\n')
+    const eduLines = formEducacion
+      .filter(e => e.institucion.trim() || e.titulo.trim())
+      .map(e =>
+        `• ${[e.titulo.trim(), e.institucion.trim()].filter(Boolean).join(' — ')}${e.periodo.trim() ? ` | ${e.periodo.trim()}` : ''}`
+      )
+      .join('\n')
     const parts = [`TITULAR PROFESIONAL: ${formTitular.trim()}`]
-    if (formCargo.trim() || formEmpresa.trim())
-      parts.push(`EXPERIENCIA ACTUAL: ${[formCargo.trim(), formEmpresa.trim()].filter(Boolean).join(' en ')}`)
-    if (formResumen.trim())
-      parts.push(`RESUMEN / ACERCA DE:\n${formResumen.trim()}`)
-    if (formHabilidades.trim())
-      parts.push(`HABILIDADES DESTACADAS: ${formHabilidades.trim()}`)
+    if (formResumen.trim()) parts.push(`RESUMEN / ACERCA DE:\n${formResumen.trim()}`)
+    if (expLines) parts.push(`EXPERIENCIA PROFESIONAL:\n${expLines}`)
+    if (eduLines) parts.push(`EDUCACIÓN:\n${eduLines}`)
+    if (formHabilidades.trim()) parts.push(`HABILIDADES: ${formHabilidades.trim()}`)
     setProfileText(parts.join('\n\n'))
     setFormConfirmed(true)
+  }
+
+  // ── Attempt to fetch LinkedIn profile by URL ──
+  const handleUrlAttempt = async () => {
+    if (!linkedinUrl.trim() || urlLoading) return
+    setUrlLoading(true)
+    try {
+      const res = await fetch(WORKER_URL, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ action: 'fetch_url', url: linkedinUrl.trim() }),
+      })
+      const data = await res.json().catch(() => ({ blocked: true }))
+      if (!data.blocked && data.html) {
+        const text = data.html.replace(/<[^>]+>/g, ' ').replace(/\s{2,}/g, ' ').trim().slice(0, 4000)
+        if (text.length > 200) {
+          setProfileText(text)
+          setUrlAttempted(true)
+          return
+        }
+      }
+      setUrlAttempted(true)
+    } catch {
+      setUrlAttempted(true)
+    } finally {
+      setUrlLoading(false)
+    }
+  }
+
+  // ── Upload profile photo for form mode ──
+  const handlePhotoUpload = (e) => {
+    const file = e.target.files?.[0]
+    if (!file || !file.type.startsWith('image/') || file.size > 5 * 1024 * 1024) return
+    setProfilePhotoMime(file.type)
+    setProfilePhotoPreview(URL.createObjectURL(file))
+    const reader = new FileReader()
+    reader.onload = () => setProfilePhoto(reader.result.split(',')[1])
+    reader.readAsDataURL(file)
+    setFormConfirmed(false)
+    setProfileText('')
   }
 
   // ── Upload and extract PDF ──
@@ -748,7 +811,8 @@ Generá un análisis en este formato JSON exacto:
     {"titulo": "...", "descripcion": "..."},
     {"titulo": "...", "descripcion": "..."}
   ],
-  "estrategia_contenido": "sugerencia de 2-3 oraciones sobre qué tipo de contenido publicar para lograr el objetivo declarado"
+  "estrategia_contenido": "sugerencia de 2-3 oraciones sobre qué tipo de contenido publicar para lograr el objetivo declarado",
+  "analisis_foto": "evaluación concreta de la foto de perfil: profesionalismo, encuadre tipo headshot, fondo, iluminación, expresión. Si no se incluyó foto, indicá brevemente la importancia de tenerla."
 }`
 
     const controller = new AbortController()
@@ -762,7 +826,12 @@ Generá un análisis en este formato JSON exacto:
         signal: controller.signal,
         body: JSON.stringify({
           system_instruction: { parts: [{ text: ANALYSIS_SYSTEM_PROMPT }] },
-          contents: [{ parts: [{ text: userPrompt }] }],
+          contents: [{
+            parts: [
+              { text: userPrompt },
+              ...(profilePhoto ? [{ inlineData: { mimeType: profilePhotoMime, data: profilePhoto } }] : []),
+            ],
+          }],
           generationConfig: { responseMimeType: 'application/json', maxOutputTokens: 2200 },
         }),
       })
@@ -785,6 +854,7 @@ Generá un análisis en este formato JSON exacto:
         areas_de_mejora: parsed.areas_de_mejora || [],
         palabras_clave_sugeridas: parsed.palabras_clave_sugeridas || [],
         recomendaciones: parsed.recomendaciones || [],
+        analisis_foto: parsed.analisis_foto || '',
       })
       setStep(STEPS.RESULTS)
     } catch (err) {
@@ -1094,251 +1164,345 @@ Generá el feedback en este JSON exacto:
               <h2 className="text-2xl sm:text-3xl font-bold text-slate-900">Cargá tu perfil de LinkedIn</h2>
             </div>
 
-            {/* Selector de modo */}
-            <div className="flex rounded-xl overflow-hidden" style={{ border: '1px solid rgba(0,119,181,0.15)' }}>
-              {[
-                { id: 'form', label: '✏️  Completar en la app' },
-                { id: 'pdf',  label: '📄  Subir PDF' },
-              ].map(tab => (
+            {/* ── FASE 1: URL ── */}
+            <div className="rounded-2xl p-4 space-y-3"
+              style={{ background: 'white', border: '1px solid rgba(0,119,181,0.12)', boxShadow: '0 2px 12px rgba(0,0,0,0.05)' }}>
+              <div>
+                <p className="text-xs font-semibold text-slate-600 uppercase tracking-wide mb-1">Acceso automático</p>
+                <p className="text-slate-500 text-xs leading-relaxed">Pegá la URL de tu perfil e intentamos leerlo directamente.</p>
+              </div>
+              <div className="flex gap-2">
+                <input
+                  type="url"
+                  value={linkedinUrl}
+                  onChange={e => setLinkedinUrl(e.target.value)}
+                  onKeyDown={e => e.key === 'Enter' && handleUrlAttempt()}
+                  placeholder="https://www.linkedin.com/in/tu-usuario"
+                  disabled={urlLoading}
+                  className="flex-1 rounded-xl px-4 py-2.5 text-sm outline-none"
+                  style={{ background: '#f8fafc', border: '1px solid rgba(0,119,181,0.18)', color: '#0d2137' }}
+                />
                 <button
-                  key={tab.id}
-                  onClick={() => handleInputModeSwitch(tab.id)}
-                  className="flex-1 py-3 text-xs font-semibold transition-all duration-200"
-                  style={inputMode === tab.id
+                  onClick={handleUrlAttempt}
+                  disabled={!linkedinUrl.trim() || urlLoading}
+                  className="shrink-0 px-4 py-2.5 rounded-xl text-sm font-semibold transition-all duration-200 flex items-center gap-2"
+                  style={linkedinUrl.trim() && !urlLoading
                     ? { background: 'linear-gradient(135deg,#0077B5,#0ea5e9)', color: '#fff' }
-                    : { color: '#475569', background: 'transparent' }
+                    : { background: 'rgba(0,119,181,0.07)', color: '#94a3b8', border: '1px solid rgba(0,119,181,0.12)', cursor: 'not-allowed' }
                   }
                 >
-                  {tab.label}
+                  {urlLoading ? <><Spinner size={4} /><span>Accediendo...</span></> : 'Intentar →'}
                 </button>
-              ))}
+              </div>
+              {urlAttempted && profileText && !pdfFileName && !formConfirmed && (
+                <p className="text-green-600 text-xs font-medium">✅ Perfil accedido correctamente — podés analizar tu perfil.</p>
+              )}
+              {urlAttempted && !profileText && (
+                <p className="text-amber-600 text-xs">LinkedIn bloqueó el acceso automático (protege la privacidad de sus usuarios). Elegí una de las opciones de abajo.</p>
+              )}
+              <button
+                onClick={() => { setUrlAttempted(true); setInputMode('pdf') }}
+                className="text-xs text-slate-400 hover:text-slate-600 transition-colors"
+              >
+                Saltar este paso →
+              </button>
             </div>
 
-            {/* ── MODO FORMULARIO ── */}
-            {inputMode === 'form' && (
-              <div className="space-y-4">
-                <p className="text-slate-500 text-sm leading-relaxed">
-                  Copiá cada campo directamente desde tu perfil de LinkedIn. El análisis es igual de preciso que con el PDF.
-                </p>
-
-                {/* Titular — required */}
-                <div>
-                  <label className="text-xs font-semibold text-slate-600 uppercase tracking-wide block mb-1.5">
-                    Titular profesional <span style={{ color: '#0077B5' }}>*</span>
-                  </label>
-                  <input
-                    type="text"
-                    value={formTitular}
-                    onChange={e => { setFormTitular(e.target.value); setFormConfirmed(false); setProfileText('') }}
-                    placeholder="Ej: Desarrollador Frontend Senior | React & TypeScript | 10 años"
-                    maxLength={220}
-                    className="w-full rounded-xl px-4 py-3 text-sm outline-none"
-                    style={{ background: 'white', border: '1px solid rgba(0,119,181,0.20)', color: '#0d2137' }}
-                  />
-                  <p className="text-slate-400 text-xs mt-1">El texto debajo de tu nombre en LinkedIn</p>
+            {/* ── FASE 2: Tabs fallback (tras intento o skip) ── */}
+            {(urlAttempted && !profileText) && (
+              <>
+                <div className="flex rounded-xl overflow-hidden" style={{ border: '1px solid rgba(0,119,181,0.15)' }}>
+                  {[
+                    { id: 'pdf',  label: '📄  Subir PDF' },
+                    { id: 'form', label: '✏️  Completar en la app' },
+                  ].map(tab => (
+                    <button
+                      key={tab.id}
+                      onClick={() => handleInputModeSwitch(tab.id)}
+                      className="flex-1 py-3 text-xs font-semibold transition-all duration-200"
+                      style={inputMode === tab.id
+                        ? { background: 'linear-gradient(135deg,#0077B5,#0ea5e9)', color: '#fff' }
+                        : { color: '#475569', background: 'transparent' }
+                      }
+                    >
+                      {tab.label}
+                    </button>
+                  ))}
                 </div>
 
-                {/* Cargo + empresa */}
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  <div>
-                    <label className="text-xs font-semibold text-slate-600 uppercase tracking-wide block mb-1.5">Cargo actual</label>
-                    <input
-                      type="text"
-                      value={formCargo}
-                      onChange={e => { setFormCargo(e.target.value); setFormConfirmed(false); setProfileText('') }}
-                      placeholder="Ej: Gerente de Marketing"
-                      maxLength={120}
-                      className="w-full rounded-xl px-4 py-3 text-sm outline-none"
-                      style={{ background: 'white', border: '1px solid rgba(0,119,181,0.20)', color: '#0d2137' }}
-                    />
-                  </div>
-                  <div>
-                    <label className="text-xs font-semibold text-slate-600 uppercase tracking-wide block mb-1.5">Empresa</label>
-                    <input
-                      type="text"
-                      value={formEmpresa}
-                      onChange={e => { setFormEmpresa(e.target.value); setFormConfirmed(false); setProfileText('') }}
-                      placeholder="Ej: Google, Freelance, Startup XYZ"
-                      maxLength={120}
-                      className="w-full rounded-xl px-4 py-3 text-sm outline-none"
-                      style={{ background: 'white', border: '1px solid rgba(0,119,181,0.20)', color: '#0d2137' }}
-                    />
-                  </div>
-                </div>
-
-                {/* Resumen */}
-                <div>
-                  <label className="text-xs font-semibold text-slate-600 uppercase tracking-wide block mb-1.5">
-                    Resumen / About{' '}
-                    <span className="text-slate-400 font-normal normal-case tracking-normal">(opcional pero recomendado)</span>
-                  </label>
-                  <textarea
-                    value={formResumen}
-                    onChange={e => { setFormResumen(e.target.value); setFormConfirmed(false); setProfileText('') }}
-                    placeholder={'Pegá el texto de tu sección "Acerca de" en LinkedIn, o escribí un resumen de tu trayectoria...'}
-                    rows={4}
-                    maxLength={2600}
-                    className="w-full rounded-xl px-4 py-3 text-sm outline-none resize-none"
-                    style={{ background: 'white', border: '1px solid rgba(0,119,181,0.20)', color: '#0d2137' }}
-                  />
-                </div>
-
-                {/* Habilidades */}
-                <div>
-                  <label className="text-xs font-semibold text-slate-600 uppercase tracking-wide block mb-1.5">
-                    Habilidades principales{' '}
-                    <span className="text-slate-400 font-normal normal-case tracking-normal">(opcional)</span>
-                  </label>
-                  <input
-                    type="text"
-                    value={formHabilidades}
-                    onChange={e => { setFormHabilidades(e.target.value); setFormConfirmed(false); setProfileText('') }}
-                    placeholder="Ej: React, Gestión de equipos, Análisis de datos, Inglés avanzado"
-                    maxLength={300}
-                    className="w-full rounded-xl px-4 py-3 text-sm outline-none"
-                    style={{ background: 'white', border: '1px solid rgba(0,119,181,0.20)', color: '#0d2137' }}
-                  />
-                </div>
-
-                {/* Botón confirmar */}
-                <button
-                  onClick={handleFormConfirm}
-                  disabled={!formTitular.trim() || formConfirmed}
-                  className="w-full py-3 rounded-xl font-semibold text-sm transition-all duration-200"
-                  style={formConfirmed
-                    ? { background: 'rgba(34,197,94,0.08)', border: '1px solid rgba(34,197,94,0.35)', color: '#16a34a', cursor: 'default' }
-                    : formTitular.trim()
-                      ? { background: 'linear-gradient(135deg,#0077B5,#0ea5e9)', color: '#fff', cursor: 'pointer' }
-                      : { background: 'rgba(0,119,181,0.06)', border: '1px solid rgba(0,119,181,0.12)', color: '#94a3b8', cursor: 'not-allowed' }
-                  }
-                >
-                  {formConfirmed ? '✅ Datos listos — podés analizar tu perfil' : 'Usar estos datos →'}
-                </button>
-              </div>
-            )}
-
-            {/* ── MODO PDF ── */}
-            {inputMode === 'pdf' && (
-              <div className="space-y-4">
-                {/* Por qué PDF */}
-                <div className="rounded-xl p-4 text-sm"
-                  style={{ backgroundColor: 'rgba(245,158,11,0.07)', border: '1px solid rgba(245,158,11,0.25)' }}>
-                  <p className="text-amber-400 font-semibold text-xs uppercase tracking-wide mb-2">¿Por qué no se puede hacer automáticamente?</p>
-                  <p className="text-slate-600 leading-relaxed">
-                    LinkedIn bloquea el acceso a perfiles externos para proteger la privacidad. La única forma de leer tu perfil completo es que vos mismo lo descargues como PDF.
-                  </p>
-                </div>
-
-                {/* Instrucciones desktop/celular */}
-                <div className="rounded-2xl overflow-hidden"
-                  style={{ background: 'white', border: '1px solid rgba(0,119,181,0.12)', boxShadow: '0 2px 12px rgba(0,0,0,0.06)' }}>
-                  <div className="flex border-b" style={{ borderColor: 'rgba(0,119,181,0.12)' }}>
-                    {[
-                      { id: 'desktop', label: '🖥️  Computadora' },
-                      { id: 'mobile', label: '📱  Celular' },
-                    ].map(tab => (
-                      <button
-                        key={tab.id}
-                        onClick={() => setInstrTab(tab.id)}
-                        className="flex-1 py-3 text-xs font-semibold transition-all duration-200"
-                        style={instrTab === tab.id
-                          ? { background: 'linear-gradient(135deg,#0077B5,#0ea5e9)', color: '#fff' }
-                          : { color: '#475569', background: 'transparent' }
-                        }
-                      >
-                        {tab.label}
-                      </button>
-                    ))}
-                  </div>
-                  <div className="p-5 space-y-3">
-                    <p className="font-semibold text-slate-900 text-sm mb-1">
-                      {instrTab === 'desktop' ? '📄 Cómo descargar desde la computadora' : '📄 Cómo descargar desde el celular'}
-                    </p>
-                    <ol className="space-y-2.5">
-                      {(instrTab === 'desktop' ? [
-                        'Abrí linkedin.com en tu navegador e iniciá sesión',
-                        'Hacé clic en tu foto de perfil (arriba a la derecha) y seleccioná "Ver perfil"',
-                        'En tu perfil, hacé clic en el botón "Más" (debajo de tu foto y nombre)',
-                        'Seleccioná "Guardar como PDF" en el menú desplegable',
-                        'El PDF se descarga automáticamente — buscalo en tu carpeta de Descargas',
-                        'Volvé acá y arrastrá el archivo o hacé clic para subirlo ↓',
-                      ] : [
-                        'Abrí la app de LinkedIn en tu celular e iniciá sesión',
-                        'Tocá tu foto de perfil (arriba a la izquierda) para ir a tu perfil',
-                        'Tocá los tres puntos (...) que aparecen arriba a la derecha de tu perfil',
-                        'Seleccioná "Guardar como PDF"',
-                        'Si no ves esa opción: abrí linkedin.com en Chrome o Safari, iniciá sesión, y repetí desde el paso 2',
-                        'El PDF se guarda en tu teléfono — subilo acá ↓',
-                      ]).map((s, i) => (
-                        <li key={i} className="flex items-start gap-3 text-sm text-slate-600">
-                          <span className="w-5 h-5 rounded-full flex items-center justify-center text-xs font-bold shrink-0 mt-0.5"
-                            style={{ backgroundColor: 'rgba(0,119,181,0.2)', color: '#0077B5', minWidth: '1.25rem' }}>
-                            {i + 1}
-                          </span>
-                          <span className="leading-relaxed">{s}</span>
-                        </li>
-                      ))}
-                    </ol>
-                  </div>
-                </div>
-
-                {/* Upload area */}
-                <div>
-                  <input
-                    type="file"
-                    accept="application/pdf"
-                    id="pdf-upload"
-                    className="hidden"
-                    onChange={handlePdfUpload}
-                  />
-                  <label
-                    htmlFor="pdf-upload"
-                    onDragOver={handleDragOver}
-                    onDragLeave={handleDragLeave}
-                    onDrop={handleDrop}
-                    className="flex flex-col items-center justify-center gap-3 w-full py-10 px-6 rounded-2xl border-2 border-dashed cursor-pointer transition-all duration-300"
-                    style={{
-                      borderColor: profileText ? 'rgba(34,197,94,0.6)' : isDragging ? '#0a91d4' : pdfLoading ? '#0077B5' : 'rgba(0,119,181,0.20)',
-                      background: profileText ? 'rgba(34,197,94,0.05)' : isDragging ? 'rgba(0,119,181,0.08)' : '#f8fafc',
-                    }}
-                  >
-                    {pdfLoading ? (
-                      <>
-                        <div className="w-8 h-8 rounded-full border-2 border-t-transparent animate-spin"
-                          style={{ borderColor: '#0077B5', borderTopColor: 'transparent' }} />
-                        <p className="text-slate-500 text-sm">Extrayendo contenido del PDF...</p>
-                      </>
-                    ) : profileText ? (
-                      <>
-                        <span className="text-3xl">✅</span>
-                        <div className="text-center">
-                          <p className="text-green-600 font-semibold text-sm">{pdfFileName}</p>
-                          <p className="text-slate-500 text-xs mt-1">Perfil extraído correctamente · Hacé clic para cambiar el archivo</p>
-                        </div>
-                      </>
-                    ) : (
-                      <>
-                        <span className="text-3xl">{isDragging ? '📂' : '📄'}</span>
-                        <div className="text-center">
-                          <p className="text-slate-900 font-semibold text-sm">
-                            {isDragging ? 'Soltá el PDF acá' : 'Subir PDF de LinkedIn'}
-                          </p>
-                          <p className="text-slate-500 text-xs mt-1">Arrastrá el archivo o hacé clic para seleccionarlo · Máx. 15 MB</p>
-                        </div>
-                      </>
+                {/* ── MODO PDF ── */}
+                {inputMode === 'pdf' && (
+                  <div className="space-y-4">
+                    <div className="rounded-xl p-4 text-sm"
+                      style={{ backgroundColor: 'rgba(245,158,11,0.07)', border: '1px solid rgba(245,158,11,0.25)' }}>
+                      <p className="text-amber-500 font-semibold text-xs uppercase tracking-wide mb-1">¿Por qué PDF?</p>
+                      <p className="text-slate-600 text-xs leading-relaxed">Es la forma más completa de compartir tu perfil. LinkedIn lo genera en segundos con toda tu información.</p>
+                    </div>
+                    <div className="rounded-2xl overflow-hidden"
+                      style={{ background: 'white', border: '1px solid rgba(0,119,181,0.12)', boxShadow: '0 2px 12px rgba(0,0,0,0.06)' }}>
+                      <div className="flex border-b" style={{ borderColor: 'rgba(0,119,181,0.12)' }}>
+                        {[
+                          { id: 'desktop', label: '🖥️  Computadora' },
+                          { id: 'mobile', label: '📱  Celular' },
+                        ].map(tab => (
+                          <button key={tab.id} onClick={() => setInstrTab(tab.id)}
+                            className="flex-1 py-3 text-xs font-semibold transition-all duration-200"
+                            style={instrTab === tab.id
+                              ? { background: 'linear-gradient(135deg,#0077B5,#0ea5e9)', color: '#fff' }
+                              : { color: '#475569', background: 'transparent' }
+                            }>{tab.label}</button>
+                        ))}
+                      </div>
+                      <div className="p-5 space-y-3">
+                        <p className="font-semibold text-slate-900 text-sm mb-1">
+                          {instrTab === 'desktop' ? '📄 Descargar desde computadora' : '📄 Descargar desde celular'}
+                        </p>
+                        <ol className="space-y-2.5">
+                          {(instrTab === 'desktop' ? [
+                            'Abrí linkedin.com en tu navegador e iniciá sesión',
+                            'Hacé clic en tu foto de perfil (arriba a la derecha) → "Ver perfil"',
+                            'Hacé clic en "Más" (debajo de tu foto y nombre)',
+                            'Seleccioná "Guardar como PDF"',
+                            'El PDF se descarga automáticamente — buscalo en Descargas',
+                            'Volvé acá y subilo ↓',
+                          ] : [
+                            'Abrí la app de LinkedIn e iniciá sesión',
+                            'Tocá tu foto (arriba a la izquierda) para ir a tu perfil',
+                            'Tocá los tres puntos (...) arriba a la derecha',
+                            'Seleccioná "Guardar como PDF"',
+                            'Si no ves esa opción: abrí linkedin.com en el navegador',
+                            'El PDF se guarda en tu teléfono — subilo acá ↓',
+                          ]).map((s, i) => (
+                            <li key={i} className="flex items-start gap-3 text-sm text-slate-600">
+                              <span className="w-5 h-5 rounded-full flex items-center justify-center text-xs font-bold shrink-0 mt-0.5"
+                                style={{ backgroundColor: 'rgba(0,119,181,0.2)', color: '#0077B5', minWidth: '1.25rem' }}>
+                                {i + 1}
+                              </span>
+                              <span className="leading-relaxed">{s}</span>
+                            </li>
+                          ))}
+                        </ol>
+                      </div>
+                    </div>
+                    <div>
+                      <input type="file" accept="application/pdf" id="pdf-upload" className="hidden" onChange={handlePdfUpload} />
+                      <label htmlFor="pdf-upload"
+                        onDragOver={handleDragOver} onDragLeave={handleDragLeave} onDrop={handleDrop}
+                        className="flex flex-col items-center justify-center gap-3 w-full py-10 px-6 rounded-2xl border-2 border-dashed cursor-pointer transition-all duration-300"
+                        style={{
+                          borderColor: profileText ? 'rgba(34,197,94,0.6)' : isDragging ? '#0a91d4' : pdfLoading ? '#0077B5' : 'rgba(0,119,181,0.20)',
+                          background: profileText ? 'rgba(34,197,94,0.05)' : isDragging ? 'rgba(0,119,181,0.08)' : '#f8fafc',
+                        }}>
+                        {pdfLoading ? (
+                          <><div className="w-8 h-8 rounded-full border-2 animate-spin" style={{ borderColor: '#0077B5', borderTopColor: 'transparent' }} />
+                            <p className="text-slate-500 text-sm">Extrayendo contenido del PDF...</p></>
+                        ) : profileText ? (
+                          <><span className="text-3xl">✅</span>
+                            <div className="text-center">
+                              <p className="text-green-600 font-semibold text-sm">{pdfFileName}</p>
+                              <p className="text-slate-500 text-xs mt-1">Perfil extraído · Hacé clic para cambiar</p>
+                            </div></>
+                        ) : (
+                          <><span className="text-3xl">{isDragging ? '📂' : '📄'}</span>
+                            <div className="text-center">
+                              <p className="text-slate-900 font-semibold text-sm">{isDragging ? 'Soltá el PDF acá' : 'Subir PDF de LinkedIn'}</p>
+                              <p className="text-slate-500 text-xs mt-1">Arrastrá o hacé clic · Máx. 15 MB</p>
+                            </div></>
+                        )}
+                      </label>
+                    </div>
+                    {pdfError && (
+                      <div className="rounded-xl p-4 text-sm flex items-start gap-3"
+                        style={{ backgroundColor: 'rgba(254,226,226,0.8)', border: '1px solid #fca5a5', color: '#b91c1c' }}>
+                        <span className="shrink-0 mt-0.5">⚠️</span><span>{pdfError}</span>
+                      </div>
                     )}
-                  </label>
-                </div>
-
-                {/* PDF error */}
-                {pdfError && (
-                  <div className="rounded-xl p-4 text-sm flex items-start gap-3"
-                    style={{ backgroundColor: 'rgba(254,226,226,0.8)', border: '1px solid #fca5a5', color: '#b91c1c' }}>
-                    <span className="shrink-0 mt-0.5">⚠️</span>
-                    <span>{pdfError}</span>
                   </div>
                 )}
-              </div>
+
+                {/* ── MODO FORMULARIO ── */}
+                {inputMode === 'form' && (
+                  <div className="space-y-4">
+                    <p className="text-slate-500 text-sm leading-relaxed">
+                      Copiá cada campo directamente desde tu perfil de LinkedIn.
+                    </p>
+
+                    {/* Foto de perfil */}
+                    <div>
+                      <label className="text-xs font-semibold text-slate-600 uppercase tracking-wide block mb-2">
+                        Foto de perfil{' '}
+                        <span className="text-slate-400 font-normal normal-case tracking-normal">(opcional — se analiza calidad)</span>
+                      </label>
+                      <div className="flex items-center gap-4">
+                        <div className="w-16 h-16 rounded-full overflow-hidden shrink-0 border-2 flex items-center justify-center"
+                          style={{ borderColor: 'rgba(0,119,181,0.2)', background: '#f0f4f8' }}>
+                          {profilePhotoPreview
+                            ? <img src={profilePhotoPreview} alt="preview" className="w-full h-full object-cover" />
+                            : <span className="text-2xl">👤</span>
+                          }
+                        </div>
+                        <label htmlFor="photo-upload"
+                          className="cursor-pointer px-4 py-2 rounded-xl text-sm font-medium transition-all duration-200"
+                          style={{ background: 'rgba(0,119,181,0.08)', color: '#0077B5', border: '1px solid rgba(0,119,181,0.2)' }}>
+                          {profilePhotoPreview ? 'Cambiar foto' : 'Subir foto'}
+                        </label>
+                        <input id="photo-upload" type="file" accept="image/*" className="hidden" onChange={handlePhotoUpload} />
+                        {profilePhotoPreview && (
+                          <button onClick={() => { setProfilePhotoPreview(null); setProfilePhoto(null); setFormConfirmed(false); setProfileText('') }}
+                            className="text-xs text-slate-400 hover:text-red-400 transition-colors">✕ Quitar</button>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Titular */}
+                    <div>
+                      <label className="text-xs font-semibold text-slate-600 uppercase tracking-wide block mb-1.5">
+                        Titular profesional <span style={{ color: '#0077B5' }}>*</span>
+                      </label>
+                      <input type="text" value={formTitular}
+                        onChange={e => { setFormTitular(e.target.value); setFormConfirmed(false); setProfileText('') }}
+                        placeholder="Ej: Desarrollador Frontend Senior | React & TypeScript | 10 años"
+                        maxLength={220}
+                        className="w-full rounded-xl px-4 py-3 text-sm outline-none"
+                        style={{ background: 'white', border: '1px solid rgba(0,119,181,0.20)', color: '#0d2137' }} />
+                      <p className="text-slate-400 text-xs mt-1">El texto que aparece debajo de tu nombre en LinkedIn</p>
+                    </div>
+
+                    {/* Resumen */}
+                    <div>
+                      <label className="text-xs font-semibold text-slate-600 uppercase tracking-wide block mb-1.5">
+                        Resumen / About{' '}
+                        <span className="text-slate-400 font-normal normal-case tracking-normal">(recomendado)</span>
+                      </label>
+                      <textarea value={formResumen}
+                        onChange={e => { setFormResumen(e.target.value); setFormConfirmed(false); setProfileText('') }}
+                        placeholder={'Pegá el texto de tu sección "Acerca de" en LinkedIn...'}
+                        rows={4} maxLength={2600}
+                        className="w-full rounded-xl px-4 py-3 text-sm outline-none resize-none"
+                        style={{ background: 'white', border: '1px solid rgba(0,119,181,0.20)', color: '#0d2137' }} />
+                    </div>
+
+                    {/* Experiencias */}
+                    <div>
+                      <div className="flex items-center justify-between mb-2">
+                        <label className="text-xs font-semibold text-slate-600 uppercase tracking-wide">Experiencia profesional</label>
+                        <button
+                          onClick={() => { setFormExperiencias(p => [...p, { cargo: '', empresa: '', periodo: '', descripcion: '' }]); setFormConfirmed(false); setProfileText('') }}
+                          className="text-xs px-3 py-1 rounded-lg transition-all duration-200"
+                          style={{ color: '#0077B5', background: 'rgba(0,119,181,0.08)', border: '1px solid rgba(0,119,181,0.2)' }}>
+                          + Agregar
+                        </button>
+                      </div>
+                      {formExperiencias.map((exp, i) => (
+                        <div key={i} className="rounded-xl p-4 space-y-2 mb-3"
+                          style={{ background: 'white', border: '1px solid rgba(0,119,181,0.12)' }}>
+                          <div className="flex items-center justify-between">
+                            <span className="text-xs text-slate-500 font-semibold">Experiencia {i + 1}</span>
+                            {formExperiencias.length > 1 && (
+                              <button onClick={() => { setFormExperiencias(p => p.filter((_, j) => j !== i)); setFormConfirmed(false); setProfileText('') }}
+                                className="text-xs text-slate-400 hover:text-red-400 transition-colors">✕ Eliminar</button>
+                            )}
+                          </div>
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                            <input value={exp.cargo}
+                              onChange={e => { setFormExperiencias(p => p.map((x, j) => j === i ? { ...x, cargo: e.target.value } : x)); setFormConfirmed(false); setProfileText('') }}
+                              placeholder="Cargo" maxLength={120}
+                              className="w-full rounded-xl px-3 py-2.5 text-sm outline-none"
+                              style={{ background: '#f8fafc', border: '1px solid rgba(0,119,181,0.15)', color: '#0d2137' }} />
+                            <input value={exp.empresa}
+                              onChange={e => { setFormExperiencias(p => p.map((x, j) => j === i ? { ...x, empresa: e.target.value } : x)); setFormConfirmed(false); setProfileText('') }}
+                              placeholder="Empresa" maxLength={120}
+                              className="w-full rounded-xl px-3 py-2.5 text-sm outline-none"
+                              style={{ background: '#f8fafc', border: '1px solid rgba(0,119,181,0.15)', color: '#0d2137' }} />
+                          </div>
+                          <input value={exp.periodo}
+                            onChange={e => { setFormExperiencias(p => p.map((x, j) => j === i ? { ...x, periodo: e.target.value } : x)); setFormConfirmed(false); setProfileText('') }}
+                            placeholder="Período (Ej: Mar 2021 – Presente)" maxLength={60}
+                            className="w-full rounded-xl px-3 py-2.5 text-sm outline-none"
+                            style={{ background: '#f8fafc', border: '1px solid rgba(0,119,181,0.15)', color: '#0d2137' }} />
+                          <textarea value={exp.descripcion}
+                            onChange={e => { setFormExperiencias(p => p.map((x, j) => j === i ? { ...x, descripcion: e.target.value } : x)); setFormConfirmed(false); setProfileText('') }}
+                            placeholder="Descripción de responsabilidades y logros (opcional)"
+                            rows={2} maxLength={500}
+                            className="w-full rounded-xl px-3 py-2.5 text-sm outline-none resize-none"
+                            style={{ background: '#f8fafc', border: '1px solid rgba(0,119,181,0.15)', color: '#0d2137' }} />
+                        </div>
+                      ))}
+                    </div>
+
+                    {/* Educación */}
+                    <div>
+                      <div className="flex items-center justify-between mb-2">
+                        <label className="text-xs font-semibold text-slate-600 uppercase tracking-wide">Educación</label>
+                        <button
+                          onClick={() => { setFormEducacion(p => [...p, { institucion: '', titulo: '', periodo: '' }]); setFormConfirmed(false); setProfileText('') }}
+                          className="text-xs px-3 py-1 rounded-lg transition-all duration-200"
+                          style={{ color: '#0077B5', background: 'rgba(0,119,181,0.08)', border: '1px solid rgba(0,119,181,0.2)' }}>
+                          + Agregar
+                        </button>
+                      </div>
+                      {formEducacion.map((edu, i) => (
+                        <div key={i} className="rounded-xl p-4 space-y-2 mb-3"
+                          style={{ background: 'white', border: '1px solid rgba(0,119,181,0.12)' }}>
+                          <div className="flex items-center justify-between">
+                            <span className="text-xs text-slate-500 font-semibold">Educación {i + 1}</span>
+                            {formEducacion.length > 1 && (
+                              <button onClick={() => { setFormEducacion(p => p.filter((_, j) => j !== i)); setFormConfirmed(false); setProfileText('') }}
+                                className="text-xs text-slate-400 hover:text-red-400 transition-colors">✕ Eliminar</button>
+                            )}
+                          </div>
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                            <input value={edu.institucion}
+                              onChange={e => { setFormEducacion(p => p.map((x, j) => j === i ? { ...x, institucion: e.target.value } : x)); setFormConfirmed(false); setProfileText('') }}
+                              placeholder="Institución" maxLength={120}
+                              className="w-full rounded-xl px-3 py-2.5 text-sm outline-none"
+                              style={{ background: '#f8fafc', border: '1px solid rgba(0,119,181,0.15)', color: '#0d2137' }} />
+                            <input value={edu.titulo}
+                              onChange={e => { setFormEducacion(p => p.map((x, j) => j === i ? { ...x, titulo: e.target.value } : x)); setFormConfirmed(false); setProfileText('') }}
+                              placeholder="Título / Carrera / Curso" maxLength={120}
+                              className="w-full rounded-xl px-3 py-2.5 text-sm outline-none"
+                              style={{ background: '#f8fafc', border: '1px solid rgba(0,119,181,0.15)', color: '#0d2137' }} />
+                          </div>
+                          <input value={edu.periodo}
+                            onChange={e => { setFormEducacion(p => p.map((x, j) => j === i ? { ...x, periodo: e.target.value } : x)); setFormConfirmed(false); setProfileText('') }}
+                            placeholder="Período (Ej: 2015 – 2019)" maxLength={60}
+                            className="w-full rounded-xl px-3 py-2.5 text-sm outline-none"
+                            style={{ background: '#f8fafc', border: '1px solid rgba(0,119,181,0.15)', color: '#0d2137' }} />
+                        </div>
+                      ))}
+                    </div>
+
+                    {/* Habilidades */}
+                    <div>
+                      <label className="text-xs font-semibold text-slate-600 uppercase tracking-wide block mb-1.5">
+                        Habilidades principales{' '}
+                        <span className="text-slate-400 font-normal normal-case tracking-normal">(opcional)</span>
+                      </label>
+                      <input type="text" value={formHabilidades}
+                        onChange={e => { setFormHabilidades(e.target.value); setFormConfirmed(false); setProfileText('') }}
+                        placeholder="Ej: React, Gestión de equipos, Análisis de datos, Inglés avanzado"
+                        maxLength={400}
+                        className="w-full rounded-xl px-4 py-3 text-sm outline-none"
+                        style={{ background: 'white', border: '1px solid rgba(0,119,181,0.20)', color: '#0d2137' }} />
+                    </div>
+
+                    {/* Botón confirmar */}
+                    <button
+                      onClick={handleFormConfirm}
+                      disabled={!formTitular.trim() || formConfirmed}
+                      className="w-full py-3 rounded-xl font-semibold text-sm transition-all duration-200"
+                      style={formConfirmed
+                        ? { background: 'rgba(34,197,94,0.08)', border: '1px solid rgba(34,197,94,0.35)', color: '#16a34a', cursor: 'default' }
+                        : formTitular.trim()
+                          ? { background: 'linear-gradient(135deg,#0077B5,#0ea5e9)', color: '#fff', cursor: 'pointer' }
+                          : { background: 'rgba(0,119,181,0.06)', border: '1px solid rgba(0,119,181,0.12)', color: '#94a3b8', cursor: 'not-allowed' }
+                      }
+                    >
+                      {formConfirmed ? '✅ Datos listos — podés analizar tu perfil' : 'Usar estos datos →'}
+                    </button>
+                  </div>
+                )}
+              </>
             )}
 
             {/* Resumen de respuestas */}
@@ -1516,6 +1680,12 @@ Generá el feedback en este JSON exacto:
                   ))}
                 </div>
                 <p className="text-slate-500 text-xs mt-3">Incluí estas palabras en tu titular, resumen y experiencias para aparecer en más búsquedas.</p>
+              </ResultCard>
+            )}
+
+            {result.analisis_foto && (
+              <ResultCard title="📸 Foto de perfil">
+                <p className="text-slate-600 text-sm leading-relaxed">{result.analisis_foto}</p>
               </ResultCard>
             )}
 

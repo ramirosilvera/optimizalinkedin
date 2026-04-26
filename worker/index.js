@@ -22,6 +22,30 @@ export default {
 
     const body = await request.json().catch(() => null)
     if (!body) return new Response('Invalid JSON', { status: 400 })
+
+    if (body.action === 'fetch_url') {
+      const { url } = body
+      const corsHeaders = { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': origin }
+      if (!url || !String(url).startsWith('https://www.linkedin.com/in/')) {
+        return new Response(JSON.stringify({ blocked: true }), { status: 200, headers: corsHeaders })
+      }
+      const ctrl = new AbortController()
+      setTimeout(() => ctrl.abort(), 5000)
+      try {
+        const r = await fetch(url, {
+          headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)' },
+          signal: ctrl.signal,
+          redirect: 'follow',
+        })
+        const html = await r.text()
+        const isBlocked = r.url.includes('login') || r.url.includes('authwall') || html.includes('authwall')
+        if (isBlocked) return new Response(JSON.stringify({ blocked: true }), { status: 200, headers: corsHeaders })
+        return new Response(JSON.stringify({ html: html.slice(0, 60000) }), { status: 200, headers: corsHeaders })
+      } catch {
+        return new Response(JSON.stringify({ blocked: true }), { status: 200, headers: corsHeaders })
+      }
+    }
+
     if (!body.contents) return new Response('Missing required field: contents', { status: 400 })
 
     const { model: modelField, ...geminiBody } = body
