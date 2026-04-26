@@ -25,7 +25,9 @@ const INPUT_ALT_STYLE = { background: '#f8fafc', border: '1px solid rgba(0,119,1
 const BTN_BACK_STYLE = { border: '1px solid rgba(0,119,181,0.15)', color: '#3d5a73', background: '#f0f4f8' }
 const BTN_GHOST_STYLE = { color: '#0077B5', background: 'rgba(0,119,181,0.08)', border: '1px solid rgba(0,119,181,0.2)' }
 
-const RAMIRO_LINKEDIN_URL = 'https://www.linkedin.com/in/ramiro-silvera-b0819459'
+const RAMIRO_LINKEDIN_URL  = 'https://www.linkedin.com/in/ramiro-silvera-b0819459'
+const COMPANY_LINKEDIN_URL = 'https://www.linkedin.com/company/optimiza-lk/'
+const MP_URL               = 'https://www.mercadopago.com.ar/subscriptions/checkout?preapproval_plan_id=0922af414b854dabb5942e3291b2b5cb'
 const MAX_PDF_SIZE = 15 * 1024 * 1024
 
 const STATIC_QUESTIONS = [
@@ -917,7 +919,7 @@ Generá un análisis en este formato JSON exacto:
     } finally {
       setLeadSaving(false)
       setLeadSent(true)
-      if (colaborar) window.open('https://www.mercadopago.com.ar/subscriptions/checkout?preapproval_plan_id=0922af414b854dabb5942e3291b2b5cb', '_blank', 'noopener,noreferrer')
+      if (colaborar) window.open(MP_URL, '_blank', 'noopener,noreferrer')
       window.open(RAMIRO_LINKEDIN_URL, '_blank', 'noopener,noreferrer')
     }
   }
@@ -1762,23 +1764,64 @@ Generá el feedback en este JSON exacto:
               </button>
             </div>
 
-            {/* Card colaboración */}
-            <div className="rounded-2xl p-5 flex items-center gap-4"
-              style={{ background: 'rgba(0,180,150,0.05)', border: '1px solid rgba(0,180,150,0.22)' }}>
-              <span className="text-2xl shrink-0">🙌</span>
-              <div className="flex-1 min-w-0">
-                <p className="text-slate-800 text-sm font-semibold">¿Te sirvió el análisis?</p>
-                <p className="text-slate-500 text-xs mt-0.5 leading-snug">Podés apoyar la app con un aporte de única vez — no es suscripción, es totalmente optativo.</p>
+            {/* ── Bloque de conversión ── */}
+            <div className="rounded-2xl overflow-hidden"
+              style={{ border: '1px solid rgba(0,119,181,0.18)', boxShadow: '0 4px 20px rgba(0,0,0,0.07)' }}>
+
+              {/* Header */}
+              <div className="px-5 pt-5 pb-4 text-center"
+                style={{ background: 'linear-gradient(135deg,rgba(0,119,181,0.06),rgba(14,165,233,0.08))' }}>
+                <p className="text-slate-900 font-bold text-base leading-snug">
+                  🙌 Acabás de recibir un análisis gratuito con criterio de headhunter real
+                </p>
+                <p className="text-slate-500 text-xs mt-1.5 leading-relaxed max-w-xs mx-auto">
+                  La herramienta tiene costos reales de IA. Se sostiene gracias a la comunidad que la usa.
+                </p>
               </div>
-              <a
-                href="https://www.mercadopago.com.ar/subscriptions/checkout?preapproval_plan_id=0922af414b854dabb5942e3291b2b5cb"
-                target="_blank"
-                rel="noopener noreferrer"
-                className="shrink-0 px-4 py-2 rounded-xl text-white text-xs font-semibold transition-all"
-                style={{ background: 'linear-gradient(135deg,#00b496,#00d4aa)', boxShadow: '0 0 12px rgba(0,180,150,0.25)' }}
-              >
-                💙 Colaborar
-              </a>
+
+              {/* CTAs — stacked mobile / side-by-side sm+ */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 divide-y sm:divide-y-0 sm:divide-x divide-slate-100">
+
+                {/* LinkedIn Follow */}
+                <div className="p-5 flex flex-col gap-3 items-center text-center">
+                  <div className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0"
+                    style={{ background: LI_GRADIENT }}>
+                    <LinkedInIcon className="w-5 h-5 text-white" />
+                  </div>
+                  <div>
+                    <p className="text-slate-900 text-sm font-semibold">Seguinos en LinkedIn</p>
+                    <p className="text-slate-500 text-xs mt-1 leading-relaxed">
+                      Tips de optimización, casos reales y novedades de la herramienta. Gratis, como esto.
+                    </p>
+                  </div>
+                  <a href={COMPANY_LINKEDIN_URL} target="_blank" rel="noopener noreferrer"
+                    className="btn-glow w-full inline-flex items-center justify-center gap-2 py-2.5 rounded-xl text-white text-sm font-semibold mt-auto"
+                    style={{ background: LI_GRADIENT }}>
+                    <LinkedInIcon className="w-4 h-4" /> Seguir en LinkedIn
+                  </a>
+                </div>
+
+                {/* Mercado Pago */}
+                <div className="p-5 flex flex-col gap-3 items-center text-center">
+                  <div className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0"
+                    style={{ background: 'linear-gradient(135deg,#00b496,#00d4aa)' }}>
+                    <span className="text-lg">💙</span>
+                  </div>
+                  <div>
+                    <p className="text-slate-900 text-sm font-semibold">Colaborar con la app</p>
+                    <p className="text-slate-500 text-xs mt-1 leading-relaxed">
+                      Un aporte de única vez sostiene el servicio gratuito para todos.
+                    </p>
+                  </div>
+                  <a href={MP_URL} target="_blank" rel="noopener noreferrer"
+                    className="w-full inline-flex items-center justify-center gap-2 py-2.5 rounded-xl text-white text-sm font-semibold mt-auto transition-all duration-200"
+                    style={{ background: 'linear-gradient(135deg,#00b496,#00d4aa)', boxShadow: '0 0 16px rgba(0,180,150,0.28)' }}>
+                    💙 Colaborar · Pago único
+                  </a>
+                  <p className="text-slate-400 text-xs -mt-1">Seguro · Mercado Pago</p>
+                </div>
+
+              </div>
             </div>
 
             <button
@@ -1853,7 +1896,7 @@ Generá el feedback en este JSON exacto:
             <p className="text-slate-400 text-xs text-center">
               Simulación gratuita ·{' '}
               <a
-                href="https://www.mercadopago.com.ar/subscriptions/checkout?preapproval_plan_id=0922af414b854dabb5942e3291b2b5cb"
+                href={MP_URL}
                 target="_blank"
                 rel="noopener noreferrer"
                 className="underline hover:text-slate-600 transition-colors"
@@ -2076,24 +2119,64 @@ Generá el feedback en este JSON exacto:
                   </button>
                 </div>
 
-                {/* Card colaboración */}
-                <div className="rounded-2xl p-6 text-center"
-                  style={{ background: 'rgba(0,180,150,0.07)', border: '1px solid rgba(0,180,150,0.25)' }}>
-                  <div className="text-3xl mb-3">🙌</div>
-                  <p className="text-slate-900 font-semibold">¿Te fue útil la app?</p>
-                  <p className="text-slate-600 text-sm mt-3 leading-relaxed max-w-xs mx-auto">
-                    Esta herramienta tiene costos reales de mantenimiento. Si te fue útil, podés colaborar con un aporte de <strong>única vez</strong> — no es una suscripción. Es totalmente optativo y me ayuda a sostenerla y seguir mejorándola.
-                  </p>
-                  <a
-                    href="https://www.mercadopago.com.ar/subscriptions/checkout?preapproval_plan_id=0922af414b854dabb5942e3291b2b5cb"
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="inline-flex items-center gap-2 mt-4 px-6 py-3 rounded-2xl text-white font-semibold text-sm transition-all duration-200"
-                    style={{ background: 'linear-gradient(135deg,#00b496,#00d4aa)', boxShadow: '0 0 20px rgba(0,180,150,0.3)' }}
-                  >
-                    💙 &nbsp;Colaborar con la app
-                  </a>
-                  <p className="text-slate-600 text-xs mt-3">Pago único · Seguro · Mercado Pago</p>
+                {/* ── Bloque de conversión ── */}
+                <div className="rounded-2xl overflow-hidden"
+                  style={{ border: '1px solid rgba(0,119,181,0.18)', boxShadow: '0 4px 20px rgba(0,0,0,0.07)' }}>
+
+                  {/* Header */}
+                  <div className="px-5 pt-5 pb-4 text-center"
+                    style={{ background: 'linear-gradient(135deg,rgba(99,102,241,0.06),rgba(139,92,246,0.08))' }}>
+                    <p className="text-slate-900 font-bold text-base leading-snug">
+                      🙌 Completaste el análisis de perfil y la entrevista simulada
+                    </p>
+                    <p className="text-slate-500 text-xs mt-1.5 leading-relaxed max-w-xs mx-auto">
+                      Todo gratuito, sin registro. Si te aportó valor, podés devolver algo a la comunidad.
+                    </p>
+                  </div>
+
+                  {/* CTAs — stacked mobile / side-by-side sm+ */}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 divide-y sm:divide-y-0 sm:divide-x divide-slate-100">
+
+                    {/* LinkedIn Follow */}
+                    <div className="p-5 flex flex-col gap-3 items-center text-center">
+                      <div className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0"
+                        style={{ background: LI_GRADIENT }}>
+                        <LinkedInIcon className="w-5 h-5 text-white" />
+                      </div>
+                      <div>
+                        <p className="text-slate-900 text-sm font-semibold">Seguinos en LinkedIn</p>
+                        <p className="text-slate-500 text-xs mt-1 leading-relaxed">
+                          Tips de optimización, casos reales y novedades de la herramienta. Siempre gratis.
+                        </p>
+                      </div>
+                      <a href={COMPANY_LINKEDIN_URL} target="_blank" rel="noopener noreferrer"
+                        className="btn-glow w-full inline-flex items-center justify-center gap-2 py-2.5 rounded-xl text-white text-sm font-semibold mt-auto"
+                        style={{ background: LI_GRADIENT }}>
+                        <LinkedInIcon className="w-4 h-4" /> Seguir en LinkedIn
+                      </a>
+                    </div>
+
+                    {/* Mercado Pago */}
+                    <div className="p-5 flex flex-col gap-3 items-center text-center">
+                      <div className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0"
+                        style={{ background: 'linear-gradient(135deg,#00b496,#00d4aa)' }}>
+                        <span className="text-lg">💙</span>
+                      </div>
+                      <div>
+                        <p className="text-slate-900 text-sm font-semibold">Colaborar con la app</p>
+                        <p className="text-slate-500 text-xs mt-1 leading-relaxed">
+                          Un aporte de única vez ayuda a cubrir los costos de IA y mejorar la herramienta.
+                        </p>
+                      </div>
+                      <a href={MP_URL} target="_blank" rel="noopener noreferrer"
+                        className="w-full inline-flex items-center justify-center gap-2 py-2.5 rounded-xl text-white text-sm font-semibold mt-auto transition-all duration-200"
+                        style={{ background: 'linear-gradient(135deg,#00b496,#00d4aa)', boxShadow: '0 0 16px rgba(0,180,150,0.28)' }}>
+                        💙 Colaborar · Pago único
+                      </a>
+                      <p className="text-slate-400 text-xs -mt-1">Seguro · Mercado Pago</p>
+                    </div>
+
+                  </div>
                 </div>
 
                 <button
