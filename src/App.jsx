@@ -558,6 +558,11 @@ export default function App() {
   const [leadNombre, setLeadNombre] = useState('')
   const [leadApellido, setLeadApellido] = useState('')
 
+  // Revocar object URL de foto al cambiar o desmontar (evita memory leak)
+  useEffect(() => {
+    return () => { if (profilePhotoPreview) URL.revokeObjectURL(profilePhotoPreview) }
+  }, [profilePhotoPreview])
+
   // Loading message rotation
   const [loadingMsgIdx, setLoadingMsgIdx] = useState(0)
   useEffect(() => {
@@ -675,13 +680,18 @@ export default function App() {
 
   // ── Attempt to fetch LinkedIn profile by URL ──
   const handleUrlAttempt = async () => {
-    if (!linkedinUrl.trim() || urlLoading) return
+    const url = linkedinUrl.trim()
+    if (!url || urlLoading) return
+    if (!url.startsWith('https://www.linkedin.com/in/') && !url.startsWith('https://linkedin.com/in/')) {
+      setUrlAttempted(true)
+      return
+    }
     setUrlLoading(true)
     try {
       const res = await fetch(WORKER_URL, {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ action: 'fetch_url', url: linkedinUrl.trim() }),
+        body: JSON.stringify({ action: 'fetch_url', url }),
       })
       const data = await res.json().catch(() => ({ blocked: true }))
       if (!data.blocked && data.html) {
@@ -817,7 +827,7 @@ Generá un análisis en este formato JSON exacto:
 
     const controller = new AbortController()
     analysisAbortRef.current = controller
-    const timeoutId = setTimeout(() => controller.abort(), 90000)
+    const timeoutId = setTimeout(() => controller.abort(), 58000)
     try {
       if (!WORKER_URL) throw new Error('Worker URL no configurada. Verificá el secret VITE_WORKER_URL en GitHub.')
       const res = await fetch(WORKER_URL, {
@@ -832,7 +842,7 @@ Generá un análisis en este formato JSON exacto:
               ...(profilePhoto ? [{ inlineData: { mimeType: profilePhotoMime, data: profilePhoto } }] : []),
             ],
           }],
-          generationConfig: { responseMimeType: 'application/json', maxOutputTokens: 2200 },
+          generationConfig: { responseMimeType: 'application/json', maxOutputTokens: 3000 },
         }),
       })
       if (!res.ok) {
@@ -1197,8 +1207,14 @@ Generá el feedback en este JSON exacto:
               {urlAttempted && profileText && !pdfFileName && !formConfirmed && (
                 <p className="text-green-600 text-xs font-medium">✅ Perfil accedido correctamente — podés analizar tu perfil.</p>
               )}
-              {urlAttempted && !profileText && (
-                <p className="text-amber-600 text-xs">LinkedIn bloqueó el acceso automático (protege la privacidad de sus usuarios). Elegí una de las opciones de abajo.</p>
+              {urlAttempted && !profileText && linkedinUrl.trim() && !linkedinUrl.trim().match(/^https?:\/\/(www\.)?linkedin\.com\/in\//) && (
+                <p className="text-red-500 text-xs">La URL debe ser de linkedin.com/in/tu-usuario</p>
+              )}
+              {urlAttempted && !profileText && linkedinUrl.trim().match(/^https?:\/\/(www\.)?linkedin\.com\/in\//) && (
+                <p className="text-amber-600 text-xs">LinkedIn bloqueó el acceso automático — es su política de privacidad. Usá una de las opciones de abajo.</p>
+              )}
+              {urlAttempted && !profileText && !linkedinUrl.trim() && (
+                <p className="text-slate-500 text-xs">Elegí cómo compartir tu perfil:</p>
               )}
               <button
                 onClick={() => { setUrlAttempted(true); setInputMode('pdf') }}
@@ -1208,8 +1224,8 @@ Generá el feedback en este JSON exacto:
               </button>
             </div>
 
-            {/* ── FASE 2: Tabs fallback (tras intento o skip) ── */}
-            {(urlAttempted && !profileText) && (
+            {/* ── FASE 2: Tabs (tras intento o skip) ── */}
+            {urlAttempted && (
               <>
                 <div className="flex rounded-xl overflow-hidden" style={{ border: '1px solid rgba(0,119,181,0.15)' }}>
                   {[
@@ -1348,7 +1364,7 @@ Generá el feedback en este JSON exacto:
                         </label>
                         <input id="photo-upload" type="file" accept="image/*" className="hidden" onChange={handlePhotoUpload} />
                         {profilePhotoPreview && (
-                          <button onClick={() => { setProfilePhotoPreview(null); setProfilePhoto(null); setFormConfirmed(false); setProfileText('') }}
+                          <button onClick={() => { setProfilePhotoPreview(null); setProfilePhoto(null); setProfilePhotoMime('image/jpeg'); setFormConfirmed(false); setProfileText('') }}
                             className="text-xs text-slate-400 hover:text-red-400 transition-colors">✕ Quitar</button>
                         )}
                       </div>
@@ -1356,10 +1372,10 @@ Generá el feedback en este JSON exacto:
 
                     {/* Titular */}
                     <div>
-                      <label className="text-xs font-semibold text-slate-600 uppercase tracking-wide block mb-1.5">
+                      <label htmlFor="form-titular" className="text-xs font-semibold text-slate-600 uppercase tracking-wide block mb-1.5">
                         Titular profesional <span style={{ color: '#0077B5' }}>*</span>
                       </label>
-                      <input type="text" value={formTitular}
+                      <input id="form-titular" type="text" value={formTitular}
                         onChange={e => { setFormTitular(e.target.value); setFormConfirmed(false); setProfileText('') }}
                         placeholder="Ej: Desarrollador Frontend Senior | React & TypeScript | 10 años"
                         maxLength={220}
@@ -1370,11 +1386,11 @@ Generá el feedback en este JSON exacto:
 
                     {/* Resumen */}
                     <div>
-                      <label className="text-xs font-semibold text-slate-600 uppercase tracking-wide block mb-1.5">
+                      <label htmlFor="form-resumen" className="text-xs font-semibold text-slate-600 uppercase tracking-wide block mb-1.5">
                         Resumen / About{' '}
                         <span className="text-slate-400 font-normal normal-case tracking-normal">(recomendado)</span>
                       </label>
-                      <textarea value={formResumen}
+                      <textarea id="form-resumen" value={formResumen}
                         onChange={e => { setFormResumen(e.target.value); setFormConfirmed(false); setProfileText('') }}
                         placeholder={'Pegá el texto de tu sección "Acerca de" en LinkedIn...'}
                         rows={4} maxLength={2600}
@@ -1474,11 +1490,11 @@ Generá el feedback en este JSON exacto:
 
                     {/* Habilidades */}
                     <div>
-                      <label className="text-xs font-semibold text-slate-600 uppercase tracking-wide block mb-1.5">
+                      <label htmlFor="form-habilidades" className="text-xs font-semibold text-slate-600 uppercase tracking-wide block mb-1.5">
                         Habilidades principales{' '}
                         <span className="text-slate-400 font-normal normal-case tracking-normal">(opcional)</span>
                       </label>
-                      <input type="text" value={formHabilidades}
+                      <input id="form-habilidades" type="text" value={formHabilidades}
                         onChange={e => { setFormHabilidades(e.target.value); setFormConfirmed(false); setProfileText('') }}
                         placeholder="Ej: React, Gestión de equipos, Análisis de datos, Inglés avanzado"
                         maxLength={400}

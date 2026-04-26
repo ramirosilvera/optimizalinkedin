@@ -1,10 +1,16 @@
 const ALLOWED_MODELS = new Set(['gemini-2.5-flash-lite'])
 const DEFAULT_MODEL = 'gemini-2.5-flash-lite'
-const GEMINI_TIMEOUT_MS = 30_000
+const GEMINI_TIMEOUT_MS = 55_000
+const ALLOWED_ORIGINS = new Set([
+  'https://optimizalinkedin.com',
+  'http://localhost:5173',
+  'http://localhost:4173',
+])
 
 export default {
   async fetch(request, env) {
-    const origin = 'https://optimizalinkedin.com'
+    const reqOrigin = request.headers.get('origin') || ''
+    const origin = ALLOWED_ORIGINS.has(reqOrigin) ? reqOrigin : 'https://optimizalinkedin.com'
 
     if (request.method === 'OPTIONS') {
       return new Response(null, {
