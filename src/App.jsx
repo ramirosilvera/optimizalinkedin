@@ -20,6 +20,13 @@ const STEPS = {
 // ── Shared style tokens ─────────────────────────────────────────
 const LI_GRADIENT = 'linear-gradient(135deg,#0077B5,#0ea5e9)'
 const CARD_STYLE = { background: 'white', border: '1px solid rgba(0,119,181,0.12)', boxShadow: '0 2px 12px rgba(0,0,0,0.06)' }
+
+// ── GA4 tracking helper ──────────────────────────────────────────
+const trackEvent = (name, params = {}) => {
+  if (typeof window !== 'undefined' && typeof window.gtag === 'function') {
+    window.gtag('event', name, params)
+  }
+}
 const INPUT_STYLE = { background: 'white', border: '1px solid rgba(0,119,181,0.20)', color: '#0d2137' }
 const INPUT_ALT_STYLE = { background: '#f8fafc', border: '1px solid rgba(0,119,181,0.15)', color: '#0d2137' }
 const BTN_BACK_STYLE = { border: '1px solid rgba(0,119,181,0.15)', color: '#3d5a73', background: '#f0f4f8' }
@@ -696,9 +703,11 @@ export default function App() {
     setSelectedOption(null)
     setTextAnswer('')
     const nextIndex = newHistory.length
+    trackEvent('paso_completado', { paso: nextIndex, id: currentQ.id })
     if (nextIndex < STATIC_QUESTIONS.length) {
       setCurrentQ(STATIC_QUESTIONS[nextIndex])
     } else {
+      trackEvent('cuestionario_completado')
       setStep(STEPS.PROFILE_INPUT)
     }
   }
@@ -756,6 +765,7 @@ export default function App() {
     if (formHabilidades.trim()) parts.push(`HABILIDADES: ${formHabilidades.trim()}`)
     setProfileText(parts.join('\n\n'))
     setFormConfirmed(true)
+    trackEvent('formulario_confirmado')
   }
 
   // ── Attempt to fetch LinkedIn profile by URL ──
@@ -848,6 +858,7 @@ export default function App() {
       const text = data.candidates?.[0]?.content?.parts?.[0]?.text || ''
       if (text.length < 100) throw new Error('No se pudo extraer contenido del PDF. Verificá que sea el PDF de tu perfil de LinkedIn y que no esté protegido con contraseña.')
       setProfileText(text)
+      trackEvent('pdf_subido')
     } catch (err) {
       setPdfError(err.message || 'Error al procesar el PDF.')
       setPdfFileName('')
@@ -946,6 +957,7 @@ Generá un análisis en este formato JSON exacto:
         recomendaciones: parsed.recomendaciones || [],
         analisis_foto: parsed.analisis_foto || '',
       })
+      trackEvent('analisis_recibido', { puntaje: parsed.puntaje_general, nivel_seo: parsed.nivel_seo })
       setStep(STEPS.RESULTS)
     } catch (err) {
       if (err.name === 'AbortError') {
@@ -1062,6 +1074,7 @@ Generá el feedback en este JSON exacto:
       try { parsed = JSON.parse(raw) }
       catch { const m = raw.match(/\{[\s\S]*\}/); if (m) parsed = JSON.parse(m[0]); else throw new Error('Error al procesar el feedback. Intentá de nuevo.') }
       setInterviewFeedback(parsed)
+      trackEvent('entrevista_completada', { puntaje: parsed.puntaje_entrevista })
     } catch (err) {
       const msg = err.name === 'AbortError' ? 'El análisis tardó demasiado. Intentá de nuevo.' : err.message || 'Error al generar el feedback.'
       setInterviewError(msg)
@@ -1117,7 +1130,7 @@ Generá el feedback en este JSON exacto:
                 </span>
               </h1>
               <p className="text-slate-600 text-base max-w-sm mx-auto leading-relaxed">
-                Respondé el cuestionario, luego subí tu PDF y recibí un análisis con criterio de headhunter.
+                Optimizá tu LinkedIn, mejorá tu CV y practicá la entrevista con IA. Gratis. Hecho con criterio de headhunter.
               </p>
             </div>
 
@@ -1138,7 +1151,7 @@ Generá el feedback en este JSON exacto:
 
             <div className="space-y-3">
               <button
-                onClick={() => setStep(STEPS.QUESTIONS)}
+                onClick={() => { trackEvent('click_empezar_analisis', { location: 'hero' }); setStep(STEPS.QUESTIONS) }}
                 className="btn-glow w-full text-white font-semibold py-4 px-8 rounded-2xl text-base"
                 style={{ background: 'linear-gradient(135deg, #0077B5 0%, #0ea5e9 100%)' }}
               >
@@ -1148,6 +1161,102 @@ Generá el feedback en este JSON exacto:
             </div>
 
             <CommentsSection />
+
+            {/* ── Secciones SEO ── */}
+            <div className="text-left space-y-12 pt-6">
+
+              {/* ¿Qué incluye? */}
+              <section>
+                <h2 className="text-xl font-bold text-slate-900 mb-4">¿Qué incluye tu análisis?</h2>
+                <div className="space-y-3">
+                  {[
+                    { icon: '🎯', title: 'Diagnóstico con criterio de headhunter', desc: 'Puntaje general del perfil y evaluación estratégica del primer impacto en reclutadores.' },
+                    { icon: '🔍', title: 'SEO de LinkedIn', desc: 'Palabras clave sugeridas para aparecer en búsquedas reales de reclutadores y clientes.' },
+                    { icon: '✏️', title: 'Titular y resumen reescritos', desc: 'Versión mejorada del titular y del About con propuesta de valor clara y llamada a la acción.' },
+                    { icon: '📋', title: 'Recomendaciones accionables', desc: 'Lista priorizada de cambios concretos que podés implementar hoy.' },
+                    { icon: '📣', title: 'Estrategia de contenido', desc: 'Qué publicar en LinkedIn según tu objetivo profesional para aumentar tu visibilidad.' },
+                    { icon: '🎙️', title: 'Simulador de entrevista con IA', desc: 'Practicá una entrevista inicial y recibí feedback detallado con criterio de RRHH.' },
+                  ].map(item => (
+                    <div key={item.title} className="flex items-start gap-3 rounded-2xl p-4"
+                      style={{ background: 'white', border: '1px solid rgba(0,119,181,0.10)' }}>
+                      <span className="text-xl shrink-0">{item.icon}</span>
+                      <div>
+                        <p className="text-slate-800 text-sm font-semibold">{item.title}</p>
+                        <p className="text-slate-500 text-xs mt-0.5 leading-relaxed">{item.desc}</p>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </section>
+
+              {/* Cómo funciona */}
+              <section>
+                <h2 className="text-xl font-bold text-slate-900 mb-4">Cómo funciona</h2>
+                <div className="space-y-3">
+                  {[
+                    { num: '1', title: 'Respondés 10 preguntas rápidas', desc: 'Sobre tu profesión, objetivo y logros. Tarda unos 3 minutos.' },
+                    { num: '2', title: 'Subís tu perfil de LinkedIn', desc: 'En PDF, por URL o completando un formulario — elegís cómo.' },
+                    { num: '3', title: 'Recibís tu análisis completo', desc: 'En menos de 60 segundos, con sugerencias listas para implementar.' },
+                  ].map(step => (
+                    <div key={step.num} className="flex items-start gap-4 rounded-2xl p-4"
+                      style={{ background: 'white', border: '1px solid rgba(0,119,181,0.10)' }}>
+                      <div className="w-8 h-8 rounded-full flex items-center justify-center text-white text-sm font-bold shrink-0"
+                        style={{ background: LI_GRADIENT }}>{step.num}</div>
+                      <div>
+                        <p className="text-slate-800 text-sm font-semibold">{step.title}</p>
+                        <p className="text-slate-500 text-xs mt-0.5 leading-relaxed">{step.desc}</p>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </section>
+
+              {/* Quién está detrás */}
+              <section>
+                <h2 className="text-xl font-bold text-slate-900 mb-4">Quién está detrás</h2>
+                <div className="rounded-2xl p-5 flex items-start gap-4"
+                  style={{ background: 'white', border: '1px solid rgba(0,119,181,0.12)' }}>
+                  <div className="w-12 h-12 rounded-full flex items-center justify-center text-white font-bold text-sm shrink-0"
+                    style={{ background: LI_GRADIENT }}>RS</div>
+                  <div>
+                    <p className="text-slate-900 font-semibold text-sm">Ramiro Silvera</p>
+                    <p className="text-slate-500 text-xs mt-0.5">Gerente de RRHH · Headhunter</p>
+                    <p className="text-slate-600 text-sm mt-2 leading-relaxed">
+                      Con más de 10 años seleccionando profesionales en Argentina y la región, creé esta herramienta para que cualquier persona pueda acceder al mismo análisis que haría un headhunter real — sin costo.
+                    </p>
+                    <a href={RAMIRO_LINKEDIN_URL} target="_blank" rel="noopener noreferrer"
+                      onClick={() => trackEvent('click_externo', { destino: 'linkedin_ramiro', ubicacion: 'seccion_quien' })}
+                      className="inline-flex items-center gap-1.5 mt-3 text-xs font-semibold"
+                      style={{ color: '#0077B5' }}>
+                      <LinkedInIcon className="w-3.5 h-3.5" /> Ver perfil de LinkedIn →
+                    </a>
+                  </div>
+                </div>
+              </section>
+
+              {/* FAQ */}
+              <section>
+                <h2 className="text-xl font-bold text-slate-900 mb-4">Preguntas frecuentes</h2>
+                <div className="space-y-3">
+                  {[
+                    { q: '¿Es realmente gratis?', a: 'Sí, 100% gratis y sin registro. No necesitás crear una cuenta ni dejar tu email para recibir el análisis.' },
+                    { q: '¿Qué pasa con mi CV o perfil?', a: 'Tu información se usa únicamente para generar el análisis. No se almacena en ninguna base de datos ni se comparte con terceros.' },
+                    { q: '¿Cuánto tarda el análisis?', a: 'Menos de 60 segundos una vez que subís tu perfil. El cuestionario previo tarda unos 3 minutos.' },
+                    { q: '¿Sirve si vivo fuera de Argentina?', a: 'Sí. El análisis se adapta a tu mercado y objetivo declarado en el cuestionario.' },
+                    { q: '¿Qué es el simulador de entrevista?', a: 'Una entrevista inicial simulada con IA donde respondés 5 preguntas reales de RRHH y recibís feedback detallado sobre cada respuesta.' },
+                    { q: '¿Necesito tener el PDF de LinkedIn?', a: 'No es obligatorio. Podés subir el PDF, pegar la URL de tu perfil o completar un formulario directamente en la app.' },
+                  ].map(({ q, a }) => (
+                    <div key={q} className="rounded-2xl p-4"
+                      style={{ background: 'white', border: '1px solid rgba(0,119,181,0.10)' }}>
+                      <p className="text-slate-800 text-sm font-semibold mb-1">{q}</p>
+                      <p className="text-slate-500 text-xs leading-relaxed">{a}</p>
+                    </div>
+                  ))}
+                </div>
+              </section>
+
+            </div>
+
           </div>
         )}
 
@@ -1871,6 +1980,7 @@ Generá el feedback en este JSON exacto:
                     </p>
                   </div>
                   <a href={RAMIRO_LINKEDIN_URL} target="_blank" rel="noopener noreferrer"
+                    onClick={() => trackEvent('click_externo', { destino: 'linkedin_ramiro', ubicacion: 'results' })}
                     className="btn-glow w-full inline-flex items-center justify-center gap-2 py-2.5 rounded-xl text-white text-sm font-semibold mt-auto"
                     style={{ background: LI_GRADIENT }}>
                     <LinkedInIcon className="w-4 h-4" /> Seguir a Ramiro
@@ -1890,6 +2000,7 @@ Generá el feedback en este JSON exacto:
                     </p>
                   </div>
                   <a href={COMPANY_LINKEDIN_URL} target="_blank" rel="noopener noreferrer"
+                    onClick={() => trackEvent('click_externo', { destino: 'linkedin_pagina', ubicacion: 'results' })}
                     className="btn-glow w-full inline-flex items-center justify-center gap-2 py-2.5 rounded-xl text-white text-sm font-semibold mt-auto"
                     style={{ background: LI_GRADIENT }}>
                     <LinkedInIcon className="w-4 h-4" /> Seguir la página
@@ -1905,6 +2016,7 @@ Generá el feedback en este JSON exacto:
                   ☕ $5.000 únicos — el precio de un café para mantener esto gratis para todos.
                 </p>
                 <a href={MP_URL} target="_blank" rel="noopener noreferrer"
+                  onClick={() => trackEvent('click_externo', { destino: 'mercadopago', ubicacion: 'results' })}
                   className="shrink-0 inline-flex items-center gap-1.5 px-4 py-2 rounded-xl text-white text-xs font-semibold transition-all duration-200"
                   style={{ background: 'linear-gradient(135deg,#00b496,#00d4aa)' }}>
                   ☕ Apoyar · $5.000
@@ -1968,7 +2080,7 @@ Generá el feedback en este JSON exacto:
 
             <div className="space-y-3">
               <button
-                onClick={() => setStep(STEPS.INTERVIEW)}
+                onClick={() => { trackEvent('entrevista_iniciada'); setStep(STEPS.INTERVIEW) }}
                 className="btn-glow w-full text-white font-semibold py-4 rounded-2xl text-base"
                 style={{ background: 'linear-gradient(135deg,#6366f1,#8b5cf6)' }}
               >
@@ -2248,6 +2360,7 @@ Generá el feedback en este JSON exacto:
 
                     {/* CTA principal */}
                     <a href={RAMIRO_LINKEDIN_URL} target="_blank" rel="noopener noreferrer"
+                      onClick={() => trackEvent('click_externo', { destino: 'linkedin_ramiro', ubicacion: 'unlock_entrevista' })}
                       className="btn-glow w-full flex items-center justify-center gap-2 py-3 rounded-xl text-white text-sm font-semibold"
                       style={{ background: LI_GRADIENT }}>
                       <LinkedInIcon className="w-4 h-4" /> Escribirle a Ramiro →
@@ -2296,6 +2409,7 @@ Generá el feedback en este JSON exacto:
                     ☕ $5.000 únicos — el precio de un café para mantener esto gratis para todos.
                   </p>
                   <a href={MP_URL} target="_blank" rel="noopener noreferrer"
+                    onClick={() => trackEvent('click_externo', { destino: 'mercadopago', ubicacion: 'interview_feedback' })}
                     className="shrink-0 inline-flex items-center gap-1.5 px-4 py-2 rounded-xl text-white text-xs font-semibold transition-all duration-200"
                     style={{ background: 'linear-gradient(135deg,#00b496,#00d4aa)' }}>
                     ☕ Apoyar · $5.000
