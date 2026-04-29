@@ -14,6 +14,7 @@ function parseGeminiError(status, body) {
 const STEPS = { WELCOME: 0, QUESTIONS: 1, PROFILE_INPUT: 2, LOADING: 3, RESULTS: 4 }
 const MAX_QUESTIONS = 9
 const MAX_PDF_SIZE = 15 * 1024 * 1024
+const MP_URL = 'https://www.mercadopago.com.ar/subscriptions/checkout?preapproval_plan_id=0922af414b854dabb5942e3291b2b5cb'
 
 const INITIAL_QUESTION = {
   question: '¿Cuál es tu situación profesional actual?',
@@ -60,6 +61,22 @@ Aplicá estos frameworks en tu análisis:
 Respondé siempre en español rioplatense (Argentina).
 No usés lenguaje genérico ni de autoayuda.
 Sé directa, específica y orientada a resultados medibles.
+Respondé SOLO en JSON válido, sin markdown, sin backticks.`
+
+const CV_SYSTEM_PROMPT = `Sos un experto redactor de CVs para el mercado laboral argentino y latinoamericano, con experiencia en selección ejecutiva y compliance ATS.
+Tu tarea es transformar un perfil de LinkedIn en un CV de 1 página moderno, conciso y orientado a logros.
+
+Reglas estrictas:
+- Máximo 3 experiencias laborales (las más recientes y relevantes)
+- Máximo 3 bullets por experiencia, comenzando con verbo de acción, con métricas cuando existan
+- Resumen profesional de máximo 2 oraciones, impactante y orientado a valor
+- Sin objetivo laboral (está desactualizado)
+- Sin foto, sin estado civil, sin fecha de nacimiento
+- Habilidades: entre 6 y 10 keywords relevantes al rol
+- Todo en español (excepto términos técnicos que se usan en inglés en la industria)
+
+Usá las secciones "titular_propuesto" y "resumen_propuesto" del análisis previo si están disponibles.
+Extraé las experiencias y educación del texto del perfil.
 Respondé SOLO en JSON válido, sin markdown, sin backticks.`
 
 async function fetchNextQuestion(history) {
@@ -222,6 +239,9 @@ export default function App() {
   // Results
   const [result, setResult] = useState(null)
   const [analysisError, setAnalysisError] = useState('')
+  const [cvLoading, setCvLoading] = useState(false)
+  const [cvError, setCvError] = useState('')
+  const [showCvModal, setShowCvModal] = useState(false)
 
   // Loading message rotation
   const [loadingMsgIdx, setLoadingMsgIdx] = useState(0)
@@ -419,6 +439,148 @@ Generá un análisis en este formato JSON exacto:
       setAnalysisError(err.message || 'Error al conectar con Gemini.')
       setStep(STEPS.PROFILE_INPUT)
     }
+  }
+
+  // ── Generar CV de 1 página ──
+  const callGenerateCV = async () => {
+    if (cvLoading) return
+    setCvLoading(true)
+    setCvError('')
+
+    const nombre = result?.nombre_completo || ''
+    const titular = result?.titular_propuesto || result?.titular_actual || ''
+    const resumen = result?.resumen_propuesto || ''
+    const keywords = (result?.palabras_clave_sugeridas || []).join(', ')
+
+    let userPrompt = `Generá el CV en JSON usando esta información del profesional.\n\n`
+    userPrompt += `Nombre: ${nombre}\n`
+    userPrompt += `Titular propuesto: ${titular}\n`
+    userPrompt += `Resumen propuesto: ${resumen}\n`
+    userPrompt += `Keywords sugeridas: ${keywords}\n\n`
+    userPrompt += `Texto completo del perfil LinkedIn (extraé experiencias y educación):\n${profileText.slice(0, 5000)}\n\n`
+    userPrompt += `Respondé con este JSON exacto:
+{
+  "nombre": "string",
+  "titular": "string",
+  "email": "string o null",
+  "linkedin": "string o null",
+  "ubicacion": "string o null",
+  "resumen": "string (2 oraciones máx)",
+  "experiencias": [
+    { "cargo": "string", "empresa": "string", "periodo": "string", "logros": ["string"] }
+  ],
+  "educacion": [
+    { "titulo": "string", "institucion": "string", "periodo": "string" }
+  ],
+  "habilidades": ["string"],
+  "idiomas": ["string"]
+}`
+
+    const controller = new AbortController()
+    const timeoutId = setTimeout(() => controller.abort(), 58000)
+    try {
+      if (!WORKER_URL) throw new Error('Worker URL no configurada.')
+      const res = await fetch(WORKER_URL, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        signal: controller.signal,
+        body: JSON.stringify({
+          system_instruction: { parts: [{ text: CV_SYSTEM_PROMPT }] },
+          contents: [{ parts: [{ text: userPrompt }] }],
+          generationConfig: { responseMimeType: 'application/json', maxOutputTokens: 2000 },
+        }),
+      })
+      if (!res.ok) {
+        const e = await res.json().catch(() => ({}))
+        throw new Error(parseGeminiError(res.status, e))
+      }
+      const data = await res.json()
+      const text = data?.candidates?.[0]?.content?.parts?.[0]?.text || ''
+      const cv = JSON.parse(text)
+      openCvInNewWindow(cv)
+    } catch (err) {
+      const msg = err.name === 'AbortError' ? 'El pedido tardó demasiado. Intentá de nuevo.' : err.message || 'No se pudo generar el CV.'
+      setCvError(msg)
+    } finally {
+      clearTimeout(timeoutId)
+      setCvLoading(false)
+    }
+  }
+
+  function openCvInNewWindow(cv) {
+    const html = buildCvHtml(cv)
+    const w = window.open('', '_blank')
+    if (!w) { setCvError('Permitir pop-ups para abrir el CV.'); return }
+    w.document.write(html)
+    w.document.close()
+    w.addEventListener('load', () => w.print())
+  }
+
+  function buildCvHtml(cv) {
+    const contact = [cv.email, cv.linkedin, cv.ubicacion].filter(Boolean).join(' · ')
+    const expHtml = (cv.experiencias || []).map(e => `
+      <div class="exp-item">
+        <div class="exp-header">
+          <span class="exp-role">${e.cargo}</span>
+          <span class="exp-period">${e.periodo || ''}</span>
+        </div>
+        <div class="exp-company">${e.empresa}</div>
+        <ul class="exp-bullets">${(e.logros || []).map(l => `<li>${l}</li>`).join('')}</ul>
+      </div>`).join('')
+    const eduHtml = (cv.educacion || []).map(e => `
+      <div class="edu-row">
+        <div><div class="edu-title">${e.titulo}</div><div class="edu-inst">${e.institucion}</div></div>
+        <div class="edu-period">${e.periodo || ''}</div>
+      </div>`).join('')
+    const skillsHtml = (cv.habilidades || []).map(s => `<span class="skill">${s}</span>`).join('')
+    const idiomasHtml = cv.idiomas?.length
+      ? `<div class="section"><div class="section-title">Idiomas</div><p>${cv.idiomas.join(' · ')}</p></div>`
+      : ''
+
+    return `<!DOCTYPE html><html lang="es"><head>
+<meta charset="UTF-8">
+<title>CV – ${cv.nombre || ''}</title>
+<style>
+  @page { size: A4; margin: 14mm 16mm; }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: Arial, sans-serif; font-size: 9.5pt; color: #111827; line-height: 1.45; }
+  .header { border-bottom: 2px solid #0077B5; padding-bottom: 8px; margin-bottom: 12px; }
+  .name { font-size: 19pt; font-weight: 700; color: #0077B5; }
+  .title { font-size: 10pt; color: #374151; margin-top: 2px; }
+  .contact { font-size: 8pt; color: #6B7280; margin-top: 3px; }
+  .section { margin-bottom: 11px; }
+  .section-title { font-size: 8pt; font-weight: 700; text-transform: uppercase; letter-spacing: 0.7px;
+    color: #0077B5; border-bottom: 0.5px solid #BFDBFE; padding-bottom: 2px; margin-bottom: 6px; }
+  .exp-item { margin-bottom: 7px; }
+  .exp-header { display: flex; justify-content: space-between; }
+  .exp-role { font-size: 9.5pt; font-weight: 700; }
+  .exp-period { font-size: 8pt; color: #6B7280; }
+  .exp-company { font-size: 8.5pt; color: #374151; font-style: italic; margin-bottom: 3px; }
+  .exp-bullets { margin: 3px 0 0 14px; padding: 0; }
+  .exp-bullets li { font-size: 8.5pt; color: #374151; margin-bottom: 1.5px; }
+  .edu-row { display: flex; justify-content: space-between; margin-bottom: 4px; }
+  .edu-title { font-size: 9pt; font-weight: 600; }
+  .edu-inst { font-size: 8pt; color: #374151; font-style: italic; }
+  .edu-period { font-size: 8pt; color: #6B7280; }
+  .skills { display: flex; flex-wrap: wrap; gap: 4px; }
+  .skill { background: #EFF6FF; color: #1D4ED8; font-size: 7.5pt;
+    padding: 2px 7px; border-radius: 3px; border: 0.5px solid #BFDBFE; }
+  @media print {
+    body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  }
+</style>
+</head><body>
+<div class="header">
+  <div class="name">${cv.nombre || ''}</div>
+  <div class="title">${cv.titular || ''}</div>
+  ${contact ? `<div class="contact">${contact}</div>` : ''}
+</div>
+${cv.resumen ? `<div class="section"><div class="section-title">Resumen Profesional</div><p>${cv.resumen}</p></div>` : ''}
+${expHtml ? `<div class="section"><div class="section-title">Experiencia</div>${expHtml}</div>` : ''}
+${eduHtml ? `<div class="section"><div class="section-title">Educación</div>${eduHtml}</div>` : ''}
+${skillsHtml ? `<div class="section"><div class="section-title">Habilidades</div><div class="skills">${skillsHtml}</div></div>` : ''}
+${idiomasHtml}
+</body></html>`
   }
 
   const qNum = qaHistory.length + 1
@@ -859,6 +1021,22 @@ Generá un análisis en este formato JSON exacto:
               <p className="text-slate-200 text-sm leading-relaxed">{result.estrategia_contenido}</p>
             </div>
 
+            {/* CV 1 página */}
+            <div className="space-y-1.5">
+              <button
+                onClick={() => setShowCvModal(true)}
+                disabled={cvLoading}
+                className="w-full font-semibold py-4 rounded-xl transition-all duration-200 text-white text-sm"
+                style={{ background: cvLoading ? '#334155' : 'linear-gradient(135deg,#059669,#10b981)', opacity: cvLoading ? 0.7 : 1 }}
+              >
+                {cvLoading ? '⏳ Generando tu CV...' : '📄 Generá tu CV moderno de 1 página'}
+              </button>
+              <p className="text-center text-xs text-slate-500">
+                Gratis · Formato actual · ATS-compatible · Como piden los reclutadores hoy
+              </p>
+              {cvError && <p className="text-xs text-red-400 text-center">{cvError}</p>}
+            </div>
+
             <button
               onClick={reset}
               className="w-full border border-slate-600 text-slate-300 font-semibold py-4 rounded-xl transition-all duration-200 text-sm hover:border-slate-400"
@@ -869,6 +1047,70 @@ Generá un análisis en este formato JSON exacto:
         )}
 
       </div>
+
+      {/* ── Modal CV 1 página ── */}
+      {showCvModal && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center px-4 py-6 overflow-y-auto"
+          style={{ background: 'rgba(0,0,0,0.70)', backdropFilter: 'blur(4px)' }}
+          onClick={e => { if (e.target === e.currentTarget) setShowCvModal(false) }}
+        >
+          <div className="w-full max-w-sm rounded-2xl overflow-hidden"
+            style={{ background: '#1e293b', border: '1px solid #334155', boxShadow: '0 20px 60px rgba(0,0,0,0.5)' }}>
+
+            <div className="p-6 pb-4 space-y-3">
+              <h3 className="text-lg font-bold text-white">📄 Tu CV de 1 página</h3>
+              <p className="text-slate-400 text-sm leading-relaxed">
+                Vamos a generar un CV moderno, conciso y ATS-compatible usando el análisis de tu perfil —
+                el formato que prefieren los reclutadores hoy.
+              </p>
+              <ul className="text-xs text-slate-500 space-y-1">
+                <li>✓ Titular y resumen optimizados de tu análisis</li>
+                <li>✓ Experiencias con logros y métricas</li>
+                <li>✓ Keywords de tu industria incluidas</li>
+                <li>✓ Listo para imprimir y guardar como PDF</li>
+              </ul>
+            </div>
+
+            <div className="px-6 pb-6 pt-4 space-y-3"
+              style={{ borderTop: '1px solid rgba(0,180,150,0.2)', background: 'rgba(0,180,150,0.04)' }}>
+              <div className="flex items-start gap-3">
+                <span className="text-2xl shrink-0">🙌</span>
+                <div>
+                  <p className="text-sm font-semibold text-white">¿Te aportó valor? Invitame un cafecito ☕</p>
+                  <p className="text-slate-400 text-xs mt-1 leading-relaxed">
+                    $5.000 de única vez — no es suscripción, es totalmente optativo.
+                    Me ayuda a mantener la herramienta gratuita.
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => {
+                  window.open(MP_URL, '_blank', 'noopener,noreferrer')
+                  setShowCvModal(false)
+                  callGenerateCV()
+                }}
+                className="w-full py-3 rounded-xl text-white text-sm font-semibold"
+                style={{ background: 'linear-gradient(135deg,#00b496,#00d4aa)', boxShadow: '0 0 18px rgba(0,180,150,0.25)' }}
+              >
+                ☕ Apoyar $5.000 y generar mi CV →
+              </button>
+              <button
+                onClick={() => { setShowCvModal(false); callGenerateCV() }}
+                className="w-full py-3 rounded-xl text-sm font-semibold border border-slate-600 text-slate-300 hover:border-slate-400 transition-colors"
+              >
+                Generar sin apoyar →
+              </button>
+              <button
+                onClick={() => setShowCvModal(false)}
+                className="w-full py-2 text-slate-500 text-xs hover:text-slate-400 transition-colors"
+              >
+                Cancelar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
