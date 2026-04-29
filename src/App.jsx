@@ -1466,6 +1466,19 @@ Generá el feedback en este JSON exacto:
                         ))}
                       </div>
                       <div className="p-5 space-y-3">
+                        <div className="flex flex-col items-center gap-2 mb-1">
+                          <p className="text-xs text-slate-500 font-medium self-start">📹 Tutorial rápido</p>
+                          <div className="relative w-full rounded-xl overflow-hidden" style={{ maxWidth: 240, paddingTop: '177.78%', margin: '0 auto' }}>
+                            <iframe
+                              key={instrTab}
+                              className="absolute inset-0 w-full h-full"
+                              src={`https://www.youtube.com/embed/${instrTab === 'desktop' ? 'w6MrNsHb1Bg' : 'pRIWttYnV5I'}?rel=0&modestbranding=1`}
+                              title={instrTab === 'desktop' ? 'Cómo descargar tu PDF de LinkedIn desde computadora' : 'Cómo descargar tu PDF de LinkedIn desde celular'}
+                              allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                              allowFullScreen
+                            />
+                          </div>
+                        </div>
                         <p className="font-semibold text-slate-900 text-sm mb-1">
                           {instrTab === 'desktop' ? '📄 Descargar desde computadora' : '📄 Descargar desde celular'}
                         </p>
