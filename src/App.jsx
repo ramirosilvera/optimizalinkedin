@@ -765,7 +765,7 @@ export default function App() {
     if (formHabilidades.trim()) parts.push(`HABILIDADES: ${formHabilidades.trim()}`)
     setProfileText(parts.join('\n\n'))
     setFormConfirmed(true)
-    trackEvent('formulario_confirmado')
+    trackEvent('cv_subido', { metodo: 'formulario' })
   }
 
   // ── Attempt to fetch LinkedIn profile by URL ──
@@ -858,7 +858,7 @@ export default function App() {
       const text = data.candidates?.[0]?.content?.parts?.[0]?.text || ''
       if (text.length < 100) throw new Error('No se pudo extraer contenido del PDF. Verificá que sea el PDF de tu perfil de LinkedIn y que no esté protegido con contraseña.')
       setProfileText(text)
-      trackEvent('pdf_subido')
+      trackEvent('cv_subido', { metodo: 'pdf' })
     } catch (err) {
       setPdfError(err.message || 'Error al procesar el PDF.')
       setPdfFileName('')
@@ -2026,7 +2026,7 @@ Generá el feedback en este JSON exacto:
             </div>
 
             <button
-              onClick={() => { resetInterview(); setStep(STEPS.INTERVIEW_INTRO) }}
+              onClick={() => { trackEvent('click_simulador', { location: 'post_analisis' }); resetInterview(); setStep(STEPS.INTERVIEW_INTRO) }}
               className="btn-glow w-full font-semibold py-4 rounded-2xl text-white text-sm"
               style={{ background: 'linear-gradient(135deg,#6366f1,#8b5cf6)' }}
             >
@@ -2034,7 +2034,7 @@ Generá el feedback en este JSON exacto:
             </button>
 
             <button
-              onClick={reset}
+              onClick={() => { trackEvent('click_analizar_otro', { location: 'post_analisis' }); reset() }}
               className="w-full font-semibold py-4 rounded-2xl transition-all duration-200 text-sm"
               style={BTN_BACK_STYLE}
             >
