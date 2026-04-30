@@ -624,6 +624,8 @@ export default function App() {
   const [instrTab, setInstrTab] = useState(() =>
     /iPhone|iPad|iPod|Android/i.test(navigator.userAgent) ? 'mobile' : 'desktop'
   )
+  const [mobileSlide, setMobileSlide] = useState(0)
+  const touchStartX = useRef(null)
   const instrTabRef = useRef(instrTab)
   useEffect(() => { instrTabRef.current = instrTab }, [instrTab])
   useEffect(() => {
@@ -752,6 +754,7 @@ export default function App() {
     setPdfLoading(false)
     setPdfError('')
     setInstrTab(/iPhone|iPad|iPod|Android/i.test(navigator.userAgent) ? 'mobile' : 'desktop')
+    setMobileSlide(0)
     setIsDragging(false)
     setInputMode('pdf')
     setLinkedinUrl('')
@@ -1833,48 +1836,111 @@ Respondé con este JSON exacto:
                             }>{tab.label}</button>
                         ))}
                       </div>
-                      <div className="p-5 space-y-3">
-                        <div className="flex flex-col items-center gap-2 mb-1">
-                          <p className="text-xs text-slate-500 font-medium self-start">📹 Tutorial rápido</p>
-                          <div className="relative w-full rounded-xl overflow-hidden" style={{ maxWidth: 240, paddingTop: '177.78%', margin: '0 auto' }}>
-                            <iframe
-                              key={instrTab}
-                              className="absolute inset-0 w-full h-full"
-                              src={`https://www.youtube.com/embed/wUR9COhVWyI?rel=0&modestbranding=1&enablejsapi=1&origin=https://optimizalinkedin.com`}
-                              title={instrTab === 'desktop' ? 'Cómo descargar tu PDF de LinkedIn desde computadora' : 'Cómo descargar tu PDF de LinkedIn desde celular'}
-                              allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-                              allowFullScreen
-                            />
-                          </div>
-                        </div>
-                        <p className="font-semibold text-slate-900 text-sm mb-1">
-                          {instrTab === 'desktop' ? '📄 Descargar desde computadora' : '📄 Descargar desde celular'}
-                        </p>
-                        <ol className="space-y-2.5">
-                          {(instrTab === 'desktop' ? [
-                            'Abrí linkedin.com en tu navegador e iniciá sesión',
-                            'Hacé clic en tu foto de perfil (arriba a la derecha) → "Ver perfil"',
-                            'Hacé clic en "Más" (debajo de tu foto y nombre)',
-                            'Seleccioná "Guardar como PDF"',
-                            'El PDF se descarga automáticamente — buscalo en Descargas',
-                            'Volvé acá y subilo ↓',
-                          ] : [
-                            'Abrí la app de LinkedIn e iniciá sesión',
-                            'Tocá tu foto (arriba a la izquierda) para ir a tu perfil',
-                            'Tocá los tres puntos (...) arriba a la derecha',
-                            'Seleccioná "Guardar como PDF"',
-                            'Si no ves esa opción: abrí linkedin.com en el navegador',
-                            'El PDF se guarda en tu teléfono — subilo acá ↓',
-                          ]).map((s, i) => (
-                            <li key={i} className="flex items-start gap-3 text-sm text-slate-600">
-                              <span className="w-5 h-5 rounded-full flex items-center justify-center text-xs font-bold shrink-0 mt-0.5"
-                                style={{ backgroundColor: 'rgba(0,119,181,0.2)', color: '#0077B5', minWidth: '1.25rem' }}>
-                                {i + 1}
-                              </span>
-                              <span className="leading-relaxed">{s}</span>
-                            </li>
-                          ))}
-                        </ol>
+                      <div className="p-5 space-y-4">
+                        {instrTab === 'desktop' ? (
+                          <>
+                            <div className="flex flex-col items-center gap-2">
+                              <p className="text-xs text-slate-500 font-medium self-start">📹 Tutorial rápido</p>
+                              <div style={{ width: 220, margin: '0 auto', borderRadius: 12, overflow: 'hidden', flexShrink: 0 }}>
+                                <div className="relative" style={{ paddingTop: '177.78%' }}>
+                                  <iframe
+                                    className="absolute inset-0 w-full h-full"
+                                    src="https://www.youtube.com/embed/wUR9COhVWyI?rel=0&modestbranding=1&enablejsapi=1&origin=https://optimizalinkedin.com"
+                                    title="Cómo descargar tu PDF de LinkedIn desde computadora"
+                                    allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                                    allowFullScreen
+                                  />
+                                </div>
+                              </div>
+                            </div>
+                            <p className="font-semibold text-slate-900 text-sm">📄 Descargar desde computadora</p>
+                            <ol className="space-y-2.5">
+                              {[
+                                'Abrí linkedin.com en tu navegador e iniciá sesión',
+                                'Hacé clic en tu foto de perfil (arriba a la derecha) → "Ver perfil"',
+                                'Hacé clic en "Más" (debajo de tu foto y nombre)',
+                                'Seleccioná "Guardar como PDF"',
+                                'El PDF se descarga automáticamente — buscalo en Descargas',
+                                'Volvé acá y subilo ↓',
+                              ].map((s, i) => (
+                                <li key={i} className="flex items-start gap-3 text-sm text-slate-600">
+                                  <span className="w-5 h-5 rounded-full flex items-center justify-center text-xs font-bold shrink-0 mt-0.5"
+                                    style={{ backgroundColor: 'rgba(0,119,181,0.2)', color: '#0077B5', minWidth: '1.25rem' }}>
+                                    {i + 1}
+                                  </span>
+                                  <span className="leading-relaxed">{s}</span>
+                                </li>
+                              ))}
+                            </ol>
+                          </>
+                        ) : (
+                          <>
+                            <p className="font-semibold text-slate-900 text-sm">📄 Descargar desde celular (Chrome)</p>
+                            <div className="relative rounded-xl overflow-hidden select-none"
+                              style={{ background: '#f1f5f9', border: '1px solid rgba(0,119,181,0.1)' }}
+                              onTouchStart={e => { touchStartX.current = e.touches[0].clientX }}
+                              onTouchEnd={e => {
+                                const dx = e.changedTouches[0].clientX - (touchStartX.current ?? 0)
+                                if (dx < -40 && mobileSlide < 1) setMobileSlide(1)
+                                if (dx > 40 && mobileSlide > 0) setMobileSlide(0)
+                              }}
+                            >
+                              <img
+                                src={mobileSlide === 0 ? '/Captura linkedin celular.png' : '/Captura linkedin celular 2.png'}
+                                alt={mobileSlide === 0 ? 'Botón Compartir resaltado en LinkedIn' : 'Pantalla de impresión con botón Compartir'}
+                                className="w-full object-contain"
+                                style={{ maxHeight: 340, display: 'block', margin: '0 auto' }}
+                              />
+                              {mobileSlide > 0 && (
+                                <button
+                                  onClick={() => setMobileSlide(0)}
+                                  className="absolute left-2 top-1/2 -translate-y-1/2 w-8 h-8 rounded-full flex items-center justify-center text-white text-sm font-bold shadow-md"
+                                  style={{ background: 'rgba(0,0,0,0.45)' }}
+                                >‹</button>
+                              )}
+                              {mobileSlide < 1 && (
+                                <button
+                                  onClick={() => setMobileSlide(1)}
+                                  className="absolute right-2 top-1/2 -translate-y-1/2 w-8 h-8 rounded-full flex items-center justify-center text-white text-sm font-bold shadow-md"
+                                  style={{ background: 'rgba(0,0,0,0.45)' }}
+                                >›</button>
+                              )}
+                              <div className="absolute bottom-2 left-0 right-0 flex justify-center gap-1.5">
+                                {[0, 1].map(i => (
+                                  <button key={i} onClick={() => setMobileSlide(i)}
+                                    className="rounded-full transition-all duration-200"
+                                    style={{ width: mobileSlide === i ? 16 : 6, height: 6,
+                                      background: mobileSlide === i ? '#0077B5' : 'rgba(255,255,255,0.7)' }}
+                                  />
+                                ))}
+                              </div>
+                            </div>
+                            <p className="text-xs text-slate-500 text-center -mt-1">
+                              {mobileSlide === 0
+                                ? 'Imagen 1 — Tocá el botón Compartir (resaltado en amarillo)'
+                                : 'Imagen 2 — En la pantalla de impresión, tocá Compartir → Guardar archivo'}
+                            </p>
+                            <ol className="space-y-2.5">
+                              {[
+                                'Abrí linkedin.com en Chrome (navegador, no en la app)',
+                                'Iniciá sesión y andá a tu perfil',
+                                'Tocá el botón Compartir resaltado en amarillo (ver imagen 1)',
+                                'Seleccioná Imprimir en el menú que aparece',
+                                'En la pantalla de impresión (imagen 2), tocá Compartir nuevamente',
+                                'Seleccioná Guardar en Archivos (o "Guardar como PDF")',
+                                'Volvé acá y subí el archivo ↓',
+                              ].map((s, i) => (
+                                <li key={i} className="flex items-start gap-3 text-sm text-slate-600">
+                                  <span className="w-5 h-5 rounded-full flex items-center justify-center text-xs font-bold shrink-0 mt-0.5"
+                                    style={{ backgroundColor: 'rgba(0,119,181,0.2)', color: '#0077B5', minWidth: '1.25rem' }}>
+                                    {i + 1}
+                                  </span>
+                                  <span className="leading-relaxed">{s}</span>
+                                </li>
+                              ))}
+                            </ol>
+                          </>
+                        )}
                       </div>
                     </div>
                     <div>
