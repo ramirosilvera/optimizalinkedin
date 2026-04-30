@@ -1,7 +1,6 @@
 import { useState, useEffect, useCallback } from 'react'
 import './index.css'
 
-const GEMINI_MODEL = 'gemini-2.5-flash-lite'
 const WORKER_URL = import.meta.env.VITE_WORKER_URL
 
 function parseGeminiError(status, body) {
@@ -267,6 +266,9 @@ export default function App() {
     setResult(null)
     setAnalysisError('')
     setLoadingMsgIdx(0)
+    setCvLoading(false)
+    setCvError('')
+    setShowCvModal(false)
   }
 
   // ── Answer a question and fetch next ──
