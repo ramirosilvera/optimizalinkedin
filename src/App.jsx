@@ -254,6 +254,31 @@ No usés lenguaje genérico ni de autoayuda.
 Sé directa, específica y orientada a resultados medibles.
 Respondé SOLO en JSON válido, sin markdown, sin backticks.`
 
+const CV_SYSTEM_PROMPT = `Sos un experto redactor de CVs para el mercado laboral argentino y latinoamericano, con experiencia en selección ejecutiva y compliance ATS.
+Tu tarea es transformar un perfil de LinkedIn en un CV de 1 página moderno, conciso y orientado a logros.
+
+Reglas estrictas:
+- Máximo 3 experiencias laborales (las más recientes y relevantes)
+- Máximo 3 bullets por experiencia, comenzando con verbo de acción, con métricas cuando existan
+- Resumen profesional de máximo 2 oraciones, impactante y orientado a valor
+- Sin objetivo laboral (está desactualizado)
+- Sin foto, sin estado civil, sin fecha de nacimiento
+- Habilidades: entre 6 y 10 keywords relevantes al rol
+- Todo en español (excepto términos técnicos que se usan en inglés en la industria)
+
+Usá las secciones "titular_propuesto" y "resumen_propuesto" del análisis previo si están disponibles.
+Extraé las experiencias y educación del texto del perfil.
+Respondé SOLO en JSON válido, sin markdown, sin backticks.`
+
+function escapeHtml(s) {
+  return String(s ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;')
+}
+
 // ── UI components ──────────────────────────────────────────────
 
 const LinkedInIcon = ({ className }) => (
@@ -646,6 +671,16 @@ export default function App() {
   const [leadNombre, setLeadNombre] = useState('')
   const [leadApellido, setLeadApellido] = useState('')
 
+  // CV de 1 página
+  const [cvLoading, setCvLoading] = useState(false)
+  const [cvError, setCvError] = useState('')
+  const [cvSuccess, setCvSuccess] = useState('')
+  const [showCvModal, setShowCvModal] = useState(false)
+  const [pendingWithSupport, setPendingWithSupport] = useState(false)
+  const [contactEmail, setContactEmail] = useState('')
+  const [contactTelefono, setContactTelefono] = useState('')
+  const [contactLinkedin, setContactLinkedin] = useState('')
+
   // Scroll al tope en cada cambio de paso (crítico en mobile)
   useEffect(() => { window.scrollTo({ top: 0, behavior: 'instant' }) }, [step])
 
@@ -715,6 +750,14 @@ export default function App() {
     setAnalysisError('')
     setAnalyzing(false)
     setLoadingMsgIdx(0)
+    setCvLoading(false)
+    setCvError('')
+    setCvSuccess('')
+    setShowCvModal(false)
+    setPendingWithSupport(false)
+    setContactEmail('')
+    setContactTelefono('')
+    setContactLinkedin('')
     resetInterview()
   }
 
@@ -1103,6 +1146,174 @@ Generá el feedback en este JSON exacto:
     } finally {
       clearTimeout(timeoutId)
       setInterviewLoading(false)
+    }
+  }
+
+  // ── CV de 1 página ──────────────────────────────────────────
+
+  const saveCvGenerado = async ({ contacto, cv }) => {
+    if (!SUPABASE_URL || !SUPABASE_KEY) return
+    await fetch(`${SUPABASE_URL}/rest/v1/cv_generados`, {
+      method: 'POST',
+      headers: {
+        'apikey': SUPABASE_KEY,
+        'Authorization': `Bearer ${SUPABASE_KEY}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        nombre: cv.nombre || null,
+        email: contacto.email,
+        telefono: contacto.telefono || null,
+        linkedin_url: contacto.linkedinUrl || null,
+        cv_data: cv,
+        apoyo_mercadopago: !!pendingWithSupport,
+        consentimiento: true,
+      }),
+    }).catch(() => {})
+  }
+
+  const buildCvHtml = (cv) => {
+    const e = escapeHtml
+    const contact = [cv.email, cv.telefono, cv.linkedin, cv.ubicacion].filter(Boolean).map(e).join(' · ')
+    const expHtml = (cv.experiencias || []).map(ex => `
+      <div class="exp-item">
+        <div class="exp-header">
+          <span class="exp-role">${e(ex.cargo)}</span>
+          <span class="exp-period">${e(ex.periodo)}</span>
+        </div>
+        <div class="exp-company">${e(ex.empresa)}</div>
+        <ul class="exp-bullets">${(ex.logros || []).map(l => `<li>${e(l)}</li>`).join('')}</ul>
+      </div>`).join('')
+    const eduHtml = (cv.educacion || []).map(ed => `
+      <div class="edu-row">
+        <div><div class="edu-title">${e(ed.titulo)}</div><div class="edu-inst">${e(ed.institucion)}</div></div>
+        <div class="edu-period">${e(ed.periodo)}</div>
+      </div>`).join('')
+    const skillsHtml = (cv.habilidades || []).map(s => `<span class="skill">${e(s)}</span>`).join('')
+    const idiomasHtml = cv.idiomas?.length
+      ? `<div class="section"><div class="section-title">Idiomas</div><p>${cv.idiomas.map(e).join(' · ')}</p></div>`
+      : ''
+    return `<!DOCTYPE html><html lang="es"><head>
+<meta charset="UTF-8">
+<title>CV – ${e(cv.nombre)}</title>
+<style>
+  @page { size: A4; margin: 14mm 16mm; }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: Arial, sans-serif; font-size: 9.5pt; color: #111827; line-height: 1.45; }
+  .header { border-bottom: 2px solid #0077B5; padding-bottom: 8px; margin-bottom: 12px; }
+  .name { font-size: 19pt; font-weight: 700; color: #0077B5; }
+  .title { font-size: 10pt; color: #374151; margin-top: 2px; }
+  .contact { font-size: 8pt; color: #6B7280; margin-top: 3px; }
+  .section { margin-bottom: 11px; }
+  .section-title { font-size: 8pt; font-weight: 700; text-transform: uppercase; letter-spacing: 0.7px;
+    color: #0077B5; border-bottom: 0.5px solid #BFDBFE; padding-bottom: 2px; margin-bottom: 6px; }
+  .exp-item { margin-bottom: 7px; }
+  .exp-header { display: flex; justify-content: space-between; }
+  .exp-role { font-size: 9.5pt; font-weight: 700; }
+  .exp-period { font-size: 8pt; color: #6B7280; }
+  .exp-company { font-size: 8.5pt; color: #374151; font-style: italic; margin-bottom: 3px; }
+  .exp-bullets { margin: 3px 0 0 14px; padding: 0; }
+  .exp-bullets li { font-size: 8.5pt; color: #374151; margin-bottom: 1.5px; }
+  .edu-row { display: flex; justify-content: space-between; margin-bottom: 4px; }
+  .edu-title { font-size: 9pt; font-weight: 600; }
+  .edu-inst { font-size: 8pt; color: #374151; font-style: italic; }
+  .edu-period { font-size: 8pt; color: #6B7280; }
+  .skills { display: flex; flex-wrap: wrap; gap: 4px; }
+  .skill { background: #EFF6FF; color: #1D4ED8; font-size: 7.5pt;
+    padding: 2px 7px; border-radius: 3px; border: 0.5px solid #BFDBFE; }
+  @media print {
+    body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  }
+</style>
+</head><body>
+<div class="header">
+  <div class="name">${e(cv.nombre)}</div>
+  <div class="title">${e(cv.titular)}</div>
+  ${contact ? `<div class="contact">${contact}</div>` : ''}
+</div>
+${cv.resumen ? `<div class="section"><div class="section-title">Resumen Profesional</div><p>${e(cv.resumen)}</p></div>` : ''}
+${expHtml ? `<div class="section"><div class="section-title">Experiencia</div>${expHtml}</div>` : ''}
+${eduHtml ? `<div class="section"><div class="section-title">Educación</div>${eduHtml}</div>` : ''}
+${skillsHtml ? `<div class="section"><div class="section-title">Habilidades</div><div class="skills">${skillsHtml}</div></div>` : ''}
+${idiomasHtml}
+</body></html>`
+  }
+
+  const downloadCvHtml = (cv) => {
+    const html = buildCvHtml(cv)
+    const blob = new Blob([html], { type: 'text/html; charset=utf-8' })
+    const url = URL.createObjectURL(blob)
+    const filename = cv.nombre
+      ? `CV-${cv.nombre.replace(/[^a-zA-ZÀ-ÿ0-9 ]/g, '').replace(/\s+/g, '-')}.html`
+      : 'CV.html'
+    const a = document.createElement('a')
+    a.href = url
+    a.download = filename
+    document.body.appendChild(a)
+    a.click()
+    document.body.removeChild(a)
+    setTimeout(() => URL.revokeObjectURL(url), 30000)
+    setCvSuccess(filename)
+  }
+
+  const callGenerateCV = async (contacto = {}) => {
+    if (cvLoading) return
+    setCvLoading(true)
+    setCvError('')
+    setCvSuccess('')
+    const nombre = result?.nombre_completo || ''
+    const titular = result?.titular_propuesto || result?.titular_actual || ''
+    const resumen = result?.resumen_propuesto || ''
+    const keywords = (result?.palabras_clave_sugeridas || []).join(', ')
+    let userPrompt = `Generá el CV en JSON usando esta información del profesional.\n\n`
+    userPrompt += `Nombre: ${nombre}\nTitular propuesto: ${titular}\nResumen propuesto: ${resumen}\nKeywords sugeridas: ${keywords}\n\n`
+    if (contacto.email)       userPrompt += `Email de contacto: ${contacto.email}\n`
+    if (contacto.telefono)    userPrompt += `Teléfono: ${contacto.telefono}\n`
+    if (contacto.linkedinUrl) userPrompt += `URL LinkedIn: ${contacto.linkedinUrl}\n`
+    userPrompt += `\nTexto completo del perfil LinkedIn (extraé experiencias y educación):\n${profileText.slice(0, 5000)}\n\n`
+    userPrompt += `Usá el email, teléfono y URL de LinkedIn proporcionados arriba. No los inventes si no se dieron (poné null).
+Respondé con este JSON exacto:
+{
+  "nombre": "string",
+  "titular": "string",
+  "email": "string o null",
+  "telefono": "string o null",
+  "linkedin": "string o null",
+  "ubicacion": "string o null",
+  "resumen": "string (2 oraciones máx)",
+  "experiencias": [{ "cargo": "string", "empresa": "string", "periodo": "string", "logros": ["string"] }],
+  "educacion": [{ "titulo": "string", "institucion": "string", "periodo": "string" }],
+  "habilidades": ["string"],
+  "idiomas": ["string"]
+}`
+    const controller = new AbortController()
+    const timeoutId = setTimeout(() => controller.abort(), 58000)
+    try {
+      if (!WORKER_URL) throw new Error('Worker URL no configurada.')
+      const res = await fetch(WORKER_URL, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        signal: controller.signal,
+        body: JSON.stringify({
+          system_instruction: { parts: [{ text: CV_SYSTEM_PROMPT }] },
+          contents: [{ parts: [{ text: userPrompt }] }],
+          generationConfig: { responseMimeType: 'application/json', maxOutputTokens: 2000 },
+        }),
+      })
+      if (!res.ok) {
+        const e = await res.json().catch(() => ({}))
+        throw new Error(parseGeminiError(res.status, e))
+      }
+      const data = await res.json()
+      const text = data?.candidates?.[0]?.content?.parts?.[0]?.text || ''
+      const cv = JSON.parse(text)
+      downloadCvHtml(cv)
+      saveCvGenerado({ contacto, cv }).catch(() => {})
+    } catch (err) {
+      setCvError(err.name === 'AbortError' ? 'El pedido tardó demasiado. Intentá de nuevo.' : err.message || 'No se pudo generar el CV.')
+    } finally {
+      clearTimeout(timeoutId)
+      setCvLoading(false)
     }
   }
 
@@ -1892,6 +2103,27 @@ Generá el feedback en este JSON exacto:
               </div>
             </ResultCard>
 
+            {/* ── Botón CV de 1 página ── */}
+            <div className="space-y-1.5">
+              <button
+                onClick={() => setShowCvModal(true)}
+                disabled={cvLoading}
+                className="w-full font-semibold py-4 rounded-xl transition-all duration-200 text-white text-sm"
+                style={{ background: cvLoading ? '#94a3b8' : 'linear-gradient(135deg,#059669,#10b981)', opacity: cvLoading ? 0.7 : 1 }}
+              >
+                {cvLoading ? '⏳ Generando tu CV...' : '📄 Generá tu CV moderno de 1 página'}
+              </button>
+              <p className="text-center text-xs text-slate-500">
+                Gratis · ATS-compatible · Descargalo y guardá como PDF con Ctrl+P
+              </p>
+              {cvError && <p className="text-xs text-red-500 text-center">{cvError}</p>}
+              {cvSuccess && (
+                <p className="text-xs text-center" style={{ color: '#059669' }}>
+                  ✓ {cvSuccess} descargado — abrilo y guardá como PDF con Ctrl+P
+                </p>
+              )}
+            </div>
+
             <ResultCard title="Fortalezas y áreas de mejora">
               <div className="grid sm:grid-cols-2 gap-6">
                 <div className="space-y-2">
@@ -2464,6 +2696,123 @@ Generá el feedback en este JSON exacto:
         )}
 
       </div>
+
+      {/* ── Modal CV de 1 página ── */}
+      {showCvModal && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center px-4 py-6 overflow-y-auto"
+          style={{ background: 'rgba(0,0,0,0.70)', backdropFilter: 'blur(4px)' }}
+          onClick={e => { if (e.target === e.currentTarget) setShowCvModal(false) }}
+        >
+          <div className="w-full max-w-sm rounded-2xl overflow-hidden"
+            style={{ background: '#1e293b', border: '1px solid #334155', boxShadow: '0 20px 60px rgba(0,0,0,0.5)' }}>
+            <div className="p-6 pb-4 space-y-2">
+              <h3 className="text-lg font-bold text-white">📄 Tu CV de 1 página</h3>
+              <ul className="text-xs space-y-1 pt-1" style={{ color: '#64748b' }}>
+                <li>✓ Titular y resumen optimizados de tu análisis</li>
+                <li>✓ Experiencias con logros y métricas</li>
+                <li>✓ Keywords de tu industria incluidas</li>
+                <li>✓ ATS-compatible · listo para guardar como PDF</li>
+              </ul>
+            </div>
+            <div className="px-6 pb-6 pt-4 space-y-3" style={{ borderTop: '1px solid rgba(255,255,255,0.07)' }}>
+              <p className="text-xs font-semibold" style={{ color: '#cbd5e1' }}>Datos de contacto para el CV</p>
+              <div>
+                <label className="text-xs block mb-1" style={{ color: '#64748b' }}>
+                  Email <span style={{ color: '#f87171' }}>*</span>
+                </label>
+                <input
+                  type="email"
+                  value={contactEmail}
+                  onChange={e => setContactEmail(e.target.value)}
+                  placeholder="tu@email.com"
+                  className="w-full rounded-xl px-4 py-2.5 text-sm text-white outline-none"
+                  style={{ background: 'rgba(15,23,42,0.8)', border: `1px solid ${contactEmail.trim() ? 'rgba(0,119,181,0.5)' : '#334155'}` }}
+                />
+              </div>
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label className="text-xs block mb-1" style={{ color: '#64748b' }}>Teléfono</label>
+                  <input
+                    type="tel"
+                    value={contactTelefono}
+                    onChange={e => setContactTelefono(e.target.value)}
+                    placeholder="+54 11 1234-5678"
+                    className="w-full rounded-xl px-3 py-2.5 text-sm text-white outline-none"
+                    style={{ background: 'rgba(15,23,42,0.8)', border: '1px solid #334155' }}
+                  />
+                </div>
+                <div>
+                  <label className="text-xs block mb-1" style={{ color: '#64748b' }}>URL LinkedIn</label>
+                  <input
+                    type="url"
+                    value={contactLinkedin}
+                    onChange={e => setContactLinkedin(e.target.value)}
+                    placeholder="linkedin.com/in/..."
+                    className="w-full rounded-xl px-3 py-2.5 text-sm text-white outline-none"
+                    style={{ background: 'rgba(15,23,42,0.8)', border: '1px solid #334155' }}
+                  />
+                </div>
+              </div>
+              <p className="text-xs leading-relaxed pt-1" style={{ color: '#475569' }}>
+                🔒 Tus datos se usan solo para confeccionar el CV y no se comparten con terceros.
+              </p>
+              <button
+                onClick={() => {
+                  if (!contactEmail.trim()) return
+                  const contacto = { email: contactEmail.trim(), telefono: contactTelefono.trim(), linkedinUrl: contactLinkedin.trim() }
+                  setPendingWithSupport(false)
+                  setShowCvModal(false)
+                  callGenerateCV(contacto)
+                }}
+                disabled={!contactEmail.trim()}
+                className="w-full py-3.5 rounded-xl text-sm font-semibold transition-opacity"
+                style={{
+                  background: contactEmail.trim() ? '#0077B5' : '#334155',
+                  color: 'white',
+                  opacity: contactEmail.trim() ? 1 : 0.5,
+                  cursor: contactEmail.trim() ? 'pointer' : 'not-allowed',
+                }}
+              >
+                Generar mi CV →
+              </button>
+              <div className="flex items-start gap-2.5">
+                <span className="text-base shrink-0 mt-0.5">☕</span>
+                <p className="text-xs leading-relaxed" style={{ color: '#475569' }}>
+                  Si te aportó valor, podés apoyar con $5.000 (único, optativo).
+                </p>
+              </div>
+              <button
+                onClick={() => {
+                  if (!contactEmail.trim()) return
+                  const contacto = { email: contactEmail.trim(), telefono: contactTelefono.trim(), linkedinUrl: contactLinkedin.trim() }
+                  setPendingWithSupport(true)
+                  window.open(MP_URL, '_blank', 'noopener,noreferrer')
+                  setShowCvModal(false)
+                  callGenerateCV(contacto)
+                }}
+                disabled={!contactEmail.trim()}
+                className="w-full py-2.5 rounded-xl text-xs font-medium transition-colors"
+                style={{
+                  border: `1px solid ${contactEmail.trim() ? 'rgba(0,180,150,0.35)' : '#334155'}`,
+                  color: contactEmail.trim() ? '#34d399' : '#475569',
+                  background: contactEmail.trim() ? 'rgba(0,180,150,0.06)' : 'transparent',
+                  cursor: contactEmail.trim() ? 'pointer' : 'not-allowed',
+                }}
+              >
+                ☕ Apoyar $5.000 y generar →
+              </button>
+              <button
+                onClick={() => setShowCvModal(false)}
+                className="w-full py-2 text-xs transition-colors"
+                style={{ color: '#475569' }}
+              >
+                Cancelar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* ── Modal nombre + colaboración ── */}
       {showLeadModal && (
