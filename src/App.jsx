@@ -57,6 +57,7 @@ Aplicá estos frameworks en tu análisis:
 - Propuesta de valor: ¿está claro qué problema resuelve este profesional y para quién específicamente?
 - Prueba social: ¿hay métricas, logros concretos, recomendaciones o validaciones externas?
 - CTA: ¿hay una llamada a la acción clara para el visitante ideal del perfil?
+Si se adjunta una imagen de perfil, analizála con estos criterios: fondo (sólido/profesional vs. distractivo), iluminación (natural frontal vs. contraluz/sombras), encuadre (desde hombros hacia arriba vs. cuerpo entero o mal recortado), expresión (cálida/profesional vs. seria/distante), vestimenta (acorde al sector). Sé específica y accionable en las recomendaciones de foto.
 Respondé siempre en español rioplatense (Argentina).
 No usés lenguaje genérico ni de autoayuda.
 Sé directa, específica y orientada a resultados medibles.
@@ -260,6 +261,10 @@ export default function App() {
   const [formHabilidades, setFormHabilidades] = useState('')
   const [formExps, setFormExps] = useState([{ cargo: '', empresa: '', periodo: '', descripcion: '' }])
   const [formEdus, setFormEdus] = useState([{ titulo: '', institucion: '', periodo: '' }])
+  const [photoBase64, setPhotoBase64] = useState('')
+  const [photoMimeType, setPhotoMimeType] = useState('')
+  const [photoPreviewUrl, setPhotoPreviewUrl] = useState('')
+  const [photoError, setPhotoError] = useState('')
 
   // Results
   const [result, setResult] = useState(null)
@@ -304,6 +309,10 @@ export default function App() {
     setFormHabilidades('')
     setFormExps([{ cargo: '', empresa: '', periodo: '', descripcion: '' }])
     setFormEdus([{ titulo: '', institucion: '', periodo: '' }])
+    setPhotoBase64('')
+    setPhotoMimeType('')
+    setPhotoPreviewUrl('')
+    setPhotoError('')
   }
 
   // ── Answer a question and fetch next ──
@@ -435,6 +444,29 @@ export default function App() {
     setPdfFileName('')
   }
 
+  // ── Upload de foto de perfil ──
+  const handlePhotoUpload = (file) => {
+    setPhotoError('')
+    if (!file) return
+    const allowed = ['image/jpeg', 'image/png', 'image/webp']
+    if (!allowed.includes(file.type)) {
+      setPhotoError('Formato no válido. Usá JPG, PNG o WEBP.')
+      return
+    }
+    if (file.size > 4 * 1024 * 1024) {
+      setPhotoError('La imagen es muy grande. Máximo 4 MB.')
+      return
+    }
+    const reader = new FileReader()
+    reader.onload = (ev) => {
+      const dataUrl = ev.target.result
+      setPhotoMimeType(file.type)
+      setPhotoBase64(dataUrl.split(',')[1])
+      setPhotoPreviewUrl(dataUrl)
+    }
+    reader.readAsDataURL(file)
+  }
+
   // ── Construir profileText desde el formulario manual ──
   const buildAndSetProfileText = () => {
     const expsText = formExps
@@ -478,6 +510,8 @@ ${contextText}
 Perfil de LinkedIn:
 ${profileText}
 
+${photoBase64 ? 'Se adjunta la foto de perfil actual. Analizala y completá el campo foto_recomendacion con observaciones concretas.' : 'No se adjuntó foto de perfil. El campo foto_recomendacion debe ser null.'}
+
 Generá un análisis en este formato JSON exacto:
 {
   "nombre_completo": "nombre y apellido del profesional extraídos del perfil",
@@ -495,7 +529,8 @@ Generá un análisis en este formato JSON exacto:
   "recomendaciones": [
     {"titulo": "nombre de la recomendación", "descripcion": "explicación concreta de qué cambiar y cómo, con ejemplos si aplica"}
   ],
-  "estrategia_contenido": "sugerencia de 2-3 oraciones sobre qué tipo de contenido publicar para lograr el objetivo declarado"
+  "estrategia_contenido": "sugerencia de 2-3 oraciones sobre qué tipo de contenido publicar para lograr el objetivo declarado",
+  "foto_recomendacion": "recomendación concreta sobre la foto de perfil analizada, o null si no se adjuntó foto"
 }`
 
     const controller = new AbortController()
@@ -508,7 +543,12 @@ Generá un análisis en este formato JSON exacto:
         signal: controller.signal,
         body: JSON.stringify({
           system_instruction: { parts: [{ text: ANALYSIS_SYSTEM_PROMPT }] },
-          contents: [{ parts: [{ text: userPrompt }] }],
+          contents: [{
+            parts: [
+              ...(photoBase64 ? [{ inline_data: { mime_type: photoMimeType, data: photoBase64 } }] : []),
+              { text: userPrompt },
+            ],
+          }],
           generationConfig: { responseMimeType: 'application/json', maxOutputTokens: 2048 },
         }),
       })
@@ -1125,6 +1165,52 @@ ${idiomasHtml}
               </div>
             )}
 
+            {/* ── Foto de perfil (opcional, independiente del modo) ── */}
+            <div className="rounded-2xl p-5 space-y-3"
+              style={{ background: 'rgba(15,23,42,0.6)', border: '1px solid #334155' }}>
+              <div className="flex items-center justify-between">
+                <label className="text-sm font-semibold text-white">
+                  Foto de perfil <span className="text-slate-500 font-normal text-xs">(opcional)</span>
+                </label>
+                {photoPreviewUrl && (
+                  <button
+                    onClick={() => { setPhotoBase64(''); setPhotoMimeType(''); setPhotoPreviewUrl(''); setPhotoError('') }}
+                    className="text-xs text-slate-500 hover:text-red-400 transition-colors"
+                  >
+                    Quitar
+                  </button>
+                )}
+              </div>
+              <p className="text-xs text-slate-400">
+                Subila para recibir recomendaciones sobre tu imagen profesional. JPG, PNG o WEBP · máx 4 MB.
+              </p>
+              {!photoPreviewUrl ? (
+                <label
+                  className="flex flex-col items-center justify-center gap-2 rounded-xl py-6 cursor-pointer border-2 border-dashed transition-colors"
+                  style={{ borderColor: '#334155' }}
+                  onDragOver={e => e.preventDefault()}
+                  onDrop={e => { e.preventDefault(); handlePhotoUpload(e.dataTransfer.files[0]) }}
+                >
+                  <span className="text-2xl">🖼️</span>
+                  <span className="text-xs text-slate-400">Hacé clic o arrastrá tu foto aquí</span>
+                  <input
+                    type="file"
+                    accept="image/jpeg,image/png,image/webp"
+                    className="hidden"
+                    onChange={e => handlePhotoUpload(e.target.files?.[0])}
+                  />
+                </label>
+              ) : (
+                <div className="flex items-center gap-4">
+                  <img src={photoPreviewUrl} alt="Foto de perfil"
+                    className="w-20 h-20 rounded-full object-cover"
+                    style={{ border: '2px solid rgba(0,119,181,0.4)' }} />
+                  <p className="text-xs text-green-400 font-medium">✓ Foto cargada — se analizará junto al perfil</p>
+                </div>
+              )}
+              {photoError && <p className="text-xs text-red-400">{photoError}</p>}
+            </div>
+
             {/* Resumen de respuestas (siempre visible) */}
             <div className="rounded-xl p-4"
               style={{ backgroundColor: 'rgba(0,119,181,0.06)', border: '1px solid rgba(0,119,181,0.2)' }}>
@@ -1268,6 +1354,12 @@ ${idiomasHtml}
                   ))}
                 </div>
                 <p className="text-slate-500 text-xs mt-3">Incluí estas palabras en tu titular, resumen y experiencias para aparecer en más búsquedas.</p>
+              </ResultCard>
+            )}
+
+            {result.foto_recomendacion && (
+              <ResultCard title="📸 Foto de perfil">
+                <p className="text-sm text-slate-300 leading-relaxed">{result.foto_recomendacion}</p>
               </ResultCard>
             )}
 
