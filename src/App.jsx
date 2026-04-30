@@ -1407,6 +1407,7 @@ Respondé con este JSON exacto:
                     { icon: '🔍', title: 'SEO de LinkedIn', desc: 'Palabras clave sugeridas para aparecer en búsquedas reales de reclutadores y clientes.' },
                     { icon: '✏️', title: 'Titular y resumen reescritos', desc: 'Versión mejorada del titular y del About con propuesta de valor clara y llamada a la acción.' },
                     { icon: '📋', title: 'Recomendaciones accionables', desc: 'Lista priorizada de cambios concretos que podés implementar hoy.' },
+                    { icon: '📄', title: 'CV de 1 página listo para enviar', desc: 'Lo que los reclutadores piden hoy: un CV moderno, ATS-compatible y de una sola página generado con tu perfil optimizado.' },
                     { icon: '📣', title: 'Estrategia de contenido', desc: 'Qué publicar en LinkedIn según tu objetivo profesional para aumentar tu visibilidad.' },
                     { icon: '🎙️', title: 'Simulador de entrevista con IA', desc: 'Practicá una entrevista inicial y recibí feedback detallado con criterio de RRHH.' },
                   ].map(item => (
