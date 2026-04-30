@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import './index.css'
+import { saveCvLead } from './supabase.js'
 
 const WORKER_URL = import.meta.env.VITE_WORKER_URL
 
@@ -273,6 +274,11 @@ export default function App() {
   const [cvError, setCvError] = useState('')
   const [cvSuccess, setCvSuccess] = useState('')
   const [showCvModal, setShowCvModal] = useState(false)
+  const [showContactForm, setShowContactForm] = useState(false)
+  const [contactEmail, setContactEmail] = useState('')
+  const [contactTelefono, setContactTelefono] = useState('')
+  const [contactLinkedin, setContactLinkedin] = useState('')
+  const [pendingWithSupport, setPendingWithSupport] = useState(false)
 
   // Loading message rotation
   const [loadingMsgIdx, setLoadingMsgIdx] = useState(0)
@@ -302,6 +308,11 @@ export default function App() {
     setCvError('')
     setCvSuccess('')
     setShowCvModal(false)
+    setShowContactForm(false)
+    setContactEmail('')
+    setContactTelefono('')
+    setContactLinkedin('')
+    setPendingWithSupport(false)
     setInputMode('pdf')
     setFormNombre('')
     setFormTitular('')
@@ -573,7 +584,7 @@ Generá un análisis en este formato JSON exacto:
   }
 
   // ── Generar CV de 1 página ──
-  const callGenerateCV = async () => {
+  const callGenerateCV = async (contacto = {}) => {
     if (cvLoading) return
     setCvLoading(true)
     setCvError('')
@@ -589,12 +600,17 @@ Generá un análisis en este formato JSON exacto:
     userPrompt += `Titular propuesto: ${titular}\n`
     userPrompt += `Resumen propuesto: ${resumen}\n`
     userPrompt += `Keywords sugeridas: ${keywords}\n\n`
-    userPrompt += `Texto completo del perfil LinkedIn (extraé experiencias y educación):\n${profileText.slice(0, 5000)}\n\n`
-    userPrompt += `Respondé con este JSON exacto:
+    if (contacto.email)       userPrompt += `Email de contacto: ${contacto.email}\n`
+    if (contacto.telefono)    userPrompt += `Teléfono: ${contacto.telefono}\n`
+    if (contacto.linkedinUrl) userPrompt += `URL LinkedIn: ${contacto.linkedinUrl}\n`
+    userPrompt += `\nTexto completo del perfil LinkedIn (extraé experiencias y educación):\n${profileText.slice(0, 5000)}\n\n`
+    userPrompt += `Usá el email, teléfono y URL de LinkedIn proporcionados arriba. No los inventes si no se dieron (poné null).
+Respondé con este JSON exacto:
 {
   "nombre": "string",
   "titular": "string",
   "email": "string o null",
+  "telefono": "string o null",
   "linkedin": "string o null",
   "ubicacion": "string o null",
   "resumen": "string (2 oraciones máx)",
@@ -630,6 +646,7 @@ Generá un análisis en este formato JSON exacto:
       const text = data?.candidates?.[0]?.content?.parts?.[0]?.text || ''
       const cv = JSON.parse(text)
       downloadCvHtml(cv)
+      saveCvLead({ contacto, cv, analisis: result }).catch(() => {})
     } catch (err) {
       const msg = err.name === 'AbortError' ? 'El pedido tardó demasiado. Intentá de nuevo.' : err.message || 'No se pudo generar el CV.'
       setCvError(msg)
@@ -658,7 +675,7 @@ Generá un análisis en este formato JSON exacto:
 
   function buildCvHtml(cv) {
     const e = escapeHtml
-    const contact = [cv.email, cv.linkedin, cv.ubicacion].filter(Boolean).map(e).join(' · ')
+    const contact = [cv.email, cv.telefono, cv.linkedin, cv.ubicacion].filter(Boolean).map(e).join(' · ')
     const expHtml = (cv.experiencias || []).map(ex => `
       <div class="exp-item">
         <div class="exp-header">
@@ -1434,55 +1451,119 @@ ${idiomasHtml}
           <div className="w-full max-w-sm rounded-2xl overflow-hidden"
             style={{ background: '#1e293b', border: '1px solid #334155', boxShadow: '0 20px 60px rgba(0,0,0,0.5)' }}>
 
-            <div className="p-6 pb-4 space-y-3">
+            {/* Header */}
+            <div className="p-6 pb-4 space-y-2">
               <h3 className="text-lg font-bold text-white">📄 Tu CV de 1 página</h3>
-              <p className="text-slate-400 text-sm leading-relaxed">
-                Vamos a generar un CV moderno, conciso y ATS-compatible usando el análisis de tu perfil —
-                el formato que prefieren los reclutadores hoy.
-              </p>
-              <ul className="text-xs text-slate-500 space-y-1">
+              <ul className="text-xs text-slate-500 space-y-1 pt-1">
                 <li>✓ Titular y resumen optimizados de tu análisis</li>
                 <li>✓ Experiencias con logros y métricas</li>
                 <li>✓ Keywords de tu industria incluidas</li>
-                <li>✓ Listo para imprimir y guardar como PDF</li>
+                <li>✓ ATS-compatible · listo para guardar como PDF</li>
               </ul>
             </div>
 
+            {/* Formulario de contacto */}
             <div className="px-6 pb-6 pt-4 space-y-3"
               style={{ borderTop: '1px solid rgba(255,255,255,0.07)' }}>
 
-              {/* Acción principal — generar (primaria) */}
+              <p className="text-xs font-semibold text-slate-300">Datos de contacto para el CV</p>
+
+              <div>
+                <label className="text-xs text-slate-500 block mb-1">
+                  Email <span className="text-red-400">*</span>
+                </label>
+                <input
+                  type="email"
+                  value={contactEmail}
+                  onChange={e => setContactEmail(e.target.value)}
+                  placeholder="tu@email.com"
+                  className="w-full rounded-xl px-4 py-2.5 text-sm text-white outline-none"
+                  style={{ background: 'rgba(15,23,42,0.8)', border: `1px solid ${contactEmail.trim() ? 'rgba(0,119,181,0.5)' : '#334155'}` }}
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label className="text-xs text-slate-500 block mb-1">Teléfono</label>
+                  <input
+                    type="tel"
+                    value={contactTelefono}
+                    onChange={e => setContactTelefono(e.target.value)}
+                    placeholder="+54 11 1234-5678"
+                    className="w-full rounded-xl px-3 py-2.5 text-sm text-white outline-none"
+                    style={{ background: 'rgba(15,23,42,0.8)', border: '1px solid #334155' }}
+                  />
+                </div>
+                <div>
+                  <label className="text-xs text-slate-500 block mb-1">URL LinkedIn</label>
+                  <input
+                    type="url"
+                    value={contactLinkedin}
+                    onChange={e => setContactLinkedin(e.target.value)}
+                    placeholder="linkedin.com/in/..."
+                    className="w-full rounded-xl px-3 py-2.5 text-sm text-white outline-none"
+                    style={{ background: 'rgba(15,23,42,0.8)', border: '1px solid #334155' }}
+                  />
+                </div>
+              </div>
+
+              {/* Aviso de privacidad */}
+              <p className="text-xs leading-relaxed pt-1"
+                style={{ color: '#475569' }}>
+                🔒 Tu nombre, email, teléfono y datos del CV serán almacenados de forma segura para la confección del documento. No serán compartidos con terceros.
+              </p>
+
+              {/* Acción principal */}
               <button
-                onClick={() => { setShowCvModal(false); callGenerateCV() }}
-                className="w-full py-3.5 rounded-xl text-white text-sm font-semibold transition-opacity hover:opacity-90"
-                style={{ background: '#0077B5' }}
+                onClick={() => {
+                  if (!contactEmail.trim()) return
+                  const contacto = { email: contactEmail.trim(), telefono: contactTelefono.trim(), linkedinUrl: contactLinkedin.trim() }
+                  setShowCvModal(false)
+                  callGenerateCV(contacto)
+                }}
+                disabled={!contactEmail.trim()}
+                className="w-full py-3.5 rounded-xl text-sm font-semibold transition-opacity"
+                style={{
+                  background: contactEmail.trim() ? '#0077B5' : '#334155',
+                  color: 'white',
+                  opacity: contactEmail.trim() ? 1 : 0.5,
+                  cursor: contactEmail.trim() ? 'pointer' : 'not-allowed',
+                }}
               >
                 Generar mi CV →
               </button>
 
-              {/* Donación — opción secundaria sin presión */}
-              <div className="flex items-start gap-2.5 pt-1">
+              {/* Donación — secundaria */}
+              <div className="flex items-start gap-2.5">
                 <span className="text-base shrink-0 mt-0.5">☕</span>
-                <p className="text-slate-500 text-xs leading-relaxed">
-                  Si la herramienta te aportó valor, podés apoyarla con $5.000 (único, optativo).
-                  Me ayuda a mantenerla gratis para todos.
+                <p className="text-xs leading-relaxed" style={{ color: '#475569' }}>
+                  Si te aportó valor, podés apoyar con $5.000 (único, optativo). Me ayuda a mantenerla gratis.
                 </p>
               </div>
               <button
                 onClick={() => {
+                  if (!contactEmail.trim()) return
+                  const contacto = { email: contactEmail.trim(), telefono: contactTelefono.trim(), linkedinUrl: contactLinkedin.trim() }
                   window.open(MP_URL, '_blank', 'noopener,noreferrer')
                   setShowCvModal(false)
-                  callGenerateCV()
+                  callGenerateCV(contacto)
                 }}
+                disabled={!contactEmail.trim()}
                 className="w-full py-2.5 rounded-xl text-xs font-medium transition-colors"
-                style={{ border: '1px solid rgba(0,180,150,0.35)', color: '#34d399', background: 'rgba(0,180,150,0.06)' }}
+                style={{
+                  border: `1px solid ${contactEmail.trim() ? 'rgba(0,180,150,0.35)' : '#334155'}`,
+                  color: contactEmail.trim() ? '#34d399' : '#475569',
+                  background: contactEmail.trim() ? 'rgba(0,180,150,0.06)' : 'transparent',
+                  cursor: contactEmail.trim() ? 'pointer' : 'not-allowed',
+                }}
               >
                 ☕ Apoyar $5.000 y generar →
               </button>
 
               <button
                 onClick={() => setShowCvModal(false)}
-                className="w-full py-2 text-slate-600 text-xs hover:text-slate-400 transition-colors"
+                className="w-full py-2 text-xs hover:text-slate-400 transition-colors"
+                style={{ color: '#475569' }}
               >
                 Cancelar
               </button>
