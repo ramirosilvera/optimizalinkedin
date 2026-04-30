@@ -1363,6 +1363,30 @@ ${idiomasHtml}
               </div>
             </ResultCard>
 
+            {/* ── CTA principal: CV — visible sin scrollear ── */}
+            <div className="space-y-1.5">
+              <button
+                onClick={() => {
+                  if (saveEmailValue && !contactEmail) setContactEmail(saveEmailValue)
+                  setShowCvModal(true)
+                }}
+                disabled={cvLoading}
+                className="w-full font-semibold py-4 rounded-xl transition-all duration-200 text-white text-sm"
+                style={{ background: cvLoading ? '#334155' : 'linear-gradient(135deg,#059669,#10b981)', opacity: cvLoading ? 0.7 : 1 }}
+              >
+                {cvLoading ? '⏳ Generando tu CV...' : '📄 Generá tu CV moderno de 1 página'}
+              </button>
+              <p className="text-center text-xs text-slate-500">
+                Gratis · ATS-compatible · Descargalo y guardá como PDF con Ctrl+P
+              </p>
+              {cvError && <p className="text-xs text-red-400 text-center">{cvError}</p>}
+              {cvSuccess && (
+                <p className="text-xs text-emerald-400 text-center">
+                  ✓ {cvSuccess} descargado — abrilo y guardá como PDF con Ctrl+P
+                </p>
+              )}
+            </div>
+
             <ResultCard title="Fortalezas y áreas de mejora">
               <div className="grid sm:grid-cols-2 gap-6">
                 <div className="space-y-2">
@@ -1474,30 +1498,6 @@ ${idiomasHtml}
                 <p className="text-green-400 text-sm">Análisis guardado en <span className="font-semibold">{saveEmailValue}</span></p>
               </div>
             )}
-
-            {/* CV 1 página */}
-            <div className="space-y-1.5">
-              <button
-                onClick={() => {
-                  if (saveEmailValue && !contactEmail) setContactEmail(saveEmailValue)
-                  setShowCvModal(true)
-                }}
-                disabled={cvLoading}
-                className="w-full font-semibold py-4 rounded-xl transition-all duration-200 text-white text-sm"
-                style={{ background: cvLoading ? '#334155' : 'linear-gradient(135deg,#059669,#10b981)', opacity: cvLoading ? 0.7 : 1 }}
-              >
-                {cvLoading ? '⏳ Generando tu CV...' : '📄 Generá tu CV moderno de 1 página'}
-              </button>
-              <p className="text-center text-xs text-slate-500">
-                Gratis · ATS-compatible · Abrilo en el browser y guardá como PDF con Ctrl+P
-              </p>
-              {cvError && <p className="text-xs text-red-400 text-center">{cvError}</p>}
-              {cvSuccess && (
-                <p className="text-xs text-emerald-400 text-center">
-                  ✓ {cvSuccess} descargado — abrilo y guardá como PDF con Ctrl+P
-                </p>
-              )}
-            </div>
 
             <button
               onClick={reset}
