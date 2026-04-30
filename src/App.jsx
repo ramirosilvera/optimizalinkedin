@@ -249,6 +249,7 @@ export default function App() {
   const [analysisError, setAnalysisError] = useState('')
   const [cvLoading, setCvLoading] = useState(false)
   const [cvError, setCvError] = useState('')
+  const [cvSuccess, setCvSuccess] = useState('')
   const [showCvModal, setShowCvModal] = useState(false)
 
   // Loading message rotation
@@ -277,6 +278,7 @@ export default function App() {
     setLoadingMsgIdx(0)
     setCvLoading(false)
     setCvError('')
+    setCvSuccess('')
     setShowCvModal(false)
   }
 
@@ -458,6 +460,7 @@ Generá un análisis en este formato JSON exacto:
     if (cvLoading) return
     setCvLoading(true)
     setCvError('')
+    setCvSuccess('')
 
     const nombre = result?.nombre_completo || ''
     const titular = result?.titular_propuesto || result?.titular_actual || ''
@@ -509,7 +512,7 @@ Generá un análisis en este formato JSON exacto:
       const data = await res.json()
       const text = data?.candidates?.[0]?.content?.parts?.[0]?.text || ''
       const cv = JSON.parse(text)
-      openCvInNewWindow(cv)
+      downloadCvHtml(cv)
     } catch (err) {
       const msg = err.name === 'AbortError' ? 'El pedido tardó demasiado. Intentá de nuevo.' : err.message || 'No se pudo generar el CV.'
       setCvError(msg)
@@ -519,13 +522,21 @@ Generá un análisis en este formato JSON exacto:
     }
   }
 
-  function openCvInNewWindow(cv) {
+  function downloadCvHtml(cv) {
     const html = buildCvHtml(cv)
-    const w = window.open('', '_blank')
-    if (!w) { setCvError('Permitir pop-ups para abrir el CV.'); return }
-    w.document.write(html)
-    w.document.close()
-    w.addEventListener('load', () => w.print())
+    const blob = new Blob([html], { type: 'text/html; charset=utf-8' })
+    const url = URL.createObjectURL(blob)
+    const filename = cv.nombre
+      ? `CV-${cv.nombre.replace(/[^a-zA-ZÀ-ÿ0-9 ]/g, '').replace(/\s+/g, '-')}.html`
+      : 'CV.html'
+    const a = document.createElement('a')
+    a.href = url
+    a.download = filename
+    document.body.appendChild(a)
+    a.click()
+    document.body.removeChild(a)
+    setTimeout(() => URL.revokeObjectURL(url), 30000)
+    setCvSuccess(filename)
   }
 
   function buildCvHtml(cv) {
@@ -1045,9 +1056,14 @@ ${idiomasHtml}
                 {cvLoading ? '⏳ Generando tu CV...' : '📄 Generá tu CV moderno de 1 página'}
               </button>
               <p className="text-center text-xs text-slate-500">
-                Gratis · Formato actual · ATS-compatible · Como piden los reclutadores hoy
+                Gratis · ATS-compatible · Abrilo en el browser y guardá como PDF con Ctrl+P
               </p>
               {cvError && <p className="text-xs text-red-400 text-center">{cvError}</p>}
+              {cvSuccess && (
+                <p className="text-xs text-emerald-400 text-center">
+                  ✓ {cvSuccess} descargado — abrilo y guardá como PDF con Ctrl+P
+                </p>
+              )}
             </div>
 
             <button
