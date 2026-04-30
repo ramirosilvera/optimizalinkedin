@@ -1490,6 +1490,73 @@ Respondé con este JSON exacto:
                 </div>
               </section>
 
+              {/* Comparativa vs alternativas */}
+              <section>
+                <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full text-xs font-semibold mb-3"
+                  style={{ background: 'rgba(99,102,241,0.08)', color: '#6366f1', border: '1px solid rgba(99,102,241,0.2)' }}>
+                  Por qué esta app
+                </div>
+                <h2 className="text-xl font-bold text-slate-900 mb-2">Gratis vs. las alternativas</h2>
+                <p className="text-slate-500 text-sm mb-5 leading-relaxed">
+                  Lo mismo que te costaría entre <strong className="text-slate-700">$30.000 y $125.000</strong> con un asesor, o <strong className="text-slate-700">~$56.000/mes</strong> con LinkedIn Premium — acá lo obtenés sin costo.
+                </p>
+                <div className="overflow-x-auto -mx-0 rounded-2xl border border-slate-100 shadow-sm">
+                  <table className="w-full min-w-[500px] text-xs border-collapse">
+                    <thead>
+                      <tr>
+                        <th className="text-left py-3 pl-4 pr-2 text-slate-400 font-normal" style={{ width: 160 }}></th>
+                        <th className="py-3 px-2 text-center font-bold text-white" style={{ background: 'linear-gradient(135deg,#6366f1,#0ea5e9)', minWidth: 86 }}>
+                          <div className="text-[10px] font-normal opacity-80 mb-0.5">Esta app</div>
+                          <div className="text-emerald-200">GRATIS 🎉</div>
+                        </th>
+                        <th className="py-3 px-2 text-center text-slate-500 font-medium bg-slate-50" style={{ minWidth: 86 }}>
+                          <div className="text-[10px] text-slate-400 mb-0.5">LinkedIn Premium</div>
+                          <div className="text-slate-600 text-[11px]">~$56.000<span className="text-slate-400">/mes</span></div>
+                        </th>
+                        <th className="py-3 px-2 text-center text-slate-500 font-medium bg-slate-50" style={{ minWidth: 86 }}>
+                          <div className="text-[10px] text-slate-400 mb-0.5">IA genérica</div>
+                          <div className="text-slate-600 text-[11px]">Gratis*</div>
+                        </th>
+                        <th className="py-3 px-2 text-center text-slate-500 font-medium bg-slate-50" style={{ minWidth: 86 }}>
+                          <div className="text-[10px] text-slate-400 mb-0.5">Asesor profesional</div>
+                          <div className="text-slate-600 text-[11px]">$30k–$125k</div>
+                        </th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {[
+                        { feat: 'Criterio de headhunter real',         app: 1, premium: 0, ia: 0, asesor: 1 },
+                        { feat: 'Diagnóstico completo del perfil',      app: 1, premium: 2, ia: 2, asesor: 1 },
+                        { feat: 'Titular y resumen optimizados',        app: 1, premium: 2, ia: 2, asesor: 1 },
+                        { feat: 'SEO para búsquedas de reclutadores',   app: 1, premium: 1, ia: 0, asesor: 1 },
+                        { feat: 'Simulador de entrevista con IA',       app: 1, premium: 0, ia: 0, asesor: 2 },
+                        { feat: 'Entrenamiento metodología STAR',       app: 1, premium: 0, ia: 0, asesor: 2 },
+                        { feat: 'CV de 1 página ATS-compatible',        app: 1, premium: 0, ia: 0, asesor: 2 },
+                        { feat: 'Sin registro · resultado en 60 seg',   app: 1, premium: 0, ia: 1, asesor: 0 },
+                      ].map((row, i) => {
+                        const cell = v => v === 1
+                          ? <span className="text-emerald-500 font-bold text-sm">✓</span>
+                          : v === 0
+                          ? <span className="text-red-300 text-sm">✗</span>
+                          : <span className="text-amber-500 text-[10px] font-semibold">varía</span>
+                        return (
+                          <tr key={row.feat} style={{ background: i % 2 === 0 ? 'white' : 'rgba(248,250,252,0.8)' }}>
+                            <td className="py-2.5 pl-4 pr-2 text-slate-600 font-medium text-[11px] leading-snug">{row.feat}</td>
+                            <td className="py-2.5 px-2 text-center" style={{ background: i % 2 === 0 ? 'rgba(99,102,241,0.06)' : 'rgba(99,102,241,0.09)' }}>{cell(row.app)}</td>
+                            <td className="py-2.5 px-2 text-center">{cell(row.premium)}</td>
+                            <td className="py-2.5 px-2 text-center">{cell(row.ia)}</td>
+                            <td className="py-2.5 px-2 text-center">{cell(row.asesor)}</td>
+                          </tr>
+                        )
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+                <p className="text-slate-400 text-[10px] mt-2 leading-relaxed">
+                  * La IA genérica no cuenta con prompts especializados en RRHH ni con la validación de un profesional. Precios en ARS, referencia USD 1 ≈ ARS 1.400.
+                </p>
+              </section>
+
               {/* Cómo funciona */}
               <section>
                 <h2 className="text-xl font-bold text-slate-900 mb-4">Cómo funciona</h2>
