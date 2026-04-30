@@ -628,7 +628,7 @@ export default function App() {
         trackEvent('tutorial_video', {
           action,
           tab,
-          video_id: tab === 'desktop' ? 'w6MrNsHb1Bg' : 'pRIWttYnV5I',
+          video_id: 'wUR9COhVWyI',
         })
       } catch {}
     }
@@ -1705,7 +1705,7 @@ Respondé con este JSON exacto:
                             <iframe
                               key={instrTab}
                               className="absolute inset-0 w-full h-full"
-                              src={`https://www.youtube.com/embed/${instrTab === 'desktop' ? 'w6MrNsHb1Bg' : 'pRIWttYnV5I'}?rel=0&modestbranding=1&enablejsapi=1&origin=https://optimizalinkedin.com`}
+                              src={`https://www.youtube.com/embed/wUR9COhVWyI?rel=0&modestbranding=1&enablejsapi=1&origin=https://optimizalinkedin.com`}
                               title={instrTab === 'desktop' ? 'Cómo descargar tu PDF de LinkedIn desde computadora' : 'Cómo descargar tu PDF de LinkedIn desde celular'}
                               allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
                               allowFullScreen
