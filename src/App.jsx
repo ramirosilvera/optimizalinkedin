@@ -259,6 +259,7 @@ export default function App() {
   const [formResumen, setFormResumen] = useState('')
   const [formHabilidades, setFormHabilidades] = useState('')
   const [formExps, setFormExps] = useState([{ cargo: '', empresa: '', periodo: '', descripcion: '' }])
+  const [formEdus, setFormEdus] = useState([{ titulo: '', institucion: '', periodo: '' }])
 
   // Results
   const [result, setResult] = useState(null)
@@ -302,6 +303,7 @@ export default function App() {
     setFormResumen('')
     setFormHabilidades('')
     setFormExps([{ cargo: '', empresa: '', periodo: '', descripcion: '' }])
+    setFormEdus([{ titulo: '', institucion: '', periodo: '' }])
   }
 
   // ── Answer a question and fetch next ──
@@ -443,11 +445,17 @@ export default function App() {
       ].filter(Boolean).join('\n'))
       .join('\n\n')
 
+    const edusText = formEdus
+      .filter(e => e.titulo.trim() || e.institucion.trim())
+      .map(e => [e.titulo.trim(), e.institucion.trim(), e.periodo.trim()].filter(Boolean).join(' | '))
+      .join('\n')
+
     const parts = [
       formNombre.trim()      && `NOMBRE: ${formNombre.trim()}`,
       formTitular.trim()     && `TITULAR:\n${formTitular.trim()}`,
       formResumen.trim()     && `RESUMEN / ABOUT:\n${formResumen.trim()}`,
       expsText               && `EXPERIENCIA LABORAL:\n${expsText}`,
+      edusText               && `EDUCACIÓN:\n${edusText}`,
       formHabilidades.trim() && `HABILIDADES:\n${formHabilidades.trim()}`,
     ].filter(Boolean)
 
@@ -1023,6 +1031,57 @@ ${idiomasHtml}
                           rows={3}
                           className="w-full rounded-lg px-3 py-2.5 text-sm text-white outline-none resize-none"
                           style={{ background: 'rgba(30,41,59,0.8)', border: '1px solid #334155' }} />
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Educación */}
+                <div>
+                  <div className="flex items-center justify-between mb-2">
+                    <label className="text-xs text-slate-400">Educación</label>
+                    {formEdus.length < 4 && (
+                      <button
+                        onClick={() => setFormEdus(prev => [...prev, { titulo: '', institucion: '', periodo: '' }])}
+                        className="text-xs font-semibold transition-colors"
+                        style={{ color: '#0077B5' }}
+                      >
+                        + Agregar
+                      </button>
+                    )}
+                  </div>
+                  <div className="space-y-3">
+                    {formEdus.map((edu, i) => (
+                      <div key={i} className="rounded-xl p-4 space-y-2.5"
+                        style={{ background: 'rgba(15,23,42,0.6)', border: '1px solid #334155' }}>
+                        <div className="flex items-center justify-between">
+                          <span className="text-xs text-slate-500 font-medium">Educación {i + 1}</span>
+                          {formEdus.length > 1 && (
+                            <button
+                              onClick={() => setFormEdus(prev => prev.filter((_, idx) => idx !== i))}
+                              className="text-xs text-slate-600 hover:text-red-400 transition-colors"
+                            >
+                              Eliminar
+                            </button>
+                          )}
+                        </div>
+                        <input value={edu.titulo}
+                          onChange={e => setFormEdus(prev => prev.map((x, idx) => idx === i ? { ...x, titulo: e.target.value } : x))}
+                          placeholder="Título / Carrera"
+                          className="w-full rounded-lg px-3 py-2.5 text-sm text-white outline-none"
+                          style={{ background: 'rgba(30,41,59,0.8)', border: '1px solid #334155' }} />
+                        <div className="grid grid-cols-2 gap-2">
+                          <input value={edu.institucion}
+                            onChange={e => setFormEdus(prev => prev.map((x, idx) => idx === i ? { ...x, institucion: e.target.value } : x))}
+                            placeholder="Institución"
+                            className="rounded-lg px-3 py-2.5 text-sm text-white outline-none"
+                            style={{ background: 'rgba(30,41,59,0.8)', border: '1px solid #334155' }} />
+                          <input value={edu.periodo}
+                            onChange={e => setFormEdus(prev => prev.map((x, idx) => idx === i ? { ...x, periodo: e.target.value } : x))}
+                            placeholder="Período (ej: 2018–2022)"
+                            className="rounded-lg px-3 py-2.5 text-sm text-white outline-none"
+                            style={{ background: 'rgba(30,41,59,0.8)', border: '1px solid #334155' }} />
+                        </div>
                       </div>
                     ))}
                   </div>
