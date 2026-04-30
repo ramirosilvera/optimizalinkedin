@@ -14,7 +14,7 @@ function parseGeminiError(status, body) {
 
 const STEPS = {
   WELCOME: 0, QUESTIONS: 1, PROFILE_INPUT: 2, LOADING: 3, RESULTS: 4,
-  INTERVIEW_INTRO: 5, INTERVIEW: 6, INTERVIEW_FEEDBACK: 7,
+  INTERVIEW_INTRO: 5, INTERVIEW: 6, INTERVIEW_FEEDBACK: 7, STAR_TRAINING: 8,
 }
 
 // ── Shared style tokens ─────────────────────────────────────────
@@ -181,6 +181,17 @@ Aplicá estos criterios: claridad del mensaje, método STAR en logros, nivel de 
 Respondé siempre en español rioplatense (Argentina).
 No usés lenguaje genérico ni de autoayuda. Sé directa, específica y orientada a la mejora concreta.
 Respondé SOLO en JSON válido, sin markdown, sin backticks.`
+
+const STAR_SYSTEM_PROMPT = `Sos un coach de entrevistas laborales especializado en la metodología STAR. Evaluá si la respuesta del usuario aplica correctamente la metodología STAR (Situación, Tarea, Acción, Resultado). Sé directo, específico y constructivo. Respondé en español rioplatense. Respondé SOLO en JSON válido, sin markdown, sin backticks.`
+
+const STAR_QUESTIONS = [
+  'Contame sobre un momento en que tuviste que resolver un problema complejo en el trabajo.',
+  'Describí una situación en la que lideraste un proyecto o iniciativa desde cero.',
+  'Contame sobre un logro profesional concreto del que estés orgulloso/a.',
+  '¿Cuándo tuviste que manejar un conflicto en tu equipo? ¿Cómo lo resolviste?',
+  'Describí una situación en la que tuviste que adaptarte rápidamente a un cambio inesperado.',
+  'Contame sobre una vez que tuviste que influir o convencer a alguien sin tener autoridad directa.',
+]
 
 const LOADING_MESSAGES_BY_SITUACION = {
   'Empleado/a buscando un nuevo trabajo': [
@@ -671,6 +682,15 @@ export default function App() {
   const [leadNombre, setLeadNombre] = useState('')
   const [leadApellido, setLeadApellido] = useState('')
 
+  // Entrenador STAR
+  const [showStarModal, setShowStarModal] = useState(false)
+  const [starPhase, setStarPhase] = useState('theory')
+  const [starQuestionIdx, setStarQuestionIdx] = useState(0)
+  const [starAnswer, setStarAnswer] = useState('')
+  const [starFeedback, setStarFeedback] = useState(null)
+  const [starLoading, setStarLoading] = useState(false)
+  const [starError, setStarError] = useState('')
+
   // CV de 1 página
   const [cvLoading, setCvLoading] = useState(false)
   const [cvError, setCvError] = useState('')
@@ -758,6 +778,13 @@ export default function App() {
     setContactEmail('')
     setContactTelefono('')
     setContactLinkedin('')
+    setShowStarModal(false)
+    setStarPhase('theory')
+    setStarQuestionIdx(0)
+    setStarAnswer('')
+    setStarFeedback(null)
+    setStarLoading(false)
+    setStarError('')
     resetInterview()
   }
 
@@ -1146,6 +1173,46 @@ Generá el feedback en este JSON exacto:
     } finally {
       clearTimeout(timeoutId)
       setInterviewLoading(false)
+    }
+  }
+
+  // ── Entrenador STAR ─────────────────────────────────────────
+
+  const callStarFeedback = async () => {
+    if (starLoading) return
+    setStarLoading(true)
+    setStarError('')
+    setStarFeedback(null)
+    const pregunta = STAR_QUESTIONS[starQuestionIdx]
+    const userPrompt = `Pregunta de entrevista: "${pregunta}"\n\nRespuesta del candidato:\n"${starAnswer}"\n\nEvaluá si la respuesta aplica la metodología STAR. Respondé con este JSON exacto:\n{\n  "puntaje": número del 1 al 10,\n  "situacion": { "presente": true/false, "comentario": "max 1 oración" },\n  "tarea": { "presente": true/false, "comentario": "max 1 oración" },\n  "accion": { "presente": true/false, "comentario": "max 1 oración" },\n  "resultado": { "presente": true/false, "comentario": "max 1 oración" },\n  "sugerencia_clave": "1 mejora concreta y específica para esta respuesta"\n}`
+    const controller = new AbortController()
+    const timeoutId = setTimeout(() => controller.abort(), 30000)
+    try {
+      if (!WORKER_URL) throw new Error('Worker URL no configurada.')
+      const res = await fetch(WORKER_URL, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        signal: controller.signal,
+        body: JSON.stringify({
+          system_instruction: { parts: [{ text: STAR_SYSTEM_PROMPT }] },
+          contents: [{ parts: [{ text: userPrompt }] }],
+          generationConfig: { responseMimeType: 'application/json', maxOutputTokens: 700 },
+        }),
+      })
+      if (!res.ok) {
+        const e = await res.json().catch(() => ({}))
+        throw new Error(parseGeminiError(res.status, e))
+      }
+      const data = await res.json()
+      const text = data?.candidates?.[0]?.content?.parts?.[0]?.text || ''
+      const parsed = JSON.parse(text)
+      setStarFeedback(parsed)
+      trackEvent('star_feedback_received', { puntaje: parsed.puntaje, question_idx: starQuestionIdx })
+    } catch (err) {
+      setStarError(err.name === 'AbortError' ? 'El pedido tardó demasiado. Intentá de nuevo.' : err.message || 'No se pudo obtener el feedback.')
+    } finally {
+      clearTimeout(timeoutId)
+      setStarLoading(false)
     }
   }
 
@@ -2684,6 +2751,22 @@ Respondé con este JSON exacto:
                   </a>
                 </div>
 
+                {/* ── Sugerencia STAR ── */}
+                <div className="rounded-2xl p-5 space-y-3"
+                  style={{ background: 'rgba(99,102,241,0.06)', border: '1px solid rgba(99,102,241,0.22)' }}>
+                  <p className="text-sm font-semibold text-slate-800">🎯 ¿Querés mejorar tus respuestas de entrevista?</p>
+                  <p className="text-slate-500 text-xs leading-relaxed">
+                    Aprendé y practicá la <strong>metodología STAR</strong> — el framework que usan los mejores candidatos para estructurar sus respuestas y causar impacto real en los reclutadores.
+                  </p>
+                  <button
+                    onClick={() => { trackEvent('star_cta_click', { location: 'interview_feedback' }); setShowStarModal(true) }}
+                    className="w-full py-3 rounded-xl text-white text-sm font-semibold transition-all"
+                    style={{ background: 'linear-gradient(135deg,#6366f1,#8b5cf6)' }}
+                  >
+                    Entrenar metodología STAR →
+                  </button>
+                </div>
+
                 <button
                   onClick={() => setStep(STEPS.RESULTS)}
                   className="w-full font-semibold py-4 rounded-2xl text-sm"
@@ -2696,7 +2779,274 @@ Respondé con este JSON exacto:
           </div>
         )}
 
+        {/* ── STAR TRAINING ── */}
+        {step === STEPS.STAR_TRAINING && (
+          <div className="step-transition space-y-6">
+            <Logo />
+
+            {starPhase === 'theory' && (
+              <>
+                <div className="text-center space-y-2">
+                  <h2 className="text-2xl font-bold text-slate-900">Metodología STAR</h2>
+                  <p className="text-slate-500 text-sm leading-relaxed max-w-sm mx-auto">
+                    Un framework simple para dar respuestas claras, estructuradas y memorables en cualquier entrevista.
+                  </p>
+                </div>
+
+                <div className="space-y-3">
+                  {[
+                    { letra: 'S', color: '#6366f1', bg: 'rgba(99,102,241,0.08)', border: 'rgba(99,102,241,0.22)', nombre: 'Situación', def: 'Describí el contexto. ¿Cuándo y dónde ocurrió? ¿Qué estaba en juego?', ej: 'Ej: "Era finales de año y el sistema de facturación colapsó justo antes del cierre."' },
+                    { letra: 'T', color: '#0ea5e9', bg: 'rgba(14,165,233,0.08)', border: 'rgba(14,165,233,0.22)', nombre: 'Tarea', def: '¿Cuál era tu responsabilidad específica en esa situación?', ej: 'Ej: "Yo era el responsable de garantizar que los pagos se procesaran a tiempo."' },
+                    { letra: 'A', color: '#059669', bg: 'rgba(5,150,105,0.08)', border: 'rgba(5,150,105,0.22)', nombre: 'Acción', def: '¿Qué hiciste vos concretamente? Usá verbos de acción en primera persona.', ej: 'Ej: "Coordiné al equipo, prioricé manualmente las cuentas críticas y contacté al proveedor."' },
+                    { letra: 'R', color: '#f59e0b', bg: 'rgba(245,158,11,0.08)', border: 'rgba(245,158,11,0.22)', nombre: 'Resultado', def: '¿Qué lograste? Con métricas si podés. ¿Qué aprendiste?', ej: 'Ej: "Procesamos el 95% de los pagos en tiempo. El cliente renovó el contrato por 2 años más."' },
+                  ].map(({ letra, color, bg, border, nombre, def, ej }) => (
+                    <div key={letra} className="rounded-2xl p-4 flex gap-4 items-start"
+                      style={{ background: bg, border: `1px solid ${border}` }}>
+                      <div className="w-10 h-10 rounded-xl flex items-center justify-center text-white text-lg font-black shrink-0"
+                        style={{ background: color }}>{letra}</div>
+                      <div className="space-y-1">
+                        <p className="font-semibold text-sm text-slate-800">{nombre}</p>
+                        <p className="text-slate-600 text-xs leading-relaxed">{def}</p>
+                        <p className="text-xs italic" style={{ color }}>{ej}</p>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+
+                <div className="rounded-2xl p-5 space-y-3"
+                  style={{ background: 'white', border: '1px solid rgba(99,102,241,0.20)', boxShadow: '0 2px 12px rgba(0,0,0,0.05)' }}>
+                  <p className="text-xs font-semibold uppercase tracking-wide" style={{ color: '#6366f1' }}>Ejemplo completo bien estructurado</p>
+                  <p className="text-xs text-slate-500 italic mb-1">Pregunta: "Contame sobre un logro profesional del que estés orgulloso/a."</p>
+                  <p className="text-slate-700 text-sm leading-relaxed">
+                    <strong className="text-indigo-600">S:</strong> "En mi anterior empresa, el equipo de ventas no tenía visibilidad en tiempo real de los resultados." <strong className="text-sky-600">T:</strong> "Como analista de datos, me propuse crear un dashboard que resolviera ese problema sin presupuesto adicional." <strong className="text-emerald-600">A:</strong> "Dediqué 3 semanas fuera del horario laboral, aprendí Power BI y coordiné con el equipo de IT para los accesos." <strong className="text-amber-600">R:</strong> "El dashboard redujo el tiempo de reporte semanal de 4 horas a 20 minutos. El gerente lo adoptó para toda la región."
+                  </p>
+                </div>
+
+                <button
+                  onClick={() => { setStarPhase('practice'); trackEvent('star_phase_change', { phase: 'practice' }) }}
+                  className="w-full py-4 rounded-2xl text-white text-sm font-semibold transition-all btn-glow"
+                  style={{ background: 'linear-gradient(135deg,#6366f1,#8b5cf6)' }}
+                >
+                  Practicar ahora →
+                </button>
+                <button onClick={() => setStep(STEPS.INTERVIEW_FEEDBACK)}
+                  className="w-full py-3 rounded-2xl text-sm font-semibold" style={BTN_BACK_STYLE}>
+                  ← Volver al feedback
+                </button>
+              </>
+            )}
+
+            {starPhase === 'practice' && (
+              <>
+                <div className="rounded-2xl p-5 space-y-2"
+                  style={{ background: 'rgba(99,102,241,0.06)', border: '1px solid rgba(99,102,241,0.22)' }}>
+                  <p className="text-xs font-semibold uppercase tracking-wide" style={{ color: '#6366f1' }}>
+                    Pregunta {starQuestionIdx + 1} de {STAR_QUESTIONS.length}
+                  </p>
+                  <p className="text-slate-800 text-base font-semibold leading-snug">
+                    {STAR_QUESTIONS[starQuestionIdx]}
+                  </p>
+                </div>
+
+                <div className="flex gap-2 flex-wrap">
+                  {[
+                    { l: 'S', label: 'Situación', color: '#6366f1' },
+                    { l: 'T', label: 'Tarea', color: '#0ea5e9' },
+                    { l: 'A', label: 'Acción', color: '#059669' },
+                    { l: 'R', label: 'Resultado', color: '#f59e0b' },
+                  ].map(({ l, label, color }) => (
+                    <span key={l} className="text-xs px-3 py-1 rounded-full font-semibold"
+                      style={{ background: `${color}15`, color, border: `1px solid ${color}40` }}>
+                      {l} · {label}
+                    </span>
+                  ))}
+                </div>
+
+                {!starFeedback ? (
+                  <div className="space-y-3">
+                    <div className="relative">
+                      <textarea
+                        value={starAnswer}
+                        onChange={e => setStarAnswer(e.target.value)}
+                        placeholder="Escribí tu respuesta usando la estructura STAR. Empezá describiendo la Situación..."
+                        rows={7}
+                        maxLength={1000}
+                        className="w-full rounded-2xl px-4 py-3.5 text-sm text-slate-800 resize-none outline-none transition-all"
+                        style={{
+                          ...INPUT_STYLE,
+                          border: `1px solid ${starAnswer.length >= 40 ? 'rgba(99,102,241,0.4)' : 'rgba(0,119,181,0.20)'}`,
+                        }}
+                      />
+                      <span className="absolute bottom-3 right-4 text-xs text-slate-400">{starAnswer.length}/1000</span>
+                    </div>
+                    {starAnswer.length > 0 && starAnswer.length < 40 && (
+                      <p className="text-xs text-slate-400">{40 - starAnswer.length} caracteres más para habilitar el feedback</p>
+                    )}
+                    {starError && <p className="text-xs text-red-500">{starError}</p>}
+                    <button
+                      disabled={starAnswer.trim().length < 40 || starLoading}
+                      onClick={() => { trackEvent('star_practice_submit', { question_idx: starQuestionIdx }); callStarFeedback() }}
+                      className="w-full py-4 rounded-2xl text-sm font-semibold text-white transition-all"
+                      style={{
+                        background: starAnswer.trim().length >= 40 && !starLoading ? 'linear-gradient(135deg,#6366f1,#8b5cf6)' : '#94a3b8',
+                        opacity: starAnswer.trim().length < 40 || starLoading ? 0.6 : 1,
+                      }}
+                    >
+                      {starLoading ? '⏳ Analizando tu respuesta...' : 'Obtener feedback →'}
+                    </button>
+                  </div>
+                ) : (
+                  <div className="space-y-4">
+                    <div className="flex items-center gap-4 rounded-2xl p-4"
+                      style={{ background: 'white', border: '1px solid rgba(99,102,241,0.15)', boxShadow: '0 2px 8px rgba(0,0,0,0.05)' }}>
+                      <div className="flex flex-col items-center shrink-0">
+                        <span className="text-3xl font-black" style={{ color: starFeedback.puntaje >= 7 ? '#059669' : starFeedback.puntaje >= 5 ? '#6366f1' : '#f59e0b' }}>
+                          {starFeedback.puntaje}
+                        </span>
+                        <span className="text-xs text-slate-400">/ 10</span>
+                      </div>
+                      <div>
+                        <p className="text-sm font-semibold text-slate-800">Puntaje STAR</p>
+                        <p className="text-xs text-slate-500">
+                          {starFeedback.puntaje >= 8 ? '¡Excelente estructura!' : starFeedback.puntaje >= 6 ? 'Buena base, hay margen de mejora.' : 'Seguí practicando — vas a mejorar rápido.'}
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="space-y-2">
+                      {[
+                        { key: 'situacion', letra: 'S', nombre: 'Situación', color: '#6366f1' },
+                        { key: 'tarea', letra: 'T', nombre: 'Tarea', color: '#0ea5e9' },
+                        { key: 'accion', letra: 'A', nombre: 'Acción', color: '#059669' },
+                        { key: 'resultado', letra: 'R', nombre: 'Resultado', color: '#f59e0b' },
+                      ].map(({ key, letra, nombre, color }) => {
+                        const item = starFeedback[key]
+                        return (
+                          <div key={key} className="flex items-start gap-3 rounded-xl p-3"
+                            style={{ background: item.presente ? `${color}08` : 'rgba(239,68,68,0.05)', border: `1px solid ${item.presente ? `${color}25` : 'rgba(239,68,68,0.20)'}` }}>
+                            <div className="w-7 h-7 rounded-lg flex items-center justify-center text-white text-xs font-black shrink-0"
+                              style={{ background: item.presente ? color : '#ef4444' }}>{letra}</div>
+                            <div>
+                              <p className="text-xs font-semibold" style={{ color: item.presente ? color : '#ef4444' }}>
+                                {nombre} — {item.presente ? '✓ Presente' : '✗ Falta o poco claro'}
+                              </p>
+                              <p className="text-xs text-slate-500 mt-0.5 leading-relaxed">{item.comentario}</p>
+                            </div>
+                          </div>
+                        )
+                      })}
+                    </div>
+
+                    <div className="rounded-2xl p-4 space-y-1"
+                      style={{ background: 'rgba(99,102,241,0.06)', border: '1px solid rgba(99,102,241,0.22)' }}>
+                      <p className="text-xs font-semibold uppercase tracking-wide" style={{ color: '#6366f1' }}>💡 Sugerencia clave</p>
+                      <p className="text-slate-700 text-sm leading-relaxed">{starFeedback.sugerencia_clave}</p>
+                    </div>
+
+                    <div className="flex gap-3">
+                      <button
+                        onClick={() => { setStarFeedback(null); setStarAnswer(''); setStarError(''); trackEvent('star_retry', { question_idx: starQuestionIdx }) }}
+                        className="flex-1 py-3 rounded-xl text-sm font-semibold" style={BTN_BACK_STYLE}
+                      >
+                        Intentar de nuevo
+                      </button>
+                      <button
+                        onClick={() => {
+                          const next = (starQuestionIdx + 1) % STAR_QUESTIONS.length
+                          setStarQuestionIdx(next)
+                          setStarFeedback(null)
+                          setStarAnswer('')
+                          setStarError('')
+                          trackEvent('star_next_question', { question_idx: next })
+                        }}
+                        className="flex-1 py-3 rounded-xl text-sm font-semibold text-white"
+                        style={{ background: 'linear-gradient(135deg,#6366f1,#8b5cf6)' }}
+                      >
+                        Nueva pregunta →
+                      </button>
+                    </div>
+                  </div>
+                )}
+
+                <button onClick={() => setStep(STEPS.RESULTS)}
+                  className="w-full py-3 rounded-2xl text-sm font-semibold" style={BTN_BACK_STYLE}>
+                  ← Volver a mi análisis
+                </button>
+              </>
+            )}
+          </div>
+        )}
+
       </div>
+
+      {/* ── Modal STAR paywall ── */}
+      {showStarModal && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center px-4 py-6 overflow-y-auto"
+          style={{ background: 'rgba(0,0,0,0.70)', backdropFilter: 'blur(4px)' }}
+          onClick={e => { if (e.target === e.currentTarget) setShowStarModal(false) }}
+        >
+          <div className="w-full max-w-sm rounded-2xl overflow-hidden step-transition"
+            style={{ background: '#1e293b', border: '1px solid #334155', boxShadow: '0 20px 60px rgba(0,0,0,0.5)' }}>
+            <div className="p-6 pb-4 space-y-2">
+              <h3 className="text-lg font-bold text-white">🎯 Entrenador STAR</h3>
+              <p className="text-xs leading-relaxed" style={{ color: '#64748b' }}>
+                El método que usan los mejores candidatos para estructurar respuestas que impactan.
+              </p>
+              <ul className="text-xs space-y-1 pt-1" style={{ color: '#64748b' }}>
+                <li>✓ Teoría explicada paso a paso (S · T · A · R)</li>
+                <li>✓ Ejemplo completo de una respuesta bien estructurada</li>
+                <li>✓ Práctica real con preguntas de RRHH</li>
+                <li>✓ Feedback de IA por cada componente STAR</li>
+              </ul>
+            </div>
+            <div className="px-6 pb-6 pt-4 space-y-3" style={{ borderTop: '1px solid rgba(255,255,255,0.07)' }}>
+              <button
+                onClick={() => {
+                  trackEvent('star_training_start', { via: 'free' })
+                  setShowStarModal(false)
+                  setStarPhase('theory')
+                  setStarFeedback(null)
+                  setStarAnswer('')
+                  setStep(STEPS.STAR_TRAINING)
+                }}
+                className="w-full py-3.5 rounded-xl text-sm font-semibold"
+                style={{ background: 'linear-gradient(135deg,#6366f1,#8b5cf6)', color: 'white' }}
+              >
+                Empezar gratis →
+              </button>
+              <div className="flex items-start gap-2.5">
+                <span className="text-base shrink-0 mt-0.5">☕</span>
+                <p className="text-xs leading-relaxed" style={{ color: '#475569' }}>
+                  Si te aportó valor, podés apoyar con $5.000 (único, optativo).
+                </p>
+              </div>
+              <button
+                onClick={() => {
+                  trackEvent('star_training_start', { via: 'paid' })
+                  window.open(MP_URL, '_blank', 'noopener,noreferrer')
+                  setShowStarModal(false)
+                  setStarPhase('theory')
+                  setStarFeedback(null)
+                  setStarAnswer('')
+                  setStep(STEPS.STAR_TRAINING)
+                }}
+                className="w-full py-2.5 rounded-xl text-xs font-medium"
+                style={{ border: '1px solid rgba(0,180,150,0.35)', color: '#34d399', background: 'rgba(0,180,150,0.06)' }}
+              >
+                ☕ Apoyar $5.000 y empezar →
+              </button>
+              <button
+                onClick={() => setShowStarModal(false)}
+                className="w-full py-2 text-xs transition-colors"
+                style={{ color: '#475569' }}
+              >
+                Cancelar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* ── Modal CV de 1 página ── */}
       {showCvModal && (
