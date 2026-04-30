@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import './index.css'
-import { saveCvLead } from './supabase.js'
+import { saveAnalisis, saveCvGenerado } from './supabase.js'
 
 const WORKER_URL = import.meta.env.VITE_WORKER_URL
 
@@ -279,6 +279,10 @@ export default function App() {
   const [contactTelefono, setContactTelefono] = useState('')
   const [contactLinkedin, setContactLinkedin] = useState('')
   const [pendingWithSupport, setPendingWithSupport] = useState(false)
+  const [analisisId, setAnalisisId] = useState(null)
+  const [saveEmailValue, setSaveEmailValue] = useState('')
+  const [savingAnalisis, setSavingAnalisis] = useState(false)
+  const [analisisSaved, setAnalisisSaved] = useState(false)
 
   // Loading message rotation
   const [loadingMsgIdx, setLoadingMsgIdx] = useState(0)
@@ -313,6 +317,10 @@ export default function App() {
     setContactTelefono('')
     setContactLinkedin('')
     setPendingWithSupport(false)
+    setAnalisisId(null)
+    setSaveEmailValue('')
+    setSavingAnalisis(false)
+    setAnalisisSaved(false)
     setInputMode('pdf')
     setFormNombre('')
     setFormTitular('')
@@ -506,6 +514,25 @@ export default function App() {
     setPdfError('')
   }
 
+  // ── Guardar análisis en Supabase ──
+  const handleSaveAnalisis = async (email, consentimiento) => {
+    if (!result || savingAnalisis) return
+    setSavingAnalisis(true)
+    const { id } = await saveAnalisis({
+      email,
+      analisis: { ...result, _fotoAnalizada: !!photoBase64 },
+      inputMode,
+      qaContexto: qaHistory,
+      consentimiento,
+    })
+    if (id) {
+      setAnalisisId(id)
+      setAnalisisSaved(true)
+      setSaveEmailValue(email)
+    }
+    setSavingAnalisis(false)
+  }
+
   // ── Call Gemini for analysis ──
   const callGemini = async () => {
     setStep(STEPS.LOADING)
@@ -646,7 +673,7 @@ Respondé con este JSON exacto:
       const text = data?.candidates?.[0]?.content?.parts?.[0]?.text || ''
       const cv = JSON.parse(text)
       downloadCvHtml(cv)
-      saveCvLead({ contacto, cv, analisis: result }).catch(() => {})
+      saveCvGenerado({ analisisId, contacto, cv, conApoyoMercadoPago: pendingWithSupport }).catch(() => {})
     } catch (err) {
       const msg = err.name === 'AbortError' ? 'El pedido tardó demasiado. Intentá de nuevo.' : err.message || 'No se pudo generar el CV.'
       setCvError(msg)
@@ -1409,10 +1436,52 @@ ${idiomasHtml}
               <p className="text-slate-200 text-sm leading-relaxed">{result.estrategia_contenido}</p>
             </div>
 
+            {/* Guardar análisis */}
+            {!analisisSaved ? (
+              <div className="rounded-2xl p-5 space-y-3"
+                style={{ background: 'rgba(0,119,181,0.06)', border: '1px solid rgba(0,119,181,0.2)' }}>
+                <p className="text-sm font-semibold text-white">💾 Guardá tu análisis</p>
+                <p className="text-xs text-slate-400 leading-relaxed">
+                  Dejá tu email y guardamos el diagnóstico completo. Tus datos se almacenan de forma segura y no se comparten con terceros.
+                </p>
+                <div className="flex gap-2">
+                  <input
+                    type="email"
+                    value={saveEmailValue}
+                    onChange={e => setSaveEmailValue(e.target.value)}
+                    placeholder="tu@email.com"
+                    className="flex-1 rounded-xl px-4 py-2.5 text-sm text-white outline-none"
+                    style={{ background: 'rgba(15,23,42,0.8)', border: '1px solid #334155' }}
+                  />
+                  <button
+                    onClick={() => { if (saveEmailValue.trim()) handleSaveAnalisis(saveEmailValue.trim(), true) }}
+                    disabled={!saveEmailValue.trim() || savingAnalisis}
+                    className="px-4 py-2.5 rounded-xl text-sm font-semibold text-white shrink-0 transition-opacity"
+                    style={{
+                      background: saveEmailValue.trim() ? '#0077B5' : '#334155',
+                      opacity: saveEmailValue.trim() ? 1 : 0.5,
+                      cursor: saveEmailValue.trim() ? 'pointer' : 'not-allowed',
+                    }}
+                  >
+                    {savingAnalisis ? '...' : 'Guardar'}
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <div className="rounded-2xl p-4 flex items-center gap-3"
+                style={{ background: 'rgba(34,197,94,0.06)', border: '1px solid rgba(34,197,94,0.25)' }}>
+                <span>✅</span>
+                <p className="text-green-400 text-sm">Análisis guardado en <span className="font-semibold">{saveEmailValue}</span></p>
+              </div>
+            )}
+
             {/* CV 1 página */}
             <div className="space-y-1.5">
               <button
-                onClick={() => setShowCvModal(true)}
+                onClick={() => {
+                  if (saveEmailValue && !contactEmail) setContactEmail(saveEmailValue)
+                  setShowCvModal(true)
+                }}
                 disabled={cvLoading}
                 className="w-full font-semibold py-4 rounded-xl transition-all duration-200 text-white text-sm"
                 style={{ background: cvLoading ? '#334155' : 'linear-gradient(135deg,#059669,#10b981)', opacity: cvLoading ? 0.7 : 1 }}
@@ -1518,6 +1587,7 @@ ${idiomasHtml}
                 onClick={() => {
                   if (!contactEmail.trim()) return
                   const contacto = { email: contactEmail.trim(), telefono: contactTelefono.trim(), linkedinUrl: contactLinkedin.trim() }
+                  setPendingWithSupport(false)
                   setShowCvModal(false)
                   callGenerateCV(contacto)
                 }}
@@ -1544,6 +1614,7 @@ ${idiomasHtml}
                 onClick={() => {
                   if (!contactEmail.trim()) return
                   const contacto = { email: contactEmail.trim(), telefono: contactTelefono.trim(), linkedinUrl: contactLinkedin.trim() }
+                  setPendingWithSupport(true)
                   window.open(MP_URL, '_blank', 'noopener,noreferrer')
                   setShowCvModal(false)
                   callGenerateCV(contacto)
