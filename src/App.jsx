@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import './index.css'
 
 const WORKER_URL = import.meta.env.VITE_WORKER_URL
@@ -89,22 +89,31 @@ async function fetchNextQuestion(history) {
     ? `Respuestas del usuario hasta ahora:\n${historyText}\n\n¿Cuál es la siguiente pregunta más importante para entender su contexto y optimizar su perfil?\n\nRespondé en este formato JSON:\n{"done": false, "question": "la pregunta", "options": ["opción 1", "opción 2", "opción 3", "opción 4"]}`
     : `Respuestas del usuario hasta ahora:\n${historyText}\n\n¿Ya tenés suficiente información para hacer una optimización completa del perfil, o necesitás hacer una pregunta más?\n\nSi necesitás más info:\n{"done": false, "question": "la pregunta", "options": ["opción 1", "opción 2", "opción 3", "opción 4"]}\n\nSi ya tenés suficiente:\n{"done": true}`
 
-  const res = await fetch(WORKER_URL, {
-    method: 'POST',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({
-      system_instruction: { parts: [{ text: QUESTION_SYSTEM_PROMPT }] },
-      contents: [{ parts: [{ text: prompt }] }],
-      generationConfig: { responseMimeType: 'application/json', maxOutputTokens: 512 },
-    }),
-  })
-  if (!res.ok) {
-    const body = await res.json().catch(() => ({}))
-    throw new Error(parseGeminiError(res.status, body))
+  const controller = new AbortController()
+  const timeoutId = setTimeout(() => controller.abort(), 30000)
+  try {
+    const res = await fetch(WORKER_URL, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      signal: controller.signal,
+      body: JSON.stringify({
+        system_instruction: { parts: [{ text: QUESTION_SYSTEM_PROMPT }] },
+        contents: [{ parts: [{ text: prompt }] }],
+        generationConfig: { responseMimeType: 'application/json', maxOutputTokens: 512 },
+      }),
+    })
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}))
+      throw new Error(parseGeminiError(res.status, body))
+    }
+    const data = await res.json()
+    const raw = data.candidates?.[0]?.content?.parts?.[0]?.text || '{}'
+    return JSON.parse(raw)
+  } catch (err) {
+    throw err.name === 'AbortError' ? new Error('La red tardó demasiado. Intentá de nuevo.') : err
+  } finally {
+    clearTimeout(timeoutId)
   }
-  const data = await res.json()
-  const raw = data.candidates?.[0]?.content?.parts?.[0]?.text || '{}'
-  return JSON.parse(raw)
 }
 
 
@@ -228,6 +237,7 @@ function BeforeAfter({ label, before, after }) {
 
 export default function App() {
   const [step, setStep] = useState(STEPS.WELCOME)
+  const lastAnswerRef = useRef(null)
 
   // Dynamic Q&A
   const [qaHistory, setQaHistory] = useState([])
@@ -285,6 +295,7 @@ export default function App() {
   // ── Answer a question and fetch next ──
   const handleAnswer = async (answer) => {
     if (qLoading) return
+    lastAnswerRef.current = answer
     setSelectedOption(answer)
 
     const newHistory = [...qaHistory, { question: currentQ.question, options: currentQ.options, answer }]
@@ -353,19 +364,29 @@ export default function App() {
         reader.readAsDataURL(file)
       })
       if (!WORKER_URL) throw new Error('Worker URL no configurada. Verificá el secret VITE_WORKER_URL en GitHub.')
-      const res = await fetch(WORKER_URL, {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({
-          contents: [{
-            parts: [
-              { inline_data: { mime_type: 'application/pdf', data: base64 } },
-              { text: 'Extraé todo el contenido de texto de este perfil de LinkedIn en PDF. Incluí el titular, resumen/about, toda la experiencia laboral con fechas y descripciones, educación, skills, certificaciones, voluntariado y cualquier otra sección del perfil. Devolvé solo el texto extraído, organizado claramente.' },
-            ],
-          }],
-          generationConfig: { maxOutputTokens: 3000 },
-        }),
-      })
+      const pdfController = new AbortController()
+      const pdfTimeoutId = setTimeout(() => pdfController.abort(), 45000)
+      let res
+      try {
+        res = await fetch(WORKER_URL, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          signal: pdfController.signal,
+          body: JSON.stringify({
+            contents: [{
+              parts: [
+                { inline_data: { mime_type: 'application/pdf', data: base64 } },
+                { text: 'Extraé todo el contenido de texto de este perfil de LinkedIn en PDF. Incluí el titular, resumen/about, toda la experiencia laboral con fechas y descripciones, educación, skills, certificaciones, voluntariado y cualquier otra sección del perfil. Devolvé solo el texto extraído, organizado claramente.' },
+              ],
+            }],
+            generationConfig: { maxOutputTokens: 3000 },
+          }),
+        })
+      } catch (err) {
+        throw err.name === 'AbortError' ? new Error('La extracción del PDF tardó demasiado. Intentá de nuevo.') : err
+      } finally {
+        clearTimeout(pdfTimeoutId)
+      }
       if (!res.ok) {
         const body = await res.json().catch(() => ({}))
         throw new Error(parseGeminiError(res.status, body))
@@ -427,11 +448,14 @@ Generá un análisis en este formato JSON exacto:
   "estrategia_contenido": "sugerencia de 2-3 oraciones sobre qué tipo de contenido publicar para lograr el objetivo declarado"
 }`
 
+    const controller = new AbortController()
+    const timeoutId = setTimeout(() => controller.abort(), 60000)
     try {
       if (!WORKER_URL) throw new Error('Worker URL no configurada. Verificá el secret VITE_WORKER_URL en GitHub.')
       const res = await fetch(WORKER_URL, {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
+        signal: controller.signal,
         body: JSON.stringify({
           system_instruction: { parts: [{ text: ANALYSIS_SYSTEM_PROMPT }] },
           contents: [{ parts: [{ text: userPrompt }] }],
@@ -450,8 +474,11 @@ Generá un análisis en este formato JSON exacto:
       setResult(parsed)
       setStep(STEPS.RESULTS)
     } catch (err) {
-      setAnalysisError(err.message || 'Error al conectar con Gemini.')
+      const msg = err.name === 'AbortError' ? 'El análisis tardó demasiado. Intentá de nuevo.' : err.message || 'Error al conectar con Gemini.'
+      setAnalysisError(msg)
       setStep(STEPS.PROFILE_INPUT)
+    } finally {
+      clearTimeout(timeoutId)
     }
   }
 
@@ -722,7 +749,12 @@ ${idiomasHtml}
               <div className="rounded-xl p-4 text-sm flex items-center justify-between gap-4"
                 style={{ backgroundColor: 'rgba(127,29,29,0.3)', border: '1px solid #b91c1c', color: '#fca5a5' }}>
                 <span>⚠️ {qError}</span>
-                <button onClick={() => setQError('')} className="text-xs underline shrink-0">Cerrar</button>
+                <button
+                  onClick={() => { setQError(''); if (lastAnswerRef.current) handleAnswer(lastAnswerRef.current) }}
+                  className="text-xs font-semibold underline shrink-0"
+                >
+                  Reintentar
+                </button>
               </div>
             )}
 
