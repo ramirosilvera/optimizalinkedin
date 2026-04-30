@@ -108,6 +108,15 @@ async function fetchNextQuestion(history) {
 }
 
 
+function escapeHtml(s) {
+  return String(s ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;')
+}
+
 // ── UI components ──────────────────────────────────────────────
 
 const LinkedInIcon = ({ className }) => (
@@ -398,6 +407,7 @@ ${profileText}
 
 Generá un análisis en este formato JSON exacto:
 {
+  "nombre_completo": "nombre y apellido del profesional extraídos del perfil",
   "puntaje_general": número del 1 al 10,
   "nivel_seo": "Alto" o "Medio" o "Bajo",
   "resumen_diagnostico": "2-3 oraciones directas sobre el estado actual del perfil aplicando los frameworks de headhunter",
@@ -519,29 +529,30 @@ Generá un análisis en este formato JSON exacto:
   }
 
   function buildCvHtml(cv) {
-    const contact = [cv.email, cv.linkedin, cv.ubicacion].filter(Boolean).join(' · ')
-    const expHtml = (cv.experiencias || []).map(e => `
+    const e = escapeHtml
+    const contact = [cv.email, cv.linkedin, cv.ubicacion].filter(Boolean).map(e).join(' · ')
+    const expHtml = (cv.experiencias || []).map(ex => `
       <div class="exp-item">
         <div class="exp-header">
-          <span class="exp-role">${e.cargo}</span>
-          <span class="exp-period">${e.periodo || ''}</span>
+          <span class="exp-role">${e(ex.cargo)}</span>
+          <span class="exp-period">${e(ex.periodo)}</span>
         </div>
-        <div class="exp-company">${e.empresa}</div>
-        <ul class="exp-bullets">${(e.logros || []).map(l => `<li>${l}</li>`).join('')}</ul>
+        <div class="exp-company">${e(ex.empresa)}</div>
+        <ul class="exp-bullets">${(ex.logros || []).map(l => `<li>${e(l)}</li>`).join('')}</ul>
       </div>`).join('')
-    const eduHtml = (cv.educacion || []).map(e => `
+    const eduHtml = (cv.educacion || []).map(ed => `
       <div class="edu-row">
-        <div><div class="edu-title">${e.titulo}</div><div class="edu-inst">${e.institucion}</div></div>
-        <div class="edu-period">${e.periodo || ''}</div>
+        <div><div class="edu-title">${e(ed.titulo)}</div><div class="edu-inst">${e(ed.institucion)}</div></div>
+        <div class="edu-period">${e(ed.periodo)}</div>
       </div>`).join('')
-    const skillsHtml = (cv.habilidades || []).map(s => `<span class="skill">${s}</span>`).join('')
+    const skillsHtml = (cv.habilidades || []).map(s => `<span class="skill">${e(s)}</span>`).join('')
     const idiomasHtml = cv.idiomas?.length
-      ? `<div class="section"><div class="section-title">Idiomas</div><p>${cv.idiomas.join(' · ')}</p></div>`
+      ? `<div class="section"><div class="section-title">Idiomas</div><p>${cv.idiomas.map(e).join(' · ')}</p></div>`
       : ''
 
     return `<!DOCTYPE html><html lang="es"><head>
 <meta charset="UTF-8">
-<title>CV – ${cv.nombre || ''}</title>
+<title>CV – ${e(cv.nombre)}</title>
 <style>
   @page { size: A4; margin: 14mm 16mm; }
   * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -573,11 +584,11 @@ Generá un análisis en este formato JSON exacto:
 </style>
 </head><body>
 <div class="header">
-  <div class="name">${cv.nombre || ''}</div>
-  <div class="title">${cv.titular || ''}</div>
+  <div class="name">${e(cv.nombre)}</div>
+  <div class="title">${e(cv.titular)}</div>
   ${contact ? `<div class="contact">${contact}</div>` : ''}
 </div>
-${cv.resumen ? `<div class="section"><div class="section-title">Resumen Profesional</div><p>${cv.resumen}</p></div>` : ''}
+${cv.resumen ? `<div class="section"><div class="section-title">Resumen Profesional</div><p>${e(cv.resumen)}</p></div>` : ''}
 ${expHtml ? `<div class="section"><div class="section-title">Experiencia</div>${expHtml}</div>` : ''}
 ${eduHtml ? `<div class="section"><div class="section-title">Educación</div>${eduHtml}</div>` : ''}
 ${skillsHtml ? `<div class="section"><div class="section-title">Habilidades</div><div class="skills">${skillsHtml}</div></div>` : ''}
