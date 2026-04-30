@@ -1219,14 +1219,14 @@ Generá el feedback en este JSON exacto:
                     { num: '1', title: 'Respondés 10 preguntas rápidas', desc: 'Sobre tu profesión, objetivo y logros. Tarda unos 3 minutos.' },
                     { num: '2', title: 'Subís tu perfil de LinkedIn', desc: 'En PDF, por URL o completando un formulario — elegís cómo.' },
                     { num: '3', title: 'Recibís tu análisis completo', desc: 'En menos de 60 segundos, con sugerencias listas para implementar.' },
-                  ].map(step => (
-                    <div key={step.num} className="flex items-start gap-4 rounded-2xl p-4"
+                  ].map(stepItem => (
+                    <div key={stepItem.num} className="flex items-start gap-4 rounded-2xl p-4"
                       style={{ background: 'white', border: '1px solid rgba(0,119,181,0.10)' }}>
                       <div className="w-8 h-8 rounded-full flex items-center justify-center text-white text-sm font-bold shrink-0"
-                        style={{ background: LI_GRADIENT }}>{step.num}</div>
+                        style={{ background: LI_GRADIENT }}>{stepItem.num}</div>
                       <div>
-                        <p className="text-slate-800 text-sm font-semibold">{step.title}</p>
-                        <p className="text-slate-500 text-xs mt-0.5 leading-relaxed">{step.desc}</p>
+                        <p className="text-slate-800 text-sm font-semibold">{stepItem.title}</p>
+                        <p className="text-slate-500 text-xs mt-0.5 leading-relaxed">{stepItem.desc}</p>
                       </div>
                     </div>
                   ))}
