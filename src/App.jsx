@@ -1134,16 +1134,24 @@ ${idiomasHtml}
             </div>
 
             <div className="px-6 pb-6 pt-4 space-y-3"
-              style={{ borderTop: '1px solid rgba(0,180,150,0.2)', background: 'rgba(0,180,150,0.04)' }}>
-              <div className="flex items-start gap-3">
-                <span className="text-2xl shrink-0">🙌</span>
-                <div>
-                  <p className="text-sm font-semibold text-white">¿Te aportó valor? Invitame un cafecito ☕</p>
-                  <p className="text-slate-400 text-xs mt-1 leading-relaxed">
-                    $5.000 de única vez — no es suscripción, es totalmente optativo.
-                    Me ayuda a mantener la herramienta gratuita.
-                  </p>
-                </div>
+              style={{ borderTop: '1px solid rgba(255,255,255,0.07)' }}>
+
+              {/* Acción principal — generar (primaria) */}
+              <button
+                onClick={() => { setShowCvModal(false); callGenerateCV() }}
+                className="w-full py-3.5 rounded-xl text-white text-sm font-semibold transition-opacity hover:opacity-90"
+                style={{ background: '#0077B5' }}
+              >
+                Generar mi CV →
+              </button>
+
+              {/* Donación — opción secundaria sin presión */}
+              <div className="flex items-start gap-2.5 pt-1">
+                <span className="text-base shrink-0 mt-0.5">☕</span>
+                <p className="text-slate-500 text-xs leading-relaxed">
+                  Si la herramienta te aportó valor, podés apoyarla con $5.000 (único, optativo).
+                  Me ayuda a mantenerla gratis para todos.
+                </p>
               </div>
               <button
                 onClick={() => {
@@ -1151,20 +1159,15 @@ ${idiomasHtml}
                   setShowCvModal(false)
                   callGenerateCV()
                 }}
-                className="w-full py-3 rounded-xl text-white text-sm font-semibold"
-                style={{ background: 'linear-gradient(135deg,#00b496,#00d4aa)', boxShadow: '0 0 18px rgba(0,180,150,0.25)' }}
+                className="w-full py-2.5 rounded-xl text-xs font-medium transition-colors"
+                style={{ border: '1px solid rgba(0,180,150,0.35)', color: '#34d399', background: 'rgba(0,180,150,0.06)' }}
               >
-                ☕ Apoyar $5.000 y generar mi CV →
+                ☕ Apoyar $5.000 y generar →
               </button>
-              <button
-                onClick={() => { setShowCvModal(false); callGenerateCV() }}
-                className="w-full py-3 rounded-xl text-sm font-semibold border border-slate-600 text-slate-300 hover:border-slate-400 transition-colors"
-              >
-                Generar sin apoyar →
-              </button>
+
               <button
                 onClick={() => setShowCvModal(false)}
-                className="w-full py-2 text-slate-500 text-xs hover:text-slate-400 transition-colors"
+                className="w-full py-2 text-slate-600 text-xs hover:text-slate-400 transition-colors"
               >
                 Cancelar
               </button>
