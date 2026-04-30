@@ -1236,7 +1236,7 @@ Generá el feedback en este JSON exacto:
         apoyo_mercadopago: !!pendingWithSupport,
         consentimiento: true,
       }),
-    }).catch(() => {})
+    }).catch(err => console.error('[cv_generados save]', err))
   }
 
   const buildCvHtml = (cv) => {
@@ -3251,10 +3251,13 @@ Respondé con este JSON exacto:
               </button>
               <button
                 onClick={() => setShowLeadModal(false)}
-                className="w-full py-2 text-slate-400 text-xs hover:text-slate-600 transition-colors pb-5"
+                className="w-full py-2 text-slate-400 text-xs hover:text-slate-600 transition-colors"
               >
                 Cancelar
               </button>
+              <p className="text-center text-slate-400 text-xs pb-5">
+                🔒 Tu nombre y análisis se almacenan de forma segura y solo Ramiro puede acceder a ellos.
+              </p>
             </div>
           </div>
         </div>
