@@ -794,18 +794,56 @@ ${idiomasHtml}
                 Respondé algunas preguntas, descargá el PDF de tu perfil y recibí un análisis estratégico con criterio de headhunter.
               </p>
             </div>
-            <div className="grid grid-cols-3 gap-4 text-center">
-              {[
-                { icon: '🎯', text: 'Diagnóstico con criterio de headhunter' },
-                { icon: '🔍', text: 'SEO para aparecer en búsquedas de reclutadores' },
-                { icon: '⚡', text: 'Titular que supera el test de 6 segundos' },
-              ].map(item => (
-                <div key={item.text} className="rounded-xl p-4"
-                  style={{ backgroundColor: 'rgba(30,41,59,0.5)', border: '1px solid #334155' }}>
-                  <div className="text-2xl mb-2">{item.icon}</div>
-                  <p className="text-slate-400 text-xs leading-snug">{item.text}</p>
-                </div>
-              ))}
+            <div className="text-left space-y-4">
+              <h2 className="text-base font-semibold text-slate-300 text-center">¿Qué incluye tu análisis?</h2>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                {[
+                  {
+                    icon: '🎯',
+                    title: 'Diagnóstico con criterio de headhunter',
+                    desc: 'Puntaje general del perfil y evaluación estratégica del primer impacto en reclutadores.',
+                  },
+                  {
+                    icon: '🔍',
+                    title: 'SEO de LinkedIn',
+                    desc: 'Palabras clave sugeridas para aparecer en búsquedas reales de reclutadores y clientes.',
+                  },
+                  {
+                    icon: '✏️',
+                    title: 'Titular y resumen reescritos',
+                    desc: 'Versión mejorada del titular y del About con propuesta de valor clara y llamada a la acción.',
+                  },
+                  {
+                    icon: '📋',
+                    title: 'Recomendaciones accionables',
+                    desc: 'Lista priorizada de cambios concretos que podés implementar hoy.',
+                  },
+                  {
+                    icon: '📄',
+                    title: 'CV de 1 página',
+                    desc: 'CV moderno, ATS-compatible y orientado a logros, listo para descargar como PDF.',
+                  },
+                  {
+                    icon: '📣',
+                    title: 'Estrategia de contenido',
+                    desc: 'Qué publicar en LinkedIn según tu objetivo profesional para aumentar tu visibilidad.',
+                  },
+                  {
+                    icon: '🎙️',
+                    title: 'Simulador de entrevista con IA',
+                    desc: 'Practicá una entrevista inicial y recibí feedback detallado con criterio de RRHH.',
+                  },
+                ].map(item => (
+                  <div key={item.title} className="flex items-start gap-3 rounded-xl p-4"
+                    style={{ backgroundColor: 'rgba(30,41,59,0.5)', border: '1px solid #334155' }}>
+                    <span className="text-xl shrink-0 mt-0.5">{item.icon}</span>
+                    <div>
+                      <p className="text-white text-sm font-semibold leading-snug">{item.title}</p>
+                      <p className="text-slate-400 text-xs mt-1 leading-relaxed">{item.desc}</p>
+                    </div>
+                  </div>
+                ))}
+              </div>
             </div>
             <button
               onClick={() => setStep(STEPS.QUESTIONS)}
