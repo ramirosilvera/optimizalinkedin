@@ -1924,6 +1924,14 @@ ${idiomasHtml}
         {step === STEPS.PROFILE_INPUT && (
           <div className="step-transition space-y-5">
             <Logo />
+
+            {/* ── RATE LIMIT: reemplaza toda la pantalla ── */}
+            {(rateLimitSecs > 0 || rateLimitEvento === 'analisis') && (
+              <RateLimitUI secs={rateLimitSecs} evento={rateLimitEvento === 'analisis' ? rateLimitEvento : ''} email={waitlistEmail} onEmailChange={setWaitlistEmail} sent={waitlistSent} loading={waitlistLoading} onSubmit={handleWaitlist} />
+            )}
+
+            {/* ── FORM NORMAL: se oculta cuando hay rate limit activo ── */}
+            {!(rateLimitSecs > 0 || rateLimitEvento === 'analisis') && <>
             <div>
               <p className="text-slate-500 text-sm mb-1">Último paso</p>
               <h2 className="text-2xl sm:text-3xl font-bold text-slate-900">Cargá tu perfil de LinkedIn</h2>
@@ -2377,10 +2385,7 @@ ${idiomasHtml}
               </div>
             </div>
 
-            {/* Analysis error / rate limit */}
-            {(rateLimitSecs > 0 || rateLimitEvento === 'analisis')
-              ? <RateLimitUI secs={rateLimitSecs} evento={rateLimitEvento === 'analisis' ? rateLimitEvento : ''} email={waitlistEmail} onEmailChange={setWaitlistEmail} sent={waitlistSent} loading={waitlistLoading} onSubmit={handleWaitlist} />
-              : analysisError && (
+            {analysisError && (
               <div role="alert" className="rounded-xl p-4 text-sm space-y-2"
                 style={{ backgroundColor: 'rgba(254,226,226,0.8)', border: '1px solid #fca5a5', color: '#b91c1c' }}>
                 <p>⚠️ {analysisError}</p>
@@ -2425,6 +2430,7 @@ ${idiomasHtml}
                 {analyzing ? 'Analizando...' : 'Analizar mi perfil ✦'}
               </button>
             </div>
+            </>}
           </div>
         )}
 
