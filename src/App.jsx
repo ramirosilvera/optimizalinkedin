@@ -1,9 +1,13 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
+import emailjs from '@emailjs/browser'
 import './index.css'
 
 const WORKER_URL = import.meta.env.VITE_WORKER_URL
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL || ''
 const SUPABASE_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY || ''
+const EMAILJS_SERVICE_ID  = import.meta.env.VITE_EMAILJS_SERVICE_ID  || ''
+const EMAILJS_TEMPLATE_ID = import.meta.env.VITE_EMAILJS_TEMPLATE_ID || ''
+const EMAILJS_PUBLIC_KEY  = import.meta.env.VITE_EMAILJS_PUBLIC_KEY  || ''
 
 function parseGeminiError(status, body) {
   if (status === 400) return 'API key inválida o solicitud incorrecta. Revisá la key ingresada.'
@@ -17,6 +21,39 @@ function makeRateLimitError() {
 const STEPS = {
   WELCOME: 0, QUESTIONS: 1, PROFILE_INPUT: 2, LOADING: 3, RESULTS: 4,
   INTERVIEW_INTRO: 5, INTERVIEW: 6, INTERVIEW_FEEDBACK: 7, STAR_TRAINING: 8,
+}
+
+function RateLimitUI({ secs, evento, email, onEmailChange, sent, loading, onSubmit }) {
+  const amber = { background: 'rgba(251,191,36,0.10)', border: '1px solid rgba(251,191,36,0.35)', color: '#fbbf24' }
+  if (secs > 0) return (
+    <div role="alert" className="rounded-xl p-4 text-sm flex items-center gap-3" style={amber}>
+      <span style={{ fontSize: '1.1em' }}>⏱</span>
+      <span>Estamos experimentando alta demanda. Volvé a intentar en <strong>{secs}s</strong></span>
+    </div>
+  )
+  if (!evento) return null
+  if (sent) return (
+    <div role="alert" className="rounded-xl p-4 text-sm text-center font-medium"
+      style={{ background: 'rgba(34,197,94,0.10)', border: '1px solid rgba(34,197,94,0.35)', color: '#22c55e' }}>
+      ✓ ¡Anotado! Te mandamos un mail cuando vuelva a estar disponible.
+    </div>
+  )
+  return (
+    <div role="alert" className="rounded-xl p-4 text-sm space-y-3" style={amber}>
+      <p>⏱ Los tokens de IA se agotaron por hoy. Dejá tu email y te avisamos mañana cuando se reinicien.</p>
+      <div className="flex gap-2">
+        <input type="email" value={email} onChange={e => onEmailChange(e.target.value)}
+          placeholder="tu@email.com" onKeyDown={e => e.key === 'Enter' && email.includes('@') && onSubmit(email)}
+          className="flex-1 rounded-lg px-3 py-2 text-sm text-white outline-none"
+          style={{ background: 'rgba(15,23,42,0.85)', border: '1px solid rgba(251,191,36,0.3)' }} />
+        <button onClick={() => onSubmit(email)} disabled={loading || !email.includes('@')}
+          className="px-4 py-2 rounded-lg text-sm font-semibold text-slate-900 transition-opacity"
+          style={{ background: '#fbbf24', opacity: loading || !email.includes('@') ? 0.45 : 1, cursor: loading || !email.includes('@') ? 'not-allowed' : 'pointer' }}>
+          {loading ? '...' : 'Avisame'}
+        </button>
+      </div>
+    </div>
+  )
 }
 
 // ── Shared style tokens ─────────────────────────────────────────
@@ -678,6 +715,10 @@ export default function App() {
   const [interviewError, setInterviewError] = useState('')
 
   const [rateLimitSecs, setRateLimitSecs] = useState(0)
+  const [rateLimitEvento, setRateLimitEvento] = useState('')
+  const [waitlistEmail, setWaitlistEmail] = useState('')
+  const [waitlistSent, setWaitlistSent] = useState(false)
+  const [waitlistLoading, setWaitlistLoading] = useState(false)
 
   // Contacto con Ramiro
   const [leadSaving, setLeadSaving] = useState(false)
@@ -808,6 +849,11 @@ export default function App() {
     setContactUbicacion('')
     setContactIdiomas('')
     setContactHabilidades('')
+    setRateLimitSecs(0)
+    setRateLimitEvento('')
+    setWaitlistEmail('')
+    setWaitlistSent(false)
+    setWaitlistLoading(false)
     setShowStarModal(false)
     setStarPhase('theory')
     setStarQuestionIdx(0)
@@ -816,6 +862,32 @@ export default function App() {
     setStarLoading(false)
     setStarError('')
     resetInterview()
+  }
+
+  // ── Waitlist: guardar email y enviar aviso ──
+  const handleWaitlist = async (email) => {
+    if (waitlistLoading || waitlistSent || !email.includes('@')) return
+    setWaitlistLoading(true)
+    try {
+      if (SUPABASE_URL) {
+        const res = await fetch(`${SUPABASE_URL}/rest/v1/waitlist`, {
+          method: 'POST',
+          headers: { apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}`, 'Content-Type': 'application/json', Prefer: 'return=minimal' },
+          body: JSON.stringify({ email: email.trim(), evento: rateLimitEvento }),
+        })
+        if (!res.ok) console.error('[waitlist save]', res.status)
+      }
+      if (EMAILJS_SERVICE_ID && EMAILJS_TEMPLATE_ID && EMAILJS_PUBLIC_KEY) {
+        await emailjs.send(EMAILJS_SERVICE_ID, EMAILJS_TEMPLATE_ID, { to_email: email.trim() }, EMAILJS_PUBLIC_KEY)
+      }
+      trackEvent('waitlist_signup', { evento: rateLimitEvento })
+      setWaitlistSent(true)
+    } catch (err) {
+      console.error('[waitlist email]', err)
+      setWaitlistSent(true)
+    } finally {
+      setWaitlistLoading(false)
+    }
   }
 
   // ── Avanzar al siguiente paso del cuestionario ──
@@ -983,7 +1055,7 @@ export default function App() {
       setProfileText(text)
       trackEvent('cv_subido', { metodo: 'pdf' })
     } catch (err) {
-      if (err.isRateLimit) { setRateLimitSecs(60); return }
+      if (err.isRateLimit) { setRateLimitSecs(60); setRateLimitEvento('pdf'); return }
       setPdfError(err.message || 'Error al procesar el PDF.')
       setPdfFileName('')
     } finally {
@@ -1087,7 +1159,7 @@ Generá un análisis en este formato JSON exacto:
       trackEvent('analisis_consent_shown', { puntaje: parsed.puntaje_general })
       setStep(STEPS.RESULTS)
     } catch (err) {
-      if (err.isRateLimit) { setRateLimitSecs(60); setStep(STEPS.PROFILE_INPUT); return }
+      if (err.isRateLimit) { setRateLimitSecs(60); setRateLimitEvento('analisis'); setStep(STEPS.PROFILE_INPUT); return }
       if (err.name === 'AbortError') {
         setAnalysisError('El análisis fue cancelado o tardó demasiado (90 s). Revisá tu conexión e intentá de nuevo.')
       } else {
@@ -1210,7 +1282,7 @@ Generá el feedback en este JSON exacto:
       setInterviewFeedback(parsed)
       trackEvent('entrevista_completada', { puntaje: parsed.puntaje_entrevista })
     } catch (err) {
-      if (err.isRateLimit) { setRateLimitSecs(60); return }
+      if (err.isRateLimit) { setRateLimitSecs(60); setRateLimitEvento('entrevista'); return }
       const msg = err.name === 'AbortError' ? 'El análisis tardó demasiado. Intentá de nuevo.' : err.message || 'Error al generar el feedback.'
       setInterviewError(msg)
     } finally {
@@ -1255,7 +1327,7 @@ Generá el feedback en este JSON exacto:
       setStarFeedback(parsed)
       trackEvent('star_feedback_received', { puntaje: parsed.puntaje, question_idx: starQuestionIdx })
     } catch (err) {
-      if (err.isRateLimit) { setRateLimitSecs(60); return }
+      if (err.isRateLimit) { setRateLimitSecs(60); setRateLimitEvento('star'); return }
       setStarError(err.name === 'AbortError' ? 'El pedido tardó demasiado. Intentá de nuevo.' : err.message || 'No se pudo obtener el feedback.')
     } finally {
       clearTimeout(timeoutId)
@@ -1488,7 +1560,7 @@ ${idiomasHtml}
       }
       saveCvGenerado({ contacto, cv }).catch(err => console.error('[cv_generados save]', err))
     } catch (err) {
-      if (err.isRateLimit) { setRateLimitSecs(60); return }
+      if (err.isRateLimit) { setRateLimitSecs(60); setRateLimitEvento('cv'); return }
       setCvError(err.name === 'AbortError' ? 'El pedido tardó demasiado. Intentá de nuevo.' : err.message || 'No se pudo generar el CV.')
     } finally {
       clearTimeout(timeoutId)
@@ -2085,18 +2157,14 @@ ${idiomasHtml}
                         )}
                       </label>
                     </div>
-                    {rateLimitSecs > 0 ? (
-                      <div role="alert" className="rounded-xl p-4 text-sm flex items-center gap-3"
-                        style={{ background: 'rgba(251,191,36,0.12)', border: '1px solid rgba(251,191,36,0.4)', color: '#fbbf24' }}>
-                        <span style={{ fontSize: '1.1em' }}>⏱</span>
-                        <span>Estamos experimentando alta demanda. Volvé a intentar en <strong>{rateLimitSecs}s</strong></span>
-                      </div>
-                    ) : pdfError && (
-                      <div role="alert" className="rounded-xl p-4 text-sm flex items-start gap-3"
-                        style={{ backgroundColor: 'rgba(254,226,226,0.8)', border: '1px solid #fca5a5', color: '#b91c1c' }}>
-                        <span className="shrink-0 mt-0.5">⚠️</span><span>{pdfError}</span>
-                      </div>
-                    )}
+                    {(rateLimitSecs > 0 || rateLimitEvento === 'pdf')
+                      ? <RateLimitUI secs={rateLimitSecs} evento={rateLimitEvento === 'pdf' ? rateLimitEvento : ''} email={waitlistEmail} onEmailChange={setWaitlistEmail} sent={waitlistSent} loading={waitlistLoading} onSubmit={handleWaitlist} />
+                      : pdfError && (
+                        <div role="alert" className="rounded-xl p-4 text-sm flex items-start gap-3"
+                          style={{ backgroundColor: 'rgba(254,226,226,0.8)', border: '1px solid #fca5a5', color: '#b91c1c' }}>
+                          <span className="shrink-0 mt-0.5">⚠️</span><span>{pdfError}</span>
+                        </div>
+                      )}
                   </div>
                 )}
 
@@ -2302,13 +2370,9 @@ ${idiomasHtml}
             </div>
 
             {/* Analysis error / rate limit */}
-            {rateLimitSecs > 0 ? (
-              <div role="alert" className="rounded-xl p-4 text-sm flex items-center gap-3"
-                style={{ background: 'rgba(251,191,36,0.12)', border: '1px solid rgba(251,191,36,0.4)', color: '#fbbf24' }}>
-                <span style={{ fontSize: '1.1em' }}>⏱</span>
-                <span>Estamos experimentando alta demanda. Volvé a intentar en <strong>{rateLimitSecs}s</strong></span>
-              </div>
-            ) : analysisError && (
+            {(rateLimitSecs > 0 || rateLimitEvento === 'analisis')
+              ? <RateLimitUI secs={rateLimitSecs} evento={rateLimitEvento === 'analisis' ? rateLimitEvento : ''} email={waitlistEmail} onEmailChange={setWaitlistEmail} sent={waitlistSent} loading={waitlistLoading} onSubmit={handleWaitlist} />
+              : analysisError && (
               <div role="alert" className="rounded-xl p-4 text-sm space-y-2"
                 style={{ backgroundColor: 'rgba(254,226,226,0.8)', border: '1px solid #fca5a5', color: '#b91c1c' }}>
                 <p>⚠️ {analysisError}</p>
@@ -2330,6 +2394,7 @@ ${idiomasHtml}
             )}
 
             <div className="flex gap-3 pt-1">
+
               <button
                 onClick={() => { handleBack(); setStep(STEPS.QUESTIONS) }}
                 className="flex-1 font-semibold py-3.5 rounded-2xl transition-all duration-200"
@@ -2483,11 +2548,8 @@ ${idiomasHtml}
               <p className="text-center text-xs text-slate-500">
                 Gratis · ATS-compatible · Se descarga como HTML y se guarda como PDF
               </p>
-              {rateLimitSecs > 0
-                ? <div role="alert" className="rounded-xl p-3 text-xs flex items-center gap-2"
-                    style={{ background: 'rgba(251,191,36,0.12)', border: '1px solid rgba(251,191,36,0.4)', color: '#fbbf24' }}>
-                    <span>⏱</span><span>Alta demanda — intentá en <strong>{rateLimitSecs}s</strong></span>
-                  </div>
+              {(rateLimitSecs > 0 || rateLimitEvento === 'cv')
+                ? <RateLimitUI secs={rateLimitSecs} evento={rateLimitEvento === 'cv' ? rateLimitEvento : ''} email={waitlistEmail} onEmailChange={setWaitlistEmail} sent={waitlistSent} loading={waitlistLoading} onSubmit={handleWaitlist} />
                 : cvError && <p className="text-xs text-red-500 text-center">{cvError}</p>
               }
               {cvSuccess && (
@@ -2844,14 +2906,8 @@ ${idiomasHtml}
                   ))}
                 </div>
               </div>
-            ) : rateLimitSecs > 0 ? (
-              <div className="space-y-4">
-                <div role="alert" className="rounded-xl p-4 text-sm flex items-center gap-3"
-                  style={{ background: 'rgba(251,191,36,0.12)', border: '1px solid rgba(251,191,36,0.4)', color: '#fbbf24' }}>
-                  <span style={{ fontSize: '1.1em' }}>⏱</span>
-                  <span>Estamos experimentando alta demanda. Volvé a intentar en <strong>{rateLimitSecs}s</strong></span>
-                </div>
-              </div>
+            ) : (rateLimitSecs > 0 || rateLimitEvento === 'entrevista') ? (
+              <RateLimitUI secs={rateLimitSecs} evento={rateLimitEvento === 'entrevista' ? rateLimitEvento : ''} email={waitlistEmail} onEmailChange={setWaitlistEmail} sent={waitlistSent} loading={waitlistLoading} onSubmit={handleWaitlist} />
             ) : interviewError ? (
               <div className="space-y-4">
                 <div className="rounded-xl p-4 text-sm"
@@ -3195,11 +3251,8 @@ ${idiomasHtml}
                     {starAnswer.length > 0 && starAnswer.length < 40 && (
                       <p className="text-xs text-slate-400">{40 - starAnswer.length} caracteres más para habilitar el feedback</p>
                     )}
-                    {rateLimitSecs > 0
-                      ? <div role="alert" className="rounded-xl p-3 text-xs flex items-center gap-2"
-                          style={{ background: 'rgba(251,191,36,0.12)', border: '1px solid rgba(251,191,36,0.4)', color: '#fbbf24' }}>
-                          <span>⏱</span><span>Alta demanda — intentá en <strong>{rateLimitSecs}s</strong></span>
-                        </div>
+                    {(rateLimitSecs > 0 || rateLimitEvento === 'star')
+                      ? <RateLimitUI secs={rateLimitSecs} evento={rateLimitEvento === 'star' ? rateLimitEvento : ''} email={waitlistEmail} onEmailChange={setWaitlistEmail} sent={waitlistSent} loading={waitlistLoading} onSubmit={handleWaitlist} />
                       : starError && <p className="text-xs text-red-500">{starError}</p>
                     }
                     <button
