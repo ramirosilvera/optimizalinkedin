@@ -697,11 +697,13 @@ export default function App() {
   const [showAnalisisConsent, setShowAnalisisConsent] = useState(false)
   const [analisisSaved, setAnalisisSaved] = useState(false)
   const [analisisSaving, setAnalisisSaving] = useState(false)
+  const [analisisError, setAnalisisError] = useState('')
 
   // CV de 1 página
   const [cvLoading, setCvLoading] = useState(false)
   const [cvError, setCvError] = useState('')
   const [cvSuccess, setCvSuccess] = useState('')
+  const [cvPreviewHtml, setCvPreviewHtml] = useState('')
   const [showCvModal, setShowCvModal] = useState(false)
   const [pendingWithSupport, setPendingWithSupport] = useState(false)
   const [contactEmail, setContactEmail] = useState('')
@@ -781,9 +783,11 @@ export default function App() {
     setShowAnalisisConsent(false)
     setAnalisisSaved(false)
     setAnalisisSaving(false)
+    setAnalisisError('')
     setCvLoading(false)
     setCvError('')
     setCvSuccess('')
+    setCvPreviewHtml('')
     setShowCvModal(false)
     setPendingWithSupport(false)
     setContactEmail('')
@@ -1234,12 +1238,17 @@ Generá el feedback en este JSON exacto:
   // ── CV de 1 página ──────────────────────────────────────────
 
   const saveAnalisis = async () => {
-    if (analisisSaving || analisisSaved || !SUPABASE_URL) return
+    if (analisisSaving || analisisSaved) return
+    if (!SUPABASE_URL || !SUPABASE_KEY) {
+      setAnalisisError('Servicio de guardado no disponible. Intentá más tarde.')
+      return
+    }
     setAnalisisSaving(true)
+    setAnalisisError('')
     const ctrl = new AbortController()
     const tid = setTimeout(() => ctrl.abort(), 15000)
     try {
-      await fetch(`${SUPABASE_URL}/rest/v1/analisis`, {
+      const res = await fetch(`${SUPABASE_URL}/rest/v1/analisis`, {
         signal: ctrl.signal,
         method: 'POST',
         headers: {
@@ -1255,10 +1264,17 @@ Generá el feedback en este JSON exacto:
           consentimiento: true,
         }),
       })
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}))
+        console.error('[analisis save] error response:', res.status, body)
+        throw new Error(`Error al guardar (${res.status}). Verificá que la tabla exista en Supabase.`)
+      }
       setAnalisisSaved(true)
       setShowAnalisisConsent(false)
       trackEvent('analisis_saved', { puntaje: result?.puntaje_general })
     } catch (err) {
+      const msg = err.name === 'AbortError' ? 'Tiempo agotado. Intentá de nuevo.' : err.message
+      setAnalisisError(msg)
       console.error('[analisis save]', err)
     } finally {
       clearTimeout(tid)
@@ -1376,17 +1392,9 @@ ${idiomasHtml}
     setCvLoading(true)
     setCvError('')
     setCvSuccess('')
+    setCvPreviewHtml('')
 
-    // Abrimos la ventana ANTES de cualquier await para evitar bloqueo de popup en mobile
     const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent)
-    let mobileWin = null
-    if (isMobile) {
-      mobileWin = window.open('', '_blank', 'noopener,noreferrer')
-      if (mobileWin) {
-        mobileWin.document.write('<!DOCTYPE html><html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Generando CV...</title></head><body style="font-family:system-ui,sans-serif;display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:100vh;margin:0;background:#f8fafc;color:#334155;text-align:center;padding:2rem"><div style="font-size:3rem;margin-bottom:1rem">⏳</div><h2 style="margin:0 0 .5rem;color:#0077B5;font-size:1.25rem">Generando tu CV...</h2><p style="color:#64748b;margin:0;font-size:.9rem">Esto tarda unos segundos, no cierres esta pestaña.</p></body></html>')
-        mobileWin.document.close()
-      }
-    }
 
     const nombre = result?.nombre_completo || ''
     const titular = result?.titular_propuesto || result?.titular_actual || ''
@@ -1437,21 +1445,15 @@ Respondé con este JSON exacto:
       try { cv = JSON.parse(rawCv) }
       catch { const m = rawCv.match(/\{[\s\S]*\}/); if (m) cv = JSON.parse(m[0]); else throw new Error('No se pudo interpretar el CV generado. Intentá de nuevo.') }
       const html = buildCvHtml(cv)
-      if (isMobile && mobileWin && !mobileWin.closed) {
-        // Mobile: volcamos el CV en la pestaña ya abierta (popup abierto en evento síncrono → no bloqueado)
-        mobileWin.document.open()
-        mobileWin.document.write(html)
-        mobileWin.document.close()
-        setCvSuccess('CV abierto en nueva pestaña — tocá Compartir → Imprimir → Compartir → Guardar archivo para guardarlo como PDF')
+      if (isMobile) {
+        // Mobile: mostrar en overlay in-app (no depende de popups ni permisos del navegador)
+        setCvPreviewHtml(html)
+        setCvSuccess('Tu CV está listo — usá el botón de abajo para guardarlo como PDF')
       } else {
-        if (isMobile && !mobileWin) {
-          // El popup fue bloqueado: fallback con blob igual que desktop
-        }
         downloadCvHtml(cv)
       }
       saveCvGenerado({ contacto, cv }).catch(err => console.error('[cv_generados save]', err))
     } catch (err) {
-      if (mobileWin && !mobileWin.closed) mobileWin.close()
       setCvError(err.name === 'AbortError' ? 'El pedido tardó demasiado. Intentá de nuevo.' : err.message || 'No se pudo generar el CV.')
     } finally {
       clearTimeout(timeoutId)
@@ -2382,6 +2384,7 @@ Respondé con este JSON exacto:
                     No, gracias
                   </button>
                 </div>
+                {analisisError && <p className="text-xs text-red-500">{analisisError}</p>}
               </div>
             )}
             {analisisSaved && (
@@ -3227,6 +3230,31 @@ Respondé con este JSON exacto:
         )}
 
       </div>
+
+      {/* ── Preview CV mobile (in-app overlay, reemplaza window.open) ── */}
+      {cvPreviewHtml && (
+        <div className="fixed inset-0 z-50 flex flex-col" style={{ background: '#fff' }}>
+          <div className="flex items-center justify-between px-4 py-3 shrink-0"
+            style={{ background: 'linear-gradient(135deg,#0077B5,#0ea5e9)', boxShadow: '0 2px 8px rgba(0,0,0,0.15)' }}>
+            <p className="text-white text-sm font-semibold">📄 Tu CV — guardalo como PDF</p>
+            <button onClick={() => setCvPreviewHtml('')}
+              className="text-white text-xs px-3 py-1.5 rounded-lg"
+              style={{ background: 'rgba(255,255,255,0.2)' }}>
+              ✕ Cerrar
+            </button>
+          </div>
+          <div className="px-4 py-2 shrink-0 text-center text-xs text-slate-600 leading-relaxed"
+            style={{ background: '#f0f7ff', borderBottom: '1px solid rgba(0,119,181,0.12)' }}>
+            Tocá <strong>Compartir</strong> en tu navegador → <strong>Imprimir</strong> → Compartir → <strong>Guardar en Archivos</strong>
+          </div>
+          <iframe
+            srcDoc={cvPreviewHtml}
+            title="Vista previa de tu CV"
+            className="flex-1 w-full border-0"
+            sandbox="allow-same-origin"
+          />
+        </div>
+      )}
 
       {/* ── Modal STAR paywall ── */}
       {showStarModal && (
