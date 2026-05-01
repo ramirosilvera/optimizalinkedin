@@ -3722,8 +3722,8 @@ ${idiomasHtml}
 
       <button
         onClick={() => { setRateLimitEvento('analisis'); setRateLimitSecs(0); setStep(STEPS.PROFILE_INPUT) }}
-        style={{ position: 'fixed', bottom: 6, right: 8, fontSize: '9px', opacity: 0.2, color: '#94a3b8', background: 'none', border: 'none', cursor: 'pointer', zIndex: 9999 }}
-      >test</button>
+        style={{ position: 'fixed', bottom: 16, left: '50%', transform: 'translateX(-50%)', fontSize: '12px', padding: '8px 16px', background: '#fbbf24', color: '#000', border: 'none', borderRadius: '8px', cursor: 'pointer', zIndex: 9999, fontWeight: 600 }}
+      >TEST EMAIL</button>
 
     </main>
   )
