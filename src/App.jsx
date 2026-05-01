@@ -1094,7 +1094,7 @@ Generá un análisis en este formato JSON exacto:
     setShowLeadModal(false)
     try {
       if (SUPABASE_URL) {
-        await fetch(`${SUPABASE_URL}/rest/v1/leads`, {
+        const res = await fetch(`${SUPABASE_URL}/rest/v1/leads`, {
           method: 'POST',
           headers: {
             apikey: SUPABASE_KEY,
@@ -1111,9 +1111,14 @@ Generá un análisis en este formato JSON exacto:
             feedback_entrevista: interviewFeedback || {},
           }),
         })
+        if (!res.ok) {
+          const body = await res.json().catch(() => ({}))
+          console.error('[leads save] error response:', res.status, body)
+        }
       }
-    } catch {
+    } catch (err) {
       // Si falla, abrimos LinkedIn igual — nunca bloqueamos al usuario
+      console.error('[leads save]', err)
     } finally {
       setLeadSaving(false)
       setLeadSent(true)
