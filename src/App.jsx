@@ -759,14 +759,6 @@ export default function App() {
 
   // Scroll al tope en cada cambio de paso (crítico en mobile)
   useEffect(() => { window.scrollTo({ top: 0, behavior: 'instant' }) }, [step])
-  // Test mode: ?test_email activa el formulario de waitlist directamente
-  useEffect(() => {
-    if (new URLSearchParams(window.location.search).has('test_email')) {
-      setRateLimitEvento('analisis')
-      setRateLimitSecs(0)
-      setStep(STEPS.PROFILE_INPUT)
-    }
-  }, [])
   useEffect(() => {
     if (rateLimitSecs <= 0) return
     const t = setTimeout(() => setRateLimitSecs(s => s - 1), 1000)
@@ -3720,10 +3712,7 @@ ${idiomasHtml}
         </div>
       )}
 
-      <button
-        onClick={() => { setRateLimitEvento('analisis'); setRateLimitSecs(0); setStep(STEPS.PROFILE_INPUT) }}
-        style={{ position: 'fixed', bottom: 16, left: '50%', transform: 'translateX(-50%)', fontSize: '12px', padding: '8px 16px', background: '#fbbf24', color: '#000', border: 'none', borderRadius: '8px', cursor: 'pointer', zIndex: 9999, fontWeight: 600 }}
-      >TEST EMAIL</button>
+
 
     </main>
   )
