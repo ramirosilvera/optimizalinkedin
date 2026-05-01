@@ -6,10 +6,12 @@ const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL || ''
 const SUPABASE_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY || ''
 
 function parseGeminiError(status, body) {
-  if (status === 429) return 'Cuota de API agotada. Generá una nueva key en aistudio.google.com/apikey o esperá a que se resetee.'
   if (status === 400) return 'API key inválida o solicitud incorrecta. Revisá la key ingresada.'
   if (status === 403) return 'API key sin permisos. Verificá que esté habilitada en Google AI Studio.'
   return `Error HTTP ${status}: ${body?.error?.message || 'Error desconocido'}`
+}
+function makeRateLimitError() {
+  return Object.assign(new Error('RATE_LIMIT'), { isRateLimit: true })
 }
 
 const STEPS = {
@@ -675,6 +677,8 @@ export default function App() {
   const [interviewLoading, setInterviewLoading] = useState(false)
   const [interviewError, setInterviewError] = useState('')
 
+  const [rateLimitSecs, setRateLimitSecs] = useState(0)
+
   // Contacto con Ramiro
   const [leadSaving, setLeadSaving] = useState(false)
   const [leadSent, setLeadSent] = useState(false)
@@ -714,6 +718,11 @@ export default function App() {
 
   // Scroll al tope en cada cambio de paso (crítico en mobile)
   useEffect(() => { window.scrollTo({ top: 0, behavior: 'instant' }) }, [step])
+  useEffect(() => {
+    if (rateLimitSecs <= 0) return
+    const t = setTimeout(() => setRateLimitSecs(s => s - 1), 1000)
+    return () => clearTimeout(t)
+  }, [rateLimitSecs])
 
   // Aviso antes de cerrar pestaña si hay resultados
   useEffect(() => {
@@ -965,6 +974,7 @@ export default function App() {
       })
       if (!res.ok) {
         const body = await res.json().catch(() => ({}))
+        if (res.status === 429) throw makeRateLimitError()
         throw new Error(parseGeminiError(res.status, body))
       }
       const data = await res.json()
@@ -973,6 +983,7 @@ export default function App() {
       setProfileText(text)
       trackEvent('cv_subido', { metodo: 'pdf' })
     } catch (err) {
+      if (err.isRateLimit) { setRateLimitSecs(60); return }
       setPdfError(err.message || 'Error al procesar el PDF.')
       setPdfFileName('')
     } finally {
@@ -1051,6 +1062,7 @@ Generá un análisis en este formato JSON exacto:
       })
       if (!res.ok) {
         const e = await res.json().catch(() => ({}))
+        if (res.status === 429) throw makeRateLimitError()
         throw new Error(parseGeminiError(res.status, e))
       }
       const data = await res.json()
@@ -1075,6 +1087,7 @@ Generá un análisis en este formato JSON exacto:
       trackEvent('analisis_consent_shown', { puntaje: parsed.puntaje_general })
       setStep(STEPS.RESULTS)
     } catch (err) {
+      if (err.isRateLimit) { setRateLimitSecs(60); setStep(STEPS.PROFILE_INPUT); return }
       if (err.name === 'AbortError') {
         setAnalysisError('El análisis fue cancelado o tardó demasiado (90 s). Revisá tu conexión e intentá de nuevo.')
       } else {
@@ -1184,6 +1197,7 @@ Generá el feedback en este JSON exacto:
       })
       if (!res.ok) {
         const e = await res.json().catch(() => ({}))
+        if (res.status === 429) throw makeRateLimitError()
         throw new Error(parseGeminiError(res.status, e))
       }
       const data = await res.json()
@@ -1196,6 +1210,7 @@ Generá el feedback en este JSON exacto:
       setInterviewFeedback(parsed)
       trackEvent('entrevista_completada', { puntaje: parsed.puntaje_entrevista })
     } catch (err) {
+      if (err.isRateLimit) { setRateLimitSecs(60); return }
       const msg = err.name === 'AbortError' ? 'El análisis tardó demasiado. Intentá de nuevo.' : err.message || 'Error al generar el feedback.'
       setInterviewError(msg)
     } finally {
@@ -1229,6 +1244,7 @@ Generá el feedback en este JSON exacto:
       })
       if (!res.ok) {
         const e = await res.json().catch(() => ({}))
+        if (res.status === 429) throw makeRateLimitError()
         throw new Error(parseGeminiError(res.status, e))
       }
       const data = await res.json()
@@ -1239,6 +1255,7 @@ Generá el feedback en este JSON exacto:
       setStarFeedback(parsed)
       trackEvent('star_feedback_received', { puntaje: parsed.puntaje, question_idx: starQuestionIdx })
     } catch (err) {
+      if (err.isRateLimit) { setRateLimitSecs(60); return }
       setStarError(err.name === 'AbortError' ? 'El pedido tardó demasiado. Intentá de nuevo.' : err.message || 'No se pudo obtener el feedback.')
     } finally {
       clearTimeout(timeoutId)
@@ -1453,6 +1470,7 @@ ${idiomasHtml}
       })
       if (!res.ok) {
         const e = await res.json().catch(() => ({}))
+        if (res.status === 429) throw makeRateLimitError()
         throw new Error(parseGeminiError(res.status, e))
       }
       const data = await res.json()
@@ -1470,6 +1488,7 @@ ${idiomasHtml}
       }
       saveCvGenerado({ contacto, cv }).catch(err => console.error('[cv_generados save]', err))
     } catch (err) {
+      if (err.isRateLimit) { setRateLimitSecs(60); return }
       setCvError(err.name === 'AbortError' ? 'El pedido tardó demasiado. Intentá de nuevo.' : err.message || 'No se pudo generar el CV.')
     } finally {
       clearTimeout(timeoutId)
@@ -2066,7 +2085,13 @@ ${idiomasHtml}
                         )}
                       </label>
                     </div>
-                    {pdfError && (
+                    {rateLimitSecs > 0 ? (
+                      <div role="alert" className="rounded-xl p-4 text-sm flex items-center gap-3"
+                        style={{ background: 'rgba(251,191,36,0.12)', border: '1px solid rgba(251,191,36,0.4)', color: '#fbbf24' }}>
+                        <span style={{ fontSize: '1.1em' }}>⏱</span>
+                        <span>Estamos experimentando alta demanda. Volvé a intentar en <strong>{rateLimitSecs}s</strong></span>
+                      </div>
+                    ) : pdfError && (
                       <div role="alert" className="rounded-xl p-4 text-sm flex items-start gap-3"
                         style={{ backgroundColor: 'rgba(254,226,226,0.8)', border: '1px solid #fca5a5', color: '#b91c1c' }}>
                         <span className="shrink-0 mt-0.5">⚠️</span><span>{pdfError}</span>
@@ -2276,8 +2301,14 @@ ${idiomasHtml}
               </div>
             </div>
 
-            {/* Analysis error */}
-            {analysisError && (
+            {/* Analysis error / rate limit */}
+            {rateLimitSecs > 0 ? (
+              <div role="alert" className="rounded-xl p-4 text-sm flex items-center gap-3"
+                style={{ background: 'rgba(251,191,36,0.12)', border: '1px solid rgba(251,191,36,0.4)', color: '#fbbf24' }}>
+                <span style={{ fontSize: '1.1em' }}>⏱</span>
+                <span>Estamos experimentando alta demanda. Volvé a intentar en <strong>{rateLimitSecs}s</strong></span>
+              </div>
+            ) : analysisError && (
               <div role="alert" className="rounded-xl p-4 text-sm space-y-2"
                 style={{ backgroundColor: 'rgba(254,226,226,0.8)', border: '1px solid #fca5a5', color: '#b91c1c' }}>
                 <p>⚠️ {analysisError}</p>
@@ -2452,7 +2483,13 @@ ${idiomasHtml}
               <p className="text-center text-xs text-slate-500">
                 Gratis · ATS-compatible · Se descarga como HTML y se guarda como PDF
               </p>
-              {cvError && <p className="text-xs text-red-500 text-center">{cvError}</p>}
+              {rateLimitSecs > 0
+                ? <div role="alert" className="rounded-xl p-3 text-xs flex items-center gap-2"
+                    style={{ background: 'rgba(251,191,36,0.12)', border: '1px solid rgba(251,191,36,0.4)', color: '#fbbf24' }}>
+                    <span>⏱</span><span>Alta demanda — intentá en <strong>{rateLimitSecs}s</strong></span>
+                  </div>
+                : cvError && <p className="text-xs text-red-500 text-center">{cvError}</p>
+              }
               {cvSuccess && (
                 <p className="text-xs text-center" style={{ color: '#059669' }}>
                   ✓ {cvSuccess}
@@ -2807,6 +2844,14 @@ ${idiomasHtml}
                   ))}
                 </div>
               </div>
+            ) : rateLimitSecs > 0 ? (
+              <div className="space-y-4">
+                <div role="alert" className="rounded-xl p-4 text-sm flex items-center gap-3"
+                  style={{ background: 'rgba(251,191,36,0.12)', border: '1px solid rgba(251,191,36,0.4)', color: '#fbbf24' }}>
+                  <span style={{ fontSize: '1.1em' }}>⏱</span>
+                  <span>Estamos experimentando alta demanda. Volvé a intentar en <strong>{rateLimitSecs}s</strong></span>
+                </div>
+              </div>
             ) : interviewError ? (
               <div className="space-y-4">
                 <div className="rounded-xl p-4 text-sm"
@@ -3150,7 +3195,13 @@ ${idiomasHtml}
                     {starAnswer.length > 0 && starAnswer.length < 40 && (
                       <p className="text-xs text-slate-400">{40 - starAnswer.length} caracteres más para habilitar el feedback</p>
                     )}
-                    {starError && <p className="text-xs text-red-500">{starError}</p>}
+                    {rateLimitSecs > 0
+                      ? <div role="alert" className="rounded-xl p-3 text-xs flex items-center gap-2"
+                          style={{ background: 'rgba(251,191,36,0.12)', border: '1px solid rgba(251,191,36,0.4)', color: '#fbbf24' }}>
+                          <span>⏱</span><span>Alta demanda — intentá en <strong>{rateLimitSecs}s</strong></span>
+                        </div>
+                      : starError && <p className="text-xs text-red-500">{starError}</p>
+                    }
                     <button
                       disabled={starAnswer.trim().length < 40 || starLoading}
                       onClick={() => { trackEvent('star_practice_submit', { question_idx: starQuestionIdx }); callStarFeedback() }}
