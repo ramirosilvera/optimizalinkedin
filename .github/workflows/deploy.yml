@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - claude/linkedin-profile-optimizer-5uHPM
+      - claude/debug-blank-page-issue-YPnmj
 
 permissions:
   contents: read

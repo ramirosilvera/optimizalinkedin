@@ -759,6 +759,13 @@ export default function App() {
 
   // Scroll al tope en cada cambio de paso (crítico en mobile)
   useEffect(() => { window.scrollTo({ top: 0, behavior: 'instant' }) }, [step])
+  // Test mode: ?test_email activa el formulario de waitlist directamente
+  useEffect(() => {
+    if (new URLSearchParams(window.location.search).has('test_email')) {
+      setRateLimitEvento('analisis')
+      setRateLimitSecs(0)
+    }
+  }, [])
   useEffect(() => {
     if (rateLimitSecs <= 0) return
     const t = setTimeout(() => setRateLimitSecs(s => s - 1), 1000)
