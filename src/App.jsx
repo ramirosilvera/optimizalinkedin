@@ -912,6 +912,7 @@ export default function App() {
       setStep(STEPS.WELCOME)
       return
     }
+    trackEvent('question_back', { desde_paso: qaHistory.length })
     const prev = qaHistory[qaHistory.length - 1]
     const newHistory = qaHistory.slice(0, -1)
     setQaHistory(newHistory)
@@ -929,6 +930,7 @@ export default function App() {
   // ── Switch input mode (pdf / form) ──
   const handleInputModeSwitch = (mode) => {
     if (mode === inputMode) return
+    trackEvent('input_mode_switched', { desde: inputMode, hacia: mode })
     setInputMode(mode)
     setProfileText('')
     // Preserve form data when switching back to form tab; only clear PDF state
@@ -971,6 +973,7 @@ export default function App() {
       return
     }
     setUrlLoading(true)
+    trackEvent('url_attempt')
     try {
       const res = await fetch(WORKER_URL, {
         method: 'POST',
@@ -983,11 +986,14 @@ export default function App() {
         if (text.length > 200) {
           setProfileText(text)
           setUrlAttempted(true)
+          trackEvent('url_success')
           return
         }
       }
+      trackEvent('url_blocked')
       setUrlAttempted(true)
     } catch {
+      trackEvent('url_error')
       setUrlAttempted(true)
     } finally {
       setUrlLoading(false)
@@ -1012,10 +1018,12 @@ export default function App() {
     if (!file) return
     if (file.type !== 'application/pdf') {
       setPdfError('El archivo debe ser un PDF. Descargá tu perfil de LinkedIn como PDF y volvé a intentarlo.')
+      trackEvent('pdf_error', { tipo: 'formato_invalido' })
       return
     }
     if (file.size > MAX_PDF_SIZE) {
       setPdfError('El archivo es demasiado grande. El PDF debe pesar menos de 15 MB.')
+      trackEvent('pdf_error', { tipo: 'archivo_grande', size_mb: Math.round(file.size / 1024 / 1024) })
       setPdfFileName('')
       return
     }
@@ -1055,7 +1063,8 @@ export default function App() {
       setProfileText(text)
       trackEvent('cv_subido', { metodo: 'pdf' })
     } catch (err) {
-      if (err.isRateLimit) { setRateLimitSecs(60); setRateLimitEvento('pdf'); return }
+      if (err.isRateLimit) { setRateLimitSecs(60); setRateLimitEvento('pdf'); trackEvent('rate_limit_hit', { funcion: 'pdf' }); return }
+      trackEvent('pdf_error', { tipo: 'parseo_fallido' })
       setPdfError(err.message || 'Error al procesar el PDF.')
       setPdfFileName('')
     } finally {
@@ -1079,6 +1088,7 @@ export default function App() {
     setAnalyzing(true)
     setStep(STEPS.LOADING)
     setAnalysisError('')
+    trackEvent('analyze_click', { metodo: pdfFileName ? 'pdf' : formConfirmed ? 'formulario' : 'url', texto_largo: profileText.length })
 
     const contextText = qaHistory
       .map(h => `- ${STATIC_QUESTIONS.find(q => q.question === h.question)?.id ?? 'dato'}: ${h.answer}`)
@@ -1159,7 +1169,7 @@ Generá un análisis en este formato JSON exacto:
       trackEvent('analisis_consent_shown', { puntaje: parsed.puntaje_general })
       setStep(STEPS.RESULTS)
     } catch (err) {
-      if (err.isRateLimit) { setRateLimitSecs(60); setRateLimitEvento('analisis'); setStep(STEPS.PROFILE_INPUT); return }
+      if (err.isRateLimit) { setRateLimitSecs(60); setRateLimitEvento('analisis'); setStep(STEPS.PROFILE_INPUT); trackEvent('rate_limit_hit', { funcion: 'analisis' }); return }
       if (err.name === 'AbortError') {
         setAnalysisError('El análisis fue cancelado o tardó demasiado (90 s). Revisá tu conexión e intentá de nuevo.')
       } else {
@@ -1207,6 +1217,7 @@ Generá un análisis en este formato JSON exacto:
     } finally {
       setLeadSaving(false)
       setLeadSent(true)
+      trackEvent('lead_submitted', { con_apoyo: colaborar })
       if (colaborar) window.open(MP_URL, '_blank', 'noopener,noreferrer')
       window.open(RAMIRO_LINKEDIN_URL, '_blank', 'noopener,noreferrer')
     }
@@ -1282,7 +1293,7 @@ Generá el feedback en este JSON exacto:
       setInterviewFeedback(parsed)
       trackEvent('entrevista_completada', { puntaje: parsed.puntaje_entrevista })
     } catch (err) {
-      if (err.isRateLimit) { setRateLimitSecs(60); setRateLimitEvento('entrevista'); return }
+      if (err.isRateLimit) { setRateLimitSecs(60); setRateLimitEvento('entrevista'); trackEvent('rate_limit_hit', { funcion: 'entrevista' }); return }
       const msg = err.name === 'AbortError' ? 'El análisis tardó demasiado. Intentá de nuevo.' : err.message || 'Error al generar el feedback.'
       setInterviewError(msg)
     } finally {
@@ -1327,7 +1338,7 @@ Generá el feedback en este JSON exacto:
       setStarFeedback(parsed)
       trackEvent('star_feedback_received', { puntaje: parsed.puntaje, question_idx: starQuestionIdx })
     } catch (err) {
-      if (err.isRateLimit) { setRateLimitSecs(60); setRateLimitEvento('star'); return }
+      if (err.isRateLimit) { setRateLimitSecs(60); setRateLimitEvento('star'); trackEvent('rate_limit_hit', { funcion: 'star' }); return }
       setStarError(err.name === 'AbortError' ? 'El pedido tardó demasiado. Intentá de nuevo.' : err.message || 'No se pudo obtener el feedback.')
     } finally {
       clearTimeout(timeoutId)
@@ -1507,6 +1518,7 @@ ${idiomasHtml}
     setCvError('')
     setCvSuccess('')
     setCvPreviewHtml('')
+    trackEvent('cv_generation_started', { tiene_email: !!contacto.email, tiene_telefono: !!contacto.telefono, tiene_linkedin: !!contacto.linkedinUrl })
 
     const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent)
 
@@ -1558,9 +1570,11 @@ ${idiomasHtml}
       } else {
         downloadCvHtml(cv)
       }
+      trackEvent('cv_generation_success', { es_mobile: isMobile })
       saveCvGenerado({ contacto, cv }).catch(err => console.error('[cv_generados save]', err))
     } catch (err) {
-      if (err.isRateLimit) { setRateLimitSecs(60); setRateLimitEvento('cv'); return }
+      if (err.isRateLimit) { setRateLimitSecs(60); setRateLimitEvento('cv'); trackEvent('rate_limit_hit', { funcion: 'cv' }); return }
+      trackEvent('cv_generation_error', { tipo: err.name === 'AbortError' ? 'timeout' : 'error' })
       setCvError(err.name === 'AbortError' ? 'El pedido tardó demasiado. Intentá de nuevo.' : err.message || 'No se pudo generar el CV.')
     } finally {
       clearTimeout(timeoutId)
@@ -1572,6 +1586,7 @@ ${idiomasHtml}
   const handleInterviewNext = (answer) => {
     if (interviewLoading) return
     const newAnswers = [...interviewAnswers, { pregunta: INTERVIEW_QUESTIONS[interviewIdx].pregunta, respuesta: answer }]
+    trackEvent('interview_answer_submitted', { pregunta_idx: interviewIdx, largo_respuesta: answer.length })
     setInterviewAnswers(newAnswers)
     setInterviewAnswer('')
     if (newAnswers.length < INTERVIEW_QUESTIONS.length) {
@@ -1583,6 +1598,7 @@ ${idiomasHtml}
 
   const handleInterviewBack = () => {
     if (interviewIdx === 0) { setInterviewAnswer(''); setStep(STEPS.INTERVIEW_INTRO); return }
+    trackEvent('interview_back', { desde_pregunta: interviewIdx })
     const newIdx = interviewIdx - 1
     setInterviewAnswers(prev => prev.slice(0, newIdx))
     setInterviewIdx(newIdx)
@@ -2458,7 +2474,7 @@ ${idiomasHtml}
               ))}
             </div>
             <button
-              onClick={() => { analysisAbortRef.current?.abort(); setAnalyzing(false); setStep(STEPS.PROFILE_INPUT) }}
+              onClick={() => { analysisAbortRef.current?.abort(); setAnalyzing(false); setStep(STEPS.PROFILE_INPUT); trackEvent('analisis_cancelado') }}
               className="text-slate-500 text-xs hover:text-slate-700 transition-colors py-2 px-4 rounded-xl"
               style={{ border: '1px solid rgba(0,119,181,0.12)', background: '#f8fafc' }}
             >
@@ -2544,7 +2560,7 @@ ${idiomasHtml}
             {/* ── Botón CV de 1 página ── */}
             <div className="space-y-1.5">
               <button
-                onClick={() => setShowCvModal(true)}
+                onClick={() => { setShowCvModal(true); trackEvent('cv_modal_opened') }}
                 disabled={cvLoading}
                 className="w-full font-semibold py-4 rounded-xl transition-all duration-200 text-white text-sm"
                 style={{ background: cvLoading ? '#94a3b8' : 'linear-gradient(135deg,#059669,#10b981)', opacity: cvLoading ? 0.7 : 1 }}
@@ -2649,7 +2665,7 @@ ${idiomasHtml}
                 Ramiro puede guiarte paso a paso: revisar tu perfil en vivo, reescribir tu titular y resumen, y armar tu estrategia de búsqueda. Consulta con costo — se cotiza en el momento.
               </p>
               <button
-                onClick={() => setShowLeadModal(true)}
+                onClick={() => { setShowLeadModal(true); trackEvent('lead_modal_opened') }}
                 className="btn-glow inline-flex items-center gap-2 px-5 py-2.5 rounded-xl text-white text-sm font-semibold"
                 style={{ background: LI_GRADIENT }}
               >
@@ -3134,7 +3150,7 @@ ${idiomasHtml}
                     Aprendé y practicá la <strong>metodología STAR</strong> — el framework que usan los mejores candidatos para estructurar sus respuestas y causar impacto real en los reclutadores.
                   </p>
                   <button
-                    onClick={() => { trackEvent('star_cta_click', { location: 'interview_feedback' }); setShowStarModal(true) }}
+                    onClick={() => { trackEvent('star_cta_click', { location: 'interview_feedback' }); trackEvent('star_modal_opened'); setShowStarModal(true) }}
                     className="w-full py-3 rounded-xl text-white text-sm font-semibold transition-all"
                     style={{ background: 'linear-gradient(135deg,#6366f1,#8b5cf6)' }}
                   >
@@ -3387,7 +3403,7 @@ ${idiomasHtml}
         <div
           className="fixed inset-0 z-50 flex items-center justify-center px-4 py-6 overflow-y-auto"
           style={{ background: 'rgba(0,0,0,0.70)', backdropFilter: 'blur(4px)' }}
-          onClick={e => { if (e.target === e.currentTarget) setShowStarModal(false) }}
+          onClick={e => { if (e.target === e.currentTarget) { setShowStarModal(false); trackEvent('star_modal_closed', { motivo: 'backdrop' }) } }}
         >
           <div className="w-full max-w-sm rounded-2xl overflow-hidden step-transition"
             style={{ background: '#1e293b', border: '1px solid #334155', boxShadow: '0 20px 60px rgba(0,0,0,0.5)' }}>
@@ -3440,7 +3456,7 @@ ${idiomasHtml}
                 ☕ Apoyar $5.000 y empezar →
               </button>
               <button
-                onClick={() => setShowStarModal(false)}
+                onClick={() => { setShowStarModal(false); trackEvent('star_modal_closed', { motivo: 'cancelar' }) }}
                 className="w-full py-2 text-xs transition-colors"
                 style={{ color: '#475569' }}
               >
@@ -3456,7 +3472,7 @@ ${idiomasHtml}
         <div
           className="fixed inset-0 z-50 flex items-center justify-center px-4 py-6 overflow-y-auto"
           style={{ background: 'rgba(0,0,0,0.70)', backdropFilter: 'blur(4px)' }}
-          onClick={e => { if (e.target === e.currentTarget) setShowCvModal(false) }}
+          onClick={e => { if (e.target === e.currentTarget) { setShowCvModal(false); trackEvent('cv_modal_closed', { motivo: 'backdrop' }) } }}
         >
           <div className="w-full max-w-sm rounded-2xl overflow-hidden"
             style={{ background: '#1e293b', border: '1px solid #334155', boxShadow: '0 20px 60px rgba(0,0,0,0.5)' }}>
@@ -3603,7 +3619,7 @@ ${idiomasHtml}
                 ☕ Apoyar $5.000 y generar →
               </button>
               <button
-                onClick={() => setShowCvModal(false)}
+                onClick={() => { setShowCvModal(false); trackEvent('cv_modal_closed', { motivo: 'cancelar' }) }}
                 className="w-full py-2 text-xs transition-colors"
                 style={{ color: '#475569' }}
               >
@@ -3619,7 +3635,7 @@ ${idiomasHtml}
         <div
           className="fixed inset-0 z-50 flex items-center justify-center px-4 py-6 overflow-y-auto"
           style={{ background: 'rgba(0,0,0,0.40)', backdropFilter: 'blur(4px)' }}
-          onClick={e => { if (e.target === e.currentTarget) setShowLeadModal(false) }}
+          onClick={e => { if (e.target === e.currentTarget) { setShowLeadModal(false); trackEvent('lead_modal_closed', { motivo: 'backdrop' }) } }}
         >
           <div className="w-full max-w-sm rounded-2xl step-transition overflow-hidden"
             style={{ background: 'white', boxShadow: '0 20px 60px rgba(0,0,0,0.20)', border: '1px solid rgba(0,119,181,0.15)' }}>
@@ -3699,7 +3715,7 @@ ${idiomasHtml}
                 <LinkedInIcon className="w-4 h-4 inline mr-1.5" /> Solo conectar con Ramiro →
               </button>
               <button
-                onClick={() => setShowLeadModal(false)}
+                onClick={() => { setShowLeadModal(false); trackEvent('lead_modal_closed', { motivo: 'cancelar' }) }}
                 className="w-full py-2 text-slate-400 text-xs hover:text-slate-600 transition-colors"
               >
                 Cancelar
