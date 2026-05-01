@@ -265,24 +265,19 @@ No usés lenguaje genérico ni de autoayuda.
 Sé directa, específica y orientada a resultados medibles.
 Respondé SOLO en JSON válido, sin markdown, sin backticks.`
 
-const CV_SYSTEM_PROMPT = `Sos un experto redactor de CVs para el mercado laboral argentino y latinoamericano, con experiencia en selección ejecutiva y compliance ATS.
-Tu tarea es transformar un perfil de LinkedIn en un CV de 1 página moderno, conciso y orientado a logros.
+const CV_SYSTEM_PROMPT = `Sos un experto redactor de CVs ATS-compatible para el mercado argentino/latinoamericano.
+Transformá el perfil en un CV de EXACTAMENTE 1 PÁGINA. Si el contenido es extenso, comprimí más: reducí bullets a 2 por experiencia, acortá el resumen a 1 oración, eliminá educación redundante.
 
-Reglas estrictas:
-- Últimas 3 experiencias laborales → "experiencias_detalladas": cargo, empresa, periodo y máx 3 bullets de logros cada una (verbo de acción + métricas)
-- Experiencias anteriores a las últimas 3 → "experiencias_resumidas": solo cargo, empresa y periodo, SIN bullets
-- Educación reciente (máx 2 títulos más relevantes) → "educacion_detallada": titulo, institucion, periodo
-- Educación anterior o cursos adicionales → "educacion_resumida": solo titulo, institucion, periodo, SIN detalle extra
-- Resumen profesional de máximo 2 oraciones, impactante y orientado a valor
-- Sin objetivo laboral (está desactualizado)
-- Sin foto, sin estado civil, sin fecha de nacimiento
-- Habilidades: entre 6 y 10 keywords relevantes al rol
-- Todo en español (excepto términos técnicos que se usan en inglés en la industria)
-- Si se proporcionan nombre, ubicacion o idiomas, incorporalos al JSON de salida
-
-Usá las secciones "titular_propuesto" y "resumen_propuesto" del análisis previo si están disponibles.
-Extraé las experiencias y educación del texto del perfil.
-Respondé SOLO en JSON válido, sin markdown, sin backticks.`
+Reglas:
+- "experiencias_detalladas": últimas 3 posiciones con cargo, empresa, periodo y máx 2-3 bullets de logros (verbo + métrica)
+- "experiencias_resumidas": posiciones anteriores, SOLO cargo + empresa + periodo, sin bullets
+- "educacion_detallada": máx 2 títulos más relevantes con titulo, institucion, periodo
+- "educacion_resumida": resto de educación, SOLO titulo + institucion + periodo
+- Habilidades: extraé TODAS las habilidades, aptitudes y competencias del perfil. Si el usuario proporcionó habilidades adicionales, incorporalas obligatoriamente. Incluí entre 6 y 10 en total.
+- Resumen: máx 2 oraciones. Sin objetivo laboral, sin foto, sin datos personales sensibles.
+- Todo en español (excepto tecnicismos en inglés).
+- Usá "titular_propuesto" y "resumen_propuesto" del análisis si están disponibles.
+- Respondé SOLO en JSON válido, sin markdown, sin backticks.`
 
 function escapeHtml(s) {
   return String(s ?? '')
@@ -715,6 +710,7 @@ export default function App() {
   const [contactNombre, setContactNombre] = useState('')
   const [contactUbicacion, setContactUbicacion] = useState('')
   const [contactIdiomas, setContactIdiomas] = useState('')
+  const [contactHabilidades, setContactHabilidades] = useState('')
 
   // Scroll al tope en cada cambio de paso (crítico en mobile)
   useEffect(() => { window.scrollTo({ top: 0, behavior: 'instant' }) }, [step])
@@ -802,6 +798,7 @@ export default function App() {
     setContactNombre('')
     setContactUbicacion('')
     setContactIdiomas('')
+    setContactHabilidades('')
     setShowStarModal(false)
     setStarPhase('theory')
     setStarQuestionIdx(0)
@@ -1429,26 +1426,12 @@ ${idiomasHtml}
     if (contacto.email)       userPrompt += `Email de contacto: ${contacto.email}\n`
     if (contacto.telefono)    userPrompt += `Teléfono: ${contacto.telefono}\n`
     if (contacto.linkedinUrl) userPrompt += `URL LinkedIn: ${contacto.linkedinUrl}\n`
-    if (contacto.ubicacion)   userPrompt += `Ubicación: ${contacto.ubicacion}\n`
-    if (contacto.idiomas)     userPrompt += `Idiomas: ${contacto.idiomas}\n`
-    userPrompt += `\nTexto completo del perfil LinkedIn (extraé experiencias y educación):\n${profileText.slice(0, 5000)}\n\n`
-    userPrompt += `Usá el email, teléfono y URL de LinkedIn proporcionados arriba. No los inventes si no se dieron (poné null).
-Respondé con este JSON exacto:
-{
-  "nombre": "string",
-  "titular": "string",
-  "email": "string o null",
-  "telefono": "string o null",
-  "linkedin": "string o null",
-  "ubicacion": "string o null",
-  "resumen": "string (2 oraciones máx)",
-  "experiencias_detalladas": [{ "cargo": "string", "empresa": "string", "periodo": "string", "logros": ["string"] }],
-  "experiencias_resumidas": [{ "cargo": "string", "empresa": "string", "periodo": "string" }],
-  "educacion_detallada": [{ "titulo": "string", "institucion": "string", "periodo": "string" }],
-  "educacion_resumida": [{ "titulo": "string", "institucion": "string", "periodo": "string" }],
-  "habilidades": ["string"],
-  "idiomas": ["string"]
-}`
+    if (contacto.ubicacion)    userPrompt += `Ubicación: ${contacto.ubicacion}\n`
+    if (contacto.idiomas)      userPrompt += `Idiomas: ${contacto.idiomas}\n`
+    if (contacto.habilidades)  userPrompt += `Habilidades adicionales del usuario (incluílas en el CV): ${contacto.habilidades}\n`
+    userPrompt += `\nPerfil LinkedIn:\n${profileText.slice(0, 3500)}\n\n`
+    userPrompt += `JSON de salida (sin texto extra):
+{"nombre":"","titular":"","email":null,"telefono":null,"linkedin":null,"ubicacion":null,"resumen":"","experiencias_detalladas":[{"cargo":"","empresa":"","periodo":"","logros":[]}],"experiencias_resumidas":[{"cargo":"","empresa":"","periodo":""}],"educacion_detallada":[{"titulo":"","institucion":"","periodo":""}],"educacion_resumida":[{"titulo":"","institucion":"","periodo":""}],"habilidades":[],"idiomas":[]}`
     const controller = new AbortController()
     const timeoutId = setTimeout(() => controller.abort(), 58000)
     try {
@@ -1460,7 +1443,7 @@ Respondé con este JSON exacto:
         body: JSON.stringify({
           system_instruction: { parts: [{ text: CV_SYSTEM_PROMPT }] },
           contents: [{ parts: [{ text: userPrompt }] }],
-          generationConfig: { responseMimeType: 'application/json', maxOutputTokens: 2000 },
+          generationConfig: { responseMimeType: 'application/json', maxOutputTokens: 1200 },
         }),
       })
       if (!res.ok) {
@@ -3445,13 +3428,24 @@ Respondé con este JSON exacto:
                   style={{ background: 'rgba(15,23,42,0.8)', border: '1px solid #334155' }}
                 />
               </div>
+              <div>
+                <label className="text-xs block mb-1" style={{ color: '#64748b' }}>Habilidades clave <span style={{ color: '#475569', fontWeight: 400 }}>(opcionales — si no aparecen en tu perfil)</span></label>
+                <input
+                  type="text"
+                  value={contactHabilidades}
+                  onChange={e => setContactHabilidades(e.target.value)}
+                  placeholder="Liderazgo, Excel, Scrum, Negociación..."
+                  className="w-full rounded-xl px-4 py-2.5 text-sm text-white outline-none"
+                  style={{ background: 'rgba(15,23,42,0.8)', border: '1px solid #334155' }}
+                />
+              </div>
               <p className="text-xs leading-relaxed pt-1" style={{ color: '#475569' }}>
                 🔒 Tus datos se usan solo para confeccionar el CV y no se comparten con terceros.
               </p>
               <button
                 onClick={() => {
                   if (!contactEmail.trim()) return
-                  const contacto = { email: contactEmail.trim(), telefono: contactTelefono.trim(), linkedinUrl: contactLinkedin.trim(), nombre: contactNombre.trim(), ubicacion: contactUbicacion.trim(), idiomas: contactIdiomas.trim() }
+                  const contacto = { email: contactEmail.trim(), telefono: contactTelefono.trim(), linkedinUrl: contactLinkedin.trim(), nombre: contactNombre.trim(), ubicacion: contactUbicacion.trim(), idiomas: contactIdiomas.trim(), habilidades: contactHabilidades.trim() }
                   setPendingWithSupport(false)
                   setShowCvModal(false)
                   callGenerateCV(contacto)
@@ -3476,7 +3470,7 @@ Respondé con este JSON exacto:
               <button
                 onClick={() => {
                   if (!contactEmail.trim()) return
-                  const contacto = { email: contactEmail.trim(), telefono: contactTelefono.trim(), linkedinUrl: contactLinkedin.trim(), nombre: contactNombre.trim(), ubicacion: contactUbicacion.trim(), idiomas: contactIdiomas.trim() }
+                  const contacto = { email: contactEmail.trim(), telefono: contactTelefono.trim(), linkedinUrl: contactLinkedin.trim(), nombre: contactNombre.trim(), ubicacion: contactUbicacion.trim(), idiomas: contactIdiomas.trim(), habilidades: contactHabilidades.trim() }
                   setPendingWithSupport(true)
                   window.open(MP_URL, '_blank', 'noopener,noreferrer')
                   setShowCvModal(false)
