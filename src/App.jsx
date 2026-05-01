@@ -1323,7 +1323,7 @@ ${idiomasHtml}
     a.click()
     document.body.removeChild(a)
     setTimeout(() => URL.revokeObjectURL(url), 30000)
-    setCvSuccess(filename)
+    setCvSuccess(`${filename} — abrilo y guardá como PDF con Ctrl+P → Guardar como PDF`)
   }
 
   const callGenerateCV = async (contacto = {}) => {
@@ -1331,6 +1331,18 @@ ${idiomasHtml}
     setCvLoading(true)
     setCvError('')
     setCvSuccess('')
+
+    // Abrimos la ventana ANTES de cualquier await para evitar bloqueo de popup en mobile
+    const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent)
+    let mobileWin = null
+    if (isMobile) {
+      mobileWin = window.open('', '_blank', 'noopener,noreferrer')
+      if (mobileWin) {
+        mobileWin.document.write('<!DOCTYPE html><html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Generando CV...</title></head><body style="font-family:system-ui,sans-serif;display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:100vh;margin:0;background:#f8fafc;color:#334155;text-align:center;padding:2rem"><div style="font-size:3rem;margin-bottom:1rem">⏳</div><h2 style="margin:0 0 .5rem;color:#0077B5;font-size:1.25rem">Generando tu CV...</h2><p style="color:#64748b;margin:0;font-size:.9rem">Esto tarda unos segundos, no cierres esta pestaña.</p></body></html>')
+        mobileWin.document.close()
+      }
+    }
+
     const nombre = result?.nombre_completo || ''
     const titular = result?.titular_propuesto || result?.titular_actual || ''
     const resumen = result?.resumen_propuesto || ''
@@ -1377,9 +1389,22 @@ Respondé con este JSON exacto:
       const data = await res.json()
       const text = data?.candidates?.[0]?.content?.parts?.[0]?.text || ''
       const cv = JSON.parse(text)
-      downloadCvHtml(cv)
-      saveCvGenerado({ contacto, cv }).catch(() => {})
+      const html = buildCvHtml(cv)
+      if (isMobile && mobileWin && !mobileWin.closed) {
+        // Mobile: volcamos el CV en la pestaña ya abierta (popup abierto en evento síncrono → no bloqueado)
+        mobileWin.document.open()
+        mobileWin.document.write(html)
+        mobileWin.document.close()
+        setCvSuccess('CV abierto en nueva pestaña — tocá Compartir → Imprimir → Compartir → Guardar archivo para guardarlo como PDF')
+      } else {
+        if (isMobile && !mobileWin) {
+          // El popup fue bloqueado: fallback con blob igual que desktop
+        }
+        downloadCvHtml(cv)
+      }
+      saveCvGenerado({ contacto, cv }).catch(err => console.error('[cv_generados save]', err))
     } catch (err) {
+      if (mobileWin && !mobileWin.closed) mobileWin.close()
       setCvError(err.name === 'AbortError' ? 'El pedido tardó demasiado. Intentá de nuevo.' : err.message || 'No se pudo generar el CV.')
     } finally {
       clearTimeout(timeoutId)
@@ -2316,12 +2341,12 @@ Respondé con este JSON exacto:
                 {cvLoading ? '⏳ Generando tu CV...' : '📄 Generá tu CV moderno de 1 página'}
               </button>
               <p className="text-center text-xs text-slate-500">
-                Gratis · ATS-compatible · Descargalo y guardá como PDF con Ctrl+P
+                Gratis · ATS-compatible · Se descarga como HTML y se guarda como PDF
               </p>
               {cvError && <p className="text-xs text-red-500 text-center">{cvError}</p>}
               {cvSuccess && (
                 <p className="text-xs text-center" style={{ color: '#059669' }}>
-                  ✓ {cvSuccess} descargado — abrilo y guardá como PDF con Ctrl+P
+                  ✓ {cvSuccess}
                 </p>
               )}
             </div>
