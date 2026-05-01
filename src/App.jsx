@@ -766,7 +766,8 @@ export default function App() {
       setRateLimitSecs(0)
       setStep(STEPS.PROFILE_INPUT)
     }
-  }, [])  useEffect(() => {
+  }, [])
+  useEffect(() => {
     if (rateLimitSecs <= 0) return
     const t = setTimeout(() => setRateLimitSecs(s => s - 1), 1000)
     return () => clearTimeout(t)
@@ -3719,13 +3720,10 @@ ${idiomasHtml}
         </div>
       )}
 
-      {/* ── TEMP TEST BUTTON — eliminar después de probar ── */}
       <button
         onClick={() => { setRateLimitEvento('analisis'); setRateLimitSecs(0); setStep(STEPS.PROFILE_INPUT) }}
         style={{ position: 'fixed', bottom: 6, right: 8, fontSize: '9px', opacity: 0.2, color: '#94a3b8', background: 'none', border: 'none', cursor: 'pointer', zIndex: 9999 }}
-      >
-        test
-      </button>
+      >test</button>
 
     </main>
   )
