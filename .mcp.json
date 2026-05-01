@@ -1,0 +1,12 @@
+{
+  "mcpServers": {
+    "ga4": {
+      "command": "npx",
+      "args": ["-y", "mcp-ga4"],
+      "env": {
+        "GA4_PROPERTY_ID": "534867380",
+        "GOOGLE_APPLICATION_CREDENTIALS": "/home/user/optimizalinkedin/ga4-credentials.json"
+      }
+    }
+  }
+}

@@ -12,6 +12,9 @@ dist
 dist-ssr
 *.local
 
+# Google service account credentials (never commit)
+ga4-credentials.json
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json
