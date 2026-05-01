@@ -693,6 +693,11 @@ export default function App() {
   const [starLoading, setStarLoading] = useState(false)
   const [starError, setStarError] = useState('')
 
+  // Consentimiento para guardar análisis
+  const [showAnalisisConsent, setShowAnalisisConsent] = useState(false)
+  const [analisisSaved, setAnalisisSaved] = useState(false)
+  const [analisisSaving, setAnalisisSaving] = useState(false)
+
   // CV de 1 página
   const [cvLoading, setCvLoading] = useState(false)
   const [cvError, setCvError] = useState('')
@@ -773,6 +778,9 @@ export default function App() {
     setAnalysisError('')
     setAnalyzing(false)
     setLoadingMsgIdx(0)
+    setShowAnalisisConsent(false)
+    setAnalisisSaved(false)
+    setAnalisisSaving(false)
     setCvLoading(false)
     setCvError('')
     setCvSuccess('')
@@ -1053,6 +1061,8 @@ Generá un análisis en este formato JSON exacto:
         analisis_foto: parsed.analisis_foto || '',
       })
       trackEvent('analisis_recibido', { puntaje: parsed.puntaje_general, nivel_seo: parsed.nivel_seo })
+      setShowAnalisisConsent(true)
+      trackEvent('analisis_consent_shown', { puntaje: parsed.puntaje_general })
       setStep(STEPS.RESULTS)
     } catch (err) {
       if (err.name === 'AbortError') {
@@ -1220,6 +1230,35 @@ Generá el feedback en este JSON exacto:
   }
 
   // ── CV de 1 página ──────────────────────────────────────────
+
+  const saveAnalisis = async () => {
+    if (analisisSaving || analisisSaved || !SUPABASE_URL) return
+    setAnalisisSaving(true)
+    try {
+      await fetch(`${SUPABASE_URL}/rest/v1/analisis`, {
+        method: 'POST',
+        headers: {
+          apikey: SUPABASE_KEY,
+          Authorization: `Bearer ${SUPABASE_KEY}`,
+          'Content-Type': 'application/json',
+          Prefer: 'return=minimal',
+        },
+        body: JSON.stringify({
+          qa_history: qaHistory,
+          resultado_analisis: result,
+          puntaje_general: result?.puntaje_general ?? null,
+          consentimiento: true,
+        }),
+      })
+      setAnalisisSaved(true)
+      setShowAnalisisConsent(false)
+      trackEvent('analisis_saved', { puntaje: result?.puntaje_general })
+    } catch (err) {
+      console.error('[analisis save]', err)
+    } finally {
+      setAnalisisSaving(false)
+    }
+  }
 
   const saveCvGenerado = async ({ contacto, cv }) => {
     if (!SUPABASE_URL || !SUPABASE_KEY) return
@@ -2299,6 +2338,44 @@ Respondé con este JSON exacto:
         {step === STEPS.RESULTS && result && (
           <div className="step-transition space-y-6">
             <Logo />
+
+            {/* Consentimiento para guardar análisis */}
+            {showAnalisisConsent && !analisisSaved && (
+              <div className="rounded-2xl p-4 space-y-3"
+                style={{ background: 'white', border: '1px solid rgba(0,119,181,0.18)', boxShadow: '0 2px 8px rgba(0,0,0,0.05)' }}>
+                <div className="flex items-start gap-3">
+                  <span className="text-xl shrink-0">🔒</span>
+                  <div>
+                    <p className="text-slate-800 text-sm font-semibold mb-1">¿Guardamos tu análisis?</p>
+                    <p className="text-slate-500 text-xs leading-relaxed">
+                      Si lo autorizás, guardamos los resultados para poder brindarte recomendaciones más personalizadas. Solo Ramiro tiene acceso — nunca se comparte con terceros.
+                    </p>
+                  </div>
+                </div>
+                <div className="flex gap-2">
+                  <button
+                    onClick={saveAnalisis}
+                    disabled={analisisSaving}
+                    className="flex-1 py-2 rounded-xl text-white text-xs font-semibold transition-all"
+                    style={{ background: analisisSaving ? '#94a3b8' : 'linear-gradient(135deg,#0077B5,#0ea5e9)' }}
+                  >
+                    {analisisSaving ? '⏳ Guardando...' : 'Sí, guardar mi análisis'}
+                  </button>
+                  <button
+                    onClick={() => { setShowAnalisisConsent(false); trackEvent('analisis_declined') }}
+                    className="px-4 py-2 rounded-xl text-xs font-medium text-slate-400 hover:text-slate-600 transition-colors"
+                    style={{ border: '1px solid rgba(0,0,0,0.08)' }}
+                  >
+                    No, gracias
+                  </button>
+                </div>
+              </div>
+            )}
+            {analisisSaved && (
+              <p className="text-xs text-center font-medium" style={{ color: '#059669' }}>
+                ✓ Análisis guardado de forma segura.
+              </p>
+            )}
 
             {/* Acción prioritaria — destacada arriba */}
             {result.accion_prioritaria && (
