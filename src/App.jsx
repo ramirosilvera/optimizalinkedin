@@ -764,6 +764,7 @@ export default function App() {
     if (new URLSearchParams(window.location.search).has('test_email')) {
       setRateLimitEvento('analisis')
       setRateLimitSecs(0)
+      setStep(STEPS.PROFILE_INPUT)
     }
   }, [])
   useEffect(() => {
