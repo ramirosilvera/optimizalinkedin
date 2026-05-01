@@ -1217,8 +1217,10 @@ Generá el feedback en este JSON exacto:
         throw new Error(parseGeminiError(res.status, e))
       }
       const data = await res.json()
-      const text = data?.candidates?.[0]?.content?.parts?.[0]?.text || ''
-      const parsed = JSON.parse(text)
+      const raw = data?.candidates?.[0]?.content?.parts?.[0]?.text || ''
+      let parsed
+      try { parsed = JSON.parse(raw) }
+      catch { const m = raw.match(/\{[\s\S]*\}/); if (m) parsed = JSON.parse(m[0]); else throw new Error('La IA devolvió una respuesta inesperada. Intentá de nuevo.') }
       setStarFeedback(parsed)
       trackEvent('star_feedback_received', { puntaje: parsed.puntaje, question_idx: starQuestionIdx })
     } catch (err) {
@@ -1234,8 +1236,11 @@ Generá el feedback en este JSON exacto:
   const saveAnalisis = async () => {
     if (analisisSaving || analisisSaved || !SUPABASE_URL) return
     setAnalisisSaving(true)
+    const ctrl = new AbortController()
+    const tid = setTimeout(() => ctrl.abort(), 15000)
     try {
       await fetch(`${SUPABASE_URL}/rest/v1/analisis`, {
+        signal: ctrl.signal,
         method: 'POST',
         headers: {
           apikey: SUPABASE_KEY,
@@ -1256,6 +1261,7 @@ Generá el feedback en este JSON exacto:
     } catch (err) {
       console.error('[analisis save]', err)
     } finally {
+      clearTimeout(tid)
       setAnalisisSaving(false)
     }
   }
@@ -1426,8 +1432,10 @@ Respondé con este JSON exacto:
         throw new Error(parseGeminiError(res.status, e))
       }
       const data = await res.json()
-      const text = data?.candidates?.[0]?.content?.parts?.[0]?.text || ''
-      const cv = JSON.parse(text)
+      const rawCv = data?.candidates?.[0]?.content?.parts?.[0]?.text || ''
+      let cv
+      try { cv = JSON.parse(rawCv) }
+      catch { const m = rawCv.match(/\{[\s\S]*\}/); if (m) cv = JSON.parse(m[0]); else throw new Error('No se pudo interpretar el CV generado. Intentá de nuevo.') }
       const html = buildCvHtml(cv)
       if (isMobile && mobileWin && !mobileWin.closed) {
         // Mobile: volcamos el CV en la pestaña ya abierta (popup abierto en evento síncrono → no bloqueado)
@@ -1789,7 +1797,7 @@ Respondé con este JSON exacto:
             )}
 
             {/* Back */}
-            <button onClick={handleBack} className="text-slate-600 text-sm hover:text-slate-400 transition-colors py-2 px-1">
+            <button onClick={handleBack} className="text-slate-600 text-sm hover:text-slate-400 transition-colors py-3 px-3 min-h-[44px]">
               ← {qaHistory.length === 0 ? 'Volver al inicio' : 'Anterior'}
             </button>
           </div>
@@ -1955,7 +1963,12 @@ Respondé con este JSON exacto:
                                 alt={mobileSlide === 0 ? 'Botón Compartir resaltado en LinkedIn' : 'Pantalla de impresión con botón Compartir'}
                                 className="w-full object-contain"
                                 style={{ maxHeight: 340, display: 'block', margin: '0 auto' }}
+                                onError={e => { e.currentTarget.style.display = 'none'; e.currentTarget.nextSibling && (e.currentTarget.nextSibling.style.display = 'flex') }}
                               />
+                              <div style={{ display: 'none', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', minHeight: 120, color: '#94a3b8', fontSize: 13 }}>
+                                <span style={{ fontSize: 32 }}>📵</span>
+                                <span>Imagen no disponible</span>
+                              </div>
                               {mobileSlide > 0 && (
                                 <button
                                   onClick={() => setMobileSlide(0)}
@@ -2743,7 +2756,7 @@ Respondé con este JSON exacto:
               </button>
             </div>
 
-            <button onClick={handleInterviewBack} className="text-slate-600 text-sm hover:text-slate-400 transition-colors py-2 px-1">
+            <button onClick={handleInterviewBack} className="text-slate-600 text-sm hover:text-slate-400 transition-colors py-3 px-3 min-h-[44px]">
               ← {interviewIdx === 0 ? 'Volver al inicio' : 'Pregunta anterior'}
             </button>
           </div>
