@@ -269,13 +269,16 @@ const CV_SYSTEM_PROMPT = `Sos un experto redactor de CVs para el mercado laboral
 Tu tarea es transformar un perfil de LinkedIn en un CV de 1 página moderno, conciso y orientado a logros.
 
 Reglas estrictas:
-- Máximo 3 experiencias laborales (las más recientes y relevantes)
-- Máximo 3 bullets por experiencia, comenzando con verbo de acción, con métricas cuando existan
+- Últimas 3 experiencias laborales → "experiencias_detalladas": cargo, empresa, periodo y máx 3 bullets de logros cada una (verbo de acción + métricas)
+- Experiencias anteriores a las últimas 3 → "experiencias_resumidas": solo cargo, empresa y periodo, SIN bullets
+- Educación reciente (máx 2 títulos más relevantes) → "educacion_detallada": titulo, institucion, periodo
+- Educación anterior o cursos adicionales → "educacion_resumida": solo titulo, institucion, periodo, SIN detalle extra
 - Resumen profesional de máximo 2 oraciones, impactante y orientado a valor
 - Sin objetivo laboral (está desactualizado)
 - Sin foto, sin estado civil, sin fecha de nacimiento
 - Habilidades: entre 6 y 10 keywords relevantes al rol
 - Todo en español (excepto términos técnicos que se usan en inglés en la industria)
+- Si se proporcionan nombre, ubicacion o idiomas, incorporalos al JSON de salida
 
 Usá las secciones "titular_propuesto" y "resumen_propuesto" del análisis previo si están disponibles.
 Extraé las experiencias y educación del texto del perfil.
@@ -709,6 +712,9 @@ export default function App() {
   const [contactEmail, setContactEmail] = useState('')
   const [contactTelefono, setContactTelefono] = useState('')
   const [contactLinkedin, setContactLinkedin] = useState('')
+  const [contactNombre, setContactNombre] = useState('')
+  const [contactUbicacion, setContactUbicacion] = useState('')
+  const [contactIdiomas, setContactIdiomas] = useState('')
 
   // Scroll al tope en cada cambio de paso (crítico en mobile)
   useEffect(() => { window.scrollTo({ top: 0, behavior: 'instant' }) }, [step])
@@ -793,6 +799,9 @@ export default function App() {
     setContactEmail('')
     setContactTelefono('')
     setContactLinkedin('')
+    setContactNombre('')
+    setContactUbicacion('')
+    setContactIdiomas('')
     setShowStarModal(false)
     setStarPhase('theory')
     setStarQuestionIdx(0)
@@ -1306,7 +1315,7 @@ Generá el feedback en este JSON exacto:
   const buildCvHtml = (cv) => {
     const e = escapeHtml
     const contact = [cv.email, cv.telefono, cv.linkedin, cv.ubicacion].filter(Boolean).map(e).join(' · ')
-    const expHtml = (cv.experiencias || []).map(ex => `
+    const expDetHtml = (cv.experiencias_detalladas || cv.experiencias || []).map(ex => `
       <div class="exp-item">
         <div class="exp-header">
           <span class="exp-role">${e(ex.cargo)}</span>
@@ -1315,11 +1324,19 @@ Generá el feedback en este JSON exacto:
         <div class="exp-company">${e(ex.empresa)}</div>
         <ul class="exp-bullets">${(ex.logros || []).map(l => `<li>${e(l)}</li>`).join('')}</ul>
       </div>`).join('')
-    const eduHtml = (cv.educacion || []).map(ed => `
+    const expResHtml = (cv.experiencias_resumidas || []).map(ex =>
+      `<div class="exp-compact"><span class="exp-compact-role">${e(ex.cargo)}</span> — ${e(ex.empresa)}<span class="exp-compact-period"> · ${e(ex.periodo)}</span></div>`
+    ).join('')
+    const expHtml = expDetHtml + expResHtml
+    const eduDetHtml = (cv.educacion_detallada || cv.educacion || []).map(ed => `
       <div class="edu-row">
         <div><div class="edu-title">${e(ed.titulo)}</div><div class="edu-inst">${e(ed.institucion)}</div></div>
         <div class="edu-period">${e(ed.periodo)}</div>
       </div>`).join('')
+    const eduResHtml = (cv.educacion_resumida || []).map(ed =>
+      `<div class="edu-compact">${e(ed.titulo)} — <span class="edu-compact-inst">${e(ed.institucion)}</span><span class="edu-compact-period"> · ${e(ed.periodo)}</span></div>`
+    ).join('')
+    const eduHtml = eduDetHtml + eduResHtml
     const skillsHtml = (cv.habilidades || []).map(s => `<span class="skill">${e(s)}</span>`).join('')
     const idiomasHtml = cv.idiomas?.length
       ? `<div class="section"><div class="section-title">Idiomas</div><p>${cv.idiomas.map(e).join(' · ')}</p></div>`
@@ -1349,6 +1366,12 @@ Generá el feedback en este JSON exacto:
   .edu-title { font-size: 9pt; font-weight: 600; }
   .edu-inst { font-size: 8pt; color: #374151; font-style: italic; }
   .edu-period { font-size: 8pt; color: #6B7280; }
+  .exp-compact { font-size: 8pt; color: #374151; margin-bottom: 2px; padding-left: 2px; }
+  .exp-compact-role { font-weight: 600; }
+  .exp-compact-period { color: #6B7280; }
+  .edu-compact { font-size: 8pt; color: #374151; margin-bottom: 2px; }
+  .edu-compact-inst { font-style: italic; }
+  .edu-compact-period { color: #6B7280; }
   .skills { display: flex; flex-wrap: wrap; gap: 4px; }
   .skill { background: #EFF6FF; color: #1D4ED8; font-size: 7.5pt;
     padding: 2px 7px; border-radius: 3px; border: 0.5px solid #BFDBFE; }
@@ -1401,10 +1424,13 @@ ${idiomasHtml}
     const resumen = result?.resumen_propuesto || ''
     const keywords = (result?.palabras_clave_sugeridas || []).join(', ')
     let userPrompt = `Generá el CV en JSON usando esta información del profesional.\n\n`
-    userPrompt += `Nombre: ${nombre}\nTitular propuesto: ${titular}\nResumen propuesto: ${resumen}\nKeywords sugeridas: ${keywords}\n\n`
+    const nombreFinal = contacto.nombre?.trim() || nombre
+    userPrompt += `Nombre: ${nombreFinal}\nTitular propuesto: ${titular}\nResumen propuesto: ${resumen}\nKeywords sugeridas: ${keywords}\n\n`
     if (contacto.email)       userPrompt += `Email de contacto: ${contacto.email}\n`
     if (contacto.telefono)    userPrompt += `Teléfono: ${contacto.telefono}\n`
     if (contacto.linkedinUrl) userPrompt += `URL LinkedIn: ${contacto.linkedinUrl}\n`
+    if (contacto.ubicacion)   userPrompt += `Ubicación: ${contacto.ubicacion}\n`
+    if (contacto.idiomas)     userPrompt += `Idiomas: ${contacto.idiomas}\n`
     userPrompt += `\nTexto completo del perfil LinkedIn (extraé experiencias y educación):\n${profileText.slice(0, 5000)}\n\n`
     userPrompt += `Usá el email, teléfono y URL de LinkedIn proporcionados arriba. No los inventes si no se dieron (poné null).
 Respondé con este JSON exacto:
@@ -1416,8 +1442,10 @@ Respondé con este JSON exacto:
   "linkedin": "string o null",
   "ubicacion": "string o null",
   "resumen": "string (2 oraciones máx)",
-  "experiencias": [{ "cargo": "string", "empresa": "string", "periodo": "string", "logros": ["string"] }],
-  "educacion": [{ "titulo": "string", "institucion": "string", "periodo": "string" }],
+  "experiencias_detalladas": [{ "cargo": "string", "empresa": "string", "periodo": "string", "logros": ["string"] }],
+  "experiencias_resumidas": [{ "cargo": "string", "empresa": "string", "periodo": "string" }],
+  "educacion_detallada": [{ "titulo": "string", "institucion": "string", "periodo": "string" }],
+  "educacion_resumida": [{ "titulo": "string", "institucion": "string", "periodo": "string" }],
   "habilidades": ["string"],
   "idiomas": ["string"]
 }`
@@ -3382,13 +3410,48 @@ Respondé con este JSON exacto:
                   />
                 </div>
               </div>
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label className="text-xs block mb-1" style={{ color: '#64748b' }}>Nombre completo</label>
+                  <input
+                    type="text"
+                    value={contactNombre}
+                    onChange={e => setContactNombre(e.target.value)}
+                    placeholder="Nombre Apellido"
+                    className="w-full rounded-xl px-3 py-2.5 text-sm text-white outline-none"
+                    style={{ background: 'rgba(15,23,42,0.8)', border: '1px solid #334155' }}
+                  />
+                </div>
+                <div>
+                  <label className="text-xs block mb-1" style={{ color: '#64748b' }}>Ubicación</label>
+                  <input
+                    type="text"
+                    value={contactUbicacion}
+                    onChange={e => setContactUbicacion(e.target.value)}
+                    placeholder="Buenos Aires, AR"
+                    className="w-full rounded-xl px-3 py-2.5 text-sm text-white outline-none"
+                    style={{ background: 'rgba(15,23,42,0.8)', border: '1px solid #334155' }}
+                  />
+                </div>
+              </div>
+              <div>
+                <label className="text-xs block mb-1" style={{ color: '#64748b' }}>Idiomas</label>
+                <input
+                  type="text"
+                  value={contactIdiomas}
+                  onChange={e => setContactIdiomas(e.target.value)}
+                  placeholder="Español nativo · Inglés avanzado"
+                  className="w-full rounded-xl px-4 py-2.5 text-sm text-white outline-none"
+                  style={{ background: 'rgba(15,23,42,0.8)', border: '1px solid #334155' }}
+                />
+              </div>
               <p className="text-xs leading-relaxed pt-1" style={{ color: '#475569' }}>
                 🔒 Tus datos se usan solo para confeccionar el CV y no se comparten con terceros.
               </p>
               <button
                 onClick={() => {
                   if (!contactEmail.trim()) return
-                  const contacto = { email: contactEmail.trim(), telefono: contactTelefono.trim(), linkedinUrl: contactLinkedin.trim() }
+                  const contacto = { email: contactEmail.trim(), telefono: contactTelefono.trim(), linkedinUrl: contactLinkedin.trim(), nombre: contactNombre.trim(), ubicacion: contactUbicacion.trim(), idiomas: contactIdiomas.trim() }
                   setPendingWithSupport(false)
                   setShowCvModal(false)
                   callGenerateCV(contacto)
@@ -3413,7 +3476,7 @@ Respondé con este JSON exacto:
               <button
                 onClick={() => {
                   if (!contactEmail.trim()) return
-                  const contacto = { email: contactEmail.trim(), telefono: contactTelefono.trim(), linkedinUrl: contactLinkedin.trim() }
+                  const contacto = { email: contactEmail.trim(), telefono: contactTelefono.trim(), linkedinUrl: contactLinkedin.trim(), nombre: contactNombre.trim(), ubicacion: contactUbicacion.trim(), idiomas: contactIdiomas.trim() }
                   setPendingWithSupport(true)
                   window.open(MP_URL, '_blank', 'noopener,noreferrer')
                   setShowCvModal(false)
