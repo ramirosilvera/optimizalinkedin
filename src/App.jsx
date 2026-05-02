@@ -699,6 +699,7 @@ export default function App() {
   const [formExperiencias, setFormExperiencias] = useState([{ cargo: '', empresa: '', periodo: '', descripcion: '' }])
   const [formEducacion, setFormEducacion] = useState([{ institucion: '', titulo: '', periodo: '' }])
   const [formConfirmed, setFormConfirmed] = useState(false)
+  const [sinPerfilMode, setSinPerfilMode] = useState(false)
 
   // Results
   const [result, setResult] = useState(null)
@@ -1088,39 +1089,59 @@ export default function App() {
     setAnalyzing(true)
     setStep(STEPS.LOADING)
     setAnalysisError('')
-    trackEvent('analyze_click', { metodo: pdfFileName ? 'pdf' : formConfirmed ? 'formulario' : 'url', texto_largo: profileText.length })
+    const modoAnalisis = sinPerfilMode ? 'sin_perfil' : pdfFileName ? 'pdf' : formConfirmed ? 'formulario' : 'url'
+    trackEvent('analyze_click', { metodo: modoAnalisis, texto_largo: profileText.length })
 
     const contextText = qaHistory
       .map(h => `- ${STATIC_QUESTIONS.find(q => q.question === h.question)?.id ?? 'dato'}: ${h.answer}`)
       .join('\n')
 
-    const userPrompt = `Perfil del usuario:
-${contextText}
-
-Perfil de LinkedIn:
-${profileText.slice(0, 4000)}
-
-Generá un análisis en este formato JSON exacto:
-{
-  "puntaje_general": número del 1 al 10,
-  "nivel_seo": "Alto" o "Medio" o "Bajo",
-  "resumen_diagnostico": "2-3 oraciones directas sobre el estado actual del perfil aplicando los frameworks de headhunter",
-  "accion_prioritaria": "la UNA acción más impactante que puede hacer HOY para mejorar su perfil, explicada en 1-2 oraciones concretas",
+    const jsonSchema = `{
+  "puntaje_general": número del 1 al 10 o null si no hay perfil real,
+  "nivel_seo": "Alto" o "Medio" o "Bajo" o null si no hay perfil real,
+  "resumen_diagnostico": "2-3 oraciones directas sobre el estado actual del perfil o el posicionamiento recomendado",
+  "accion_prioritaria": "la UNA acción más impactante que puede hacer HOY",
   "fortalezas": ["fortaleza 1", "fortaleza 2", "fortaleza 3"],
   "areas_de_mejora": ["area 1", "area 2", "area 3"],
   "palabras_clave_sugeridas": ["keyword 1", "keyword 2", "keyword 3", "keyword 4", "keyword 5", "keyword 6", "keyword 7", "keyword 8"],
-  "titular_actual": "el titular actual",
-  "titular_propuesto": "un titular mejorado, específico, con keywords y propuesta de valor clara",
-  "resumen_actual": "el resumen actual o No tiene resumen",
-  "resumen_propuesto": "un resumen reescrito de máximo 5 oraciones con propuesta de valor, logros y CTA",
+  "titular_actual": "el titular actual o 'No proporcionado'",
+  "titular_propuesto": "un titular propuesto, específico, con keywords y propuesta de valor clara",
+  "resumen_actual": "el resumen actual o 'No proporcionado'",
+  "resumen_propuesto": "un resumen propuesto de máximo 5 oraciones con propuesta de valor, logros y CTA",
   "recomendaciones": [
     {"titulo": "nombre de la recomendación", "descripcion": "explicación concreta de qué cambiar y cómo, con ejemplos si aplica"},
     {"titulo": "...", "descripcion": "..."},
     {"titulo": "...", "descripcion": "..."}
   ],
   "estrategia_contenido": "sugerencia de 2-3 oraciones sobre qué tipo de contenido publicar para lograr el objetivo declarado",
-  "analisis_foto": "evaluación concreta de la foto de perfil: profesionalismo, encuadre tipo headshot, fondo, iluminación, expresión. Si no se incluyó foto, indicá brevemente la importancia de tenerla."
+  "analisis_foto": "evaluación de la foto de perfil si se incluyó, o la importancia de tenerla."
 }`
+
+    const userPrompt = sinPerfilMode
+      ? `El usuario no tiene un perfil de LinkedIn disponible en este momento.
+Basándote EXCLUSIVAMENTE en sus respuestas del cuestionario, actuá como headhunter y generá:
+- Un diagnóstico de cómo DEBERÍA posicionarse en LinkedIn dado su perfil profesional
+- Un titular propuesto desde cero, poderoso y con keywords relevantes para su industria
+- Un resumen propuesto desde cero con propuesta de valor, logros implícitos y CTA
+- Las palabras clave que más lo van a posicionar en búsquedas de reclutadores
+- Recomendaciones concretas para construir su perfil
+
+Contexto del usuario:
+${contextText}
+
+Para "titular_actual" y "resumen_actual" usá "No proporcionado".
+Para "puntaje_general" y "nivel_seo" devolvé null.
+
+Generá el análisis en este formato JSON exacto:
+${jsonSchema}`
+      : `Perfil del usuario:
+${contextText}
+
+Perfil de LinkedIn:
+${profileText.slice(0, 4000)}
+
+Generá un análisis en este formato JSON exacto:
+${jsonSchema}`
 
     const controller = new AbortController()
     analysisAbortRef.current = controller
@@ -1164,7 +1185,7 @@ Generá un análisis en este formato JSON exacto:
         recomendaciones: parsed.recomendaciones || [],
         analisis_foto: parsed.analisis_foto || '',
       })
-      trackEvent('analisis_recibido', { puntaje: parsed.puntaje_general, nivel_seo: parsed.nivel_seo })
+      trackEvent('analisis_recibido', { puntaje: parsed.puntaje_general, nivel_seo: parsed.nivel_seo, modo: modoAnalisis })
       setShowAnalisisConsent(true)
       trackEvent('analisis_consent_shown', { puntaje: parsed.puntaje_general })
       setStep(STEPS.RESULTS)
@@ -2002,12 +2023,25 @@ ${idiomasHtml}
               <>
                 <div className="flex rounded-xl overflow-hidden" style={{ border: '1px solid rgba(0,119,181,0.15)' }}>
                   {[
-                    { id: 'pdf',  label: '📄  Subir PDF' },
-                    { id: 'form', label: '✏️  Completar en la app' },
+                    { id: 'pdf',  label: '📄  PDF' },
+                    { id: 'form', label: '✏️  Manual' },
+                    { id: 'sin_perfil', label: '💡  Sin perfil' },
                   ].map(tab => (
                     <button
                       key={tab.id}
-                      onClick={() => handleInputModeSwitch(tab.id)}
+                      onClick={() => {
+                        if (tab.id === 'sin_perfil') {
+                          setSinPerfilMode(true)
+                          setProfileText('')
+                          setPdfFileName('')
+                          setFormConfirmed(false)
+                          trackEvent('input_mode_switched', { modo: 'sin_perfil' })
+                        } else {
+                          setSinPerfilMode(false)
+                          handleInputModeSwitch(tab.id)
+                        }
+                        setInputMode(tab.id)
+                      }}
                       className="flex-1 py-3 text-xs font-semibold transition-all duration-200"
                       style={inputMode === tab.id
                         ? { background: LI_GRADIENT, color: '#fff' }
@@ -2374,6 +2408,39 @@ ${idiomasHtml}
                     </button>
                   </div>
                 )}
+
+                {/* ── MODO SIN PERFIL ── */}
+                {inputMode === 'sin_perfil' && (
+                  <div className="rounded-2xl p-5 space-y-3"
+                    style={{ background: 'white', border: '1px solid rgba(0,119,181,0.15)', boxShadow: '0 2px 12px rgba(0,0,0,0.05)' }}>
+                    <div className="flex items-start gap-3">
+                      <span className="text-2xl shrink-0">💡</span>
+                      <div>
+                        <p className="text-slate-800 text-sm font-semibold mb-1">Diagnóstico base con tus respuestas</p>
+                        <p className="text-slate-500 text-xs leading-relaxed">
+                          No necesitás tu perfil de LinkedIn ahora. Con lo que ya respondiste, te genero un punto de partida concreto: un titular propuesto, un resumen desde cero y las keywords que más te posicionan.
+                        </p>
+                      </div>
+                    </div>
+                    <div className="rounded-xl p-3 text-xs"
+                      style={{ backgroundColor: 'rgba(99,102,241,0.06)', border: '1px solid rgba(99,102,241,0.2)', color: '#4f46e5' }}>
+                      ✦ El análisis se basa en tus 10 respuestas del cuestionario. Podés subir tu PDF después para un diagnóstico más profundo.
+                    </div>
+                    <button
+                      onClick={() => {
+                        setSinPerfilMode(true)
+                        trackEvent('cv_subido', { metodo: 'sin_perfil' })
+                      }}
+                      className="w-full py-3 rounded-xl font-semibold text-sm transition-all duration-200 text-white"
+                      style={sinPerfilMode
+                        ? { background: 'rgba(34,197,94,0.08)', border: '1px solid rgba(34,197,94,0.35)', color: '#16a34a', cursor: 'default' }
+                        : { background: LI_GRADIENT, cursor: 'pointer' }
+                      }
+                    >
+                      {sinPerfilMode ? '✅ Listo — podés analizar tu perfil' : 'Recibí mi diagnóstico base →'}
+                    </button>
+                  </div>
+                )}
               </>
             )}
 
@@ -2399,14 +2466,14 @@ ${idiomasHtml}
                 <p>⚠️ {analysisError}</p>
                 <button
                   onClick={callGemini}
-                  disabled={!profileText || analyzing}
+                  disabled={(!profileText && !sinPerfilMode) || analyzing}
                   className="text-xs font-semibold px-3 py-1.5 rounded-lg transition-all duration-200"
                   style={{
                     background: 'rgba(185,28,28,0.1)',
                     border: '1px solid rgba(185,28,28,0.3)',
                     color: '#b91c1c',
-                    opacity: profileText && !analyzing ? 1 : 0.5,
-                    cursor: profileText && !analyzing ? 'pointer' : 'not-allowed',
+                    opacity: (profileText || sinPerfilMode) && !analyzing ? 1 : 0.5,
+                    cursor: (profileText || sinPerfilMode) && !analyzing ? 'pointer' : 'not-allowed',
                   }}
                 >
                   ↺ Reintentar análisis
@@ -2424,15 +2491,15 @@ ${idiomasHtml}
                 ← Atrás
               </button>
               <button
-                disabled={!profileText || analyzing}
+                disabled={(!profileText && !sinPerfilMode) || analyzing}
                 onClick={callGemini}
-                className={`flex-[2] font-semibold py-3.5 rounded-2xl transition-all duration-200 text-white ${profileText && !analyzing ? 'btn-glow' : ''}`}
+                className={`flex-[2] font-semibold py-3.5 rounded-2xl transition-all duration-200 text-white ${(profileText || sinPerfilMode) && !analyzing ? 'btn-glow' : ''}`}
                 style={{
-                  background: profileText && !analyzing ? LI_GRADIENT : 'rgba(0,119,181,0.08)',
-                  opacity: profileText && !analyzing ? 1 : 0.5,
-                  cursor: profileText && !analyzing ? 'pointer' : 'not-allowed',
-                  border: profileText && !analyzing ? 'none' : '1px solid rgba(0,119,181,0.12)',
-                  color: profileText && !analyzing ? '#fff' : '#64748b',
+                  background: (profileText || sinPerfilMode) && !analyzing ? LI_GRADIENT : 'rgba(0,119,181,0.08)',
+                  opacity: (profileText || sinPerfilMode) && !analyzing ? 1 : 0.5,
+                  cursor: (profileText || sinPerfilMode) && !analyzing ? 'pointer' : 'not-allowed',
+                  border: (profileText || sinPerfilMode) && !analyzing ? 'none' : '1px solid rgba(0,119,181,0.12)',
+                  color: (profileText || sinPerfilMode) && !analyzing ? '#fff' : '#64748b',
                 }}
               >
                 {analyzing ? 'Analizando...' : 'Analizar mi perfil ✦'}
@@ -2538,10 +2605,24 @@ ${idiomasHtml}
               </div>
             )}
 
+            {result.puntaje_general === null && (
+              <div className="rounded-2xl p-4 text-sm"
+                style={{ backgroundColor: 'rgba(99,102,241,0.07)', border: '1px solid rgba(99,102,241,0.25)' }}>
+                <p className="font-semibold text-indigo-700 mb-1">💡 Diagnóstico base generado con tus respuestas</p>
+                <p className="text-slate-600 text-xs leading-relaxed">
+                  Este análisis fue creado sin tu perfil de LinkedIn. Subí tu PDF en cualquier momento para obtener un diagnóstico completo con puntaje y evaluación real de tu perfil.
+                </p>
+              </div>
+            )}
+
             <ResultCard title="Diagnóstico general">
               <div className="flex flex-col sm:flex-row items-center sm:items-start gap-6">
                 <div className="flex flex-col items-center gap-3">
-                  <ScoreRing score={result.puntaje_general ?? 0} />
+                  {result.puntaje_general !== null && result.puntaje_general !== undefined
+                    ? <ScoreRing score={result.puntaje_general} />
+                    : <div className="w-24 h-24 rounded-full flex items-center justify-center text-3xl"
+                        style={{ background: 'rgba(99,102,241,0.08)', border: '2px dashed rgba(99,102,241,0.3)' }}>💡</div>
+                  }
                   {result.nivel_seo && (
                     <span className="text-xs font-semibold px-3 py-1 rounded-full"
                       style={{
