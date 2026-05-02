@@ -1644,17 +1644,28 @@ ${idiomasHtml}
             <div className="space-y-5">
               <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full text-xs font-semibold tracking-wide badge-shimmer"
                 style={{ border: '1px solid rgba(0,119,181,0.4)', color: '#0077B5' }}>
-                ✦ &nbsp;Análisis profesional con IA
+                ✦ &nbsp;Diagnóstico con criterio de headhunter
               </div>
               <h1 className="text-4xl sm:text-5xl font-bold leading-tight tracking-tight" style={{ letterSpacing: '-0.02em' }}>
-                <span className="text-slate-900">Optimizá tu perfil</span><br />
+                <span className="text-slate-900">Tu perfil de LinkedIn</span><br />
                 <span style={{ background: 'linear-gradient(135deg, #0ea5e9 0%, #6366f1 100%)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent' }}>
-                  de LinkedIn
+                  ¿habla por vos?
                 </span>
               </h1>
               <p className="text-slate-600 text-base max-w-sm mx-auto leading-relaxed">
-                Optimizá tu LinkedIn, mejorá tu CV y practicá la entrevista con IA. Gratis. Hecho con criterio de headhunter.
+                Un reclutador decide en <strong className="text-slate-800">6 segundos</strong> si seguís en carrera. Descubrí qué ve — y qué mejorar — con un análisis gratuito basado en criterios reales de headhunter.
               </p>
+            </div>
+
+            <div className="space-y-3">
+              <button
+                onClick={() => { trackEvent('click_empezar_analisis', { location: 'hero' }); setStep(STEPS.QUESTIONS) }}
+                className="btn-glow w-full text-white font-semibold py-4 px-8 rounded-2xl text-base"
+                style={{ background: 'linear-gradient(135deg, #0077B5 0%, #0ea5e9 100%)' }}
+              >
+                Obtener mi diagnóstico gratis →
+              </button>
+              <p className="text-slate-500 text-xs">Sin registro · Resultado en 2 minutos · 100% gratis</p>
             </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
@@ -1672,18 +1683,19 @@ ${idiomasHtml}
               ))}
             </div>
 
-            <div className="space-y-3">
+            <CommentsSection />
+
+            {/* ── CTA secundario post-scroll ── */}
+            <div className="space-y-3 pt-2">
               <button
-                onClick={() => { trackEvent('click_empezar_analisis', { location: 'hero' }); setStep(STEPS.QUESTIONS) }}
+                onClick={() => { trackEvent('click_empezar_analisis', { location: 'post_scroll' }); setStep(STEPS.QUESTIONS) }}
                 className="btn-glow w-full text-white font-semibold py-4 px-8 rounded-2xl text-base"
                 style={{ background: 'linear-gradient(135deg, #0077B5 0%, #0ea5e9 100%)' }}
               >
-                Empezar análisis →
+                Obtener mi diagnóstico gratis →
               </button>
-              <p className="text-slate-500 text-xs">Gratis · Sin registro · Sostenida por la comunidad 🙌</p>
+              <p className="text-slate-500 text-xs">Sin registro · Resultado en 2 minutos · 100% gratis</p>
             </div>
-
-            <CommentsSection />
 
             {/* ── Secciones SEO ── */}
             <div className="text-left space-y-12 pt-6">
