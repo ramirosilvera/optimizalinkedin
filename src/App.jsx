@@ -1137,8 +1137,10 @@ ${jsonSchema}`
       : `Perfil del usuario:
 ${contextText}
 
-Perfil de LinkedIn:
+Perfil profesional (puede ser un PDF de LinkedIn o un CV):
 ${profileText.slice(0, 4000)}
+
+Si el contenido es un CV (no un perfil de LinkedIn), usá los datos del CV para inferir cómo debería quedar el perfil de LinkedIn: extraé el titular más adecuado, construí el resumen y evaluá el SEO proyectado.
 
 Generá un análisis en este formato JSON exacto:
 ${jsonSchema}`
@@ -2023,7 +2025,7 @@ ${idiomasHtml}
               <>
                 <div className="flex rounded-xl overflow-hidden" style={{ border: '1px solid rgba(0,119,181,0.15)' }}>
                   {[
-                    { id: 'pdf',  label: '📄  PDF' },
+                    { id: 'pdf',  label: '📄  PDF / CV' },
                     { id: 'form', label: '✏️  Manual' },
                     { id: 'sin_perfil', label: '💡  Sin perfil' },
                   ].map(tab => (
@@ -2058,8 +2060,8 @@ ${idiomasHtml}
                   <div className="space-y-4">
                     <div className="rounded-xl p-4 text-sm"
                       style={{ backgroundColor: 'rgba(245,158,11,0.07)', border: '1px solid rgba(245,158,11,0.25)' }}>
-                      <p className="text-amber-500 font-semibold text-xs uppercase tracking-wide mb-1">¿Por qué PDF?</p>
-                      <p className="text-slate-600 text-xs leading-relaxed">Es la forma más completa de compartir tu perfil. LinkedIn lo genera en segundos con toda tu información.</p>
+                      <p className="text-amber-500 font-semibold text-xs uppercase tracking-wide mb-1">PDF de LinkedIn o tu CV</p>
+                      <p className="text-slate-600 text-xs leading-relaxed">Subí el PDF de tu perfil de LinkedIn <span className="font-semibold text-slate-700">o tu CV</span> — los dos funcionan. LinkedIn lo genera en segundos; si ya tenés tu CV a mano, también sirve.</p>
                     </div>
                     <div className="rounded-2xl overflow-hidden"
                       style={CARD_STYLE}>
@@ -2209,7 +2211,7 @@ ${idiomasHtml}
                         ) : (
                           <><span className="text-3xl">{isDragging ? '📂' : '📄'}</span>
                             <div className="text-center">
-                              <p className="text-slate-900 font-semibold text-sm">{isDragging ? 'Soltá el PDF acá' : 'Subir PDF de LinkedIn'}</p>
+                              <p className="text-slate-900 font-semibold text-sm">{isDragging ? 'Soltá el PDF acá' : 'Subir PDF de LinkedIn o CV'}</p>
                               <p className="text-slate-500 text-xs mt-1">Arrastrá o hacé clic · Máx. 15 MB</p>
                             </div></>
                         )}
