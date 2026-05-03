@@ -1644,7 +1644,7 @@ ${idiomasHtml}
             <div className="space-y-5">
               <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full text-xs font-semibold tracking-wide badge-shimmer"
                 style={{ border: '1px solid rgba(0,119,181,0.4)', color: '#0077B5' }}>
-                ✦ &nbsp;Más entrevistas. Sin buscar más.
+                ✦ &nbsp;Análisis profesional con IA
               </div>
               <h1 className="text-4xl sm:text-5xl font-bold leading-tight tracking-tight" style={{ letterSpacing: '-0.02em' }}>
                 <span className="text-slate-900">Que los reclutadores</span><br />
