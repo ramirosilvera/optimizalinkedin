@@ -90,29 +90,49 @@ export default {
     const { model: modelField, ...geminiBody } = body
     const model = ALLOWED_MODELS.has(modelField) ? modelField : DEFAULT_MODEL
 
-    const controller = new AbortController()
-    const timeoutId = setTimeout(() => controller.abort(), GEMINI_TIMEOUT_MS)
+    const geminiKeys = (env.GEMINI_API_KEY || '').split(',').map(k => k.trim()).filter(Boolean)
+    if (!geminiKeys.length) {
+      return new Response(JSON.stringify({ error: { message: 'GEMINI_API_KEY no configurada' } }), {
+        status: 500,
+        headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': origin },
+      })
+    }
 
     let res
-    try {
-      res = await fetch(
-        `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${env.GEMINI_API_KEY}`,
-        {
-          method: 'POST',
-          headers: { 'content-type': 'application/json' },
-          body: JSON.stringify(geminiBody),
-          signal: controller.signal,
+    for (const key of geminiKeys) {
+      const controller = new AbortController()
+      const timeoutId = setTimeout(() => controller.abort(), GEMINI_TIMEOUT_MS)
+      try {
+        res = await fetch(
+          `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${key}`,
+          {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify(geminiBody),
+            signal: controller.signal,
+          }
+        )
+        clearTimeout(timeoutId)
+        if (res.status !== 429) break  // si no es rate limit, usamos esta respuesta
+      } catch (err) {
+        clearTimeout(timeoutId)
+        if (err.name === 'AbortError') {
+          res = null
+          continue
         }
-      )
-    } catch (err) {
-      clearTimeout(timeoutId)
-      const msg = err.name === 'AbortError' ? 'Upstream timeout' : 'Upstream fetch failed'
-      return new Response(JSON.stringify({ error: { message: msg } }), {
+        return new Response(JSON.stringify({ error: { message: 'Upstream fetch failed' } }), {
+          status: 504,
+          headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': origin },
+        })
+      }
+    }
+
+    if (!res) {
+      return new Response(JSON.stringify({ error: { message: 'Upstream timeout' } }), {
         status: 504,
         headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': origin },
       })
     }
-    clearTimeout(timeoutId)
 
     const data = await res.json().catch(() => ({ error: { message: 'Invalid response from upstream' } }))
 
