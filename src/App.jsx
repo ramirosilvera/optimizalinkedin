@@ -2540,13 +2540,27 @@ ${idiomasHtml}
 
                 {/* ── MODO LINKEDIN OAUTH ── */}
                 {inputMode === 'linkedin' && (
-                  <div className="rounded-2xl p-5 space-y-4"
+                  <div className="rounded-2xl overflow-hidden"
                     style={{ background: 'white', border: '1px solid rgba(0,119,181,0.15)', boxShadow: '0 2px 12px rgba(0,0,0,0.05)' }}>
 
+                    {/* Header LinkedIn */}
+                    <div className="px-5 pt-5 pb-4 flex items-center gap-3"
+                      style={{ borderBottom: '1px solid rgba(0,119,181,0.08)' }}>
+                      <svg viewBox="0 0 24 24" width="22" height="22" fill="#0077B5" style={{ shrink: 0 }}>
+                        <path d="M19 3A2 2 0 0 1 21 5V19A2 2 0 0 1 19 21H5A2 2 0 0 1 3 19V5A2 2 0 0 1 5 3H19M18.5 18.5V13.2A3.26 3.26 0 0 0 15.24 9.94C14.39 9.94 13.4 10.46 12.92 11.24V10.13H10.13V18.5H12.92V13.57A1.46 1.46 0 0 1 14.38 12.11A1.46 1.46 0 0 1 15.84 13.57V18.5H18.5M6.88 8.56A1.68 1.68 0 0 0 8.56 6.88C8.56 5.95 7.81 5.19 6.88 5.19A1.69 1.69 0 0 0 5.19 6.88C5.19 7.81 5.95 8.56 6.88 8.56M8.27 18.5V10.13H5.5V18.5H8.27Z" />
+                      </svg>
+                      <div>
+                        <p className="text-slate-900 text-sm font-semibold leading-tight">Accedé con LinkedIn</p>
+                        <p className="text-slate-400 text-xs">Autorización segura · No publicamos nada</p>
+                      </div>
+                    </div>
+
+                    <div className="p-5 space-y-4">
+
                     {linkedinAuthLoading && (
-                      <div className="flex flex-col items-center gap-3 py-6 text-center">
-                        <div className="w-8 h-8 border-2 border-blue-500 border-t-transparent rounded-full animate-spin" />
-                        <p className="text-slate-500 text-sm">Conectando con LinkedIn...</p>
+                      <div className="flex flex-col items-center gap-3 py-4 text-center">
+                        <div className="w-7 h-7 border-2 border-blue-500 border-t-transparent rounded-full animate-spin" />
+                        <p className="text-slate-500 text-sm">Verificando tu cuenta...</p>
                       </div>
                     )}
 
@@ -2557,25 +2571,34 @@ ${idiomasHtml}
                         <button
                           onClick={() => { setLinkedinAuthError(''); handleLinkedinLogin() }}
                           className="underline font-semibold"
-                        >Reintentar →</button>
+                        >Reintentar</button>
                       </div>
                     )}
 
                     {!linkedinAuthLoading && linkedinOAuth && (
-                      <div className="text-center space-y-3 py-2">
-                        <div className="w-14 h-14 rounded-full overflow-hidden mx-auto" style={{ border: '2px solid #0077B5' }}>
-                          {linkedinOAuth.picture
-                            ? <img src={linkedinOAuth.picture} alt="foto" className="w-full h-full object-cover" />
-                            : <span className="text-2xl flex items-center justify-center h-full">👤</span>
-                          }
-                        </div>
-                        <div>
-                          <p className="text-slate-800 text-sm font-semibold">✅ Conectado como {linkedinOAuth.name}</p>
-                          {linkedinOAuth.email && <p className="text-slate-500 text-xs">{linkedinOAuth.email}</p>}
+                      <div className="space-y-4">
+                        <div className="flex items-center gap-3 rounded-xl p-3"
+                          style={{ background: 'rgba(0,119,181,0.04)', border: '1px solid rgba(0,119,181,0.12)' }}>
+                          <div className="relative shrink-0">
+                            <img src={linkedinOAuth.picture || ''} alt="foto"
+                              className="w-12 h-12 rounded-full object-cover"
+                              style={{ border: '2px solid #0077B5' }}
+                              onError={e => { e.target.style.display = 'none' }} />
+                            <div className="absolute -bottom-1 -right-1 w-5 h-5 rounded-full flex items-center justify-center"
+                              style={{ background: '#0077B5' }}>
+                              <svg viewBox="0 0 24 24" width="11" height="11" fill="white">
+                                <path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z" />
+                              </svg>
+                            </div>
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <p className="text-slate-900 text-sm font-semibold truncate">{linkedinOAuth.name}</p>
+                            {linkedinOAuth.email && <p className="text-slate-400 text-xs truncate">{linkedinOAuth.email}</p>}
+                          </div>
                         </div>
                         <button
                           onClick={() => setInputMode('form')}
-                          className="w-full py-2.5 rounded-xl font-semibold text-sm text-white"
+                          className="w-full py-3 rounded-xl font-semibold text-sm text-white"
                           style={{ background: LI_GRADIENT }}
                         >
                           Completar mi perfil →
@@ -2584,34 +2607,38 @@ ${idiomasHtml}
                     )}
 
                     {!linkedinAuthLoading && !linkedinOAuth && (
-                      <>
-                        <div className="flex items-center gap-3">
-                          <div className="w-10 h-10 rounded-full flex items-center justify-center shrink-0"
-                            style={{ background: '#0077B5' }}>
-                            <svg viewBox="0 0 24 24" width="20" height="20" fill="white">
-                              <path d="M19 3A2 2 0 0 1 21 5V19A2 2 0 0 1 19 21H5A2 2 0 0 1 3 19V5A2 2 0 0 1 5 3H19M18.5 18.5V13.2A3.26 3.26 0 0 0 15.24 9.94C14.39 9.94 13.4 10.46 12.92 11.24V10.13H10.13V18.5H12.92V13.57A1.46 1.46 0 0 1 14.38 12.11A1.46 1.46 0 0 1 15.84 13.57V18.5H18.5M6.88 8.56A1.68 1.68 0 0 0 8.56 6.88C8.56 5.95 7.81 5.19 6.88 5.19A1.69 1.69 0 0 0 5.19 6.88C5.19 7.81 5.95 8.56 6.88 8.56M8.27 18.5V10.13H5.5V18.5H8.27Z" />
-                            </svg>
+                      <div className="space-y-4">
+                        <div className="space-y-2 text-xs text-slate-500">
+                          <div className="flex items-center gap-2">
+                            <span className="w-4 h-4 rounded-full flex items-center justify-center shrink-0 text-white text-[10px] font-bold" style={{ background: '#0077B5' }}>✓</span>
+                            <span>Nombre y foto tomados de tu cuenta LinkedIn</span>
                           </div>
-                          <div>
-                            <p className="text-slate-800 text-sm font-semibold">Conectá con LinkedIn</p>
-                            <p className="text-slate-500 text-xs">Nombre y foto automáticos. Luego completás experiencia y formación.</p>
+                          <div className="flex items-center gap-2">
+                            <span className="w-4 h-4 rounded-full flex items-center justify-center shrink-0 text-white text-[10px] font-bold" style={{ background: '#0077B5' }}>✓</span>
+                            <span>Email capturado para enviarte el análisis</span>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <span className="w-4 h-4 rounded-full flex items-center justify-center shrink-0 text-white text-[10px] font-bold" style={{ background: '#0077B5' }}>✓</span>
+                            <span>Completás experiencia y formación en 2 min</span>
                           </div>
                         </div>
-                        <div className="rounded-xl p-3 space-y-1.5 text-xs text-slate-600"
-                          style={{ background: '#f8fafc', border: '1px solid rgba(0,119,181,0.1)' }}>
-                          <p>✔ <strong>Nombre y foto</strong> → automáticos desde tu cuenta</p>
-                          <p>✔ <strong>Email</strong> → para enviarte el análisis</p>
-                          <p>✔ <strong>Experiencia y formación</strong> → completás en 2 min</p>
-                        </div>
+
+                        {/* Botón oficial LinkedIn */}
                         <button
                           onClick={handleLinkedinLogin}
-                          className="w-full py-3 rounded-xl font-semibold text-sm text-white transition-all duration-200"
-                          style={{ background: '#0077B5', cursor: 'pointer' }}
+                          className="w-full flex items-center justify-center gap-3 py-3 rounded-xl font-semibold text-sm text-white transition-all duration-200 active:scale-95"
+                          style={{ background: '#0077B5', boxShadow: '0 2px 8px rgba(0,119,181,0.35)', cursor: 'pointer' }}
                         >
-                          Conectar con LinkedIn →
+                          <svg viewBox="0 0 24 24" width="18" height="18" fill="white">
+                            <path d="M19 3A2 2 0 0 1 21 5V19A2 2 0 0 1 19 21H5A2 2 0 0 1 3 19V5A2 2 0 0 1 5 3H19M18.5 18.5V13.2A3.26 3.26 0 0 0 15.24 9.94C14.39 9.94 13.4 10.46 12.92 11.24V10.13H10.13V18.5H12.92V13.57A1.46 1.46 0 0 1 14.38 12.11A1.46 1.46 0 0 1 15.84 13.57V18.5H18.5M6.88 8.56A1.68 1.68 0 0 0 8.56 6.88C8.56 5.95 7.81 5.19 6.88 5.19A1.69 1.69 0 0 0 5.19 6.88C5.19 7.81 5.95 8.56 6.88 8.56M8.27 18.5V10.13H5.5V18.5H8.27Z" />
+                          </svg>
+                          Iniciar sesión con LinkedIn
                         </button>
-                      </>
+                        <p className="text-center text-slate-400 text-xs">Solo leemos tu nombre, foto y email. Nunca publicamos nada.</p>
+                      </div>
                     )}
+
+                    </div>
                   </div>
                 )}
               </>
