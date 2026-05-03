@@ -1,3 +1,4 @@
 name = "linkedin-optimizer-proxy"
 main = "index.js"
 compatibility_date = "2025-01-01"
+account_id = "0f4770732ca8099cf331b6846f143b4f"
