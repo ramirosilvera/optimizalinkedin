@@ -820,7 +820,7 @@ export default function App() {
         setLinkedinOAuth(data)
         setInputMode('form')
         if (data.picture) setProfilePhotoPreview(data.picture)
-        if (data.name) setFormTitular(t => t.trim() ? t : data.name)
+        // No pre-rellenamos el titular con el nombre — la API de LinkedIn OpenID no devuelve el headline profesional
         trackEvent('cv_subido', { metodo: 'linkedin_oauth' })
       })
       .catch(err => {
@@ -2363,11 +2363,11 @@ ${idiomasHtml}
                       </label>
                       <input id="form-titular" type="text" value={formTitular}
                         onChange={e => { setFormTitular(e.target.value); setFormConfirmed(false); setProfileText('') }}
-                        placeholder={linkedinOAuth ? `Ej: ${linkedinOAuth.name.split(' ')[0]} | Cargo | Industria` : 'Ej: Desarrollador Frontend Senior | React & TypeScript | 10 años'}
+                        placeholder="Ej: Gerente de Marketing | Growth & Performance | 8 años"
                         maxLength={220}
                         className="w-full rounded-xl px-4 py-3 text-sm outline-none"
                         style={INPUT_STYLE} />
-                      <p className="text-slate-400 text-xs mt-1">{linkedinOAuth ? 'El texto que aparecerá debajo de tu nombre — completalo o reemplazá el que ya tenés' : 'El texto que aparece debajo de tu nombre en LinkedIn'}</p>
+                      <p className="text-slate-400 text-xs mt-1">El texto que aparece debajo de tu nombre en LinkedIn — copiá el tuyo</p>
                     </div>
 
                     {/* Resumen */}
