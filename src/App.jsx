@@ -705,6 +705,10 @@ export default function App() {
   const [linkedinOAuth, setLinkedinOAuth] = useState(null)
   const [linkedinAuthLoading, setLinkedinAuthLoading] = useState(false)
   const [linkedinAuthError, setLinkedinAuthError] = useState('')
+  // LinkedIn AutoFill Plugin
+  const [liAutofillDone, setLiAutofillDone] = useState(false)
+  const [liAutofillLoading, setLiAutofillLoading] = useState(false)
+  const [liAutofillError, setLiAutofillError] = useState(false)
   const [liCargo, setLiCargo] = useState('')
   const [liFormacion, setLiFormacion] = useState('')
   const [liSkills, setLiSkills] = useState('')
@@ -830,6 +834,31 @@ export default function App() {
       .finally(() => setLinkedinAuthLoading(false))
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
+  // LinkedIn AutoFill Plugin: escuchar evento disparado desde index.html
+  useEffect(() => {
+    const handler = (e) => {
+      const d = e.detail
+      setLiAutofillLoading(false)
+      if (d.headline) setFormTitular(d.headline)
+      if (d.summary) setFormResumen(d.summary)
+      if (d.company || d.title) {
+        setFormExperiencias(prev => prev.map((exp, i) =>
+          i === 0 ? {
+            ...exp,
+            cargo: d.title && !exp.cargo ? d.title : exp.cargo,
+            empresa: d.company && !exp.empresa ? d.company : exp.empresa,
+          } : exp
+        ))
+      }
+      setLiAutofillDone(true)
+      setFormConfirmed(false)
+      setProfileText('')
+      trackEvent('li_autofill_done', { headline: !!d.headline, company: !!d.company })
+    }
+    document.addEventListener('li-autofill', handler)
+    return () => document.removeEventListener('li-autofill', handler)
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
+
   // Revocar object URL de foto al cambiar o desmontar (evita memory leak)
   useEffect(() => {
     return () => { if (profilePhotoPreview) URL.revokeObjectURL(profilePhotoPreview) }
@@ -889,6 +918,9 @@ export default function App() {
     setLinkedinOAuth(null)
     setLinkedinAuthLoading(false)
     setLinkedinAuthError('')
+    setLiAutofillDone(false)
+    setLiAutofillLoading(false)
+    setLiAutofillError(false)
     setLiCargo('')
     setLiFormacion('')
     setLiSkills('')
@@ -1022,6 +1054,17 @@ export default function App() {
     })
     trackEvent('linkedin_oauth_initiated')
     window.location.href = `https://www.linkedin.com/oauth/v2/authorization?${params}`
+  }
+
+  // ── LinkedIn AutoFill Plugin: disparar popup de autorización ──
+  const handleLinkedinAutofill = () => {
+    setLiAutofillError(false)
+    const ok = typeof window.__triggerLiAutofill === 'function' && window.__triggerLiAutofill()
+    if (ok) {
+      setLiAutofillLoading(true)
+    } else {
+      setLiAutofillError(true)
+    }
   }
 
   // ── LinkedIn OAuth: confirmar mini-form → build profileText ──
@@ -2327,6 +2370,40 @@ ${idiomasHtml}
                       <p className="text-slate-500 text-sm leading-relaxed">
                         Copiá cada campo directamente desde tu perfil de LinkedIn.
                       </p>
+                    )}
+
+                    {/* AutoFill LinkedIn Plugin */}
+                    {!liAutofillDone ? (
+                      <div className="rounded-xl overflow-hidden"
+                        style={{ border: '1px solid rgba(0,119,181,0.15)', background: 'rgba(0,119,181,0.03)' }}>
+                        <div className="px-4 py-3 flex items-center justify-between gap-3">
+                          <div className="flex items-center gap-2 min-w-0">
+                            <svg viewBox="0 0 24 24" width="15" height="15" fill="#0077B5" className="shrink-0">
+                              <path d="M19 3A2 2 0 0 1 21 5V19A2 2 0 0 1 19 21H5A2 2 0 0 1 3 19V5A2 2 0 0 1 5 3H19M18.5 18.5V13.2A3.26 3.26 0 0 0 15.24 9.94C14.39 9.94 13.4 10.46 12.92 11.24V10.13H10.13V18.5H12.92V13.57A1.46 1.46 0 0 1 14.38 12.11A1.46 1.46 0 0 1 15.84 13.57V18.5H18.5M6.88 8.56A1.68 1.68 0 0 0 8.56 6.88C8.56 5.95 7.81 5.19 6.88 5.19A1.69 1.69 0 0 0 5.19 6.88C5.19 7.81 5.95 8.56 6.88 8.56M8.27 18.5V10.13H5.5V18.5H8.27Z" />
+                            </svg>
+                            <span className="text-slate-600 text-xs">Autocompletar campos desde LinkedIn</span>
+                          </div>
+                          <button
+                            onClick={handleLinkedinAutofill}
+                            disabled={liAutofillLoading}
+                            className="shrink-0 text-xs font-semibold px-3 py-1.5 rounded-lg transition-all duration-200 active:scale-95 flex items-center gap-1.5"
+                            style={{ background: '#0077B5', color: 'white', opacity: liAutofillLoading ? 0.7 : 1 }}>
+                            {liAutofillLoading
+                              ? <><div className="w-3 h-3 border border-white border-t-transparent rounded-full animate-spin" /><span>Conectando...</span></>
+                              : 'Autocompletar ↗'}
+                          </button>
+                        </div>
+                        {liAutofillError && (
+                          <p className="px-4 pb-3 text-slate-400 text-xs">Plugin pendiente de aprobación — completá los campos manualmente por ahora.</p>
+                        )}
+                      </div>
+                    ) : (
+                      <div className="flex items-center gap-2 rounded-xl px-3 py-2.5 text-xs"
+                        style={{ background: 'rgba(16,185,129,0.06)', border: '1px solid rgba(16,185,129,0.2)', color: '#065f46' }}>
+                        <span>✅</span>
+                        <span>Campos completados desde LinkedIn — revisá y ajustá si querés</span>
+                        <button onClick={() => setLiAutofillDone(false)} className="ml-auto text-slate-400 hover:text-red-400">✕</button>
+                      </div>
                     )}
 
                     {/* Foto de perfil (solo si no viene de LinkedIn) */}
