@@ -1649,7 +1649,7 @@ ${idiomasHtml}
               <h1 className="text-4xl sm:text-5xl font-bold leading-tight tracking-tight" style={{ letterSpacing: '-0.02em' }}>
                 <span className="text-slate-900">Que los reclutadores</span><br />
                 <span style={{ background: 'linear-gradient(135deg, #0ea5e9 0%, #6366f1 100%)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent' }}>
-                  te encuentren a vos
+                  te encuentren en LinkedIn
                 </span>
               </h1>
               <p className="text-slate-600 text-base max-w-sm mx-auto leading-relaxed">
