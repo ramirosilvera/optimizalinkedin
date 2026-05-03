@@ -811,6 +811,9 @@ export default function App() {
           throw new Error(data.error + (data.detail ? ` — ${JSON.stringify(data.detail)}` : ''))
         }
         setLinkedinOAuth(data)
+        setInputMode('form')
+        if (data.picture) setProfilePhotoPreview(data.picture)
+        if (data.name) setFormTitular(t => t.trim() ? t : data.name)
         trackEvent('cv_subido', { metodo: 'linkedin_oauth' })
       })
       .catch(err => {
@@ -1044,14 +1047,18 @@ export default function App() {
         `• ${[e.titulo.trim(), e.institucion.trim()].filter(Boolean).join(' — ')}${e.periodo.trim() ? ` | ${e.periodo.trim()}` : ''}`
       )
       .join('\n')
-    const parts = [`TITULAR PROFESIONAL: ${formTitular.trim()}`]
+    const parts = []
+    if (linkedinOAuth?.name) parts.push(`NOMBRE: ${linkedinOAuth.name}`)
+    if (linkedinOAuth?.email) parts.push(`EMAIL: ${linkedinOAuth.email}`)
+    parts.push(`TITULAR PROFESIONAL: ${formTitular.trim()}`)
     if (formResumen.trim()) parts.push(`RESUMEN / ACERCA DE:\n${formResumen.trim()}`)
     if (expLines) parts.push(`EXPERIENCIA PROFESIONAL:\n${expLines}`)
     if (eduLines) parts.push(`EDUCACIÓN:\n${eduLines}`)
     if (formHabilidades.trim()) parts.push(`HABILIDADES: ${formHabilidades.trim()}`)
+    if (linkedinOAuth?.picture && !profilePhotoPreview) setProfilePhotoPreview(linkedinOAuth.picture)
     setProfileText(parts.join('\n\n'))
     setFormConfirmed(true)
-    trackEvent('cv_subido', { metodo: 'formulario' })
+    trackEvent('cv_subido', { metodo: linkedinOAuth ? 'linkedin_oauth_confirmed' : 'formulario' })
   }
 
   // ── Attempt to fetch LinkedIn profile by URL ──
@@ -1178,7 +1185,7 @@ export default function App() {
     setAnalyzing(true)
     setStep(STEPS.LOADING)
     setAnalysisError('')
-    const modoAnalisis = sinPerfilMode ? 'sin_perfil' : liConfirmed ? 'linkedin' : pdfFileName ? 'pdf' : formConfirmed ? 'formulario' : 'url'
+    const modoAnalisis = sinPerfilMode ? 'sin_perfil' : (linkedinOAuth && formConfirmed) ? 'linkedin' : pdfFileName ? 'pdf' : formConfirmed ? 'formulario' : 'url'
     trackEvent('analyze_click', { metodo: modoAnalisis, texto_largo: profileText.length })
 
     const contextText = qaHistory
@@ -2290,12 +2297,33 @@ ${idiomasHtml}
                 {/* ── MODO FORMULARIO ── */}
                 {inputMode === 'form' && (
                   <div className="space-y-4">
-                    <p className="text-slate-500 text-sm leading-relaxed">
-                      Copiá cada campo directamente desde tu perfil de LinkedIn.
-                    </p>
 
-                    {/* Foto de perfil */}
-                    <div>
+                    {/* Badge LinkedIn conectado */}
+                    {linkedinOAuth && (
+                      <div className="flex items-center gap-3 rounded-xl p-3"
+                        style={{ background: 'rgba(0,119,181,0.06)', border: '1px solid rgba(0,119,181,0.2)' }}>
+                        {linkedinOAuth.picture && (
+                          <img src={linkedinOAuth.picture} alt="foto" className="w-10 h-10 rounded-full object-cover shrink-0"
+                            style={{ border: '2px solid #0077B5' }} />
+                        )}
+                        <div className="flex-1 min-w-0">
+                          <p className="text-slate-800 text-xs font-semibold truncate">✅ {linkedinOAuth.name}</p>
+                          {linkedinOAuth.email && <p className="text-slate-500 text-xs truncate">{linkedinOAuth.email}</p>}
+                        </div>
+                        <button
+                          onClick={() => { setLinkedinOAuth(null); setProfilePhotoPreview(null); setProfilePhoto(null) }}
+                          className="text-xs text-slate-400 hover:text-red-400 shrink-0">✕</button>
+                      </div>
+                    )}
+
+                    {!linkedinOAuth && (
+                      <p className="text-slate-500 text-sm leading-relaxed">
+                        Copiá cada campo directamente desde tu perfil de LinkedIn.
+                      </p>
+                    )}
+
+                    {/* Foto de perfil (solo si no viene de LinkedIn) */}
+                    {!linkedinOAuth && <div>
                       <label className="text-xs font-semibold text-slate-600 uppercase tracking-wide block mb-2">
                         Foto de perfil{' '}
                         <span className="text-slate-400 font-normal normal-case tracking-normal">(opcional — se analiza calidad)</span>
@@ -2319,7 +2347,7 @@ ${idiomasHtml}
                             className="text-xs text-slate-400 hover:text-red-400 transition-colors">✕ Quitar</button>
                         )}
                       </div>
-                    </div>
+                    </div>}
 
                     {/* Titular */}
                     <div>
@@ -2328,11 +2356,11 @@ ${idiomasHtml}
                       </label>
                       <input id="form-titular" type="text" value={formTitular}
                         onChange={e => { setFormTitular(e.target.value); setFormConfirmed(false); setProfileText('') }}
-                        placeholder="Ej: Desarrollador Frontend Senior | React & TypeScript | 10 años"
+                        placeholder={linkedinOAuth ? `Ej: ${linkedinOAuth.name.split(' ')[0]} | Cargo | Industria` : 'Ej: Desarrollador Frontend Senior | React & TypeScript | 10 años'}
                         maxLength={220}
                         className="w-full rounded-xl px-4 py-3 text-sm outline-none"
                         style={INPUT_STYLE} />
-                      <p className="text-slate-400 text-xs mt-1">El texto que aparece debajo de tu nombre en LinkedIn</p>
+                      <p className="text-slate-400 text-xs mt-1">{linkedinOAuth ? 'El texto que aparecerá debajo de tu nombre — completalo o reemplazá el que ya tenés' : 'El texto que aparece debajo de tu nombre en LinkedIn'}</p>
                     </div>
 
                     {/* Resumen */}
@@ -2509,7 +2537,7 @@ ${idiomasHtml}
                     style={{ background: 'white', border: '1px solid rgba(0,119,181,0.15)', boxShadow: '0 2px 12px rgba(0,0,0,0.05)' }}>
 
                     {linkedinAuthLoading && (
-                      <div className="flex flex-col items-center gap-3 py-4 text-center">
+                      <div className="flex flex-col items-center gap-3 py-6 text-center">
                         <div className="w-8 h-8 border-2 border-blue-500 border-t-transparent rounded-full animate-spin" />
                         <p className="text-slate-500 text-sm">Conectando con LinkedIn...</p>
                       </div>
@@ -2526,6 +2554,28 @@ ${idiomasHtml}
                       </div>
                     )}
 
+                    {!linkedinAuthLoading && linkedinOAuth && (
+                      <div className="text-center space-y-3 py-2">
+                        <div className="w-14 h-14 rounded-full overflow-hidden mx-auto" style={{ border: '2px solid #0077B5' }}>
+                          {linkedinOAuth.picture
+                            ? <img src={linkedinOAuth.picture} alt="foto" className="w-full h-full object-cover" />
+                            : <span className="text-2xl flex items-center justify-center h-full">👤</span>
+                          }
+                        </div>
+                        <div>
+                          <p className="text-slate-800 text-sm font-semibold">✅ Conectado como {linkedinOAuth.name}</p>
+                          {linkedinOAuth.email && <p className="text-slate-500 text-xs">{linkedinOAuth.email}</p>}
+                        </div>
+                        <button
+                          onClick={() => setInputMode('form')}
+                          className="w-full py-2.5 rounded-xl font-semibold text-sm text-white"
+                          style={{ background: LI_GRADIENT }}
+                        >
+                          Completar mi perfil →
+                        </button>
+                      </div>
+                    )}
+
                     {!linkedinAuthLoading && !linkedinOAuth && (
                       <>
                         <div className="flex items-center gap-3">
@@ -2537,14 +2587,14 @@ ${idiomasHtml}
                           </div>
                           <div>
                             <p className="text-slate-800 text-sm font-semibold">Conectá con LinkedIn</p>
-                            <p className="text-slate-500 text-xs">Autocompletá nombre y foto. Solo 2 datos más.</p>
+                            <p className="text-slate-500 text-xs">Nombre y foto automáticos. Luego completás experiencia y formación.</p>
                           </div>
                         </div>
                         <div className="rounded-xl p-3 space-y-1.5 text-xs text-slate-600"
                           style={{ background: '#f8fafc', border: '1px solid rgba(0,119,181,0.1)' }}>
                           <p>✔ <strong>Nombre y foto</strong> → automáticos desde tu cuenta</p>
                           <p>✔ <strong>Email</strong> → para enviarte el análisis</p>
-                          <p>✔ <strong>Cargo y formación</strong> → completás en 30 seg</p>
+                          <p>✔ <strong>Experiencia y formación</strong> → completás en 2 min</p>
                         </div>
                         <button
                           onClick={handleLinkedinLogin}
@@ -2552,82 +2602,6 @@ ${idiomasHtml}
                           style={{ background: '#0077B5', cursor: 'pointer' }}
                         >
                           Conectar con LinkedIn →
-                        </button>
-                      </>
-                    )}
-
-                    {!linkedinAuthLoading && linkedinOAuth && (
-                      <>
-                        <div className="flex items-center gap-3">
-                          {linkedinOAuth.picture && (
-                            <img src={linkedinOAuth.picture} alt="foto" className="w-12 h-12 rounded-full object-cover shrink-0"
-                              style={{ border: '2px solid #0077B5' }} />
-                          )}
-                          <div>
-                            <p className="text-slate-800 text-sm font-semibold">Hola, {linkedinOAuth.name} ✅</p>
-                            {linkedinOAuth.email && (
-                              <p className="text-slate-500 text-xs">{linkedinOAuth.email}</p>
-                            )}
-                          </div>
-                        </div>
-
-                        <div className="space-y-3">
-                          <div>
-                            <label className="block text-xs font-semibold text-slate-700 mb-1">
-                              Cargo actual y empresa <span className="text-red-400">*</span>
-                            </label>
-                            <input
-                              type="text"
-                              value={liCargo}
-                              onChange={e => setLiCargo(e.target.value)}
-                              placeholder="Ej: Analista de RRHH en Banco Galicia"
-                              disabled={liConfirmed}
-                              className="w-full rounded-xl px-4 py-2.5 text-sm border outline-none transition"
-                              style={{ border: '1px solid rgba(0,119,181,0.25)', color: '#1e293b' }}
-                            />
-                          </div>
-                          <div>
-                            <label className="block text-xs font-semibold text-slate-700 mb-1">
-                              Formación principal <span className="text-red-400">*</span>
-                            </label>
-                            <input
-                              type="text"
-                              value={liFormacion}
-                              onChange={e => setLiFormacion(e.target.value)}
-                              placeholder="Ej: Lic. Administración de Empresas – UBA"
-                              disabled={liConfirmed}
-                              className="w-full rounded-xl px-4 py-2.5 text-sm border outline-none transition"
-                              style={{ border: '1px solid rgba(0,119,181,0.25)', color: '#1e293b' }}
-                            />
-                          </div>
-                          <div>
-                            <label className="block text-xs font-semibold text-slate-700 mb-1">
-                              Skills principales <span className="text-slate-400">(opcional)</span>
-                            </label>
-                            <input
-                              type="text"
-                              value={liSkills}
-                              onChange={e => setLiSkills(e.target.value)}
-                              placeholder="Ej: Excel, Power BI, liderazgo de equipos"
-                              disabled={liConfirmed}
-                              className="w-full rounded-xl px-4 py-2.5 text-sm border outline-none transition"
-                              style={{ border: '1px solid rgba(0,119,181,0.25)', color: '#1e293b' }}
-                            />
-                          </div>
-                        </div>
-
-                        <button
-                          onClick={handleLinkedinConfirm}
-                          disabled={liConfirmed || !liCargo.trim() || !liFormacion.trim()}
-                          className="w-full py-3 rounded-xl font-semibold text-sm transition-all duration-200"
-                          style={liConfirmed
-                            ? { background: 'rgba(34,197,94,0.08)', border: '1px solid rgba(34,197,94,0.35)', color: '#16a34a', cursor: 'default' }
-                            : (!liCargo.trim() || !liFormacion.trim())
-                              ? { background: 'rgba(0,119,181,0.08)', color: '#64748b', cursor: 'not-allowed', border: '1px solid rgba(0,119,181,0.12)' }
-                              : { background: LI_GRADIENT, color: '#fff', cursor: 'pointer' }
-                          }
-                        >
-                          {liConfirmed ? '✅ Listo — podés analizar tu perfil' : 'Usar estos datos →'}
                         </button>
                       </>
                     )}
