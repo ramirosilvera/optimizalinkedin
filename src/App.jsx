@@ -795,6 +795,11 @@ export default function App() {
     setStep(STEPS.PROFILE_INPUT)
     setInputMode('linkedin')
     setUrlAttempted(true)
+    if (!WORKER_URL) {
+      setLinkedinAuthError('Worker URL no configurada (VITE_WORKER_URL)')
+      setLinkedinAuthLoading(false)
+      return
+    }
     fetch(WORKER_URL, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
@@ -805,9 +810,10 @@ export default function App() {
       }),
     })
       .then(async r => {
-        const data = await r.json()
+        const text = await r.text()
+        let data
+        try { data = JSON.parse(text) } catch { throw new Error(`Worker HTTP ${r.status}: ${text.slice(0, 120)}`) }
         if (data.error) {
-          console.error('[LinkedIn OAuth] error from worker:', data)
           const liError = data.detail?.error_description || data.detail?.error || data.error
           throw new Error(liError)
         }
