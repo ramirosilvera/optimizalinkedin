@@ -686,7 +686,7 @@ export default function App() {
     return () => window.removeEventListener('message', handleYTMessage)
   }, [])
   const [isDragging, setIsDragging] = useState(false)
-  const [inputMode, setInputMode] = useState('pdf') // 'pdf' | 'form'
+  const [inputMode, setInputMode] = useState('linkedin') // 'linkedin' | 'pdf' | 'form' | 'sin_perfil'
   const [linkedinUrl, setLinkedinUrl] = useState('')
   const [urlLoading, setUrlLoading] = useState(false)
   const [urlAttempted, setUrlAttempted] = useState(false)
@@ -804,13 +804,19 @@ export default function App() {
         redirect_uri: window.location.origin + window.location.pathname,
       }),
     })
-      .then(r => r.json())
-      .then(data => {
-        if (data.error) throw new Error(data.error)
+      .then(async r => {
+        const data = await r.json()
+        if (data.error) {
+          console.error('[LinkedIn OAuth] error from worker:', data)
+          throw new Error(data.error + (data.detail ? ` — ${JSON.stringify(data.detail)}` : ''))
+        }
         setLinkedinOAuth(data)
         trackEvent('cv_subido', { metodo: 'linkedin_oauth' })
       })
-      .catch(() => setLinkedinAuthError('No pudimos conectar con LinkedIn. Intentá de nuevo.'))
+      .catch(err => {
+        console.error('[LinkedIn OAuth]', err?.message || err)
+        setLinkedinAuthError('No pudimos conectar con LinkedIn. Verificá que los permisos de la app estén activos e intentá de nuevo.')
+      })
       .finally(() => setLinkedinAuthLoading(false))
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -990,11 +996,16 @@ export default function App() {
 
   // ── LinkedIn OAuth: iniciar redirect ──
   const handleLinkedinLogin = () => {
+    const clientId = import.meta.env.VITE_LINKEDIN_CLIENT_ID
+    if (!clientId || clientId === 'undefined') {
+      setLinkedinAuthError('Configuración pendiente: VITE_LINKEDIN_CLIENT_ID no está definido. El admin debe agregarlo a GitHub Secrets.')
+      return
+    }
     const state = crypto.randomUUID()
     sessionStorage.setItem('li_oauth_state', state)
     const params = new URLSearchParams({
       response_type: 'code',
-      client_id: import.meta.env.VITE_LINKEDIN_CLIENT_ID,
+      client_id: clientId,
       redirect_uri: window.location.origin + window.location.pathname,
       scope: 'openid profile email',
       state,
@@ -1734,6 +1745,7 @@ ${idiomasHtml}
                 Aparecer cuando buscan tu perfil. Pasar los filtros automáticos al postularte. Tener un CV moderno listo para enviar.<br />
                 <strong className="text-slate-800">Todo eso, gratis.</strong>
               </p>
+              <p className="text-slate-400 text-xs">Conectate con LinkedIn en 1 clic o subí tu CV — listo en 2 minutos.</p>
             </div>
 
             <div className="space-y-3">
@@ -2056,69 +2068,16 @@ ${idiomasHtml}
             {!(rateLimitSecs > 0 || rateLimitEvento === 'analisis') && <>
             <div>
               <p className="text-slate-500 text-sm mb-1">Último paso</p>
-              <h2 className="text-2xl sm:text-3xl font-bold text-slate-900">Cargá tu perfil de LinkedIn</h2>
+              <h2 className="text-2xl sm:text-3xl font-bold text-slate-900">Compartí tu perfil</h2>
             </div>
 
-            {/* ── FASE 1: URL ── */}
-            <div className="rounded-2xl p-4 space-y-3"
-              style={{ background: 'white', border: '1px solid rgba(0,119,181,0.12)', boxShadow: '0 2px 12px rgba(0,0,0,0.05)' }}>
-              <div>
-                <p className="text-xs font-semibold text-slate-600 uppercase tracking-wide mb-1">Acceso automático</p>
-                <p className="text-slate-500 text-xs leading-relaxed">Pegá la URL de tu perfil e intentamos leerlo directamente.</p>
-              </div>
-              <div className="flex gap-2">
-                <input
-                  type="url"
-                  value={linkedinUrl}
-                  onChange={e => setLinkedinUrl(e.target.value)}
-                  onKeyDown={e => e.key === 'Enter' && handleUrlAttempt()}
-                  placeholder="https://www.linkedin.com/in/tu-usuario"
-                  disabled={urlLoading}
-                  className="flex-1 rounded-xl px-4 py-2.5 text-sm outline-none"
-                  style={{ background: '#f8fafc', border: '1px solid rgba(0,119,181,0.18)', color: '#0d2137' }}
-                />
-                <button
-                  onClick={handleUrlAttempt}
-                  disabled={!linkedinUrl.trim() || urlLoading}
-                  className="shrink-0 px-4 py-2.5 rounded-xl text-sm font-semibold transition-all duration-200 flex items-center gap-2"
-                  style={linkedinUrl.trim() && !urlLoading
-                    ? { background: LI_GRADIENT, color: '#fff' }
-                    : { background: 'rgba(0,119,181,0.07)', color: '#94a3b8', border: '1px solid rgba(0,119,181,0.12)', cursor: 'not-allowed' }
-                  }
-                >
-                  {urlLoading ? <><Spinner size={4} /><span>Accediendo...</span></> : 'Intentar →'}
-                </button>
-              </div>
-              <div aria-live="polite" aria-atomic="true" className="text-xs">
-                {urlAttempted && profileText && !pdfFileName && !formConfirmed && (
-                  <p className="text-green-600 font-medium">✅ Perfil accedido correctamente — podés analizar tu perfil.</p>
-                )}
-                {urlAttempted && !profileText && linkedinUrl.trim() && !linkedinUrl.trim().match(/^https?:\/\/(www\.)?linkedin\.com\/in\//) && (
-                  <p role="alert" className="text-red-500">La URL debe ser de linkedin.com/in/tu-usuario</p>
-                )}
-                {urlAttempted && !profileText && linkedinUrl.trim().match(/^https?:\/\/(www\.)?linkedin\.com\/in\//) && (
-                  <p className="text-amber-600">LinkedIn bloqueó el acceso automático — es su política de privacidad. Usá una de las opciones de abajo.</p>
-                )}
-                {urlAttempted && !profileText && !linkedinUrl.trim() && (
-                  <p className="text-slate-500">Elegí cómo compartir tu perfil:</p>
-                )}
-              </div>
-              <button
-                onClick={() => { setUrlAttempted(true); setInputMode('pdf') }}
-                className="text-xs text-slate-400 hover:text-slate-600 transition-colors"
-              >
-                Saltar este paso →
-              </button>
-            </div>
-
-            {/* ── FASE 2: Tabs (tras intento o skip) ── */}
-            {urlAttempted && (
+            {/* ── Tabs de input ── */}
               <>
                 <div className="flex rounded-xl overflow-hidden" style={{ border: '1px solid rgba(0,119,181,0.15)' }}>
                   {[
+                    { id: 'linkedin', label: '🔗  LinkedIn' },
                     { id: 'pdf',  label: '📄  PDF / CV' },
                     { id: 'form', label: '✏️  Manual' },
-                    { id: 'linkedin', label: '🔗  LinkedIn' },
                     { id: 'sin_perfil', label: '💡  Sin perfil' },
                   ].map(tab => (
                     <button
@@ -2557,27 +2516,35 @@ ${idiomasHtml}
                     )}
 
                     {linkedinAuthError && (
-                      <div className="rounded-xl p-3 text-xs text-red-600"
+                      <div className="rounded-xl p-3 text-xs text-red-600 space-y-2"
                         style={{ background: 'rgba(254,226,226,0.8)', border: '1px solid #fca5a5' }}>
-                        ⚠️ {linkedinAuthError}
+                        <p>⚠️ {linkedinAuthError}</p>
+                        <button
+                          onClick={() => { setLinkedinAuthError(''); handleLinkedinLogin() }}
+                          className="underline font-semibold"
+                        >Reintentar →</button>
                       </div>
                     )}
 
                     {!linkedinAuthLoading && !linkedinOAuth && (
                       <>
-                        <div className="flex items-start gap-3">
-                          <span className="text-2xl shrink-0">🔗</span>
+                        <div className="flex items-center gap-3">
+                          <div className="w-10 h-10 rounded-full flex items-center justify-center shrink-0"
+                            style={{ background: '#0077B5' }}>
+                            <svg viewBox="0 0 24 24" width="20" height="20" fill="white">
+                              <path d="M19 3A2 2 0 0 1 21 5V19A2 2 0 0 1 19 21H5A2 2 0 0 1 3 19V5A2 2 0 0 1 5 3H19M18.5 18.5V13.2A3.26 3.26 0 0 0 15.24 9.94C14.39 9.94 13.4 10.46 12.92 11.24V10.13H10.13V18.5H12.92V13.57A1.46 1.46 0 0 1 14.38 12.11A1.46 1.46 0 0 1 15.84 13.57V18.5H18.5M6.88 8.56A1.68 1.68 0 0 0 8.56 6.88C8.56 5.95 7.81 5.19 6.88 5.19A1.69 1.69 0 0 0 5.19 6.88C5.19 7.81 5.95 8.56 6.88 8.56M8.27 18.5V10.13H5.5V18.5H8.27Z" />
+                            </svg>
+                          </div>
                           <div>
-                            <p className="text-slate-800 text-sm font-semibold mb-1">Conectá con LinkedIn</p>
-                            <p className="text-slate-500 text-xs leading-relaxed">
-                              Autocompletá tus datos en 1 clic. Solo te pedimos 2 datos más y listo.
-                            </p>
+                            <p className="text-slate-800 text-sm font-semibold">Conectá con LinkedIn</p>
+                            <p className="text-slate-500 text-xs">Autocompletá nombre y foto. Solo 2 datos más.</p>
                           </div>
                         </div>
-                        <div className="space-y-2 text-xs text-slate-600">
-                          <p>✔ Nombre y foto → automáticos</p>
-                          <p>✔ Email → para enviarte el análisis</p>
-                          <p>✔ Cargo y formación → completás en 30 segundos</p>
+                        <div className="rounded-xl p-3 space-y-1.5 text-xs text-slate-600"
+                          style={{ background: '#f8fafc', border: '1px solid rgba(0,119,181,0.1)' }}>
+                          <p>✔ <strong>Nombre y foto</strong> → automáticos desde tu cuenta</p>
+                          <p>✔ <strong>Email</strong> → para enviarte el análisis</p>
+                          <p>✔ <strong>Cargo y formación</strong> → completás en 30 seg</p>
                         </div>
                         <button
                           onClick={handleLinkedinLogin}
@@ -2667,7 +2634,6 @@ ${idiomasHtml}
                   </div>
                 )}
               </>
-            )}
 
             {/* Resumen de respuestas */}
             <div className="rounded-xl p-4"
