@@ -90,7 +90,7 @@ export default {
     const { model: modelField, ...geminiBody } = body
     const model = ALLOWED_MODELS.has(modelField) ? modelField : DEFAULT_MODEL
 
-    const geminiKeys = (env.GEMINI_API_KEY || '').split(',').map(k => k.trim()).filter(Boolean)
+    const geminiKeys = (env.GEMINI_API_KEYS || env.GEMINI_API_KEY || '').split(',').map(k => k.trim()).filter(Boolean)
     if (!geminiKeys.length) {
       return new Response(JSON.stringify({ error: { message: 'GEMINI_API_KEY no configurada' } }), {
         status: 500,
