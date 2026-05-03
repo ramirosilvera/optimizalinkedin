@@ -3,6 +3,7 @@ const DEFAULT_MODEL = 'gemini-2.5-flash-lite'
 const GEMINI_TIMEOUT_MS = 55_000
 const ALLOWED_ORIGINS = new Set([
   'https://optimizalinkedin.com',
+  'https://ramirosilvera.github.io',
   'http://localhost:5173',
   'http://localhost:4173',
 ])
@@ -28,6 +29,38 @@ export default {
 
     const body = await request.json().catch(() => null)
     if (!body) return new Response('Invalid JSON', { status: 400 })
+
+    if (body.action === 'linkedin_auth') {
+      const { code, redirect_uri } = body
+      const corsHeaders = { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': origin }
+      if (!code || !redirect_uri) {
+        return new Response(JSON.stringify({ error: 'missing_params' }), { status: 400, headers: corsHeaders })
+      }
+      const tokenRes = await fetch('https://www.linkedin.com/oauth/v2/accessToken', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: new URLSearchParams({
+          grant_type: 'authorization_code',
+          code,
+          redirect_uri,
+          client_id: env.LINKEDIN_CLIENT_ID,
+          client_secret: env.LINKEDIN_CLIENT_SECRET,
+        }),
+      })
+      const tokenData = await tokenRes.json()
+      if (!tokenData.access_token) {
+        return new Response(JSON.stringify({ error: 'auth_failed', detail: tokenData }), { status: 400, headers: corsHeaders })
+      }
+      const userRes = await fetch('https://api.linkedin.com/v2/userinfo', {
+        headers: { Authorization: `Bearer ${tokenData.access_token}` },
+      })
+      const user = await userRes.json()
+      return new Response(JSON.stringify({
+        name: user.name,
+        email: user.email,
+        picture: user.picture,
+      }), { status: 200, headers: corsHeaders })
+    }
 
     if (body.action === 'fetch_url') {
       const { url } = body

@@ -701,6 +701,15 @@ export default function App() {
   const [formConfirmed, setFormConfirmed] = useState(false)
   const [sinPerfilMode, setSinPerfilMode] = useState(false)
 
+  // LinkedIn OAuth
+  const [linkedinOAuth, setLinkedinOAuth] = useState(null)
+  const [linkedinAuthLoading, setLinkedinAuthLoading] = useState(false)
+  const [linkedinAuthError, setLinkedinAuthError] = useState('')
+  const [liCargo, setLiCargo] = useState('')
+  const [liFormacion, setLiFormacion] = useState('')
+  const [liSkills, setLiSkills] = useState('')
+  const [liConfirmed, setLiConfirmed] = useState(false)
+
   // Results
   const [result, setResult] = useState(null)
   const [analysisError, setAnalysisError] = useState('')
@@ -774,6 +783,37 @@ export default function App() {
     return () => window.removeEventListener('beforeunload', handler)
   }, [step])
 
+  // LinkedIn OAuth callback: detecta ?code= al cargar la página
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search)
+    const code = params.get('code')
+    const state = params.get('state')
+    if (!code || state !== sessionStorage.getItem('li_oauth_state')) return
+    sessionStorage.removeItem('li_oauth_state')
+    window.history.replaceState({}, '', window.location.pathname)
+    setLinkedinAuthLoading(true)
+    setStep(STEPS.PROFILE_INPUT)
+    setInputMode('linkedin')
+    setUrlAttempted(true)
+    fetch(WORKER_URL, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        action: 'linkedin_auth',
+        code,
+        redirect_uri: window.location.origin + window.location.pathname,
+      }),
+    })
+      .then(r => r.json())
+      .then(data => {
+        if (data.error) throw new Error(data.error)
+        setLinkedinOAuth(data)
+        trackEvent('cv_subido', { metodo: 'linkedin_oauth' })
+      })
+      .catch(() => setLinkedinAuthError('No pudimos conectar con LinkedIn. Intentá de nuevo.'))
+      .finally(() => setLinkedinAuthLoading(false))
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
+
   // Revocar object URL de foto al cambiar o desmontar (evita memory leak)
   useEffect(() => {
     return () => { if (profilePhotoPreview) URL.revokeObjectURL(profilePhotoPreview) }
@@ -829,6 +869,14 @@ export default function App() {
     setFormExperiencias([{ cargo: '', empresa: '', periodo: '', descripcion: '' }])
     setFormEducacion([{ institucion: '', titulo: '', periodo: '' }])
     setFormConfirmed(false)
+    setSinPerfilMode(false)
+    setLinkedinOAuth(null)
+    setLinkedinAuthLoading(false)
+    setLinkedinAuthError('')
+    setLiCargo('')
+    setLiFormacion('')
+    setLiSkills('')
+    setLiConfirmed(false)
     setResult(null)
     setAnalysisError('')
     setAnalyzing(false)
@@ -938,6 +986,36 @@ export default function App() {
     if (mode === 'pdf') setFormConfirmed(false)
     setPdfFileName('')
     setPdfError('')
+  }
+
+  // ── LinkedIn OAuth: iniciar redirect ──
+  const handleLinkedinLogin = () => {
+    const state = crypto.randomUUID()
+    sessionStorage.setItem('li_oauth_state', state)
+    const params = new URLSearchParams({
+      response_type: 'code',
+      client_id: import.meta.env.VITE_LINKEDIN_CLIENT_ID,
+      redirect_uri: window.location.origin + window.location.pathname,
+      scope: 'openid profile email',
+      state,
+    })
+    trackEvent('linkedin_oauth_initiated')
+    window.location.href = `https://www.linkedin.com/oauth/v2/authorization?${params}`
+  }
+
+  // ── LinkedIn OAuth: confirmar mini-form → build profileText ──
+  const handleLinkedinConfirm = () => {
+    if (!liCargo.trim() || !liFormacion.trim()) return
+    const text = [
+      `Nombre: ${linkedinOAuth.name}`,
+      `Cargo actual: ${liCargo.trim()}`,
+      `Formación: ${liFormacion.trim()}`,
+      liSkills.trim() ? `Skills: ${liSkills.trim()}` : '',
+    ].filter(Boolean).join('\n')
+    setProfileText(text)
+    if (linkedinOAuth.picture) setProfilePhotoPreview(linkedinOAuth.picture)
+    setLiConfirmed(true)
+    trackEvent('cv_subido', { metodo: 'linkedin_oauth_confirmed' })
   }
 
   // ── Confirm form data → build profileText ──
@@ -1089,7 +1167,7 @@ export default function App() {
     setAnalyzing(true)
     setStep(STEPS.LOADING)
     setAnalysisError('')
-    const modoAnalisis = sinPerfilMode ? 'sin_perfil' : pdfFileName ? 'pdf' : formConfirmed ? 'formulario' : 'url'
+    const modoAnalisis = sinPerfilMode ? 'sin_perfil' : liConfirmed ? 'linkedin' : pdfFileName ? 'pdf' : formConfirmed ? 'formulario' : 'url'
     trackEvent('analyze_click', { metodo: modoAnalisis, texto_largo: profileText.length })
 
     const contextText = qaHistory
@@ -2040,6 +2118,7 @@ ${idiomasHtml}
                   {[
                     { id: 'pdf',  label: '📄  PDF / CV' },
                     { id: 'form', label: '✏️  Manual' },
+                    { id: 'linkedin', label: '🔗  LinkedIn' },
                     { id: 'sin_perfil', label: '💡  Sin perfil' },
                   ].map(tab => (
                     <button
@@ -2050,9 +2129,17 @@ ${idiomasHtml}
                           setProfileText('')
                           setPdfFileName('')
                           setFormConfirmed(false)
+                          setLiConfirmed(false)
                           trackEvent('input_mode_switched', { modo: 'sin_perfil' })
+                        } else if (tab.id === 'linkedin') {
+                          setSinPerfilMode(false)
+                          setProfileText('')
+                          setPdfFileName('')
+                          setFormConfirmed(false)
+                          trackEvent('input_mode_switched', { modo: 'linkedin' })
                         } else {
                           setSinPerfilMode(false)
+                          setLiConfirmed(false)
                           handleInputModeSwitch(tab.id)
                         }
                         setInputMode(tab.id)
@@ -2454,6 +2541,129 @@ ${idiomasHtml}
                     >
                       {sinPerfilMode ? '✅ Listo — podés analizar tu perfil' : 'Recibí mi diagnóstico base →'}
                     </button>
+                  </div>
+                )}
+
+                {/* ── MODO LINKEDIN OAUTH ── */}
+                {inputMode === 'linkedin' && (
+                  <div className="rounded-2xl p-5 space-y-4"
+                    style={{ background: 'white', border: '1px solid rgba(0,119,181,0.15)', boxShadow: '0 2px 12px rgba(0,0,0,0.05)' }}>
+
+                    {linkedinAuthLoading && (
+                      <div className="flex flex-col items-center gap-3 py-4 text-center">
+                        <div className="w-8 h-8 border-2 border-blue-500 border-t-transparent rounded-full animate-spin" />
+                        <p className="text-slate-500 text-sm">Conectando con LinkedIn...</p>
+                      </div>
+                    )}
+
+                    {linkedinAuthError && (
+                      <div className="rounded-xl p-3 text-xs text-red-600"
+                        style={{ background: 'rgba(254,226,226,0.8)', border: '1px solid #fca5a5' }}>
+                        ⚠️ {linkedinAuthError}
+                      </div>
+                    )}
+
+                    {!linkedinAuthLoading && !linkedinOAuth && (
+                      <>
+                        <div className="flex items-start gap-3">
+                          <span className="text-2xl shrink-0">🔗</span>
+                          <div>
+                            <p className="text-slate-800 text-sm font-semibold mb-1">Conectá con LinkedIn</p>
+                            <p className="text-slate-500 text-xs leading-relaxed">
+                              Autocompletá tus datos en 1 clic. Solo te pedimos 2 datos más y listo.
+                            </p>
+                          </div>
+                        </div>
+                        <div className="space-y-2 text-xs text-slate-600">
+                          <p>✔ Nombre y foto → automáticos</p>
+                          <p>✔ Email → para enviarte el análisis</p>
+                          <p>✔ Cargo y formación → completás en 30 segundos</p>
+                        </div>
+                        <button
+                          onClick={handleLinkedinLogin}
+                          className="w-full py-3 rounded-xl font-semibold text-sm text-white transition-all duration-200"
+                          style={{ background: '#0077B5', cursor: 'pointer' }}
+                        >
+                          Conectar con LinkedIn →
+                        </button>
+                      </>
+                    )}
+
+                    {!linkedinAuthLoading && linkedinOAuth && (
+                      <>
+                        <div className="flex items-center gap-3">
+                          {linkedinOAuth.picture && (
+                            <img src={linkedinOAuth.picture} alt="foto" className="w-12 h-12 rounded-full object-cover shrink-0"
+                              style={{ border: '2px solid #0077B5' }} />
+                          )}
+                          <div>
+                            <p className="text-slate-800 text-sm font-semibold">Hola, {linkedinOAuth.name} ✅</p>
+                            {linkedinOAuth.email && (
+                              <p className="text-slate-500 text-xs">{linkedinOAuth.email}</p>
+                            )}
+                          </div>
+                        </div>
+
+                        <div className="space-y-3">
+                          <div>
+                            <label className="block text-xs font-semibold text-slate-700 mb-1">
+                              Cargo actual y empresa <span className="text-red-400">*</span>
+                            </label>
+                            <input
+                              type="text"
+                              value={liCargo}
+                              onChange={e => setLiCargo(e.target.value)}
+                              placeholder="Ej: Analista de RRHH en Banco Galicia"
+                              disabled={liConfirmed}
+                              className="w-full rounded-xl px-4 py-2.5 text-sm border outline-none transition"
+                              style={{ border: '1px solid rgba(0,119,181,0.25)', color: '#1e293b' }}
+                            />
+                          </div>
+                          <div>
+                            <label className="block text-xs font-semibold text-slate-700 mb-1">
+                              Formación principal <span className="text-red-400">*</span>
+                            </label>
+                            <input
+                              type="text"
+                              value={liFormacion}
+                              onChange={e => setLiFormacion(e.target.value)}
+                              placeholder="Ej: Lic. Administración de Empresas – UBA"
+                              disabled={liConfirmed}
+                              className="w-full rounded-xl px-4 py-2.5 text-sm border outline-none transition"
+                              style={{ border: '1px solid rgba(0,119,181,0.25)', color: '#1e293b' }}
+                            />
+                          </div>
+                          <div>
+                            <label className="block text-xs font-semibold text-slate-700 mb-1">
+                              Skills principales <span className="text-slate-400">(opcional)</span>
+                            </label>
+                            <input
+                              type="text"
+                              value={liSkills}
+                              onChange={e => setLiSkills(e.target.value)}
+                              placeholder="Ej: Excel, Power BI, liderazgo de equipos"
+                              disabled={liConfirmed}
+                              className="w-full rounded-xl px-4 py-2.5 text-sm border outline-none transition"
+                              style={{ border: '1px solid rgba(0,119,181,0.25)', color: '#1e293b' }}
+                            />
+                          </div>
+                        </div>
+
+                        <button
+                          onClick={handleLinkedinConfirm}
+                          disabled={liConfirmed || !liCargo.trim() || !liFormacion.trim()}
+                          className="w-full py-3 rounded-xl font-semibold text-sm transition-all duration-200"
+                          style={liConfirmed
+                            ? { background: 'rgba(34,197,94,0.08)', border: '1px solid rgba(34,197,94,0.35)', color: '#16a34a', cursor: 'default' }
+                            : (!liCargo.trim() || !liFormacion.trim())
+                              ? { background: 'rgba(0,119,181,0.08)', color: '#64748b', cursor: 'not-allowed', border: '1px solid rgba(0,119,181,0.12)' }
+                              : { background: LI_GRADIENT, color: '#fff', cursor: 'pointer' }
+                          }
+                        >
+                          {liConfirmed ? '✅ Listo — podés analizar tu perfil' : 'Usar estos datos →'}
+                        </button>
+                      </>
+                    )}
                   </div>
                 )}
               </>
