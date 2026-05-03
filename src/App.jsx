@@ -801,14 +801,15 @@ export default function App() {
       body: JSON.stringify({
         action: 'linkedin_auth',
         code,
-        redirect_uri: window.location.origin + window.location.pathname,
+        redirect_uri: window.location.origin + '/',
       }),
     })
       .then(async r => {
         const data = await r.json()
         if (data.error) {
           console.error('[LinkedIn OAuth] error from worker:', data)
-          throw new Error(data.error + (data.detail ? ` — ${JSON.stringify(data.detail)}` : ''))
+          const liError = data.detail?.error_description || data.detail?.error || data.error
+          throw new Error(liError)
         }
         setLinkedinOAuth(data)
         setInputMode('form')
@@ -818,7 +819,7 @@ export default function App() {
       })
       .catch(err => {
         console.error('[LinkedIn OAuth]', err?.message || err)
-        setLinkedinAuthError('No pudimos conectar con LinkedIn. Verificá que los permisos de la app estén activos e intentá de nuevo.')
+        setLinkedinAuthError(err?.message || 'Error desconocido al conectar con LinkedIn')
       })
       .finally(() => setLinkedinAuthLoading(false))
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
@@ -1009,7 +1010,7 @@ export default function App() {
     const params = new URLSearchParams({
       response_type: 'code',
       client_id: clientId,
-      redirect_uri: window.location.origin + window.location.pathname,
+      redirect_uri: window.location.origin + '/',
       scope: 'openid profile email',
       state,
     })
