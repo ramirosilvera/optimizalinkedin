@@ -1644,16 +1644,17 @@ ${idiomasHtml}
             <div className="space-y-5">
               <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full text-xs font-semibold tracking-wide badge-shimmer"
                 style={{ border: '1px solid rgba(0,119,181,0.4)', color: '#0077B5' }}>
-                ✦ &nbsp;Diagnóstico con criterio de headhunter
+                ✦ &nbsp;Más entrevistas. Sin buscar más.
               </div>
               <h1 className="text-4xl sm:text-5xl font-bold leading-tight tracking-tight" style={{ letterSpacing: '-0.02em' }}>
-                <span className="text-slate-900">Tu perfil de LinkedIn</span><br />
+                <span className="text-slate-900">Que los reclutadores</span><br />
                 <span style={{ background: 'linear-gradient(135deg, #0ea5e9 0%, #6366f1 100%)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent' }}>
-                  ¿habla por vos?
+                  te encuentren a vos
                 </span>
               </h1>
               <p className="text-slate-600 text-base max-w-sm mx-auto leading-relaxed">
-                Un reclutador decide en <strong className="text-slate-800">6 segundos</strong> si seguís en carrera. Descubrí qué ve — y qué mejorar — con un análisis gratuito basado en criterios reales de headhunter.
+                Aparecer cuando buscan tu perfil. Pasar los filtros automáticos al postularte. Tener un CV moderno listo para enviar.<br />
+                <strong className="text-slate-800">Todo eso, gratis.</strong>
               </p>
             </div>
 
@@ -1670,9 +1671,9 @@ ${idiomasHtml}
 
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
               {[
-                { icon: '🎯', label: 'Headhunter', text: 'Diagnóstico profesional real', accent: '#0ea5e9' },
-                { icon: '🔍', label: 'SEO',         text: 'Aparecer en búsquedas clave',  accent: '#6366f1' },
-                { icon: '⚡', label: '6 segundos',  text: 'Test de primer impacto',        accent: '#0d9488' },
+                { icon: '📬', label: 'Que te contacten',  text: 'Aparecer en búsquedas de reclutadores que buscan tu perfil exacto', accent: '#0ea5e9' },
+                { icon: '✅', label: 'Pasá los filtros',  text: 'ATS-compatible: que tu postulación no quede fuera por un algoritmo', accent: '#6366f1' },
+                { icon: '📄', label: 'CV listo hoy',      text: 'Un CV moderno de 1 página, listo para enviar en cualquier proceso', accent: '#0d9488' },
               ].map(item => (
                 <div key={item.label} className="rounded-2xl p-4 text-center relative overflow-hidden"
                   style={{ background: 'white', border: '1px solid rgba(0,119,181,0.12)', boxShadow: '0 2px 8px rgba(0,0,0,0.05)' }}>
