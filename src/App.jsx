@@ -21,6 +21,7 @@ function makeRateLimitError() {
 const STEPS = {
   WELCOME: 0, QUESTIONS: 1, PROFILE_INPUT: 2, LOADING: 3, RESULTS: 4,
   INTERVIEW_INTRO: 5, INTERVIEW: 6, INTERVIEW_FEEDBACK: 7, STAR_TRAINING: 8,
+  MODE_SELECT: 9,
 }
 
 function RateLimitUI({ secs, evento, email, onEmailChange, sent, loading, onSubmit }) {
@@ -1807,7 +1808,7 @@ ${idiomasHtml}
 
             <div className="space-y-3">
               <button
-                onClick={() => { trackEvent('click_empezar_analisis', { location: 'hero' }); setStep(STEPS.QUESTIONS) }}
+                onClick={() => { trackEvent('click_empezar_analisis', { location: 'hero' }); setStep(STEPS.MODE_SELECT) }}
                 className="btn-glow w-full text-white font-semibold py-4 px-8 rounded-2xl text-base"
                 style={{ background: 'linear-gradient(135deg, #0077B5 0%, #0ea5e9 100%)' }}
               >
@@ -1836,7 +1837,7 @@ ${idiomasHtml}
             {/* ── CTA secundario post-scroll ── */}
             <div className="space-y-3 pt-2">
               <button
-                onClick={() => { trackEvent('click_empezar_analisis', { location: 'post_scroll' }); setStep(STEPS.QUESTIONS) }}
+                onClick={() => { trackEvent('click_empezar_analisis', { location: 'post_scroll' }); setStep(STEPS.MODE_SELECT) }}
                 className="btn-glow w-full text-white font-semibold py-4 px-8 rounded-2xl text-base"
                 style={{ background: 'linear-gradient(135deg, #0077B5 0%, #0ea5e9 100%)' }}
               >
@@ -2009,6 +2010,93 @@ ${idiomasHtml}
 
             </div>
 
+          </div>
+        )}
+
+        {/* ── MODE SELECT ── */}
+        {step === STEPS.MODE_SELECT && (
+          <div className="step-transition space-y-8">
+            <Logo />
+
+            <div className="text-center space-y-2">
+              <h2 className="text-2xl font-bold text-slate-900 leading-tight" style={{ letterSpacing: '-0.02em' }}>
+                ¿En qué querés<br />trabajar hoy?
+              </h2>
+              <p className="text-slate-500 text-sm">Elegí una herramienta para empezar</p>
+            </div>
+
+            <div className="space-y-3">
+
+              {/* Diagnóstico LinkedIn + CV */}
+              <button
+                onClick={() => { trackEvent('seleccion_modo', { modo: 'diagnostico' }); setStep(STEPS.QUESTIONS) }}
+                className="w-full text-left rounded-2xl overflow-hidden transition-all duration-200 active:scale-[0.98]"
+                style={{ background: 'white', border: '1px solid rgba(0,119,181,0.15)', boxShadow: '0 2px 8px rgba(0,0,0,0.05)', borderLeft: '4px solid #0077B5' }}>
+                <div className="flex items-center gap-4 p-4">
+                  <div className="w-11 h-11 rounded-xl flex items-center justify-center shrink-0"
+                    style={{ background: 'rgba(0,119,181,0.1)' }}>
+                    <svg viewBox="0 0 24 24" width="22" height="22" fill="#0077B5">
+                      <path d="M19 3A2 2 0 0 1 21 5V19A2 2 0 0 1 19 21H5A2 2 0 0 1 3 19V5A2 2 0 0 1 5 3H19M18.5 18.5V13.2A3.26 3.26 0 0 0 15.24 9.94C14.39 9.94 13.4 10.46 12.92 11.24V10.13H10.13V18.5H12.92V13.57A1.46 1.46 0 0 1 14.38 12.11A1.46 1.46 0 0 1 15.84 13.57V18.5H18.5M6.88 8.56A1.68 1.68 0 0 0 8.56 6.88C8.56 5.95 7.81 5.19 6.88 5.19A1.69 1.69 0 0 0 5.19 6.88C5.19 7.81 5.95 8.56 6.88 8.56M8.27 18.5V10.13H5.5V18.5H8.27Z" />
+                    </svg>
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 mb-0.5 flex-wrap">
+                      <p className="text-slate-900 font-semibold text-sm">Diagnóstico LinkedIn + CV</p>
+                      <span className="text-[10px] font-bold px-2 py-0.5 rounded-full text-white shrink-0"
+                        style={{ background: '#0077B5' }}>Más popular</span>
+                    </div>
+                    <p className="text-slate-500 text-xs leading-snug">Optimizá tu perfil con criterio de headhunter y obtené un CV listo para enviar</p>
+                  </div>
+                  <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="#cbd5e1" strokeWidth="2.5" className="shrink-0">
+                    <path d="M9 18l6-6-6-6" strokeLinecap="round" strokeLinejoin="round" />
+                  </svg>
+                </div>
+              </button>
+
+              {/* Simulador de entrevista */}
+              <button
+                onClick={() => { trackEvent('seleccion_modo', { modo: 'entrevista' }); resetInterview(); setStep(STEPS.INTERVIEW_INTRO) }}
+                className="w-full text-left rounded-2xl overflow-hidden transition-all duration-200 active:scale-[0.98]"
+                style={{ background: 'white', border: '1px solid rgba(99,102,241,0.15)', boxShadow: '0 2px 8px rgba(0,0,0,0.05)', borderLeft: '4px solid #6366f1' }}>
+                <div className="flex items-center gap-4 p-4">
+                  <div className="w-11 h-11 rounded-xl flex items-center justify-center shrink-0 text-xl"
+                    style={{ background: 'rgba(99,102,241,0.1)' }}>🎙️</div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-slate-900 font-semibold text-sm mb-0.5">Simulador de entrevista</p>
+                    <p className="text-slate-500 text-xs leading-snug">Practicá 5 preguntas reales con feedback instantáneo de IA</p>
+                  </div>
+                  <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="#cbd5e1" strokeWidth="2.5" className="shrink-0">
+                    <path d="M9 18l6-6-6-6" strokeLinecap="round" strokeLinejoin="round" />
+                  </svg>
+                </div>
+              </button>
+
+              {/* Entrenamiento STAR */}
+              <button
+                onClick={() => { trackEvent('seleccion_modo', { modo: 'star' }); setStarPhase('theory'); setStep(STEPS.STAR_TRAINING) }}
+                className="w-full text-left rounded-2xl overflow-hidden transition-all duration-200 active:scale-[0.98]"
+                style={{ background: 'white', border: '1px solid rgba(13,148,136,0.15)', boxShadow: '0 2px 8px rgba(0,0,0,0.05)', borderLeft: '4px solid #0d9488' }}>
+                <div className="flex items-center gap-4 p-4">
+                  <div className="w-11 h-11 rounded-xl flex items-center justify-center shrink-0 text-xl"
+                    style={{ background: 'rgba(13,148,136,0.1)' }}>⭐</div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-slate-900 font-semibold text-sm mb-0.5">Entrenamiento STAR</p>
+                    <p className="text-slate-500 text-xs leading-snug">Aprendé a responder preguntas de comportamiento con estructura y claridad</p>
+                  </div>
+                  <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="#cbd5e1" strokeWidth="2.5" className="shrink-0">
+                    <path d="M9 18l6-6-6-6" strokeLinecap="round" strokeLinejoin="round" />
+                  </svg>
+                </div>
+              </button>
+
+            </div>
+
+            <button
+              onClick={() => setStep(STEPS.WELCOME)}
+              className="w-full text-center text-slate-400 text-sm py-2 transition-colors"
+              style={{ background: 'none', border: 'none' }}>
+              ← Volver al inicio
+            </button>
           </div>
         )}
 
@@ -3168,11 +3256,11 @@ ${idiomasHtml}
                 Empezar entrevista →
               </button>
               <button
-                onClick={() => setStep(STEPS.RESULTS)}
+                onClick={() => result ? setStep(STEPS.RESULTS) : setStep(STEPS.MODE_SELECT)}
                 className="w-full font-medium py-3 rounded-2xl text-sm transition-all"
                 style={BTN_BACK_STYLE}
               >
-                ← Volver a mis resultados
+                {result ? '← Volver a mis resultados' : '← Volver'}
               </button>
             </div>
             <p className="text-slate-400 text-xs text-center">
@@ -3516,11 +3604,11 @@ ${idiomasHtml}
                 </div>
 
                 <button
-                  onClick={() => setStep(STEPS.RESULTS)}
+                  onClick={() => result ? setStep(STEPS.RESULTS) : setStep(STEPS.MODE_SELECT)}
                   className="w-full font-semibold py-4 rounded-2xl text-sm"
                   style={BTN_BACK_STYLE}
                 >
-                  ← Volver a mi análisis
+                  {result ? '← Volver a mi análisis' : '← Volver'}
                 </button>
               </>
             )}
@@ -3719,9 +3807,9 @@ ${idiomasHtml}
                   </div>
                 )}
 
-                <button onClick={() => setStep(STEPS.RESULTS)}
+                <button onClick={() => result ? setStep(STEPS.RESULTS) : setStep(STEPS.MODE_SELECT)}
                   className="w-full py-3 rounded-2xl text-sm font-semibold" style={BTN_BACK_STYLE}>
-                  ← Volver a mi análisis
+                  {result ? '← Volver a mi análisis' : '← Volver'}
                 </button>
               </>
             )}
