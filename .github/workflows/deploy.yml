@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - claude/linkedin-profile-optimizer-5uHPM
+      - claude/premium-cv-generator-wlVb3
 
 permissions:
   contents: read
