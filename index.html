@@ -61,5 +61,39 @@
   <body>
     <div id="root"></div>
     <script type="module" src="/src/main.jsx"></script>
+
+    <!-- LinkedIn AutoFill Plugin -->
+    <script src="https://www.linkedin.com/autofill/js/autofill.js" type="text/javascript" async></script>
+    <div id="li-autofill-host" style="visibility:hidden;position:fixed;top:0;left:0;width:0;height:0;overflow:hidden;pointer-events:none">
+      <form id="li-autofill-form">
+        <script type="IN/Form2" data-client-id="779mlq95upx9wh" data-callback="__liAutofillDone"></script>
+        <input type="text" data-li-field="firstName" />
+        <input type="text" data-li-field="lastName" />
+        <input type="text" data-li-field="headline" />
+        <input type="text" data-li-field="summary" />
+        <input type="text" data-li-field="company" />
+        <input type="text" data-li-field="title" />
+        <input type="text" data-li-field="emailAddress" />
+      </form>
+    </div>
+    <script>
+      window.__liAutofillDone = function() {
+        var form = document.getElementById('li-autofill-form');
+        if (!form) return;
+        var detail = {};
+        var fields = ['firstName','lastName','headline','summary','company','title','emailAddress'];
+        fields.forEach(function(f) {
+          var el = form.querySelector('[data-li-field="' + f + '"]');
+          if (el && el.value) detail[f] = el.value;
+        });
+        window.dispatchEvent(new CustomEvent('li-autofill', { detail: detail }));
+      };
+      window.__triggerLiAutofill = function() {
+        var btn = document.querySelector('#li-autofill-host .IN-widget button, #li-autofill-host [type=submit]');
+        if (btn) { btn.click(); return; }
+        // Fallback: dispatch error
+        window.dispatchEvent(new CustomEvent('li-autofill-error'));
+      };
+    </script>
   </body>
 </html>

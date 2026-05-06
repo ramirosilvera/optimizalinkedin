@@ -52,6 +52,44 @@ export default {
       }
     }
 
+    if (body.action === 'linkedin_auth') {
+      const corsHeaders = { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': origin }
+      const { code, redirect_uri } = body
+      if (!code || !redirect_uri) {
+        return new Response(JSON.stringify({ error: 'Faltan parámetros: code y redirect_uri son requeridos.' }), { status: 400, headers: corsHeaders })
+      }
+      try {
+        const tokenRes = await fetch('https://www.linkedin.com/oauth/v2/accessToken', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+          body: new URLSearchParams({
+            grant_type: 'authorization_code',
+            code,
+            redirect_uri,
+            client_id: env.LINKEDIN_CLIENT_ID || '',
+            client_secret: env.LINKEDIN_CLIENT_SECRET || '',
+          }),
+        })
+        const tokenData = await tokenRes.json()
+        if (!tokenData.access_token) {
+          return new Response(JSON.stringify({ error: tokenData.error_description || 'Error al obtener el token de LinkedIn.' }), { status: 400, headers: corsHeaders })
+        }
+        const userRes = await fetch('https://api.linkedin.com/v2/userinfo', {
+          headers: { Authorization: `Bearer ${tokenData.access_token}` },
+        })
+        const user = await userRes.json()
+        return new Response(JSON.stringify({
+          name: user.name || [user.given_name, user.family_name].filter(Boolean).join(' '),
+          email: user.email,
+          picture: user.picture,
+          headline: user.headline,
+          summary: user.summary,
+        }), { status: 200, headers: corsHeaders })
+      } catch (err) {
+        return new Response(JSON.stringify({ error: 'Error de conexión con LinkedIn. Intentá de nuevo.' }), { status: 502, headers: corsHeaders })
+      }
+    }
+
     if (!body.contents) return new Response('Missing required field: contents', { status: 400 })
 
     const { model: modelField, ...geminiBody } = body

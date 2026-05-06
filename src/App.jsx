@@ -15,6 +15,7 @@ function parseGeminiError(status, body) {
 const STEPS = {
   WELCOME: 0, QUESTIONS: 1, PROFILE_INPUT: 2, LOADING: 3, RESULTS: 4,
   INTERVIEW_INTRO: 5, INTERVIEW: 6, INTERVIEW_FEEDBACK: 7, STAR_TRAINING: 8,
+  MODE_SELECT: 9,
 }
 
 // ── Shared style tokens ─────────────────────────────────────────
@@ -754,6 +755,74 @@ export default function App() {
   const [cvFinalData, setCvFinalData] = useState(null)
   const [cvContacto, setCvContacto] = useState(null)
 
+  // LinkedIn OAuth
+  const [linkedinOAuth, setLinkedinOAuth] = useState(null)
+  const [linkedinAuthLoading, setLinkedinAuthLoading] = useState(false)
+  const [linkedinAuthError, setLinkedinAuthError] = useState('')
+  // LinkedIn AutoFill Plugin
+  const [liAutofillDone, setLiAutofillDone] = useState(false)
+  const [liAutofillLoading, setLiAutofillLoading] = useState(false)
+  const [liAutofillError, setLiAutofillError] = useState(false)
+
+  // LinkedIn OAuth callback — lee ?code=&state= del URL al cargar
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search)
+    const code = params.get('code')
+    const state = params.get('state')
+    if (!code || !state) return
+    const savedState = sessionStorage.getItem('li_oauth_state')
+    if (state !== savedState) return
+    sessionStorage.removeItem('li_oauth_state')
+    // Limpiar URL sin recargar
+    window.history.replaceState({}, '', window.location.pathname)
+    const redirectUri = window.location.origin + window.location.pathname
+    setLinkedinAuthLoading(true)
+    setLinkedinAuthError('')
+    fetch(WORKER_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'linkedin_auth', code, redirect_uri: redirectUri }),
+    })
+      .then(r => r.json())
+      .then(data => {
+        if (data.error) { setLinkedinAuthError(data.error); setLinkedinAuthLoading(false); return }
+        setLinkedinOAuth(data)
+        setLinkedinAuthLoading(false)
+        setInputMode('linkedin')
+        setUrlAttempted(true)
+        setStep(STEPS.PROFILE_INPUT)
+      })
+      .catch(() => { setLinkedinAuthError('Error de conexión. Intentá de nuevo.'); setLinkedinAuthLoading(false) })
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  // LinkedIn AutoFill Plugin — escucha evento 'li-autofill' del DOM
+  useEffect(() => {
+    const handler = (e) => {
+      const d = e.detail || {}
+      if (d.firstName || d.lastName) {
+        const name = [d.firstName, d.lastName].filter(Boolean).join(' ')
+        if (name) setFormTitular(prev => prev || name)
+      }
+      if (d.headline) setFormTitular(d.headline)
+      if (d.summary) setFormResumen(d.summary)
+      if (d.title || d.company) {
+        setFormExperiencias(prev => {
+          const updated = [...prev]
+          if (!updated[0]) updated[0] = { cargo: '', empresa: '', periodo: '', descripcion: '' }
+          if (d.title) updated[0].cargo = d.title
+          if (d.company) updated[0].empresa = d.company
+          return updated
+        })
+      }
+      setLiAutofillDone(true)
+      setLiAutofillLoading(false)
+      setLiAutofillError(false)
+    }
+    window.addEventListener('li-autofill', handler)
+    return () => window.removeEventListener('li-autofill', handler)
+  }, [])
+
   // Scroll al tope en cada cambio de paso (crítico en mobile)
   useEffect(() => { window.scrollTo({ top: 0, behavior: 'instant' }) }, [step])
 
@@ -883,12 +952,58 @@ export default function App() {
     }
   }
 
-  // ── Switch input mode (pdf / form) ──
+  // ── LinkedIn OAuth: iniciar login ──
+  const handleLinkedinLogin = () => {
+    const clientId = import.meta.env.VITE_LINKEDIN_CLIENT_ID
+    if (!clientId) {
+      setLinkedinAuthError('Configuración pendiente: VITE_LINKEDIN_CLIENT_ID no está definido.')
+      return
+    }
+    const state = Math.random().toString(36).slice(2)
+    sessionStorage.setItem('li_oauth_state', state)
+    const redirectUri = encodeURIComponent(window.location.origin + window.location.pathname)
+    const scope = encodeURIComponent('openid profile email')
+    window.location.href = `https://www.linkedin.com/oauth/v2/authorization?response_type=code&client_id=${clientId}&redirect_uri=${redirectUri}&scope=${scope}&state=${state}`
+  }
+
+  // ── LinkedIn AutoFill: disparar el plugin ──
+  const handleLinkedinAutofill = () => {
+    setLiAutofillLoading(true)
+    setLiAutofillError(false)
+    if (typeof window.__triggerLiAutofill === 'function') {
+      window.__triggerLiAutofill()
+    } else {
+      setLiAutofillLoading(false)
+      setLiAutofillError(true)
+    }
+  }
+
+  // ── LinkedIn OAuth confirm: construye profileText desde datos OAuth ──
+  const handleLinkedinConfirm = () => {
+    if (!linkedinOAuth) return
+    const { name, email, headline, summary, positions } = linkedinOAuth
+    const parts = []
+    if (headline || formTitular) parts.push(`TITULAR PROFESIONAL: ${headline || formTitular}`)
+    if (summary || formResumen) parts.push(`RESUMEN / ACERCA DE:\n${summary || formResumen}`)
+    const expFromOAuth = positions?.map(p =>
+      `• ${[p.title, p.companyName].filter(Boolean).join(' en ')}${p.startYear ? ` | ${p.startYear}–${p.endYear || 'presente'}` : ''}${p.description ? `\n  ${p.description}` : ''}`
+    ).join('\n')
+    const expFromForm = formExperiencias
+      .filter(e => e.cargo.trim() || e.empresa.trim())
+      .map(e => `• ${[e.cargo.trim(), e.empresa.trim()].filter(Boolean).join(' en ')}${e.periodo.trim() ? ` | ${e.periodo.trim()}` : ''}${e.descripcion.trim() ? `\n  ${e.descripcion.trim()}` : ''}`)
+      .join('\n')
+    if (expFromOAuth || expFromForm) parts.push(`EXPERIENCIA PROFESIONAL:\n${expFromOAuth || expFromForm}`)
+    if (name) parts.push(`NOMBRE: ${name}`)
+    if (email) parts.push(`EMAIL: ${email}`)
+    setProfileText(parts.join('\n\n'))
+    setFormConfirmed(true)
+  }
+
+  // ── Switch input mode (pdf / form / linkedin) ──
   const handleInputModeSwitch = (mode) => {
     if (mode === inputMode) return
     setInputMode(mode)
-    setProfileText('')
-    // Preserve form data when switching back to form tab; only clear PDF state
+    if (mode !== 'linkedin') setProfileText('')
     if (mode === 'pdf') setFormConfirmed(false)
     setPdfFileName('')
     setPdfError('')
@@ -1716,7 +1831,7 @@ Respondé con este JSON exacto:
 
             <div className="space-y-3">
               <button
-                onClick={() => { trackEvent('click_empezar_analisis', { location: 'hero' }); setStep(STEPS.QUESTIONS) }}
+                onClick={() => { trackEvent('click_empezar_analisis', { location: 'hero' }); setStep(STEPS.MODE_SELECT) }}
                 className="btn-glow w-full text-white font-semibold py-4 px-8 rounded-2xl text-base"
                 style={{ background: 'linear-gradient(135deg, #0077B5 0%, #0ea5e9 100%)' }}
               >
@@ -1894,6 +2009,88 @@ Respondé con este JSON exacto:
           </div>
         )}
 
+        {/* ── MODE SELECT ── */}
+        {step === STEPS.MODE_SELECT && (
+          <div className="step-transition space-y-6">
+            <Logo />
+            <div className="text-center space-y-2">
+              <h2 className="text-2xl font-bold text-slate-900 leading-tight">¿Qué querés hacer hoy?</h2>
+              <p className="text-slate-500 text-sm">Elegí por dónde empezar</p>
+            </div>
+
+            <div className="space-y-3">
+              {/* Card 1: Diagnóstico LinkedIn + CV */}
+              <button
+                onClick={() => { trackEvent('mode_select', { mode: 'diagnostico' }); setStep(STEPS.QUESTIONS) }}
+                className="w-full text-left rounded-2xl p-5 transition-all duration-200 hover:shadow-md active:scale-[0.99]"
+                style={{ background: 'white', border: '2px solid #0077B5', boxShadow: '0 2px 12px rgba(0,119,181,0.08)' }}
+              >
+                <div className="flex items-start gap-4">
+                  <div className="w-12 h-12 rounded-xl flex items-center justify-center text-2xl shrink-0"
+                    style={{ background: 'rgba(0,119,181,0.08)' }}>🎯</div>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 mb-1">
+                      <span className="font-bold text-slate-900 text-base">Diagnóstico LinkedIn + CV</span>
+                      <span className="text-xs font-semibold px-2 py-0.5 rounded-full"
+                        style={{ background: 'rgba(0,119,181,0.1)', color: '#0077B5' }}>Más popular</span>
+                    </div>
+                    <p className="text-slate-500 text-xs leading-relaxed">
+                      Analizá tu perfil con criterio de headhunter y generá un CV premium de 1 página listo para enviar.
+                    </p>
+                  </div>
+                  <span className="text-slate-300 text-xl shrink-0 self-center">›</span>
+                </div>
+              </button>
+
+              {/* Card 2: Simulador de entrevista */}
+              <button
+                onClick={() => { trackEvent('mode_select', { mode: 'entrevista' }); resetInterview(); setStep(STEPS.INTERVIEW_INTRO) }}
+                className="w-full text-left rounded-2xl p-5 transition-all duration-200 hover:shadow-md active:scale-[0.99]"
+                style={{ background: 'white', border: '2px solid #6366f1', boxShadow: '0 2px 12px rgba(99,102,241,0.08)' }}
+              >
+                <div className="flex items-start gap-4">
+                  <div className="w-12 h-12 rounded-xl flex items-center justify-center text-2xl shrink-0"
+                    style={{ background: 'rgba(99,102,241,0.08)' }}>🎙️</div>
+                  <div className="flex-1 min-w-0">
+                    <span className="font-bold text-slate-900 text-base block mb-1">Simulador de entrevista</span>
+                    <p className="text-slate-500 text-xs leading-relaxed">
+                      Practicá 5 preguntas típicas de selección y recibí feedback detallado con criterio de RRHH.
+                    </p>
+                  </div>
+                  <span className="text-slate-300 text-xl shrink-0 self-center">›</span>
+                </div>
+              </button>
+
+              {/* Card 3: Entrenamiento STAR */}
+              <button
+                onClick={() => { trackEvent('mode_select', { mode: 'star' }); setStarPhase('theory'); setStep(STEPS.STAR_TRAINING) }}
+                className="w-full text-left rounded-2xl p-5 transition-all duration-200 hover:shadow-md active:scale-[0.99]"
+                style={{ background: 'white', border: '2px solid #0d9488', boxShadow: '0 2px 12px rgba(13,148,136,0.08)' }}
+              >
+                <div className="flex items-start gap-4">
+                  <div className="w-12 h-12 rounded-xl flex items-center justify-center text-2xl shrink-0"
+                    style={{ background: 'rgba(13,148,136,0.08)' }}>⭐</div>
+                  <div className="flex-1 min-w-0">
+                    <span className="font-bold text-slate-900 text-base block mb-1">Entrenamiento STAR</span>
+                    <p className="text-slate-500 text-xs leading-relaxed">
+                      Aprendé la metodología que usan los mejores candidatos y practicá con feedback instantáneo de IA.
+                    </p>
+                  </div>
+                  <span className="text-slate-300 text-xl shrink-0 self-center">›</span>
+                </div>
+              </button>
+            </div>
+
+            <button
+              onClick={() => setStep(STEPS.WELCOME)}
+              className="w-full py-3 rounded-2xl text-sm font-medium transition-all"
+              style={BTN_BACK_STYLE}
+            >
+              ← Volver al inicio
+            </button>
+          </div>
+        )}
+
         {/* ── QUESTIONS ── */}
         {step === STEPS.QUESTIONS && (
           <div className="step-transition space-y-7">
@@ -2059,8 +2256,9 @@ Respondé con este JSON exacto:
               <>
                 <div className="flex rounded-xl overflow-hidden" style={{ border: '1px solid rgba(0,119,181,0.15)' }}>
                   {[
-                    { id: 'pdf',  label: '📄  Subir PDF' },
-                    { id: 'form', label: '✏️  Completar en la app' },
+                    { id: 'linkedin', label: '🔗  LinkedIn' },
+                    { id: 'pdf',      label: '📄  PDF' },
+                    { id: 'form',     label: '✏️  Manual' },
                   ].map(tab => (
                     <button
                       key={tab.id}
@@ -2075,6 +2273,105 @@ Respondé con este JSON exacto:
                     </button>
                   ))}
                 </div>
+
+                {/* ── MODO LINKEDIN ── */}
+                {inputMode === 'linkedin' && (
+                  <div className="space-y-4">
+                    {linkedinAuthLoading && (
+                      <div className="rounded-2xl p-6 text-center space-y-2"
+                        style={{ background: 'rgba(0,119,181,0.05)', border: '1px solid rgba(0,119,181,0.15)' }}>
+                        <div className="text-2xl">⏳</div>
+                        <p className="text-slate-600 text-sm">Verificando tu cuenta de LinkedIn...</p>
+                      </div>
+                    )}
+
+                    {!linkedinAuthLoading && !linkedinOAuth && (
+                      <div className="space-y-4">
+                        <div className="rounded-2xl p-5 space-y-3"
+                          style={{ background: 'rgba(0,119,181,0.04)', border: '1px solid rgba(0,119,181,0.15)' }}>
+                          <p className="text-xs font-semibold uppercase tracking-wide" style={{ color: '#0077B5' }}>¿Por qué iniciar sesión?</p>
+                          <ul className="space-y-1.5">
+                            {[
+                              'Importa tu nombre, cargo y resumen automáticamente',
+                              'Foto de perfil incluida en el CV generado',
+                              'Sin copiar y pegar — más rápido y preciso',
+                            ].map(t => (
+                              <li key={t} className="flex items-start gap-2 text-xs text-slate-600">
+                                <span className="text-emerald-500 shrink-0 mt-0.5">✓</span>{t}
+                              </li>
+                            ))}
+                          </ul>
+                        </div>
+
+                        {linkedinAuthError && (
+                          <p className="text-red-500 text-xs rounded-xl px-4 py-2"
+                            style={{ background: 'rgba(239,68,68,0.06)', border: '1px solid rgba(239,68,68,0.2)' }}>
+                            {linkedinAuthError}
+                          </p>
+                        )}
+
+                        <button
+                          onClick={handleLinkedinLogin}
+                          className="w-full py-3.5 rounded-2xl font-semibold text-white flex items-center justify-center gap-3 transition-all btn-glow"
+                          style={{ background: '#0077B5' }}
+                        >
+                          <svg width="18" height="18" viewBox="0 0 24 24" fill="white">
+                            <path d="M20.447 20.452h-3.554v-5.569c0-1.328-.027-3.037-1.852-3.037-1.853 0-2.136 1.445-2.136 2.939v5.667H9.351V9h3.414v1.561h.046c.477-.9 1.637-1.85 3.37-1.85 3.601 0 4.267 2.37 4.267 5.455v6.286zM5.337 7.433c-1.144 0-2.063-.926-2.063-2.065 0-1.138.92-2.063 2.063-2.063 1.14 0 2.064.925 2.064 2.063 0 1.139-.925 2.065-2.064 2.065zm1.782 13.019H3.555V9h3.564v11.452zM22.225 0H1.771C.792 0 0 .774 0 1.729v20.542C0 23.227.792 24 1.771 24h20.451C23.2 24 24 23.227 24 22.271V1.729C24 .774 23.2 0 22.222 0h.003z"/>
+                          </svg>
+                          Iniciar sesión con LinkedIn
+                        </button>
+                      </div>
+                    )}
+
+                    {!linkedinAuthLoading && linkedinOAuth && (
+                      <div className="space-y-4">
+                        <div className="rounded-2xl p-4 flex items-center gap-3"
+                          style={{ background: 'rgba(5,150,105,0.06)', border: '1px solid rgba(5,150,105,0.2)' }}>
+                          {linkedinOAuth.picture && (
+                            <img src={linkedinOAuth.picture} alt="Foto" className="w-10 h-10 rounded-full object-cover shrink-0"
+                              style={{ border: '2px solid #0077B5' }} />
+                          )}
+                          <div className="flex-1 min-w-0">
+                            <p className="font-semibold text-slate-900 text-sm truncate">{linkedinOAuth.name}</p>
+                            <p className="text-slate-500 text-xs truncate">{linkedinOAuth.email}</p>
+                          </div>
+                          <span className="text-emerald-500 text-lg shrink-0">✓</span>
+                        </div>
+
+                        <p className="text-xs text-slate-500 text-center">Completá los datos que faltan (opcional)</p>
+
+                        <div className="space-y-3">
+                          <input
+                            value={formTitular} onChange={e => setFormTitular(e.target.value)}
+                            placeholder="Titular profesional (ej: Desarrolladora Full Stack)"
+                            className="w-full rounded-xl px-4 py-3 text-sm"
+                            style={INPUT_STYLE}
+                          />
+                          <textarea
+                            value={formResumen} onChange={e => setFormResumen(e.target.value)}
+                            placeholder="Resumen / About (opcional)"
+                            rows={3}
+                            className="w-full rounded-xl px-4 py-3 text-sm resize-none"
+                            style={INPUT_STYLE}
+                          />
+                        </div>
+
+                        <button
+                          onClick={handleLinkedinConfirm}
+                          disabled={!formTitular.trim()}
+                          className="w-full py-3.5 rounded-2xl font-semibold text-white transition-all btn-glow"
+                          style={{
+                            background: formTitular.trim() ? LI_GRADIENT : 'rgba(0,119,181,0.15)',
+                            opacity: formTitular.trim() ? 1 : 0.6,
+                            cursor: formTitular.trim() ? 'pointer' : 'not-allowed',
+                          }}
+                        >
+                          Completar mi perfil →
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                )}
 
                 {/* ── MODO PDF ── */}
                 {inputMode === 'pdf' && (
@@ -2253,6 +2550,32 @@ Respondé con este JSON exacto:
                     <p className="text-slate-500 text-sm leading-relaxed">
                       Copiá cada campo directamente desde tu perfil de LinkedIn.
                     </p>
+
+                    {/* Banner AutoFill */}
+                    <div className="rounded-xl p-3 flex items-center gap-3"
+                      style={{ background: 'rgba(0,119,181,0.05)', border: '1px solid rgba(0,119,181,0.18)' }}>
+                      <span className="text-lg shrink-0">⚡</span>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-xs font-semibold text-slate-700">Autocompletar desde LinkedIn</p>
+                        <p className="text-xs text-slate-500">Completá los campos con un clic</p>
+                      </div>
+                      {liAutofillDone
+                        ? <span className="text-emerald-500 text-xs font-semibold shrink-0">✓ Listo</span>
+                        : (
+                          <button
+                            onClick={handleLinkedinAutofill}
+                            disabled={liAutofillLoading}
+                            className="shrink-0 text-xs font-semibold px-3 py-1.5 rounded-lg transition-all"
+                            style={{ background: '#0077B5', color: 'white', opacity: liAutofillLoading ? 0.6 : 1 }}
+                          >
+                            {liAutofillLoading ? '...' : 'Autocompletar'}
+                          </button>
+                        )
+                      }
+                    </div>
+                    {liAutofillError && (
+                      <p className="text-xs text-amber-600">Plugin pendiente de aprobación por LinkedIn. Completá manualmente.</p>
+                    )}
 
                     {/* Foto de perfil */}
                     <div>
@@ -2981,11 +3304,11 @@ Respondé con este JSON exacto:
                 Empezar entrevista →
               </button>
               <button
-                onClick={() => setStep(STEPS.RESULTS)}
+                onClick={() => result ? setStep(STEPS.RESULTS) : setStep(STEPS.MODE_SELECT)}
                 className="w-full font-medium py-3 rounded-2xl text-sm transition-all"
                 style={BTN_BACK_STYLE}
               >
-                ← Volver a mis resultados
+                {result ? '← Volver a mis resultados' : '← Volver al menú'}
               </button>
             </div>
             <p className="text-slate-400 text-xs text-center">
@@ -3327,11 +3650,11 @@ Respondé con este JSON exacto:
                 </div>
 
                 <button
-                  onClick={() => setStep(STEPS.RESULTS)}
+                  onClick={() => result ? setStep(STEPS.RESULTS) : setStep(STEPS.MODE_SELECT)}
                   className="w-full font-semibold py-4 rounded-2xl text-sm"
                   style={BTN_BACK_STYLE}
                 >
-                  ← Volver a mi análisis
+                  {result ? '← Volver a mi análisis' : '← Volver al menú'}
                 </button>
               </>
             )}
@@ -3527,9 +3850,9 @@ Respondé con este JSON exacto:
                   </div>
                 )}
 
-                <button onClick={() => setStep(STEPS.RESULTS)}
+                <button onClick={() => result ? setStep(STEPS.RESULTS) : setStep(STEPS.MODE_SELECT)}
                   className="w-full py-3 rounded-2xl text-sm font-semibold" style={BTN_BACK_STYLE}>
-                  ← Volver a mi análisis
+                  {result ? '← Volver a mi análisis' : '← Volver al menú'}
                 </button>
               </>
             )}
