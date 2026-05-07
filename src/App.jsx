@@ -332,26 +332,37 @@ Usá las secciones "titular_propuesto" y "resumen_propuesto" del análisis previ
 Extraé las experiencias y educación del texto del perfil, respetando ESTRICTAMENTE las fechas de cada entrada.
 Respondé SOLO en JSON válido, sin markdown, sin backticks.`
 
-const CV_QUALITY_SYSTEM_PROMPT = `Sos un evaluador experto de CVs con estándares de headhunter ejecutivo.
-Analizá el CV provisto y detectá brechas de calidad en estas categorías:
-1. Fechas faltantes o incompletas en experiencias o educación (periodo null o vacío)
-2. Bullets sin métricas cuantificables (números, %, $, escalas, volúmenes)
-3. Frases genéricas o filler ("orientado a resultados", "proactivo", "dinámico", etc.)
-4. Herramientas o tecnologías mencionadas vagamente, sin especificidad real
+const CV_QUALITY_SYSTEM_PROMPT = `Sos un consultor de empleabilidad senior con estándares de headhunter ejecutivo.
+Realizá una revisión completa del CV provisto en dos partes:
+
+PARTE 1 — Detección de brechas críticas:
+Analizá estas categorías:
+1. Fechas faltantes o incompletas en experiencias o educación (período null o vacío) → siempre impacto Alto
+2. Bullets sin métricas cuantificables cuando claramente deberían tenerlas (%, $, números, escalas, volúmenes)
+3. Frases genéricas o relleno ("orientado a resultados", "proactivo", "dinámico", "apasionado", etc.)
+4. Herramientas o tecnologías mencionadas sin especificidad (ej: "manejo de sistemas" sin decir cuáles)
 5. Logros sin verbo de impacto concreto o sin resultado medible
-6. Experiencias con descripción insuficiente o demasiado vaga
+6. Resumen profesional débil, genérico o que no diferencia al candidato
 
-IMPORTANTE: Las fechas faltantes son siempre brechas de impacto Alto. Si ves "periodo": null o periodo vacío en cualquier experiencia o educación, generá obligatoriamente una pregunta pidiendo las fechas de esa entrada.
+Para cada brecha crítica, generá UNA pregunta corta, específica y accionable.
+NUNCA hagas preguntas genéricas. Máximo 6 brechas. Priorizá impacto Alto.
 
-Para cada brecha crítica detectada, generá UNA sola pregunta corta, específica y accionable para obtener la información real del candidato.
-NUNCA hagas preguntas genéricas como "contame más sobre tu experiencia".
-Máximo 6 brechas en total. Priorizá las de mayor impacto en la calidad del CV.
+IMPORTANTE: Las fechas faltantes son SIEMPRE impacto Alto. Si período es null o vacío, generá obligatoriamente la pregunta.
+
+PARTE 2 — Evaluación de consultor:
+Como consultor de empleabilidad, evaluá:
+- 2 a 3 fortalezas reales y específicas del CV (no genéricas)
+- Una nota honesta y concreta sobre la empleabilidad del CV en el mercado actual
+- Riesgo de filtrado ATS: ¿el formato y keywords son compatibles con sistemas automáticos?
 
 Respondé SOLO en JSON válido, sin markdown, sin backticks:
 {
   "score": número del 1 al 10,
   "nivel": "Básico|Intermedio|Sólido|Premium",
   "aprobado": boolean (true si score >= 8 o si no hay brechas de impacto Alto),
+  "nota_consultor": "frase concreta sobre empleabilidad y fit para el mercado (1-2 oraciones)",
+  "riesgo_ats": "Bajo|Medio|Alto",
+  "fortalezas": ["string específico", "string específico"],
   "gaps": [
     {
       "id": "string corto único sin espacios",
@@ -1707,12 +1718,14 @@ Respondé con este JSON exacto:
       const cvText = [
         `Nombre: ${cv.nombre}`,
         `Titular: ${cv.titular}`,
-        `Resumen: ${cv.resumen}`,
+        `Resumen: ${cv.resumen || '(sin resumen)'}`,
         ...(cv.experiencias || []).map(ex =>
-          `Cargo: ${ex.cargo} en ${ex.empresa} (${ex.periodo})\nLogros: ${(ex.logros || []).join(' | ')}`
+          `Cargo: ${ex.cargo} en ${ex.empresa} | Período: ${ex.periodo || 'SIN FECHA'}\nLogros: ${(ex.logros || []).join(' | ') || '(sin logros)'}`
         ),
-        `Habilidades: ${(cv.habilidades || []).join(', ')}`,
-      ].join('\n\n')
+        `Educación: ${(cv.educacion || []).map(ed => `${ed.titulo} — ${ed.institucion} (${ed.periodo || 'SIN FECHA'})`).join(' | ') || '(sin educación)'}`,
+        `Habilidades: ${(cv.habilidades || []).join(', ') || '(ninguna)'}`,
+        cv.idiomas?.length ? `Idiomas: ${cv.idiomas.join(', ')}` : null,
+      ].filter(Boolean).join('\n\n')
       const controller = new AbortController()
       const timeoutId = setTimeout(() => controller.abort(), 30000)
       const res = await fetch(WORKER_URL, {
@@ -1898,12 +1911,13 @@ Respondé con este JSON exacto:
     if (!cvPreviewHtml) return
     const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent)
     trackEvent('cv_print_clicked', { via: isMobile ? 'mobile' : 'desktop' })
-    if (isMobile) {
-      const iframe = document.getElementById('cv-preview-iframe')
-      if (iframe?.contentWindow) { iframe.contentWindow.print(); return }
-    }
-    const win = window.open('', '_blank', 'width=900,height=700')
+
+    // Estrategia unificada: abrir en nueva ventana/tab y llamar print()
+    // Esto funciona en desktop (Ctrl+P → Guardar como PDF) y en mobile
+    // (Android Chrome muestra "Guardar como PDF" / iOS Safari muestra AirPrint → Guardar en Archivos)
+    const win = window.open('', isMobile ? '_blank' : '_blank', isMobile ? '' : 'width=900,height=700')
     if (!win) {
+      // Popup bloqueado — descargar HTML como fallback
       const blob = new Blob([cvPreviewHtml], { type: 'text/html; charset=utf-8' })
       const url = URL.createObjectURL(blob)
       const a = document.createElement('a')
@@ -1911,13 +1925,14 @@ Respondé con este JSON exacto:
       a.href = url; a.download = `CV-${cvName}.html`
       document.body.appendChild(a); a.click(); document.body.removeChild(a)
       setTimeout(() => URL.revokeObjectURL(url), 30000)
-      setCvSuccess('Archivo descargado — abrilo y guardá como PDF con Ctrl+P → Guardar como PDF')
+      setCvSuccess('HTML descargado — abrilo en el navegador y usá Ctrl+P → Guardar como PDF')
       return
     }
     win.document.write(cvPreviewHtml)
     win.document.close()
     win.focus()
-    setTimeout(() => { win.print() }, 300)
+    // En mobile damos más tiempo para que cargue antes de llamar print()
+    setTimeout(() => { try { win.print() } catch { /* algunos browsers bloquean en mobile */ } }, isMobile ? 800 : 300)
   }
 
   // ── Avanzar en la entrevista ──
@@ -3253,12 +3268,12 @@ Respondé con este JSON exacto:
                   </div>
                   <p className="text-sm font-medium text-slate-700">
                     {cvStage === 'drafting' && 'Generando tu CV...'}
-                    {cvStage === 'scoring' && 'Evaluando calidad del CV...'}
+                    {cvStage === 'scoring' && 'Revisando con consultor de empleabilidad...'}
                     {cvStage === 'regenerating' && 'Aplicando mejoras...'}
                   </p>
                   <p className="text-xs text-slate-400">
                     {cvStage === 'drafting' && 'Extrayendo tu experiencia real del perfil'}
-                    {cvStage === 'scoring' && 'Detectando brechas y oportunidades de mejora'}
+                    {cvStage === 'scoring' && 'Evaluando calidad, fechas, logros y compatibilidad ATS'}
                     {cvStage === 'regenerating' && 'Integrando la información que nos diste'}
                   </p>
                 </div>
@@ -3268,18 +3283,31 @@ Respondé con este JSON exacto:
               {cvStage === 'gap_form' && cvQuality && (
                 <div className="rounded-2xl overflow-hidden"
                   style={{ border: '1px solid rgba(245,158,11,0.30)', boxShadow: '0 4px 16px rgba(0,0,0,0.06)' }}>
-                  {/* Header con score */}
-                  <div className="px-5 py-4 flex items-center gap-4"
+                  {/* Header con score y nota consultor */}
+                  <div className="px-5 py-4 space-y-3"
                     style={{ background: 'linear-gradient(135deg,rgba(245,158,11,0.08),rgba(234,88,12,0.05))' }}>
-                    <div className="shrink-0 w-12 h-12 rounded-full flex flex-col items-center justify-center font-black"
-                      style={{ background: 'rgba(245,158,11,0.12)', border: '1.5px solid rgba(245,158,11,0.30)', color: '#d97706' }}>
-                      <span className="text-lg leading-none">{cvQuality.score}</span>
-                      <span className="text-[9px] text-slate-500 font-normal">/10</span>
+                    <div className="flex items-center gap-4">
+                      <div className="shrink-0 w-12 h-12 rounded-full flex flex-col items-center justify-center font-black"
+                        style={{ background: 'rgba(245,158,11,0.12)', border: '1.5px solid rgba(245,158,11,0.30)', color: '#d97706' }}>
+                        <span className="text-lg leading-none">{cvQuality.score}</span>
+                        <span className="text-[9px] text-slate-500 font-normal">/10</span>
+                      </div>
+                      <div>
+                        <p className="text-sm font-semibold text-slate-800">Puntaje {cvQuality.score}/10 — podemos mejorarlo</p>
+                        <p className="text-xs text-slate-500 mt-0.5">{cvQuality.nota_consultor || 'Respondé estas preguntas para agregar datos reales que potencien tu CV'}</p>
+                      </div>
                     </div>
-                    <div>
-                      <p className="text-sm font-semibold text-slate-800">Tu CV tiene puntaje {cvQuality.score}/10 — podemos mejorarlo</p>
-                      <p className="text-xs text-slate-500 mt-0.5">Respondé estas preguntas para agregar datos reales que potencien tu CV</p>
-                    </div>
+                    {cvQuality.fortalezas?.length > 0 && (
+                      <div className="space-y-1 border-t pt-3" style={{ borderColor: 'rgba(245,158,11,0.15)' }}>
+                        <p className="text-[10px] font-semibold uppercase tracking-wide" style={{ color: '#d97706' }}>Lo que ya está bien</p>
+                        {cvQuality.fortalezas.map((f, i) => (
+                          <div key={i} className="flex items-start gap-1.5">
+                            <span className="text-emerald-500 shrink-0 text-xs">✓</span>
+                            <p className="text-xs text-slate-600 leading-snug">{f}</p>
+                          </div>
+                        ))}
+                      </div>
+                    )}
                   </div>
                   {/* Preguntas de gaps */}
                   <div className="px-5 py-4 space-y-5" style={{ background: 'white' }}>
@@ -3329,17 +3357,48 @@ Respondé con este JSON exacto:
                 </div>
               )}
 
-              {/* CV listo — mostrar score + botón imprimir */}
+              {/* CV listo — score + revisión consultor + botón imprimir */}
               {cvStage === 'done' && cvFinalData && (
                 <div className="space-y-3">
                   {cvQuality && (
-                    <div className="flex items-center gap-3 rounded-xl px-4 py-3"
-                      style={{ background: cvQuality.score >= 8 ? 'rgba(34,197,94,0.06)' : 'rgba(0,119,181,0.05)', border: `1px solid ${cvQuality.score >= 8 ? 'rgba(34,197,94,0.20)' : 'rgba(0,119,181,0.15)'}` }}>
-                      <span className="text-xl font-black shrink-0" style={{ color: cvQuality.score >= 8 ? '#16a34a' : '#0077B5' }}>{cvQuality.score}/10</span>
-                      <div>
-                        <p className="text-xs font-semibold text-slate-700">CV {cvQuality.nivel}</p>
-                        <p className="text-xs text-slate-400">{cvQuality.score >= 8 ? 'Listo para enviar a reclutadores' : 'Generado con tu información real'}</p>
+                    <div className="rounded-2xl overflow-hidden"
+                      style={{ border: `1px solid ${cvQuality.score >= 8 ? 'rgba(34,197,94,0.25)' : 'rgba(0,119,181,0.18)'}` }}>
+                      {/* Score header */}
+                      <div className="flex items-center gap-3 px-4 py-3"
+                        style={{ background: cvQuality.score >= 8 ? 'rgba(34,197,94,0.06)' : 'rgba(0,119,181,0.05)' }}>
+                        <div className="shrink-0 w-12 h-12 rounded-full flex flex-col items-center justify-center font-black"
+                          style={{ background: cvQuality.score >= 8 ? 'rgba(34,197,94,0.12)' : 'rgba(0,119,181,0.10)', color: cvQuality.score >= 8 ? '#16a34a' : '#0077B5', border: `1.5px solid ${cvQuality.score >= 8 ? 'rgba(34,197,94,0.30)' : 'rgba(0,119,181,0.25)'}` }}>
+                          <span className="text-lg leading-none">{cvQuality.score}</span>
+                          <span className="text-[9px] text-slate-500 font-normal">/10</span>
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <p className="text-sm font-semibold text-slate-800">CV {cvQuality.nivel}</p>
+                            {cvQuality.riesgo_ats && (
+                              <span className="text-[10px] px-1.5 py-0.5 rounded font-semibold"
+                                style={{
+                                  background: cvQuality.riesgo_ats === 'Bajo' ? 'rgba(34,197,94,0.10)' : cvQuality.riesgo_ats === 'Alto' ? 'rgba(239,68,68,0.10)' : 'rgba(245,158,11,0.10)',
+                                  color: cvQuality.riesgo_ats === 'Bajo' ? '#16a34a' : cvQuality.riesgo_ats === 'Alto' ? '#dc2626' : '#d97706',
+                                }}>
+                                ATS {cvQuality.riesgo_ats}
+                              </span>
+                            )}
+                          </div>
+                          <p className="text-xs text-slate-500 mt-0.5 leading-snug">{cvQuality.nota_consultor || (cvQuality.score >= 8 ? 'Listo para enviar a reclutadores' : 'Generado con tu información real')}</p>
+                        </div>
                       </div>
+                      {/* Fortalezas del consultor */}
+                      {cvQuality.fortalezas?.length > 0 && (
+                        <div className="px-4 py-3 space-y-1.5 border-t" style={{ borderColor: 'rgba(0,0,0,0.06)', background: 'white' }}>
+                          <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-500">Fortalezas del CV</p>
+                          {cvQuality.fortalezas.map((f, i) => (
+                            <div key={i} className="flex items-start gap-2">
+                              <span className="text-emerald-500 shrink-0 mt-0.5 text-xs">✓</span>
+                              <p className="text-xs text-slate-600 leading-snug">{f}</p>
+                            </div>
+                          ))}
+                        </div>
+                      )}
                     </div>
                   )}
                   <button
@@ -3347,10 +3406,10 @@ Respondé con este JSON exacto:
                     className="w-full py-4 rounded-xl text-sm font-semibold text-white transition-all"
                     style={{ background: 'linear-gradient(135deg,#059669,#10b981)', boxShadow: '0 4px 12px rgba(5,150,105,0.25)' }}
                   >
-                    🖨 Imprimir CV
+                    📥 Guardar como PDF
                   </button>
                   <p className="text-center text-xs text-slate-400">
-                    Se abre el diálogo de impresión · Guardá como PDF desde ahí
+                    Se abre el diálogo de impresión → seleccioná <strong>Guardar como PDF</strong>
                   </p>
                   {cvSuccess && <p className="text-xs text-center" style={{ color: '#059669' }}>✓ {cvSuccess}</p>}
                   <button
@@ -4164,6 +4223,7 @@ Respondé con este JSON exacto:
       {/* ── Preview CV — overlay unificado (mobile + desktop) ── */}
       {cvPreviewHtml && cvStage === 'done' && (
         <div className="fixed inset-0 z-50 flex flex-col" style={{ background: '#fff' }}>
+          {/* Barra superior */}
           <div className="flex items-center justify-between px-4 py-3 shrink-0"
             style={{ background: 'linear-gradient(135deg,#0077B5,#0ea5e9)', boxShadow: '0 2px 8px rgba(0,0,0,0.15)' }}>
             <div className="flex items-center gap-3">
@@ -4176,45 +4236,36 @@ Respondé con este JSON exacto:
               )}
             </div>
             <div className="flex items-center gap-2">
-                <button
-                  onClick={() => {
-                    const cvName = (cvFinalData?.nombre || cvDraft?.nombre || 'CV').replace(/[^a-zA-ZÀ-ÿ0-9 ]/g, '').replace(/\s+/g, '-')
-                    const blob = new Blob([cvPreviewHtml], { type: 'text/html; charset=utf-8' })
-                    const url = URL.createObjectURL(blob)
-                    const a = document.createElement('a')
-                    a.href = url; a.download = `CV-${cvName}.html`
-                    document.body.appendChild(a); a.click(); document.body.removeChild(a)
-                    setTimeout(() => URL.revokeObjectURL(url), 30000)
-                    trackEvent('cv_download_html')
-                  }}
-                  className="text-white text-xs px-3 py-1.5 rounded-lg font-medium"
-                  style={{ background: 'rgba(255,255,255,0.15)', border: '1px solid rgba(255,255,255,0.22)' }}>
-                  ⬇ Descargar
-                </button>
-                <button
-                  onClick={printCv}
-                  className="text-white text-xs px-3 py-1.5 rounded-lg font-semibold"
-                  style={{ background: 'rgba(255,255,255,0.25)', border: '1px solid rgba(255,255,255,0.30)' }}>
-                  🖨 Imprimir CV
-                </button>
-                <button
-                  onClick={() => setCvPreviewHtml('')}
-                  className="text-white text-xs px-3 py-1.5 rounded-lg"
-                  style={{ background: 'rgba(255,255,255,0.15)' }}>
-                  ✕
-                </button>
-              </div>
+              <button
+                onClick={printCv}
+                className="text-white text-xs px-3 py-1.5 rounded-lg font-semibold flex items-center gap-1.5"
+                style={{ background: 'rgba(255,255,255,0.25)', border: '1px solid rgba(255,255,255,0.35)' }}>
+                📥 Guardar PDF
+              </button>
+              <button
+                onClick={() => setCvPreviewHtml('')}
+                className="text-white text-xs px-3 py-1.5 rounded-lg"
+                style={{ background: 'rgba(255,255,255,0.15)' }}>
+                ✕
+              </button>
+            </div>
           </div>
-          <div className="px-4 py-2 shrink-0 text-center text-xs text-slate-500 leading-relaxed"
-            style={{ background: '#f0f7ff', borderBottom: '1px solid rgba(0,119,181,0.12)' }}>
-            <strong>Imprimir CV</strong> → <em>Guardar como PDF</em> en el diálogo · o <strong>Descargar</strong> el HTML y abrilo para imprimir
+          {/* Instrucción contextual */}
+          <div className="px-4 py-2 shrink-0 text-center text-xs leading-relaxed"
+            style={{ background: '#f0f7ff', borderBottom: '1px solid rgba(0,119,181,0.12)', color: '#475569' }}>
+            {/iPhone|iPad|iPod/i.test(navigator.userAgent)
+              ? <>Tocá <strong>Guardar PDF</strong> → en el diálogo elegí el ícono <strong>Compartir</strong> → <em>Guardar en Archivos</em></>
+              : /Android/i.test(navigator.userAgent)
+                ? <>Tocá <strong>Guardar PDF</strong> → en el menú de impresión elegí <em>Guardar como PDF</em></>
+                : <>Hacé clic en <strong>Guardar PDF</strong> → en el diálogo de impresión seleccioná <em>Guardar como PDF</em></>
+            }
           </div>
           <iframe
             id="cv-preview-iframe"
             srcDoc={cvPreviewHtml}
             title="Vista previa de tu CV"
             className="flex-1 w-full border-0"
-            sandbox="allow-same-origin allow-scripts allow-modals"
+            sandbox="allow-same-origin allow-scripts"
           />
         </div>
       )}
