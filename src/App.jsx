@@ -1517,6 +1517,7 @@ Generá el feedback en este JSON exacto:
       catch { const m = raw.match(/\{[\s\S]*\}/); if (m) parsed = JSON.parse(m[0]); else throw new Error('La IA devolvió una respuesta inesperada. Intentá de nuevo.') }
       setStarFeedback(parsed)
       trackEvent('star_feedback_received', { puntaje: parsed.puntaje, question_idx: starQuestionIdx })
+      saveStarPractica(pregunta, starAnswer, parsed).catch(err => console.error('[star_practicas save]', err))
     } catch (err) {
       if (!err.isRateLimit) setStarError(err.name === 'AbortError' ? 'El pedido tardó demasiado. Intentá de nuevo.' : err.message || 'No se pudo obtener el feedback.')
     } finally {
@@ -1591,6 +1592,31 @@ Generá el feedback en este JSON exacto:
         consentimiento: true,
       }),
     }).catch(err => console.error('[cv_generados save]', err))
+  }
+
+  const saveStarPractica = async (pregunta, respuesta, feedback) => {
+    if (!SUPABASE_URL || !SUPABASE_KEY) return
+    try {
+      await fetch(`${SUPABASE_URL}/rest/v1/star_practicas`, {
+        method: 'POST',
+        headers: {
+          apikey: SUPABASE_KEY,
+          Authorization: `Bearer ${SUPABASE_KEY}`,
+          'Content-Type': 'application/json',
+          Prefer: 'return=minimal',
+        },
+        body: JSON.stringify({
+          pregunta,
+          respuesta,
+          feedback_star: feedback,
+          puntaje: feedback?.puntaje ?? null,
+          qa_history: qaHistory,
+        }),
+      })
+      trackEvent('star_saved', { puntaje: feedback?.puntaje })
+    } catch (err) {
+      console.error('[star_practicas save]', err)
+    }
   }
 
   const saveEntrevista = async (feedback, answers) => {
@@ -4060,7 +4086,7 @@ Respondé con este JSON exacto:
                 >
                   Practicar ahora →
                 </button>
-                <button onClick={() => setStep(STEPS.INTERVIEW_FEEDBACK)}
+                <button onClick={() => { trackEvent('star_back', { from: 'theory' }); setStep(STEPS.INTERVIEW_FEEDBACK) }}
                   className="w-full py-3 rounded-2xl text-sm font-semibold" style={BTN_BACK_STYLE}>
                   ← Volver al feedback
                 </button>
@@ -4200,7 +4226,56 @@ Respondé con este JSON exacto:
                   </div>
                 )}
 
-                <button onClick={() => result ? setStep(STEPS.RESULTS) : setStep(STEPS.MODE_SELECT)}
+                {/* Seguir + contribución — solo se muestra cuando hay feedback */}
+                {starFeedback && (
+                  <>
+                    {/* Follows */}
+                    <div className="rounded-2xl p-4 space-y-2"
+                      style={{ background: 'rgba(99,102,241,0.04)', border: '1px solid rgba(99,102,241,0.15)' }}>
+                      <p className="text-xs font-semibold uppercase tracking-wide" style={{ color: '#6366f1' }}>
+                        🔗 Seguinos en LinkedIn
+                      </p>
+                      <a href={RAMIRO_LINKEDIN_URL} target="_blank" rel="noopener noreferrer"
+                        onClick={() => trackEvent('click_externo', { destino: 'linkedin_ramiro', ubicacion: 'star_feedback' })}
+                        className="flex items-center gap-3 px-3 py-2.5 rounded-xl transition-all hover:opacity-80"
+                        style={{ background: 'white', border: '1px solid rgba(99,102,241,0.15)' }}>
+                        <LinkedInIcon className="w-4 h-4 shrink-0" style={{ color: '#0077B5' }} />
+                        <div className="flex-1 min-w-0">
+                          <p className="text-xs font-semibold text-slate-800">Ramiro Silvera</p>
+                          <p className="text-xs text-slate-400">Gerente de RRHH · Creador de la app</p>
+                        </div>
+                        <span className="text-xs font-semibold shrink-0" style={{ color: '#0077B5' }}>Seguir →</span>
+                      </a>
+                      <a href={COMPANY_LINKEDIN_URL} target="_blank" rel="noopener noreferrer"
+                        onClick={() => trackEvent('click_externo', { destino: 'linkedin_pagina', ubicacion: 'star_feedback' })}
+                        className="flex items-center gap-3 px-3 py-2.5 rounded-xl transition-all hover:opacity-80"
+                        style={{ background: 'white', border: '1px solid rgba(99,102,241,0.15)' }}>
+                        <LinkedInIcon className="w-4 h-4 shrink-0" style={{ color: '#0077B5' }} />
+                        <div className="flex-1 min-w-0">
+                          <p className="text-xs font-semibold text-slate-800">OptimizaLinkedin</p>
+                          <p className="text-xs text-slate-400">Comunidad · Recursos de empleabilidad</p>
+                        </div>
+                        <span className="text-xs font-semibold shrink-0" style={{ color: '#0077B5' }}>Seguir →</span>
+                      </a>
+                    </div>
+
+                    {/* Contribución $5.000 */}
+                    <div className="flex items-center justify-between gap-3 px-4 py-3 rounded-2xl"
+                      style={{ background: 'rgba(0,180,150,0.05)', border: '1px solid rgba(0,180,150,0.18)' }}>
+                      <p className="text-slate-500 text-xs leading-snug">
+                        ☕ $5.000 únicos — ayudás a mantener esto gratis para todos.
+                      </p>
+                      <a href={MP_URL} target="_blank" rel="noopener noreferrer"
+                        onClick={() => trackEvent('click_externo', { destino: 'mercadopago', ubicacion: 'star_feedback' })}
+                        className="shrink-0 inline-flex items-center gap-1.5 px-4 py-2 rounded-xl text-white text-xs font-semibold"
+                        style={{ background: 'linear-gradient(135deg,#00b496,#00d4aa)' }}>
+                        ☕ Apoyar
+                      </a>
+                    </div>
+                  </>
+                )}
+
+                <button onClick={() => { trackEvent('star_back', { from: 'practice' }); result ? setStep(STEPS.RESULTS) : setStep(STEPS.MODE_SELECT) }}
                   className="w-full py-3 rounded-2xl text-sm font-semibold" style={BTN_BACK_STYLE}>
                   {result ? '← Volver a mi análisis' : '← Volver al menú'}
                 </button>
