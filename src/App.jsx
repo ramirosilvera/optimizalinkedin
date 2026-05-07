@@ -375,6 +375,35 @@ Respondé SOLO en JSON válido, sin markdown, sin backticks:
   ]
 }`
 
+const CV_PRE_QUESTIONS_PROMPT = `Sos un consultor de empleabilidad senior. Tu tarea es analizar el perfil profesional de un candidato ANTES de generar su CV para detectar qué información adicional mejoraría significativamente el resultado.
+
+Analizá el perfil y las respuestas del cuestionario. Generá entre 3 y 5 preguntas MUY específicas y accionables sobre:
+1. Métricas o impacto cuantificable que parezcan faltar en logros mencionados (ej: "aumenté ventas" → ¿cuánto %? ¿en qué período?)
+2. Tecnologías, herramientas o metodologías relevantes para el sector no especificadas
+3. Contexto de escala o equipo (cuántas personas, presupuesto, alcance del proyecto)
+4. Logros vagamente mencionados que con más contexto destacarían en el CV
+5. Información declarada en el cuestionario (ej: "lideré equipos") que no aparece en el perfil
+
+REGLAS ESTRICTAS:
+- NO hagas preguntas sobre lo que ya está claro y completo en el perfil
+- NO inventes brechas que no existen
+- Si el perfil está bien detallado y no hay brechas críticas, devolvé preguntas vacías
+- Máximo 5 preguntas — solo las de mayor impacto para el CV
+- Formulalas en segunda persona informal, directo al punto
+- Cada pregunta debe referenciar un cargo o logro específico del perfil
+
+Respondé SOLO en JSON válido, sin markdown, sin backticks:
+{
+  "preguntas": [
+    {
+      "id": "string corto único sin espacios (ej: logro_ventas_1)",
+      "contexto": "nombre del cargo o empresa al que refiere (máx 45 chars)",
+      "pregunta": "pregunta específica y accionable",
+      "placeholder": "ejemplo de respuesta ideal (máx 60 chars)"
+    }
+  ]
+}`
+
 function escapeHtml(s) {
   return String(s ?? '')
     .replace(/&/g, '&amp;')
@@ -808,9 +837,11 @@ export default function App() {
   const [cvDraft, setCvDraft] = useState(null)
   const [cvQuality, setCvQuality] = useState(null)
   const [cvGapAnswers, setCvGapAnswers] = useState({})
-  const [cvStage, setCvStage] = useState('idle') // 'idle'|'drafting'|'scoring'|'gap_form'|'regenerating'|'done'
+  const [cvStage, setCvStage] = useState('idle') // 'idle'|'pre_loading'|'pre_questions'|'drafting'|'scoring'|'gap_form'|'regenerating'|'done'
   const [cvFinalData, setCvFinalData] = useState(null)
   const [cvContacto, setCvContacto] = useState(null)
+  const [cvPreQuestions, setCvPreQuestions] = useState([])  // Questions generated pre-CV from profile analysis
+  const [cvPreAnswers, setCvPreAnswers] = useState({})      // User's answers to pre-generation questions
 
   // LinkedIn OAuth
   const [linkedinOAuth, setLinkedinOAuth] = useState(null)
@@ -1735,7 +1766,7 @@ ${idiomasHtml}
     setCvSuccess(`${filename} — abrilo y guardá como PDF con Ctrl+P → Guardar como PDF`)
   }
 
-  const buildCvPromptBase = (contacto) => {
+  const buildCvPromptBase = (contacto, preAnswers = {}) => {
     const nombre = result?.nombre_completo || ''
     const titular = result?.titular_propuesto || result?.titular_actual || ''
     const resumen = result?.resumen_propuesto || ''
@@ -1746,6 +1777,16 @@ ${idiomasHtml}
     if (contacto.telefono)    p += `Teléfono: ${contacto.telefono}\n`
     if (contacto.linkedinUrl) p += `URL LinkedIn: ${contacto.linkedinUrl}\n`
     p += `\nTexto completo del perfil LinkedIn (extraé experiencias, educación y sus fechas individuales):\n${profileText.slice(0, 8000)}\n\n`
+
+    // Incluir respuestas pre-generación del candidato
+    const enrichedLines = cvPreQuestions
+      .filter(q => preAnswers[q.id]?.trim())
+      .map(q => `- ${q.contexto ? `[${q.contexto}] ` : ''}${preAnswers[q.id].trim()}`)
+      .join('\n')
+    if (enrichedLines) {
+      p += `INFORMACIÓN ADICIONAL REAL PROVISTA POR EL CANDIDATO — integrala en los bullets y resumen correspondientes, NUNCA inventes nada extra más allá de lo que el candidato escribió:\n${enrichedLines}\n\n`
+    }
+
     p += `Usá el email, teléfono y URL de LinkedIn proporcionados arriba. No los inventes si no se dieron (poné null).
 IMPORTANTE sobre fechas: el campo "periodo" de cada experiencia y educación DEBE tomarse del texto del perfil para ESA entrada específica. Si hay dos formaciones distintas (grado y posgrado), cada una tiene su propio "periodo". NUNCA copies el mismo periodo para entradas distintas.
 Respondé con este JSON exacto:
@@ -1803,7 +1844,49 @@ Respondé con este JSON exacto:
     }
   }
 
-  const callGenerateCV = async (contacto = {}) => {
+  const callGenerateCvPreQuestions = async (contacto) => {
+    if (cvLoading) return
+    setCvContacto(contacto)
+    setCvPreQuestions([])
+    setCvPreAnswers({})
+    setCvStage('pre_loading')
+    try {
+      if (!WORKER_URL) { callGenerateCV(contacto, {}); return }
+      const profesion = qaHistory.find(h => h.questionId === 'profesion')?.answer || qaHistory[0]?.answer || ''
+      const situacion = qaHistory.find(h => h.questionId === 'situacion')?.answer || qaHistory[1]?.answer || ''
+      const prompt = `Profesión del candidato: ${profesion}\nSituación actual: ${situacion}\n\nTexto del perfil LinkedIn:\n${profileText.slice(0, 5000)}`
+      const controller = new AbortController()
+      const timeoutId = setTimeout(() => controller.abort(), 25000)
+      const res = await fetch(WORKER_URL, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        signal: controller.signal,
+        body: JSON.stringify({
+          system_instruction: { parts: [{ text: CV_PRE_QUESTIONS_PROMPT }] },
+          contents: [{ parts: [{ text: prompt }] }],
+          generationConfig: { responseMimeType: 'application/json', maxOutputTokens: 800 },
+        }),
+      })
+      clearTimeout(timeoutId)
+      if (!res.ok) { callGenerateCV(contacto, {}); return }
+      const data = await res.json()
+      const raw = data?.candidates?.[0]?.content?.parts?.[0]?.text || ''
+      let parsed
+      try { parsed = JSON.parse(raw) } catch { parsed = null }
+      const preguntas = parsed?.preguntas?.filter(q => q.id && q.pregunta) || []
+      if (preguntas.length === 0) {
+        callGenerateCV(contacto, {})
+      } else {
+        setCvPreQuestions(preguntas)
+        setCvStage('pre_questions')
+        trackEvent('cv_pre_questions_shown', { count: preguntas.length })
+      }
+    } catch {
+      callGenerateCV(contacto, {})
+    }
+  }
+
+  const callGenerateCV = async (contacto = {}, preAnswers = {}) => {
     if (cvLoading) return
     setCvLoading(true)
     setCvError('')
@@ -1813,10 +1896,11 @@ Respondé con este JSON exacto:
     setCvQuality(null)
     setCvFinalData(null)
     setCvGapAnswers({})
-    setCvContacto(contacto)
+    const resolvedContacto = contacto && Object.keys(contacto).length ? contacto : (cvContacto || {})
+    setCvContacto(resolvedContacto)
     setCvStage('drafting')
 
-    const userPrompt = buildCvPromptBase(contacto)
+    const userPrompt = buildCvPromptBase(resolvedContacto, preAnswers)
     const controller = new AbortController()
     const timeoutId = setTimeout(() => controller.abort(), 58000)
     try {
@@ -1910,13 +1994,13 @@ Respondé con este JSON exacto:
     setCvStage('regenerating')
     trackEvent('cv_gap_form_submitted', { answered_count: Object.keys(gapAnswers).length })
 
-    let userPrompt = buildCvPromptBase(cvContacto)
+    let userPrompt = buildCvPromptBase(cvContacto, cvPreAnswers)
     const gapLines = (cvQuality?.gaps || [])
       .filter(g => gapAnswers[g.id]?.trim())
       .map(g => `- ${g.campo}: ${gapAnswers[g.id].trim()}`)
       .join('\n')
     if (gapLines) {
-      userPrompt += `\nINFORMACIÓN ADICIONAL REAL PROVISTA POR EL CANDIDATO (integrala en los bullets correspondientes, NUNCA inventes nada extra):\n${gapLines}\n`
+      userPrompt += `\nCORRECCIONES Y DATOS ADICIONALES PROVISTOS POR EL CANDIDATO (integrala en los bullets correspondientes, NUNCA inventes nada extra):\n${gapLines}\n`
     }
 
     const controller = new AbortController()
@@ -3312,22 +3396,94 @@ Respondé con este JSON exacto:
               )}
 
               {/* Loading states */}
-              {(cvStage === 'drafting' || cvStage === 'scoring' || cvStage === 'regenerating') && (
+              {(cvStage === 'pre_loading' || cvStage === 'drafting' || cvStage === 'scoring' || cvStage === 'regenerating') && (
                 <div className="rounded-2xl p-5 text-center space-y-3"
                   style={{ background: 'rgba(0,119,181,0.04)', border: '1px solid rgba(0,119,181,0.12)' }}>
                   <div className="flex justify-center">
-                    <div className="w-8 h-8 border-2 border-t-transparent rounded-full animate-spin" style={{ borderColor: '#0077B5', borderTopColor: 'transparent' }} />
+                    <div className="w-8 h-8 border-2 rounded-full animate-spin" style={{ borderColor: 'rgba(0,119,181,0.25)', borderTopColor: '#0077B5' }} />
                   </div>
                   <p className="text-sm font-medium text-slate-700">
+                    {cvStage === 'pre_loading' && 'Analizando tu perfil...'}
                     {cvStage === 'drafting' && 'Generando tu CV...'}
                     {cvStage === 'scoring' && 'Revisando con consultor de empleabilidad...'}
                     {cvStage === 'regenerating' && 'Aplicando mejoras...'}
                   </p>
                   <p className="text-xs text-slate-400">
+                    {cvStage === 'pre_loading' && 'Identificando qué información potenciaría tu CV'}
                     {cvStage === 'drafting' && 'Extrayendo tu experiencia real del perfil'}
                     {cvStage === 'scoring' && 'Evaluando calidad, fechas, logros y compatibilidad ATS'}
                     {cvStage === 'regenerating' && 'Integrando la información que nos diste'}
                   </p>
+                </div>
+              )}
+
+              {/* Pre-questions — enriquecer antes de generar */}
+              {cvStage === 'pre_questions' && cvPreQuestions.length > 0 && (
+                <div className="rounded-2xl overflow-hidden"
+                  style={{ border: '1px solid rgba(0,119,181,0.20)', boxShadow: '0 2px 12px rgba(0,0,0,0.06)' }}>
+                  <div className="px-5 pt-5 pb-4"
+                    style={{ background: 'linear-gradient(135deg,rgba(0,119,181,0.06),rgba(14,165,233,0.04))', borderBottom: '1px solid rgba(0,119,181,0.10)' }}>
+                    <div className="flex items-start gap-3">
+                      <span className="text-xl shrink-0 mt-0.5">✦</span>
+                      <div>
+                        <p className="text-sm font-bold text-slate-900 leading-snug">
+                          Antes de generar tu CV, respondé estas preguntas
+                        </p>
+                        <p className="text-xs text-slate-500 mt-1 leading-relaxed">
+                          Identificamos {cvPreQuestions.length} oportunidad{cvPreQuestions.length > 1 ? 'es' : ''} para enriquecer tu CV con datos reales que hacen diferencia. Cada respuesta se integra directamente en los bullets.
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                  <div className="px-5 py-5 space-y-5 bg-white">
+                    {cvPreQuestions.map((q, i) => (
+                      <div key={q.id} className="space-y-2">
+                        <div className="flex items-start gap-2.5">
+                          <span className="w-5 h-5 rounded-full flex items-center justify-center text-[11px] font-bold text-white shrink-0 mt-0.5"
+                            style={{ background: LI_GRADIENT }}>{i + 1}</span>
+                          <div className="flex-1 min-w-0">
+                            {q.contexto && (
+                              <p className="text-[10px] font-semibold uppercase tracking-wide mb-0.5" style={{ color: '#64748b' }}>{q.contexto}</p>
+                            )}
+                            <p className="text-sm font-medium text-slate-800 leading-snug">{q.pregunta}</p>
+                          </div>
+                        </div>
+                        <input
+                          type="text"
+                          value={cvPreAnswers[q.id] || ''}
+                          onChange={e => setCvPreAnswers(prev => ({ ...prev, [q.id]: e.target.value }))}
+                          placeholder={q.placeholder || 'Tu respuesta...'}
+                          className="w-full rounded-xl px-4 py-2.5 text-sm outline-none transition-all"
+                          style={{
+                            ...INPUT_ALT_STYLE,
+                            border: `1px solid ${cvPreAnswers[q.id]?.trim() ? 'rgba(0,119,181,0.40)' : 'rgba(0,119,181,0.15)'}`,
+                          }}
+                        />
+                      </div>
+                    ))}
+                    {cvError && <p className="text-xs text-red-500">{cvError}</p>}
+                    <div className="space-y-2 pt-1">
+                      <button
+                        onClick={() => {
+                          trackEvent('cv_pre_questions_submitted', { answered: Object.values(cvPreAnswers).filter(v => v?.trim()).length, total: cvPreQuestions.length })
+                          callGenerateCV(cvContacto, cvPreAnswers)
+                        }}
+                        className="btn-glow w-full font-semibold py-3.5 rounded-2xl text-white text-sm"
+                        style={{ background: LI_GRADIENT }}
+                      >
+                        Generar mi CV →
+                      </button>
+                      <button
+                        onClick={() => {
+                          trackEvent('cv_pre_questions_skipped')
+                          callGenerateCV(cvContacto, {})
+                        }}
+                        className="w-full py-2.5 rounded-2xl text-xs text-slate-400 hover:text-slate-600 transition-colors"
+                      >
+                        Omitir y generar sin agregar información
+                      </button>
+                    </div>
+                  </div>
                 </div>
               )}
 
@@ -4527,7 +4683,7 @@ Respondé con este JSON exacto:
                   const contacto = { email: contactEmail.trim(), telefono: contactTelefono.trim(), linkedinUrl: contactLinkedin.trim() }
                   setPendingWithSupport(false)
                   setShowCvModal(false)
-                  callGenerateCV(contacto)
+                  callGenerateCvPreQuestions(contacto)
                 }}
                 disabled={!contactEmail.trim()}
                 className="w-full py-3.5 rounded-xl text-sm font-semibold transition-opacity"
