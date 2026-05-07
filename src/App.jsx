@@ -732,7 +732,7 @@ export default function App() {
     return () => window.removeEventListener('message', handleYTMessage)
   }, [])
   const [isDragging, setIsDragging] = useState(false)
-  const [inputMode, setInputMode] = useState('pdf') // 'pdf' | 'form'
+  const [inputMode, setInputMode] = useState('linkedin') // 'linkedin' | 'pdf' | 'form' | 'sinperfil'
   const [linkedinUrl, setLinkedinUrl] = useState('')
   const [urlLoading, setUrlLoading] = useState(false)
   const [urlAttempted, setUrlAttempted] = useState(false)
@@ -843,6 +843,8 @@ export default function App() {
       .then(data => {
         if (data.error) { setLinkedinAuthError(data.error); setLinkedinAuthLoading(false); return }
         setLinkedinOAuth(data)
+        if (data.headline) setFormTitular(data.headline)
+        if (data.summary) setFormResumen(data.summary)
         setLinkedinAuthLoading(false)
         setInputMode('linkedin')
         setUrlAttempted(true)
@@ -1059,10 +1061,10 @@ export default function App() {
   // ── LinkedIn OAuth confirm: construye profileText desde datos OAuth ──
   const handleLinkedinConfirm = () => {
     if (!linkedinOAuth) return
-    const { name, email, headline, summary, positions } = linkedinOAuth
+    const { name, email, positions } = linkedinOAuth
     const parts = []
-    if (headline || formTitular) parts.push(`TITULAR PROFESIONAL: ${headline || formTitular}`)
-    if (summary || formResumen) parts.push(`RESUMEN / ACERCA DE:\n${summary || formResumen}`)
+    if (formTitular.trim()) parts.push(`TITULAR PROFESIONAL: ${formTitular.trim()}`)
+    if (formResumen.trim()) parts.push(`RESUMEN / ACERCA DE:\n${formResumen.trim()}`)
     const expFromOAuth = positions?.map(p =>
       `• ${[p.title, p.companyName].filter(Boolean).join(' en ')}${p.startYear ? ` | ${p.startYear}–${p.endYear || 'presente'}` : ''}${p.description ? `\n  ${p.description}` : ''}`
     ).join('\n')
@@ -1071,10 +1073,17 @@ export default function App() {
       .map(e => `• ${[e.cargo.trim(), e.empresa.trim()].filter(Boolean).join(' en ')}${e.periodo.trim() ? ` | ${e.periodo.trim()}` : ''}${e.descripcion.trim() ? `\n  ${e.descripcion.trim()}` : ''}`)
       .join('\n')
     if (expFromOAuth || expFromForm) parts.push(`EXPERIENCIA PROFESIONAL:\n${expFromOAuth || expFromForm}`)
+    const eduLines = formEducacion
+      .filter(e => e.institucion.trim() || e.titulo.trim())
+      .map(e => `• ${[e.titulo.trim(), e.institucion.trim()].filter(Boolean).join(' — ')}${e.periodo.trim() ? ` | ${e.periodo.trim()}` : ''}`)
+      .join('\n')
+    if (eduLines) parts.push(`EDUCACIÓN:\n${eduLines}`)
+    if (formHabilidades.trim()) parts.push(`HABILIDADES: ${formHabilidades.trim()}`)
     if (name) parts.push(`NOMBRE: ${name}`)
     if (email) parts.push(`EMAIL: ${email}`)
     setProfileText(parts.join('\n\n'))
     setFormConfirmed(true)
+    trackEvent('cv_subido', { metodo: 'linkedin_oauth' })
   }
 
   // ── Switch input mode (pdf / form / linkedin) ──
@@ -2346,58 +2355,6 @@ Respondé con este JSON exacto:
               <h2 className="text-2xl sm:text-3xl font-bold text-slate-900">Cargá tu perfil de LinkedIn</h2>
             </div>
 
-            {/* ── FASE 1: URL ── */}
-            <div className="rounded-2xl p-4 space-y-3"
-              style={{ background: 'white', border: '1px solid rgba(0,119,181,0.12)', boxShadow: '0 2px 12px rgba(0,0,0,0.05)' }}>
-              <div>
-                <p className="text-xs font-semibold text-slate-600 uppercase tracking-wide mb-1">Acceso automático</p>
-                <p className="text-slate-500 text-xs leading-relaxed">Pegá la URL de tu perfil e intentamos leerlo directamente.</p>
-              </div>
-              <div className="flex gap-2">
-                <input
-                  type="url"
-                  value={linkedinUrl}
-                  onChange={e => setLinkedinUrl(e.target.value)}
-                  onKeyDown={e => e.key === 'Enter' && handleUrlAttempt()}
-                  placeholder="https://www.linkedin.com/in/tu-usuario"
-                  disabled={urlLoading}
-                  className="flex-1 rounded-xl px-4 py-2.5 text-sm outline-none"
-                  style={{ background: '#f8fafc', border: '1px solid rgba(0,119,181,0.18)', color: '#0d2137' }}
-                />
-                <button
-                  onClick={handleUrlAttempt}
-                  disabled={!linkedinUrl.trim() || urlLoading}
-                  className="shrink-0 px-4 py-2.5 rounded-xl text-sm font-semibold transition-all duration-200 flex items-center gap-2"
-                  style={linkedinUrl.trim() && !urlLoading
-                    ? { background: LI_GRADIENT, color: '#fff' }
-                    : { background: 'rgba(0,119,181,0.07)', color: '#94a3b8', border: '1px solid rgba(0,119,181,0.12)', cursor: 'not-allowed' }
-                  }
-                >
-                  {urlLoading ? <><Spinner size={4} /><span>Accediendo...</span></> : 'Intentar →'}
-                </button>
-              </div>
-              <div aria-live="polite" aria-atomic="true" className="text-xs">
-                {urlAttempted && profileText && !pdfFileName && !formConfirmed && (
-                  <p className="text-green-600 font-medium">✅ Perfil accedido correctamente — podés analizar tu perfil.</p>
-                )}
-                {urlAttempted && !profileText && linkedinUrl.trim() && !linkedinUrl.trim().match(/^https?:\/\/(www\.)?linkedin\.com\/in\//) && (
-                  <p role="alert" className="text-red-500">La URL debe ser de linkedin.com/in/tu-usuario</p>
-                )}
-                {urlAttempted && !profileText && linkedinUrl.trim().match(/^https?:\/\/(www\.)?linkedin\.com\/in\//) && (
-                  <p className="text-amber-600">LinkedIn bloqueó el acceso automático — es su política de privacidad. Usá una de las opciones de abajo.</p>
-                )}
-                {urlAttempted && !profileText && !linkedinUrl.trim() && (
-                  <p className="text-slate-500">Elegí cómo compartir tu perfil:</p>
-                )}
-              </div>
-              <button
-                onClick={() => { setUrlAttempted(true); setInputMode('pdf') }}
-                className="text-xs text-slate-400 hover:text-slate-600 transition-colors"
-              >
-                Saltar este paso →
-              </button>
-            </div>
-
             {/* Rate limit banner */}
             {(rateLimitEvento === 'analisis') && (
               <RateLimitUI secs={rateLimitSecs} evento={rateLimitEvento}
@@ -2405,9 +2362,9 @@ Respondé con este JSON exacto:
                 sent={waitlistSent} loading={waitlistLoading} onSubmit={handleWaitlist} />
             )}
 
-            {/* ── FASE 2: Tabs (tras intento o skip) ── */}
-            {urlAttempted && (
-              <>
+            {/* ── Tabs de carga de perfil ── */}
+            <>
+
                 <div className="flex rounded-xl overflow-hidden" style={{ border: '1px solid rgba(0,119,181,0.15)' }}>
                   {[
                     { id: 'linkedin',  label: '🔗  LinkedIn' },
@@ -2479,36 +2436,171 @@ Respondé con este JSON exacto:
                     )}
 
                     {!linkedinAuthLoading && linkedinOAuth && (
-                      <div className="space-y-4">
-                        <div className="rounded-2xl p-4 flex items-center gap-3"
+                      <div className="space-y-5">
+                        {/* Lo que obtuvimos */}
+                        <div className="rounded-2xl p-4 space-y-3"
                           style={{ background: 'rgba(5,150,105,0.06)', border: '1px solid rgba(5,150,105,0.2)' }}>
-                          {linkedinOAuth.picture && (
-                            <img src={linkedinOAuth.picture} alt="Foto" className="w-10 h-10 rounded-full object-cover shrink-0"
-                              style={{ border: '2px solid #0077B5' }} />
-                          )}
-                          <div className="flex-1 min-w-0">
-                            <p className="font-semibold text-slate-900 text-sm truncate">{linkedinOAuth.name}</p>
-                            <p className="text-slate-500 text-xs truncate">{linkedinOAuth.email}</p>
+                          <div className="flex items-center gap-3">
+                            {linkedinOAuth.picture && (
+                              <img src={linkedinOAuth.picture} alt="Foto" className="w-12 h-12 rounded-full object-cover shrink-0"
+                                style={{ border: '2px solid #0077B5' }} />
+                            )}
+                            <div className="flex-1 min-w-0">
+                              <p className="font-semibold text-slate-900 text-sm truncate">{linkedinOAuth.name}</p>
+                              <p className="text-slate-500 text-xs truncate">{linkedinOAuth.email}</p>
+                            </div>
+                            <span className="text-emerald-500 shrink-0">✓ Conectado</span>
                           </div>
-                          <span className="text-emerald-500 text-lg shrink-0">✓</span>
+                          <div>
+                            <p className="text-xs font-semibold uppercase tracking-wide mb-2" style={{ color: '#059669' }}>
+                              Datos importados de LinkedIn
+                            </p>
+                            <div className="grid grid-cols-2 gap-1">
+                              {[
+                                ['Nombre', !!linkedinOAuth.name],
+                                ['Email', !!linkedinOAuth.email],
+                                ['Foto de perfil', !!linkedinOAuth.picture],
+                                ['Titular', !!linkedinOAuth.headline],
+                                ['Resumen / About', !!linkedinOAuth.summary],
+                              ].map(([label, ok]) => (
+                                <div key={label} className="flex items-center gap-1.5 text-xs">
+                                  <span style={{ color: ok ? '#059669' : '#94a3b8' }}>{ok ? '✓' : '○'}</span>
+                                  <span className={ok ? 'text-slate-700' : 'text-slate-400 line-through'}>{label}</span>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
                         </div>
 
-                        <p className="text-xs text-slate-500 text-center">Completá los datos que faltan (opcional)</p>
+                        {/* Por qué falta lo demás */}
+                        <div className="rounded-2xl p-4"
+                          style={{ background: 'rgba(245,158,11,0.06)', border: '1px solid rgba(245,158,11,0.22)' }}>
+                          <p className="text-xs font-semibold uppercase tracking-wide mb-1.5" style={{ color: '#d97706' }}>
+                            ⚠ Por qué no se importan las experiencias
+                          </p>
+                          <p className="text-xs text-slate-600 leading-relaxed">
+                            La API de LinkedIn <strong>no permite acceder a experiencias laborales, educación ni habilidades</strong> de apps externas — es su política de privacidad. Completalos abajo para un análisis más preciso.
+                          </p>
+                        </div>
 
-                        <div className="space-y-3">
-                          <input
-                            value={formTitular} onChange={e => setFormTitular(e.target.value)}
-                            placeholder="Titular profesional (ej: Desarrolladora Full Stack)"
-                            className="w-full rounded-xl px-4 py-3 text-sm"
-                            style={INPUT_STYLE}
-                          />
-                          <textarea
-                            value={formResumen} onChange={e => setFormResumen(e.target.value)}
-                            placeholder="Resumen / About (opcional)"
-                            rows={3}
-                            className="w-full rounded-xl px-4 py-3 text-sm resize-none"
-                            style={INPUT_STYLE}
-                          />
+                        {/* Titular */}
+                        <div>
+                          <label className="text-xs font-semibold text-slate-600 uppercase tracking-wide flex items-center gap-2 mb-1.5">
+                            Titular profesional
+                            {linkedinOAuth.headline
+                              ? <span className="text-emerald-600 normal-case font-normal tracking-normal">✓ importado</span>
+                              : <span style={{ color: '#0077B5' }}>*</span>}
+                          </label>
+                          <input value={formTitular}
+                            onChange={e => { setFormTitular(e.target.value); setFormConfirmed(false) }}
+                            placeholder="Ej: Desarrollador Full Stack | React & Node | 8 años"
+                            className="w-full rounded-xl px-4 py-3 text-sm outline-none" style={INPUT_STYLE} />
+                        </div>
+
+                        {/* Resumen */}
+                        <div>
+                          <label className="text-xs font-semibold text-slate-600 uppercase tracking-wide flex items-center gap-2 mb-1.5">
+                            Resumen / About
+                            {linkedinOAuth.summary
+                              ? <span className="text-emerald-600 normal-case font-normal tracking-normal">✓ importado</span>
+                              : <span className="text-slate-400 font-normal normal-case tracking-normal">(recomendado)</span>}
+                          </label>
+                          <textarea value={formResumen}
+                            onChange={e => { setFormResumen(e.target.value); setFormConfirmed(false) }}
+                            placeholder="Tu propuesta de valor, logros clave y especialización..."
+                            rows={3} className="w-full rounded-xl px-4 py-3 text-sm resize-none outline-none" style={INPUT_STYLE} />
+                        </div>
+
+                        {/* Experiencias */}
+                        <div>
+                          <div className="flex items-center justify-between mb-2">
+                            <label className="text-xs font-semibold text-slate-600 uppercase tracking-wide flex items-center gap-2">
+                              Experiencia profesional
+                              <span className="text-amber-500 font-normal normal-case tracking-normal">⚠ no importada</span>
+                            </label>
+                            <button
+                              onClick={() => { setFormExperiencias(p => [...p, { cargo: '', empresa: '', periodo: '', descripcion: '' }]); setFormConfirmed(false) }}
+                              className="text-xs px-3 py-1 rounded-lg" style={BTN_GHOST_STYLE}>
+                              + Agregar
+                            </button>
+                          </div>
+                          {formExperiencias.map((exp, i) => (
+                            <div key={i} className="rounded-xl p-4 space-y-2 mb-3"
+                              style={{ background: 'white', border: '1px solid rgba(0,119,181,0.12)' }}>
+                              <div className="flex items-center justify-between">
+                                <span className="text-xs text-slate-500 font-semibold">Experiencia {i + 1}</span>
+                                {formExperiencias.length > 1 && (
+                                  <button onClick={() => { setFormExperiencias(p => p.filter((_, j) => j !== i)); setFormConfirmed(false) }}
+                                    className="text-xs text-slate-400 hover:text-red-400 transition-colors">✕</button>
+                                )}
+                              </div>
+                              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                                <input value={exp.cargo}
+                                  onChange={e => { setFormExperiencias(p => p.map((x, j) => j === i ? { ...x, cargo: e.target.value } : x)); setFormConfirmed(false) }}
+                                  placeholder="Cargo" className="w-full rounded-xl px-3 py-2.5 text-sm outline-none" style={INPUT_ALT_STYLE} />
+                                <input value={exp.empresa}
+                                  onChange={e => { setFormExperiencias(p => p.map((x, j) => j === i ? { ...x, empresa: e.target.value } : x)); setFormConfirmed(false) }}
+                                  placeholder="Empresa" className="w-full rounded-xl px-3 py-2.5 text-sm outline-none" style={INPUT_ALT_STYLE} />
+                              </div>
+                              <input value={exp.periodo}
+                                onChange={e => { setFormExperiencias(p => p.map((x, j) => j === i ? { ...x, periodo: e.target.value } : x)); setFormConfirmed(false) }}
+                                placeholder="Período (Ej: Mar 2021 – Presente)" className="w-full rounded-xl px-3 py-2.5 text-sm outline-none" style={INPUT_ALT_STYLE} />
+                              <textarea value={exp.descripcion}
+                                onChange={e => { setFormExperiencias(p => p.map((x, j) => j === i ? { ...x, descripcion: e.target.value } : x)); setFormConfirmed(false) }}
+                                placeholder="Responsabilidades y logros (opcional)" rows={2}
+                                className="w-full rounded-xl px-3 py-2.5 text-sm outline-none resize-none" style={INPUT_ALT_STYLE} />
+                            </div>
+                          ))}
+                        </div>
+
+                        {/* Educación */}
+                        <div>
+                          <div className="flex items-center justify-between mb-2">
+                            <label className="text-xs font-semibold text-slate-600 uppercase tracking-wide flex items-center gap-2">
+                              Educación
+                              <span className="text-amber-500 font-normal normal-case tracking-normal">⚠ no importada</span>
+                            </label>
+                            <button
+                              onClick={() => { setFormEducacion(p => [...p, { institucion: '', titulo: '', periodo: '' }]); setFormConfirmed(false) }}
+                              className="text-xs px-3 py-1 rounded-lg" style={BTN_GHOST_STYLE}>
+                              + Agregar
+                            </button>
+                          </div>
+                          {formEducacion.map((edu, i) => (
+                            <div key={i} className="rounded-xl p-4 space-y-2 mb-3"
+                              style={{ background: 'white', border: '1px solid rgba(0,119,181,0.12)' }}>
+                              <div className="flex items-center justify-between">
+                                <span className="text-xs text-slate-500 font-semibold">Educación {i + 1}</span>
+                                {formEducacion.length > 1 && (
+                                  <button onClick={() => { setFormEducacion(p => p.filter((_, j) => j !== i)); setFormConfirmed(false) }}
+                                    className="text-xs text-slate-400 hover:text-red-400 transition-colors">✕</button>
+                                )}
+                              </div>
+                              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                                <input value={edu.institucion}
+                                  onChange={e => { setFormEducacion(p => p.map((x, j) => j === i ? { ...x, institucion: e.target.value } : x)); setFormConfirmed(false) }}
+                                  placeholder="Institución" className="w-full rounded-xl px-3 py-2.5 text-sm outline-none" style={INPUT_ALT_STYLE} />
+                                <input value={edu.titulo}
+                                  onChange={e => { setFormEducacion(p => p.map((x, j) => j === i ? { ...x, titulo: e.target.value } : x)); setFormConfirmed(false) }}
+                                  placeholder="Título / Carrera" className="w-full rounded-xl px-3 py-2.5 text-sm outline-none" style={INPUT_ALT_STYLE} />
+                              </div>
+                              <input value={edu.periodo}
+                                onChange={e => { setFormEducacion(p => p.map((x, j) => j === i ? { ...x, periodo: e.target.value } : x)); setFormConfirmed(false) }}
+                                placeholder="Período (Ej: 2015 – 2019)" className="w-full rounded-xl px-3 py-2.5 text-sm outline-none" style={INPUT_ALT_STYLE} />
+                            </div>
+                          ))}
+                        </div>
+
+                        {/* Habilidades */}
+                        <div>
+                          <label className="text-xs font-semibold text-slate-600 uppercase tracking-wide flex items-center gap-2 mb-1.5">
+                            Habilidades
+                            <span className="text-amber-500 font-normal normal-case tracking-normal">⚠ no importadas</span>
+                          </label>
+                          <input value={formHabilidades}
+                            onChange={e => { setFormHabilidades(e.target.value); setFormConfirmed(false) }}
+                            placeholder="Ej: React, Gestión de equipos, Análisis de datos, Inglés avanzado"
+                            className="w-full rounded-xl px-4 py-3 text-sm outline-none" style={INPUT_STYLE} />
                         </div>
 
                         <button
@@ -2521,7 +2613,7 @@ Respondé con este JSON exacto:
                             cursor: formTitular.trim() ? 'pointer' : 'not-allowed',
                           }}
                         >
-                          Completar mi perfil →
+                          {formConfirmed ? '✅ Datos listos — podés analizar tu perfil' : 'Usar estos datos →'}
                         </button>
                       </div>
                     )}
@@ -2941,8 +3033,7 @@ Respondé con este JSON exacto:
                     )}
                   </div>
                 )}
-              </>
-            )}
+            </>
 
             {/* Resumen de respuestas */}
             <div className="rounded-xl p-4"
