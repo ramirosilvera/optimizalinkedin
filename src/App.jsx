@@ -1395,6 +1395,7 @@ Generá un análisis en este formato JSON exacto:
     } finally {
       setLeadSaving(false)
       setLeadSent(true)
+      trackEvent('lead_saved', { colaborar })
       if (colaborar) window.open(MP_URL, '_blank', 'noopener,noreferrer')
       window.open(RAMIRO_LINKEDIN_URL, '_blank', 'noopener,noreferrer')
     }
@@ -1469,6 +1470,7 @@ Generá el feedback en este JSON exacto:
       catch { const m = raw.match(/\{[\s\S]*\}/); if (m) parsed = JSON.parse(m[0]); else throw new Error('Error al procesar el feedback. Intentá de nuevo.') }
       setInterviewFeedback(parsed)
       trackEvent('entrevista_completada', { puntaje: parsed.puntaje_entrevista })
+      saveEntrevista(parsed, answers).catch(err => console.error('[entrevistas save]', err))
     } catch (err) {
       if (!err.isRateLimit) {
         const msg = err.name === 'AbortError' ? 'El análisis tardó demasiado. Intentá de nuevo.' : err.message || 'Error al generar el feedback.'
@@ -1589,6 +1591,30 @@ Generá el feedback en este JSON exacto:
         consentimiento: true,
       }),
     }).catch(err => console.error('[cv_generados save]', err))
+  }
+
+  const saveEntrevista = async (feedback, answers) => {
+    if (!SUPABASE_URL || !SUPABASE_KEY) return
+    try {
+      await fetch(`${SUPABASE_URL}/rest/v1/entrevistas`, {
+        method: 'POST',
+        headers: {
+          apikey: SUPABASE_KEY,
+          Authorization: `Bearer ${SUPABASE_KEY}`,
+          'Content-Type': 'application/json',
+          Prefer: 'return=minimal',
+        },
+        body: JSON.stringify({
+          qa_history: qaHistory,
+          respuestas_entrevista: answers,
+          feedback_entrevista: feedback,
+          puntaje_entrevista: feedback?.puntaje_entrevista ?? null,
+        }),
+      })
+      trackEvent('entrevista_saved', { puntaje: feedback?.puntaje_entrevista })
+    } catch (err) {
+      console.error('[entrevistas save]', err)
+    }
   }
 
   const buildCvHtml = (cv, photoBase64 = null, photoMime = 'image/jpeg') => {
@@ -3888,6 +3914,41 @@ Respondé con este JSON exacto:
                   </div>
                 </div>
 
+                {/* Seguir en LinkedIn — Ramiro + página */}
+                <div className="rounded-2xl p-5 space-y-3"
+                  style={{ background: 'rgba(0,119,181,0.04)', border: '1px solid rgba(0,119,181,0.15)' }}>
+                  <div>
+                    <p className="text-xs font-semibold uppercase tracking-wide" style={{ color: '#0077B5' }}>
+                      🔗 Seguinos en LinkedIn
+                    </p>
+                    <p className="text-slate-500 text-xs mt-1 leading-relaxed">
+                      Tips de empleabilidad, novedades de la app y recursos para potenciar tu búsqueda laboral.
+                    </p>
+                  </div>
+                  <a href={RAMIRO_LINKEDIN_URL} target="_blank" rel="noopener noreferrer"
+                    onClick={() => trackEvent('click_externo', { destino: 'linkedin_ramiro', ubicacion: 'interview_feedback' })}
+                    className="flex items-center gap-3 px-4 py-3 rounded-xl transition-all hover:opacity-80"
+                    style={{ background: 'white', border: '1px solid rgba(0,119,181,0.18)' }}>
+                    <LinkedInIcon className="w-5 h-5 shrink-0" style={{ color: '#0077B5' }} />
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-semibold text-slate-800">Ramiro Silvera</p>
+                      <p className="text-xs text-slate-500">Gerente de RRHH · Creador de la app</p>
+                    </div>
+                    <span className="text-xs font-semibold shrink-0" style={{ color: '#0077B5' }}>Seguir →</span>
+                  </a>
+                  <a href={COMPANY_LINKEDIN_URL} target="_blank" rel="noopener noreferrer"
+                    onClick={() => trackEvent('click_externo', { destino: 'linkedin_pagina', ubicacion: 'interview_feedback' })}
+                    className="flex items-center gap-3 px-4 py-3 rounded-xl transition-all hover:opacity-80"
+                    style={{ background: 'white', border: '1px solid rgba(0,119,181,0.18)' }}>
+                    <LinkedInIcon className="w-5 h-5 shrink-0" style={{ color: '#0077B5' }} />
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-semibold text-slate-800">OptimizaLinkedin</p>
+                      <p className="text-xs text-slate-500">Comunidad · Recursos de empleabilidad</p>
+                    </div>
+                    <span className="text-xs font-semibold shrink-0" style={{ color: '#0077B5' }}>Seguir →</span>
+                  </a>
+                </div>
+
                 {/* Card Ramiro — asesoramiento personalizado */}
                 <div className="rounded-2xl p-5"
                   style={{ background: 'rgba(0,119,181,0.05)', border: '1px solid rgba(0,119,181,0.18)' }}>
@@ -3898,7 +3959,10 @@ Respondé con este JSON exacto:
                     Podemos revisar tu perfil en vivo, reescribir tu titular y prepararte para entrevistas reales. Escribime por privado en LinkedIn.
                   </p>
                   <button
-                    onClick={() => !leadSaving && !leadSent && setShowLeadModal(true)}
+                    onClick={() => {
+                      trackEvent('lead_modal_open', { ubicacion: 'interview_feedback' })
+                      !leadSaving && !leadSent && setShowLeadModal(true)
+                    }}
                     disabled={leadSaving || leadSent}
                     className={`inline-flex items-center gap-2 px-5 py-2.5 rounded-xl text-white font-semibold text-sm ${!leadSent ? 'btn-glow' : ''}`}
                     style={{
