@@ -3,6 +3,7 @@ const DEFAULT_MODEL = 'gemini-2.5-flash-lite'
 const GEMINI_TIMEOUT_MS = 55_000
 const ALLOWED_ORIGINS = new Set([
   'https://optimizalinkedin.com',
+  'https://ramirosilvera.github.io',
   'http://localhost:5173',
   'http://localhost:4173',
 ])
@@ -98,17 +99,21 @@ export default {
     const controller = new AbortController()
     const timeoutId = setTimeout(() => controller.abort(), GEMINI_TIMEOUT_MS)
 
+    const geminiKeys = (env.GEMINI_API_KEYS || env.GEMINI_API_KEY || '').split(',').map(k => k.trim()).filter(Boolean)
     let res
     try {
-      res = await fetch(
-        `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${env.GEMINI_API_KEY}`,
-        {
-          method: 'POST',
-          headers: { 'content-type': 'application/json' },
-          body: JSON.stringify(geminiBody),
-          signal: controller.signal,
-        }
-      )
+      for (const key of geminiKeys) {
+        res = await fetch(
+          `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${key}`,
+          {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify(geminiBody),
+            signal: controller.signal,
+          }
+        )
+        if (res.status !== 429) break
+      }
     } catch (err) {
       clearTimeout(timeoutId)
       const msg = err.name === 'AbortError' ? 'Upstream timeout' : 'Upstream fetch failed'

@@ -6,10 +6,46 @@ const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL || ''
 const SUPABASE_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY || ''
 
 function parseGeminiError(status, body) {
-  if (status === 429) return 'Cuota de API agotada. Generá una nueva key en aistudio.google.com/apikey o esperá a que se resetee.'
   if (status === 400) return 'API key inválida o solicitud incorrecta. Revisá la key ingresada.'
   if (status === 403) return 'API key sin permisos. Verificá que esté habilitada en Google AI Studio.'
   return `Error HTTP ${status}: ${body?.error?.message || 'Error desconocido'}`
+}
+
+function makeRateLimitError() {
+  return Object.assign(new Error('RATE_LIMIT'), { isRateLimit: true })
+}
+
+function RateLimitUI({ secs, evento, email, onEmailChange, sent, loading, onSubmit }) {
+  const amber = { background: 'rgba(251,191,36,0.10)', border: '1px solid rgba(251,191,36,0.35)', color: '#fbbf24' }
+  if (secs > 0) return (
+    <div role="alert" className="rounded-xl p-4 text-sm flex items-center gap-3" style={amber}>
+      <span style={{ fontSize: '1.1em' }}>⏱</span>
+      <span>Estamos experimentando alta demanda. Volvé a intentar en <strong>{secs}s</strong></span>
+    </div>
+  )
+  if (!evento) return null
+  if (sent) return (
+    <div role="alert" className="rounded-xl p-4 text-sm text-center font-medium"
+      style={{ background: 'rgba(34,197,94,0.10)', border: '1px solid rgba(34,197,94,0.35)', color: '#22c55e' }}>
+      ✓ ¡Anotado! Te avisamos cuando vuelva a estar disponible.
+    </div>
+  )
+  return (
+    <div role="alert" className="rounded-xl p-4 text-sm space-y-3" style={amber}>
+      <p>⏱ Los tokens de IA se agotaron por hoy. Dejá tu email y te avisamos mañana cuando se reinicien.</p>
+      <div className="flex gap-2">
+        <input type="email" value={email} onChange={e => onEmailChange(e.target.value)}
+          placeholder="tu@email.com" onKeyDown={e => e.key === 'Enter' && email.includes('@') && onSubmit(email)}
+          className="flex-1 rounded-lg px-3 py-2 text-sm outline-none"
+          style={{ background: 'rgba(15,23,42,0.85)', border: '1px solid rgba(251,191,36,0.3)', color: 'white' }} />
+        <button onClick={() => onSubmit(email)} disabled={loading || !email.includes('@')}
+          className="px-4 py-2 rounded-lg text-sm font-semibold text-slate-900"
+          style={{ background: '#fbbf24', opacity: loading || !email.includes('@') ? 0.45 : 1, cursor: loading || !email.includes('@') ? 'not-allowed' : 'pointer' }}>
+          {loading ? '...' : 'Avisame'}
+        </button>
+      </div>
+    </div>
+  )
 }
 
 const STEPS = {
@@ -764,6 +800,16 @@ export default function App() {
   const [liAutofillLoading, setLiAutofillLoading] = useState(false)
   const [liAutofillError, setLiAutofillError] = useState(false)
 
+  // Sin perfil mode
+  const [sinPerfilMode, setSinPerfilMode] = useState(false)
+
+  // Rate limiting + waitlist
+  const [rateLimitSecs, setRateLimitSecs] = useState(0)
+  const [rateLimitEvento, setRateLimitEvento] = useState('')
+  const [waitlistEmail, setWaitlistEmail] = useState('')
+  const [waitlistSent, setWaitlistSent] = useState(false)
+  const [waitlistLoading, setWaitlistLoading] = useState(false)
+
   // LinkedIn OAuth callback — lee ?code=&state= del URL al cargar
   useEffect(() => {
     const params = new URLSearchParams(window.location.search)
@@ -823,6 +869,13 @@ export default function App() {
     return () => window.removeEventListener('li-autofill', handler)
   }, [])
 
+  // Countdown de rate limit
+  useEffect(() => {
+    if (rateLimitSecs <= 0) return
+    const t = setTimeout(() => setRateLimitSecs(s => s - 1), 1000)
+    return () => clearTimeout(t)
+  }, [rateLimitSecs])
+
   // Scroll al tope en cada cambio de paso (crítico en mobile)
   useEffect(() => { window.scrollTo({ top: 0, behavior: 'instant' }) }, [step])
 
@@ -860,6 +913,21 @@ export default function App() {
     setShowLeadModal(false)
     setLeadNombre('')
     setLeadApellido('')
+  }
+
+  const handleWaitlist = async (email) => {
+    if (!email.includes('@')) return
+    setWaitlistLoading(true)
+    try {
+      await fetch(`${SUPABASE_URL}/rest/v1/waitlist`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}` },
+        body: JSON.stringify({ email, evento: rateLimitEvento }),
+      })
+      trackEvent('waitlist_signup', { evento: rateLimitEvento })
+    } catch { /* silencioso */ }
+    setWaitlistLoading(false)
+    setWaitlistSent(true)
   }
 
   const reset = () => {
@@ -1118,6 +1186,7 @@ export default function App() {
       })
       if (!res.ok) {
         const body = await res.json().catch(() => ({}))
+        if (res.status === 429) { setRateLimitEvento('analisis'); setRateLimitSecs(60); setWaitlistSent(false); throw makeRateLimitError() }
         throw new Error(parseGeminiError(res.status, body))
       }
       const data = await res.json()
@@ -1126,6 +1195,7 @@ export default function App() {
       setProfileText(text)
       trackEvent('cv_subido', { metodo: 'pdf' })
     } catch (err) {
+      if (err.isRateLimit) { setPdfLoading(false); return }
       setPdfError(err.message || 'Error al procesar el PDF.')
       setPdfFileName('')
     } finally {
@@ -1154,7 +1224,18 @@ export default function App() {
       .map(h => `- ${STATIC_QUESTIONS.find(q => q.question === h.question)?.id ?? 'dato'}: ${h.answer}`)
       .join('\n')
 
-    const userPrompt = `Perfil del usuario:
+    const userPrompt = sinPerfilMode
+      ? `El usuario aún NO tiene perfil de LinkedIn. Basándote EXCLUSIVAMENTE en sus respuestas del cuestionario, generá un diagnóstico base con:
+- Titular propuesto desde cero (con keywords relevantes para su sector y objetivo)
+- Resumen propuesto desde cero con propuesta de valor, logros probables y CTA
+- Palabras clave para aparecer en búsquedas
+- Recomendaciones concretas para construir su perfil
+
+Para "puntaje_general" devolvé null. Para "nivel_seo" devolvé null.
+Para "titular_actual" y "resumen_actual" devolvé "No proporcionado".
+Contexto del usuario:
+${contextText}`
+      : `Perfil del usuario:
 ${contextText}
 
 Perfil de LinkedIn:
@@ -1204,6 +1285,7 @@ Generá un análisis en este formato JSON exacto:
       })
       if (!res.ok) {
         const e = await res.json().catch(() => ({}))
+        if (res.status === 429) { setRateLimitEvento('analisis'); setRateLimitSecs(60); setWaitlistSent(false); throw makeRateLimitError() }
         throw new Error(parseGeminiError(res.status, e))
       }
       const data = await res.json()
@@ -1228,12 +1310,14 @@ Generá un análisis en este formato JSON exacto:
       trackEvent('analisis_consent_shown', { puntaje: parsed.puntaje_general })
       setStep(STEPS.RESULTS)
     } catch (err) {
-      if (err.name === 'AbortError') {
+      if (err.isRateLimit) { setStep(STEPS.PROFILE_INPUT) }
+      else if (err.name === 'AbortError') {
         setAnalysisError('El análisis fue cancelado o tardó demasiado (90 s). Revisá tu conexión e intentá de nuevo.')
+        setStep(STEPS.PROFILE_INPUT)
       } else {
         setAnalysisError(err.message || 'Error al conectar con Gemini.')
+        setStep(STEPS.PROFILE_INPUT)
       }
-      setStep(STEPS.PROFILE_INPUT)
     } finally {
       clearTimeout(timeoutId)
       setAnalyzing(false)
@@ -1332,6 +1416,7 @@ Generá el feedback en este JSON exacto:
       })
       if (!res.ok) {
         const e = await res.json().catch(() => ({}))
+        if (res.status === 429) { setRateLimitEvento('entrevista'); setRateLimitSecs(60); setWaitlistSent(false); throw makeRateLimitError() }
         throw new Error(parseGeminiError(res.status, e))
       }
       const data = await res.json()
@@ -1344,8 +1429,10 @@ Generá el feedback en este JSON exacto:
       setInterviewFeedback(parsed)
       trackEvent('entrevista_completada', { puntaje: parsed.puntaje_entrevista })
     } catch (err) {
-      const msg = err.name === 'AbortError' ? 'El análisis tardó demasiado. Intentá de nuevo.' : err.message || 'Error al generar el feedback.'
-      setInterviewError(msg)
+      if (!err.isRateLimit) {
+        const msg = err.name === 'AbortError' ? 'El análisis tardó demasiado. Intentá de nuevo.' : err.message || 'Error al generar el feedback.'
+        setInterviewError(msg)
+      }
     } finally {
       clearTimeout(timeoutId)
       setInterviewLoading(false)
@@ -1377,6 +1464,7 @@ Generá el feedback en este JSON exacto:
       })
       if (!res.ok) {
         const e = await res.json().catch(() => ({}))
+        if (res.status === 429) { setRateLimitEvento('star'); setRateLimitSecs(60); setWaitlistSent(false); throw makeRateLimitError() }
         throw new Error(parseGeminiError(res.status, e))
       }
       const data = await res.json()
@@ -1387,7 +1475,7 @@ Generá el feedback en este JSON exacto:
       setStarFeedback(parsed)
       trackEvent('star_feedback_received', { puntaje: parsed.puntaje, question_idx: starQuestionIdx })
     } catch (err) {
-      setStarError(err.name === 'AbortError' ? 'El pedido tardó demasiado. Intentá de nuevo.' : err.message || 'No se pudo obtener el feedback.')
+      if (!err.isRateLimit) setStarError(err.name === 'AbortError' ? 'El pedido tardó demasiado. Intentá de nuevo.' : err.message || 'No se pudo obtener el feedback.')
     } finally {
       clearTimeout(timeoutId)
       setStarLoading(false)
@@ -1649,6 +1737,7 @@ Respondé con este JSON exacto:
       })
       if (!res.ok) {
         const e = await res.json().catch(() => ({}))
+        if (res.status === 429) { setRateLimitEvento('cv'); setRateLimitSecs(60); setWaitlistSent(false); throw makeRateLimitError() }
         throw new Error(parseGeminiError(res.status, e))
       }
       const data = await res.json()
@@ -1678,7 +1767,7 @@ Respondé con este JSON exacto:
       }
     } catch (err) {
       setCvStage('idle')
-      setCvError(err.name === 'AbortError' ? 'El pedido tardó demasiado. Intentá de nuevo.' : err.message || 'No se pudo generar el CV.')
+      if (!err.isRateLimit) setCvError(err.name === 'AbortError' ? 'El pedido tardó demasiado. Intentá de nuevo.' : err.message || 'No se pudo generar el CV.')
     } finally {
       clearTimeout(timeoutId)
       setCvLoading(false)
@@ -1717,6 +1806,7 @@ Respondé con este JSON exacto:
       })
       if (!res.ok) {
         const e = await res.json().catch(() => ({}))
+        if (res.status === 429) { setRateLimitEvento('cv'); setRateLimitSecs(60); setWaitlistSent(false); throw makeRateLimitError() }
         throw new Error(parseGeminiError(res.status, e))
       }
       const data = await res.json()
@@ -1730,8 +1820,10 @@ Respondé con este JSON exacto:
       trackEvent('cv_regenerated', { answered_count: Object.keys(gapAnswers).length })
       saveCvGenerado({ contacto: cvContacto, cv }).catch(err => console.error('[cv_generados regen save]', err))
     } catch (err) {
-      setCvStage('gap_form')
-      setCvError(err.name === 'AbortError' ? 'El pedido tardó demasiado. Intentá de nuevo.' : err.message || 'No se pudo regenerar el CV.')
+      if (!err.isRateLimit) {
+        setCvStage('gap_form')
+        setCvError(err.name === 'AbortError' ? 'El pedido tardó demasiado. Intentá de nuevo.' : err.message || 'No se pudo regenerar el CV.')
+      }
     } finally {
       clearTimeout(timeoutId)
       setCvLoading(false)
@@ -1804,21 +1896,21 @@ Respondé con este JSON exacto:
                 ✦ &nbsp;Análisis profesional con IA
               </div>
               <h1 className="text-4xl sm:text-5xl font-bold leading-tight tracking-tight" style={{ letterSpacing: '-0.02em' }}>
-                <span className="text-slate-900">Optimizá tu perfil</span><br />
+                <span className="text-slate-900">Que los reclutadores</span><br />
                 <span style={{ background: 'linear-gradient(135deg, #0ea5e9 0%, #6366f1 100%)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent' }}>
-                  de LinkedIn
+                  te encuentren en LinkedIn
                 </span>
               </h1>
               <p className="text-slate-600 text-base max-w-sm mx-auto leading-relaxed">
-                Optimizá tu LinkedIn, mejorá tu CV y practicá la entrevista con IA. Gratis. Hecho con criterio de headhunter.
+                Aparecer cuando buscan tu perfil. Pasar los filtros automáticos al postularte. Tener un CV moderno listo para enviar. Todo eso, gratis.
               </p>
             </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
               {[
-                { icon: '🎯', label: 'Headhunter', text: 'Diagnóstico profesional real', accent: '#0ea5e9' },
-                { icon: '🔍', label: 'SEO',         text: 'Aparecer en búsquedas clave',  accent: '#6366f1' },
-                { icon: '⚡', label: '6 segundos',  text: 'Test de primer impacto',        accent: '#0d9488' },
+                { icon: '📬', label: 'Que te contacten', text: 'Aparecer en búsquedas de reclutadores que buscan tu perfil exacto', accent: '#0ea5e9' },
+                { icon: '✅', label: 'Pasá los filtros', text: 'ATS-compatible: que tu postulación no quede fuera por un algoritmo', accent: '#6366f1' },
+                { icon: '📄', label: 'CV listo hoy',     text: 'Un CV moderno de 1 página, listo para enviar en cualquier proceso', accent: '#0d9488' },
               ].map(item => (
                 <div key={item.label} className="rounded-2xl p-4 text-center relative overflow-hidden"
                   style={{ background: 'white', border: '1px solid rgba(0,119,181,0.12)', boxShadow: '0 2px 8px rgba(0,0,0,0.05)' }}>
@@ -1835,9 +1927,9 @@ Respondé con este JSON exacto:
                 className="btn-glow w-full text-white font-semibold py-4 px-8 rounded-2xl text-base"
                 style={{ background: 'linear-gradient(135deg, #0077B5 0%, #0ea5e9 100%)' }}
               >
-                Empezar análisis →
+                Obtener mi diagnóstico gratis →
               </button>
-              <p className="text-slate-500 text-xs">Gratis · Sin registro · Sostenida por la comunidad 🙌</p>
+              <p className="text-slate-500 text-xs">Sin registro · Resultado en 2 minutos · 100% gratis</p>
             </div>
 
             <CommentsSection />
@@ -2251,14 +2343,22 @@ Respondé con este JSON exacto:
               </button>
             </div>
 
+            {/* Rate limit banner */}
+            {(rateLimitEvento === 'analisis') && (
+              <RateLimitUI secs={rateLimitSecs} evento={rateLimitEvento}
+                email={waitlistEmail} onEmailChange={setWaitlistEmail}
+                sent={waitlistSent} loading={waitlistLoading} onSubmit={handleWaitlist} />
+            )}
+
             {/* ── FASE 2: Tabs (tras intento o skip) ── */}
             {urlAttempted && (
               <>
                 <div className="flex rounded-xl overflow-hidden" style={{ border: '1px solid rgba(0,119,181,0.15)' }}>
                   {[
-                    { id: 'linkedin', label: '🔗  LinkedIn' },
-                    { id: 'pdf',      label: '📄  PDF' },
-                    { id: 'form',     label: '✏️  Manual' },
+                    { id: 'linkedin',  label: '🔗  LinkedIn' },
+                    { id: 'pdf',       label: '📄  PDF' },
+                    { id: 'form',      label: '✏️  Manual' },
+                    { id: 'sinperfil', label: '💡  Sin perfil' },
                   ].map(tab => (
                     <button
                       key={tab.id}
@@ -2752,6 +2852,40 @@ Respondé con este JSON exacto:
                     </button>
                   </div>
                 )}
+
+                {/* ── MODO SIN PERFIL ── */}
+                {inputMode === 'sinperfil' && (
+                  <div className="space-y-4">
+                    <div className="rounded-2xl p-5 space-y-3"
+                      style={{ background: 'rgba(99,102,241,0.05)', border: '1px solid rgba(99,102,241,0.18)' }}>
+                      <p className="text-xs font-semibold uppercase tracking-wide" style={{ color: '#6366f1' }}>
+                        ¿No tenés perfil de LinkedIn todavía?
+                      </p>
+                      <p className="text-slate-600 text-sm leading-relaxed">
+                        Generamos un diagnóstico de cómo posicionarte y te damos titular, resumen y palabras clave para construir tu perfil desde cero.
+                      </p>
+                      <ul className="space-y-1.5">
+                        {['Titular propuesto con keywords de tu sector', 'Resumen con propuesta de valor clara', 'Palabras clave para aparecer en búsquedas'].map(t => (
+                          <li key={t} className="flex items-start gap-2 text-xs text-slate-600">
+                            <span className="text-indigo-500 shrink-0 mt-0.5">✓</span>{t}
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                    <button
+                      onClick={() => { setSinPerfilMode(true); setProfileText('SIN_PERFIL') }}
+                      className="w-full py-3.5 rounded-2xl font-semibold text-white btn-glow"
+                      style={{ background: 'linear-gradient(135deg,#6366f1,#8b5cf6)' }}
+                    >
+                      Generar mi diagnóstico base →
+                    </button>
+                    {sinPerfilMode && (
+                      <p className="text-xs text-center text-emerald-600 font-medium">
+                        ✓ Listo — podés analizar tu perfil sin subir nada
+                      </p>
+                    )}
+                  </div>
+                )}
               </>
             )}
 
@@ -2778,7 +2912,7 @@ Respondé con este JSON exacto:
                 <p>⚠️ {analysisError}</p>
                 <button
                   onClick={callGemini}
-                  disabled={!profileText || analyzing}
+                  disabled={(!profileText && !sinPerfilMode) || analyzing}
                   className="text-xs font-semibold px-3 py-1.5 rounded-lg transition-all duration-200"
                   style={{
                     background: 'rgba(185,28,28,0.1)',
@@ -2916,9 +3050,20 @@ Respondé con este JSON exacto:
             )}
 
             <ResultCard title="Diagnóstico general">
+              {result.puntaje_general === null && (
+                <div className="rounded-xl p-3 mb-4 flex items-start gap-2 text-xs"
+                  style={{ background: 'rgba(99,102,241,0.07)', border: '1px solid rgba(99,102,241,0.2)', color: '#6366f1' }}>
+                  <span className="shrink-0 text-base">💡</span>
+                  <span>Diagnóstico base generado con tus respuestas. Subí tu PDF de LinkedIn para obtener un análisis completo con puntaje real.</span>
+                </div>
+              )}
               <div className="flex flex-col sm:flex-row items-center sm:items-start gap-6">
                 <div className="flex flex-col items-center gap-3">
-                  <ScoreRing score={result.puntaje_general ?? 0} />
+                  {result.puntaje_general !== null
+                    ? <ScoreRing score={result.puntaje_general ?? 0} />
+                    : <div className="w-20 h-20 rounded-full flex items-center justify-center text-3xl"
+                        style={{ background: 'rgba(99,102,241,0.08)', border: '2px solid rgba(99,102,241,0.2)' }}>💡</div>
+                  }
                   {result.nivel_seo && (
                     <span className="text-xs font-semibold px-3 py-1 rounded-full"
                       style={{
@@ -3012,7 +3157,8 @@ Respondé con este JSON exacto:
                         />
                       </div>
                     ))}
-                    {cvError && <p className="text-xs text-red-500">{cvError}</p>}
+                    {rateLimitEvento === 'cv' && <RateLimitUI secs={rateLimitSecs} evento={rateLimitEvento} email={waitlistEmail} onEmailChange={setWaitlistEmail} sent={waitlistSent} loading={waitlistLoading} onSubmit={handleWaitlist} />}
+                    {cvError && !rateLimitEvento && <p className="text-xs text-red-500">{cvError}</p>}
                     <div className="flex flex-col gap-2 pt-1">
                       <button
                         onClick={() => callRegenerateCV(cvGapAnswers)}
@@ -3071,7 +3217,8 @@ Respondé con este JSON exacto:
                 </div>
               )}
 
-              {cvError && cvStage === 'idle' && <p className="text-xs text-red-500 text-center">{cvError}</p>}
+              {rateLimitEvento === 'cv' && <RateLimitUI secs={rateLimitSecs} evento={rateLimitEvento} email={waitlistEmail} onEmailChange={setWaitlistEmail} sent={waitlistSent} loading={waitlistLoading} onSubmit={handleWaitlist} />}
+              {cvError && cvStage === 'idle' && !rateLimitEvento && <p className="text-xs text-red-500 text-center">{cvError}</p>}
             </div>
 
             <ResultCard title="Fortalezas y áreas de mejora">
@@ -3421,6 +3568,12 @@ Respondé con este JSON exacto:
                   ))}
                 </div>
               </div>
+            ) : rateLimitEvento === 'entrevista' ? (
+              <div className="space-y-4">
+                <RateLimitUI secs={rateLimitSecs} evento={rateLimitEvento}
+                  email={waitlistEmail} onEmailChange={setWaitlistEmail}
+                  sent={waitlistSent} loading={waitlistLoading} onSubmit={handleWaitlist} />
+              </div>
             ) : interviewError ? (
               <div className="space-y-4">
                 <div className="rounded-xl p-4 text-sm"
@@ -3764,7 +3917,8 @@ Respondé con este JSON exacto:
                     {starAnswer.length > 0 && starAnswer.length < 40 && (
                       <p className="text-xs text-slate-400">{40 - starAnswer.length} caracteres más para habilitar el feedback</p>
                     )}
-                    {starError && <p className="text-xs text-red-500">{starError}</p>}
+                    {rateLimitEvento === 'star' && <RateLimitUI secs={rateLimitSecs} evento={rateLimitEvento} email={waitlistEmail} onEmailChange={setWaitlistEmail} sent={waitlistSent} loading={waitlistLoading} onSubmit={handleWaitlist} />}
+                    {starError && !rateLimitEvento && <p className="text-xs text-red-500">{starError}</p>}
                     <button
                       disabled={starAnswer.trim().length < 40 || starLoading}
                       onClick={() => { trackEvent('star_practice_submit', { question_idx: starQuestionIdx }); callStarFeedback() }}
