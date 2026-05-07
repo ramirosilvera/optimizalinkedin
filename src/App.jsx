@@ -334,11 +334,14 @@ Respondé SOLO en JSON válido, sin markdown, sin backticks.`
 
 const CV_QUALITY_SYSTEM_PROMPT = `Sos un evaluador experto de CVs con estándares de headhunter ejecutivo.
 Analizá el CV provisto y detectá brechas de calidad en estas categorías:
-1. Bullets sin métricas cuantificables (números, %, $, escalas, volúmenes)
-2. Frases genéricas o filler ("orientado a resultados", "proactivo", "dinámico", etc.)
-3. Herramientas o tecnologías mencionadas vagamente, sin especificidad real
-4. Logros sin verbo de impacto concreto o sin resultado medible
-5. Experiencias con descripción insuficiente o demasiado vaga
+1. Fechas faltantes o incompletas en experiencias o educación (periodo null o vacío)
+2. Bullets sin métricas cuantificables (números, %, $, escalas, volúmenes)
+3. Frases genéricas o filler ("orientado a resultados", "proactivo", "dinámico", etc.)
+4. Herramientas o tecnologías mencionadas vagamente, sin especificidad real
+5. Logros sin verbo de impacto concreto o sin resultado medible
+6. Experiencias con descripción insuficiente o demasiado vaga
+
+IMPORTANTE: Las fechas faltantes son siempre brechas de impacto Alto. Si ves "periodo": null o periodo vacío en cualquier experiencia o educación, generá obligatoriamente una pregunta pidiendo las fechas de esa entrada.
 
 Para cada brecha crítica detectada, generá UNA sola pregunta corta, específica y accionable para obtener la información real del candidato.
 NUNCA hagas preguntas genéricas como "contame más sobre tu experiencia".
@@ -352,7 +355,7 @@ Respondé SOLO en JSON válido, sin markdown, sin backticks:
   "gaps": [
     {
       "id": "string corto único sin espacios",
-      "campo": "nombre del cargo/empresa donde está la brecha",
+      "campo": "nombre del cargo/empresa/título donde está la brecha",
       "descripcion": "descripción corta del problema (1 oración)",
       "pregunta": "pregunta específica y accionable para el usuario",
       "placeholder": "ejemplo corto de respuesta ideal",
@@ -1768,20 +1771,53 @@ Respondé con este JSON exacto:
       saveCvGenerado({ contacto, cv }).catch(err => console.error('[cv_generados save]', err))
       trackEvent('cv_draft_generated')
 
+      // Detectar fechas faltantes del lado del cliente antes del scoring IA
+      const dateGaps = []
+      ;(cv.experiencias || []).forEach((ex, i) => {
+        if (!ex.periodo) dateGaps.push({
+          id: `fecha_exp_${i}`,
+          campo: `${ex.cargo} en ${ex.empresa}`,
+          descripcion: 'Faltan las fechas de esta experiencia laboral.',
+          pregunta: `¿En qué período trabajaste como ${ex.cargo} en ${ex.empresa}? (mes/año de inicio y fin)`,
+          placeholder: 'ej: mar 2019 – dic 2022',
+          impacto: 'Alto',
+        })
+      })
+      ;(cv.educacion || []).forEach((ed, i) => {
+        if (!ed.periodo) dateGaps.push({
+          id: `fecha_edu_${i}`,
+          campo: `${ed.titulo} — ${ed.institucion}`,
+          descripcion: 'Faltan las fechas de este título educativo.',
+          pregunta: `¿En qué período cursaste ${ed.titulo} en ${ed.institucion}?`,
+          placeholder: 'ej: 2015 – 2019',
+          impacto: 'Alto',
+        })
+      })
+
       setCvStage('scoring')
       const quality = await callAnalyzeCvQuality(cv)
-      setCvQuality(quality)
+
+      // Fusionar gaps de fecha del cliente con los de IA (evitar duplicados por id)
+      let mergedQuality = quality
+      if (dateGaps.length > 0) {
+        const existingIds = new Set((quality?.gaps || []).map(g => g.id))
+        const newDateGaps = dateGaps.filter(g => !existingIds.has(g.id))
+        mergedQuality = quality
+          ? { ...quality, gaps: [...newDateGaps, ...(quality.gaps || [])], aprobado: false }
+          : { score: 5, nivel: 'Básico', aprobado: false, gaps: dateGaps }
+      }
+      setCvQuality(mergedQuality)
       if (quality) {
-        trackEvent('cv_quality_scored', { score: quality.score, nivel: quality.nivel, gap_count: quality.gaps?.length || 0 })
+        trackEvent('cv_quality_scored', { score: mergedQuality.score, nivel: mergedQuality.nivel, gap_count: mergedQuality.gaps?.length || 0 })
       }
 
-      const hasHighImpactGaps = quality?.gaps?.some(g => g.impacto === 'Alto')
-      if (!quality || quality.aprobado || !hasHighImpactGaps) {
+      const hasHighImpactGaps = mergedQuality?.gaps?.some(g => g.impacto === 'Alto')
+      if (!mergedQuality || mergedQuality.aprobado || !hasHighImpactGaps) {
         setCvFinalData(cv)
         setCvStage('done')
         setCvPreviewHtml(buildCvHtml(cv, profilePhoto, profilePhotoMime))
       } else {
-        trackEvent('cv_gap_form_shown', { gap_count: quality.gaps?.length || 0 })
+        trackEvent('cv_gap_form_shown', { gap_count: mergedQuality.gaps?.length || 0 })
         setCvStage('gap_form')
       }
     } catch (err) {
