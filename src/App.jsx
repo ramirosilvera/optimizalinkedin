@@ -1678,6 +1678,14 @@ Generá el feedback en este JSON exacto:
   const buildCvHtml = (cv, photoBase64 = null, photoMime = 'image/jpeg') => {
     const e = escapeHtml
 
+    // ── PDF filename: "Apellido Nombre - DD-MM-YYYY - CV Optimiza LK" ──
+    const nameParts = (cv.nombre || '').trim().split(/\s+/)
+    const apellido = nameParts.length > 1 ? nameParts[nameParts.length - 1] : nameParts[0] || ''
+    const primerNombre = nameParts.length > 1 ? nameParts.slice(0, -1).join(' ') : ''
+    const hoy = new Date()
+    const fechaStr = `${String(hoy.getDate()).padStart(2, '0')}-${String(hoy.getMonth() + 1).padStart(2, '0')}-${hoy.getFullYear()}`
+    const pdfTitle = `${apellido}${primerNombre ? ' ' + primerNombre : ''} - ${fechaStr} - CV Optimiza LK`
+
     // ── Sidebar: photo ──
     const photoHtml = photoBase64
       ? `<img class="cv-photo" src="data:${photoMime};base64,${photoBase64}" alt="Foto de perfil" />`
@@ -1731,7 +1739,7 @@ Generá el feedback en este JSON exacto:
 <html lang="es">
 <head>
 <meta charset="UTF-8">
-<title>CV – ${e(cv.nombre)}</title>
+<title>${e(pdfTitle)}</title>
 <style>
   @page { size: A4; margin: 0; }
   * { box-sizing: border-box; margin: 0; padding: 0; }
