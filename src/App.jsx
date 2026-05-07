@@ -1676,76 +1676,289 @@ Generá el feedback en este JSON exacto:
 
   const buildCvHtml = (cv, photoBase64 = null, photoMime = 'image/jpeg') => {
     const e = escapeHtml
-    const contact = [cv.email, cv.telefono, cv.linkedin, cv.ubicacion].filter(Boolean).map(e).join(' · ')
+
+    // ── Sidebar: photo ──
+    const photoHtml = photoBase64
+      ? `<img class="cv-photo" src="data:${photoMime};base64,${photoBase64}" alt="Foto de perfil" />`
+      : `<div class="cv-photo-placeholder"></div>`
+
+    // ── Sidebar: contact ──
+    const contactItems = [
+      cv.email    && `<div class="sb-contact-item">✉ ${e(cv.email)}</div>`,
+      cv.telefono && `<div class="sb-contact-item">✆ ${e(cv.telefono)}</div>`,
+      cv.linkedin && `<div class="sb-contact-item">in ${e(cv.linkedin)}</div>`,
+      cv.ubicacion&& `<div class="sb-contact-item">⌖ ${e(cv.ubicacion)}</div>`,
+    ].filter(Boolean).join('')
+
+    // ── Sidebar: skills ──
+    const skillsHtml = (cv.habilidades || [])
+      .map(s => `<div class="sb-skill">${e(s)}</div>`).join('')
+
+    // ── Sidebar: education ──
+    const eduHtml = (cv.educacion || []).map(ed => `
+      <div class="sb-edu-item">
+        <div class="sb-edu-title">${e(ed.titulo)}</div>
+        <div class="sb-edu-inst">${e(ed.institucion)}</div>
+        ${ed.periodo ? `<div class="sb-edu-period">${e(ed.periodo)}</div>` : ''}
+      </div>`).join('')
+
+    // ── Sidebar: languages ──
+    const idiomasHtml = (cv.idiomas || [])
+      .map(i => `<div class="sb-idioma">${e(i)}</div>`).join('')
+
+    // ── Main: experience ──
     const expHtml = (cv.experiencias || []).map(ex => `
       <div class="exp-item">
         <div class="exp-header">
           <span class="exp-role">${e(ex.cargo)}</span>
-          <span class="exp-period">${e(ex.periodo)}</span>
+          <span class="exp-period">${e(ex.periodo || '')}</span>
         </div>
         <div class="exp-company">${e(ex.empresa)}</div>
         <ul class="exp-bullets">${(ex.logros || []).map(l => `<li>${e(l)}</li>`).join('')}</ul>
       </div>`).join('')
-    const eduHtml = (cv.educacion || []).map(ed => `
-      <div class="edu-row">
-        <div><div class="edu-title">${e(ed.titulo)}</div><div class="edu-inst">${e(ed.institucion)}</div></div>
-        <div class="edu-period">${e(ed.periodo)}</div>
-      </div>`).join('')
-    const skillsHtml = (cv.habilidades || []).map(s => `<span class="skill">${e(s)}</span>`).join('')
-    const idiomasHtml = cv.idiomas?.length
-      ? `<div class="section"><div class="section-title">Idiomas</div><p>${cv.idiomas.map(e).join(' · ')}</p></div>`
-      : ''
-    const photoHtml = photoBase64
-      ? `<img class="cv-photo" src="data:${photoMime};base64,${photoBase64}" alt="Foto de perfil" />`
-      : ''
-    return `<!DOCTYPE html><html lang="es"><head>
+
+    return `<!DOCTYPE html>
+<html lang="es">
+<head>
 <meta charset="UTF-8">
 <title>CV – ${e(cv.nombre)}</title>
 <style>
-  @page { size: A4; margin: 14mm 16mm; }
+  @page { size: A4; margin: 0; }
   * { box-sizing: border-box; margin: 0; padding: 0; }
-  body { font-family: Arial, sans-serif; font-size: 9.5pt; color: #111827; line-height: 1.45; }
-  .header { border-bottom: 2px solid #0077B5; padding-bottom: 8px; margin-bottom: 12px; display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; }
-  .header-info { flex: 1; min-width: 0; }
-  .cv-photo { width: 52px; height: 52px; border-radius: 50%; object-fit: cover; border: 1.5px solid #0077B5; flex-shrink: 0; }
-  .name { font-size: 19pt; font-weight: 700; color: #0077B5; }
-  .title { font-size: 10pt; color: #374151; margin-top: 2px; }
-  .contact { font-size: 8pt; color: #6B7280; margin-top: 3px; }
-  .section { margin-bottom: 11px; }
-  .section-title { font-size: 8pt; font-weight: 700; text-transform: uppercase; letter-spacing: 0.7px;
-    color: #0077B5; border-bottom: 0.5px solid #BFDBFE; padding-bottom: 2px; margin-bottom: 6px; }
-  .exp-item { margin-bottom: 7px; }
-  .exp-header { display: flex; justify-content: space-between; }
-  .exp-role { font-size: 9.5pt; font-weight: 700; }
-  .exp-period { font-size: 8pt; color: #6B7280; }
-  .exp-company { font-size: 8.5pt; color: #374151; font-style: italic; margin-bottom: 3px; }
-  .exp-bullets { margin: 3px 0 0 14px; padding: 0; }
-  .exp-bullets li { font-size: 8.5pt; color: #374151; margin-bottom: 1.5px; }
-  .edu-row { display: flex; justify-content: space-between; margin-bottom: 4px; }
-  .edu-title { font-size: 9pt; font-weight: 600; }
-  .edu-inst { font-size: 8pt; color: #374151; font-style: italic; }
-  .edu-period { font-size: 8pt; color: #6B7280; }
-  .skills { display: flex; flex-wrap: wrap; gap: 4px; }
-  .skill { background: #EFF6FF; color: #1D4ED8; font-size: 7.5pt;
-    padding: 2px 7px; border-radius: 3px; border: 0.5px solid #BFDBFE; }
+  body {
+    font-family: 'Helvetica Neue', Arial, sans-serif;
+    font-size: 9pt;
+    color: #1a2332;
+    line-height: 1.42;
+    width: 210mm;
+    min-height: 297mm;
+    background: white;
+  }
+
+  /* ── Layout ── */
+  .cv-wrap {
+    display: flex;
+    width: 210mm;
+    min-height: 297mm;
+  }
+
+  /* ── SIDEBAR ── */
+  .sidebar {
+    width: 65mm;
+    background: #0d2137;
+    color: white;
+    padding: 26px 17px 24px;
+    display: flex;
+    flex-direction: column;
+    gap: 0;
+    flex-shrink: 0;
+  }
+
+  .photo-wrap {
+    display: flex;
+    justify-content: center;
+    margin-bottom: 14px;
+  }
+
+  .cv-photo {
+    width: 74px; height: 74px;
+    border-radius: 50%;
+    object-fit: cover;
+    border: 2.5px solid rgba(255,255,255,0.30);
+  }
+
+  .cv-photo-placeholder {
+    width: 74px; height: 74px;
+    border-radius: 50%;
+    background: rgba(255,255,255,0.10);
+    border: 2px solid rgba(255,255,255,0.18);
+  }
+
+  .sb-name {
+    font-size: 13.5pt;
+    font-weight: 700;
+    color: #ffffff;
+    line-height: 1.2;
+    margin-bottom: 4px;
+    word-break: break-word;
+    hyphens: auto;
+  }
+
+  .sb-title {
+    font-size: 7.5pt;
+    color: rgba(255,255,255,0.68);
+    line-height: 1.38;
+    margin-bottom: 18px;
+  }
+
+  .sb-section {
+    margin-bottom: 16px;
+  }
+
+  .sb-section-title {
+    font-size: 6.5pt;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 1.3px;
+    color: #38bdf8;
+    padding-bottom: 4px;
+    margin-bottom: 7px;
+    border-bottom: 0.5px solid rgba(255,255,255,0.12);
+  }
+
+  .sb-contact-item {
+    font-size: 7pt;
+    color: rgba(255,255,255,0.78);
+    margin-bottom: 4.5px;
+    word-break: break-all;
+    line-height: 1.35;
+  }
+
+  .sb-skill {
+    font-size: 7.5pt;
+    color: rgba(255,255,255,0.82);
+    padding: 3px 0;
+    border-bottom: 0.5px solid rgba(255,255,255,0.07);
+    line-height: 1.3;
+  }
+  .sb-skill:last-child { border-bottom: none; }
+
+  .sb-edu-item { margin-bottom: 9px; }
+  .sb-edu-title  { font-size: 7.5pt; font-weight: 600; color: white; line-height: 1.3; }
+  .sb-edu-inst   { font-size: 7pt; color: rgba(255,255,255,0.62); font-style: italic; margin-top: 1px; }
+  .sb-edu-period { font-size: 6.5pt; color: rgba(255,255,255,0.45); margin-top: 1.5px; }
+
+  .sb-idioma {
+    font-size: 7.5pt;
+    color: rgba(255,255,255,0.80);
+    margin-bottom: 3.5px;
+    line-height: 1.3;
+  }
+
+  /* ── MAIN COLUMN ── */
+  .main {
+    flex: 1;
+    padding: 28px 22px 24px 24px;
+    background: white;
+    min-width: 0;
+  }
+
+  .main-section { margin-bottom: 15px; }
+
+  .main-section-title {
+    font-size: 7.5pt;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.9px;
+    color: #0077B5;
+    padding-bottom: 3px;
+    margin-bottom: 9px;
+    border-bottom: 1.5px solid #BFDBFE;
+  }
+
+  .resumen-text {
+    font-size: 8.5pt;
+    color: #374151;
+    line-height: 1.58;
+  }
+
+  .exp-item { margin-bottom: 11px; }
+  .exp-item:last-child { margin-bottom: 0; }
+
+  .exp-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    gap: 8px;
+  }
+
+  .exp-role {
+    font-size: 9.5pt;
+    font-weight: 700;
+    color: #0f172a;
+    flex: 1;
+    min-width: 0;
+    line-height: 1.25;
+  }
+
+  .exp-period {
+    font-size: 7.5pt;
+    color: #6B7280;
+    white-space: nowrap;
+    flex-shrink: 0;
+  }
+
+  .exp-company {
+    font-size: 8pt;
+    color: #0077B5;
+    font-weight: 600;
+    margin: 2px 0 4px;
+  }
+
+  .exp-bullets { margin: 0 0 0 12px; padding: 0; }
+  .exp-bullets li {
+    font-size: 8pt;
+    color: #374151;
+    margin-bottom: 2.5px;
+    line-height: 1.48;
+  }
+
   @media print {
     body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+    .cv-wrap { page-break-inside: avoid; }
   }
 </style>
-</head><body>
-<div class="header">
-  <div class="header-info">
-    <div class="name">${e(cv.nombre)}</div>
-    <div class="title">${e(cv.titular)}</div>
-    ${contact ? `<div class="contact">${contact}</div>` : ''}
+</head>
+<body>
+<div class="cv-wrap">
+
+  <!-- SIDEBAR -->
+  <div class="sidebar">
+    <div class="photo-wrap">${photoHtml}</div>
+    <div class="sb-name">${e(cv.nombre)}</div>
+    <div class="sb-title">${e(cv.titular)}</div>
+
+    ${contactItems ? `
+    <div class="sb-section">
+      <div class="sb-section-title">Contacto</div>
+      ${contactItems}
+    </div>` : ''}
+
+    ${skillsHtml ? `
+    <div class="sb-section">
+      <div class="sb-section-title">Habilidades</div>
+      ${skillsHtml}
+    </div>` : ''}
+
+    ${eduHtml ? `
+    <div class="sb-section">
+      <div class="sb-section-title">Educación</div>
+      ${eduHtml}
+    </div>` : ''}
+
+    ${idiomasHtml ? `
+    <div class="sb-section">
+      <div class="sb-section-title">Idiomas</div>
+      ${idiomasHtml}
+    </div>` : ''}
   </div>
-  ${photoHtml}
+
+  <!-- MAIN -->
+  <div class="main">
+    ${cv.resumen ? `
+    <div class="main-section">
+      <div class="main-section-title">Resumen Profesional</div>
+      <p class="resumen-text">${e(cv.resumen)}</p>
+    </div>` : ''}
+
+    ${expHtml ? `
+    <div class="main-section">
+      <div class="main-section-title">Experiencia</div>
+      ${expHtml}
+    </div>` : ''}
+  </div>
+
 </div>
-${cv.resumen ? `<div class="section"><div class="section-title">Resumen Profesional</div><p>${e(cv.resumen)}</p></div>` : ''}
-${expHtml ? `<div class="section"><div class="section-title">Experiencia</div>${expHtml}</div>` : ''}
-${eduHtml ? `<div class="section"><div class="section-title">Educación</div>${eduHtml}</div>` : ''}
-${skillsHtml ? `<div class="section"><div class="section-title">Habilidades</div><div class="skills">${skillsHtml}</div></div>` : ''}
-${idiomasHtml}
 </body></html>`
   }
 
