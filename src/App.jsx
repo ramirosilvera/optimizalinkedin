@@ -320,8 +320,9 @@ REGLAS DE FECHAS (CRÍTICO — sin excepción):
 - Formato: representá el período tal como aparece en el perfil (ej: "mar 2018 – dic 2022", "2015 – 2019", "2020 – Presente").
 
 Reglas de estructura:
-- Máximo 3 experiencias laborales (las más recientes y relevantes)
+- Máximo 3 experiencias laborales (las más recientes y relevantes) con bullets completos
 - Máximo 3 bullets por experiencia, comenzando con verbo de acción, con métricas SOLO si existen en el perfil
+- Si existen más de 3 experiencias en el perfil, incluí las adicionales en "experiencias_anteriores" (solo cargo + empresa, sin bullets)
 - Resumen profesional de máximo 2 oraciones, basado en datos reales del perfil
 - Sin objetivo laboral (está desactualizado)
 - Sin estado civil, sin fecha de nacimiento
@@ -1706,7 +1707,7 @@ Generá el feedback en este JSON exacto:
     const idiomasHtml = (cv.idiomas || [])
       .map(i => `<div class="sb-idioma">${e(i)}</div>`).join('')
 
-    // ── Main: experience ──
+    // ── Main: experience (3 recent with bullets) ──
     const expHtml = (cv.experiencias || []).map(ex => `
       <div class="exp-item">
         <div class="exp-header">
@@ -1716,6 +1717,15 @@ Generá el feedback en este JSON exacto:
         <div class="exp-company">${e(ex.empresa)}</div>
         <ul class="exp-bullets">${(ex.logros || []).map(l => `<li>${e(l)}</li>`).join('')}</ul>
       </div>`).join('')
+
+    // ── Main: previous jobs (compact, no bullets) ──
+    const prevJobsHtml = (cv.experiencias_anteriores || []).length > 0
+      ? `<div class="exp-prev-wrap">
+          ${(cv.experiencias_anteriores || []).map(p =>
+            `<div class="exp-prev-item"><span class="exp-prev-role">${e(p.cargo)}</span><span class="exp-prev-sep"> · </span><span class="exp-prev-co">${e(p.empresa)}</span></div>`
+          ).join('')}
+        </div>`
+      : ''
 
     return `<!DOCTYPE html>
 <html lang="es">
@@ -1727,9 +1737,9 @@ Generá el feedback en este JSON exacto:
   * { box-sizing: border-box; margin: 0; padding: 0; }
   body {
     font-family: 'Helvetica Neue', Arial, sans-serif;
-    font-size: 9pt;
+    font-size: 9.5pt;
     color: #1a2332;
-    line-height: 1.42;
+    line-height: 1.48;
     width: 210mm;
     min-height: 297mm;
     background: white;
@@ -1750,50 +1760,47 @@ Generá el feedback en este JSON exacto:
     padding: 26px 17px 24px;
     display: flex;
     flex-direction: column;
-    gap: 0;
     flex-shrink: 0;
   }
 
   .photo-wrap {
     display: flex;
     justify-content: center;
-    margin-bottom: 14px;
+    margin-bottom: 15px;
   }
 
   .cv-photo {
-    width: 74px; height: 74px;
+    width: 76px; height: 76px;
     border-radius: 50%;
     object-fit: cover;
     border: 2.5px solid rgba(255,255,255,0.30);
   }
 
   .cv-photo-placeholder {
-    width: 74px; height: 74px;
+    width: 76px; height: 76px;
     border-radius: 50%;
     background: rgba(255,255,255,0.10);
     border: 2px solid rgba(255,255,255,0.18);
   }
 
   .sb-name {
-    font-size: 13.5pt;
+    font-size: 14pt;
     font-weight: 700;
     color: #ffffff;
     line-height: 1.2;
-    margin-bottom: 4px;
+    margin-bottom: 5px;
     word-break: break-word;
     hyphens: auto;
   }
 
   .sb-title {
-    font-size: 7.5pt;
-    color: rgba(255,255,255,0.68);
-    line-height: 1.38;
-    margin-bottom: 18px;
+    font-size: 8pt;
+    color: rgba(255,255,255,0.65);
+    line-height: 1.40;
+    margin-bottom: 20px;
   }
 
-  .sb-section {
-    margin-bottom: 16px;
-  }
+  .sb-section { margin-bottom: 18px; }
 
   .sb-section-title {
     font-size: 6.5pt;
@@ -1801,68 +1808,68 @@ Generá el feedback en este JSON exacto:
     text-transform: uppercase;
     letter-spacing: 1.3px;
     color: #38bdf8;
-    padding-bottom: 4px;
-    margin-bottom: 7px;
+    padding-bottom: 5px;
+    margin-bottom: 8px;
     border-bottom: 0.5px solid rgba(255,255,255,0.12);
   }
 
   .sb-contact-item {
-    font-size: 7pt;
+    font-size: 7.5pt;
     color: rgba(255,255,255,0.78);
-    margin-bottom: 4.5px;
+    margin-bottom: 5px;
     word-break: break-all;
-    line-height: 1.35;
+    line-height: 1.38;
   }
 
   .sb-skill {
-    font-size: 7.5pt;
+    font-size: 8pt;
     color: rgba(255,255,255,0.82);
-    padding: 3px 0;
+    padding: 3.5px 0;
     border-bottom: 0.5px solid rgba(255,255,255,0.07);
-    line-height: 1.3;
+    line-height: 1.32;
   }
   .sb-skill:last-child { border-bottom: none; }
 
-  .sb-edu-item { margin-bottom: 9px; }
-  .sb-edu-title  { font-size: 7.5pt; font-weight: 600; color: white; line-height: 1.3; }
-  .sb-edu-inst   { font-size: 7pt; color: rgba(255,255,255,0.62); font-style: italic; margin-top: 1px; }
-  .sb-edu-period { font-size: 6.5pt; color: rgba(255,255,255,0.45); margin-top: 1.5px; }
+  .sb-edu-item { margin-bottom: 10px; }
+  .sb-edu-title  { font-size: 8pt; font-weight: 600; color: white; line-height: 1.3; }
+  .sb-edu-inst   { font-size: 7.5pt; color: rgba(255,255,255,0.60); font-style: italic; margin-top: 1.5px; }
+  .sb-edu-period { font-size: 7pt; color: rgba(255,255,255,0.44); margin-top: 2px; }
 
   .sb-idioma {
-    font-size: 7.5pt;
+    font-size: 8pt;
     color: rgba(255,255,255,0.80);
-    margin-bottom: 3.5px;
-    line-height: 1.3;
+    margin-bottom: 4px;
+    line-height: 1.32;
   }
 
   /* ── MAIN COLUMN ── */
   .main {
     flex: 1;
-    padding: 28px 22px 24px 24px;
+    padding: 30px 24px 26px 26px;
     background: white;
     min-width: 0;
   }
 
-  .main-section { margin-bottom: 15px; }
+  .main-section { margin-bottom: 18px; }
 
   .main-section-title {
-    font-size: 7.5pt;
+    font-size: 8pt;
     font-weight: 700;
     text-transform: uppercase;
     letter-spacing: 0.9px;
     color: #0077B5;
-    padding-bottom: 3px;
-    margin-bottom: 9px;
+    padding-bottom: 4px;
+    margin-bottom: 11px;
     border-bottom: 1.5px solid #BFDBFE;
   }
 
   .resumen-text {
-    font-size: 8.5pt;
+    font-size: 9pt;
     color: #374151;
-    line-height: 1.58;
+    line-height: 1.62;
   }
 
-  .exp-item { margin-bottom: 11px; }
+  .exp-item { margin-bottom: 13px; }
   .exp-item:last-child { margin-bottom: 0; }
 
   .exp-header {
@@ -1873,7 +1880,7 @@ Generá el feedback en este JSON exacto:
   }
 
   .exp-role {
-    font-size: 9.5pt;
+    font-size: 10pt;
     font-weight: 700;
     color: #0f172a;
     flex: 1;
@@ -1882,35 +1889,50 @@ Generá el feedback en este JSON exacto:
   }
 
   .exp-period {
-    font-size: 7.5pt;
+    font-size: 8pt;
     color: #6B7280;
     white-space: nowrap;
     flex-shrink: 0;
   }
 
   .exp-company {
-    font-size: 8pt;
+    font-size: 8.5pt;
     color: #0077B5;
     font-weight: 600;
-    margin: 2px 0 4px;
+    margin: 2.5px 0 5px;
   }
 
-  .exp-bullets { margin: 0 0 0 12px; padding: 0; }
+  .exp-bullets { margin: 0 0 0 13px; padding: 0; }
   .exp-bullets li {
-    font-size: 8pt;
+    font-size: 8.5pt;
     color: #374151;
-    margin-bottom: 2.5px;
-    line-height: 1.48;
+    margin-bottom: 3px;
+    line-height: 1.50;
   }
+
+  /* ── Experiencia anterior (compact) ── */
+  .exp-prev-wrap {
+    margin-top: 11px;
+    padding-top: 9px;
+    border-top: 0.5px solid #e2e8f0;
+  }
+  .exp-prev-item {
+    font-size: 8pt;
+    color: #64748b;
+    margin-bottom: 3.5px;
+    line-height: 1.35;
+  }
+  .exp-prev-role { font-weight: 600; color: #475569; }
+  .exp-prev-sep  { color: #cbd5e1; margin: 0 2px; }
+  .exp-prev-co   { font-style: italic; }
 
   @media print {
     body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
-    .cv-wrap { page-break-inside: avoid; }
   }
 </style>
 </head>
 <body>
-<div class="cv-wrap">
+<div class="cv-wrap" id="cv-wrap">
 
   <!-- SIDEBAR -->
   <div class="sidebar">
@@ -1955,10 +1977,32 @@ Generá el feedback en este JSON exacto:
     <div class="main-section">
       <div class="main-section-title">Experiencia</div>
       ${expHtml}
+      ${prevJobsHtml}
     </div>` : ''}
   </div>
 
 </div>
+<script>
+(function () {
+  // Auto-scale to fill A4 page when content is sparse.
+  // Uses zoom (Chrome-native, respects print layout) capped at 1.35×.
+  function autofit() {
+    var wrap = document.getElementById('cv-wrap');
+    if (!wrap) return;
+    var h = wrap.scrollHeight;
+    var a4 = Math.round(297 * 3.7795); // 297mm → px at 96 dpi ≈ 1123
+    if (h > 0 && h < a4 * 0.84) {
+      var z = Math.min((a4 * 0.93) / h, 1.35);
+      wrap.style.zoom = z.toFixed(4);
+    }
+  }
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', autofit);
+  } else {
+    autofit();
+  }
+})();
+</script>
 </body></html>`
   }
 
@@ -2014,7 +2058,8 @@ Respondé con este JSON exacto:
   "experiencias": [{ "cargo": "string", "empresa": "string", "periodo": "string — período exacto de esa experiencia", "logros": ["string"] }],
   "educacion": [{ "titulo": "string", "institucion": "string", "periodo": "string — período exacto de ese título, diferente para cada uno" }],
   "habilidades": ["string"],
-  "idiomas": ["string"]
+  "idiomas": ["string"],
+  "experiencias_anteriores": [{ "cargo": "string", "empresa": "string" }]
 }`
     return p
   }
