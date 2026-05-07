@@ -3810,139 +3810,80 @@ Respondé con este JSON exacto:
                   </div>
                 </ResultCard>
 
-                {/* Fortalezas / áreas — preview (máx 2 por columna) */}
+                {/* Fortalezas / áreas — completo, sin restricción */}
                 <ResultCard title="Fortalezas y áreas de mejora" accent="#6366f1">
                   <div className="grid sm:grid-cols-2 gap-6">
                     <div className="space-y-2">
                       <p className="text-xs font-semibold uppercase tracking-wide mb-3" style={{ color: '#4ade80' }}>✅ Fortalezas</p>
-                      {(interviewFeedback.fortalezas_entrevista || []).slice(0, 2).map((f, i) => (
+                      {(interviewFeedback.fortalezas_entrevista || []).map((f, i) => (
                         <div key={i} className="flex items-start gap-2">
                           <span className="mt-0.5 shrink-0" style={{ color: '#16a34a' }}>•</span>
                           <p className="text-slate-600 text-sm">{f}</p>
                         </div>
                       ))}
-                      {(interviewFeedback.fortalezas_entrevista || []).length > 2 && (
-                        <p className="text-xs text-slate-400 italic pl-3">
-                          + {interviewFeedback.fortalezas_entrevista.length - 2} más en el informe completo
-                        </p>
-                      )}
                     </div>
                     <div className="space-y-2">
                       <p className="text-xs font-semibold uppercase tracking-wide mb-3" style={{ color: '#d97706' }}>⚠️ Áreas de mejora</p>
-                      {(interviewFeedback.areas_de_mejora_entrevista || []).slice(0, 2).map((a, i) => (
+                      {(interviewFeedback.areas_de_mejora_entrevista || []).map((a, i) => (
                         <div key={i} className="flex items-start gap-2">
                           <span className="mt-0.5 shrink-0" style={{ color: '#d97706' }}>•</span>
                           <p className="text-slate-600 text-sm">{a}</p>
                         </div>
                       ))}
-                      {(interviewFeedback.areas_de_mejora_entrevista || []).length > 2 && (
-                        <p className="text-xs text-slate-400 italic pl-3">
-                          + {interviewFeedback.areas_de_mejora_entrevista.length - 2} más en el informe completo
-                        </p>
-                      )}
                     </div>
                   </div>
                 </ResultCard>
 
-                {/* Preview borroso del contenido bloqueado */}
-                <div className="rounded-2xl overflow-hidden relative"
-                  style={{ border: '1px solid rgba(99,102,241,0.15)', minHeight: '180px' }}>
-                  <div style={{ filter: 'blur(5px)', userSelect: 'none', pointerEvents: 'none' }}
-                    className="p-5 space-y-4">
-                    {(interviewFeedback.feedback_por_respuesta || []).slice(0, 2).map((fb, i) => (
-                      <div key={i} className="rounded-xl p-4"
-                        style={{ background: '#f8fafc', border: '1px solid rgba(0,119,181,0.12)' }}>
-                        <p className="text-xs font-semibold uppercase tracking-wide mb-1" style={{ color: '#6366f1' }}>
-                          Pregunta {fb.numero}
-                        </p>
-                        <p className="text-sm text-slate-600">✅ {fb.aspecto_positivo}</p>
-                        <p className="text-sm text-slate-600">💡 {fb.sugerencia}</p>
-                      </div>
-                    ))}
-                    {interviewFeedback.recomendacion_final && (
-                      <div className="rounded-xl p-4"
-                        style={{ background: 'rgba(99,102,241,0.06)', border: '1px solid rgba(99,102,241,0.2)' }}>
-                        <p className="text-xs font-semibold uppercase tracking-wide mb-1" style={{ color: '#6366f1' }}>⚡ Recomendación final</p>
-                        <p className="text-sm text-slate-700">{interviewFeedback.recomendacion_final}</p>
-                      </div>
-                    )}
-                  </div>
-                  {/* Gradient overlay */}
-                  <div style={{
-                    position: 'absolute', inset: 0,
-                    background: 'linear-gradient(to bottom, rgba(240,244,248,0) 0%, rgba(240,244,248,0.88) 55%, #f0f4f8 100%)',
-                    display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'flex-end',
-                    paddingBottom: '20px', gap: '6px',
-                  }}>
-                    <span style={{ fontSize: '26px' }}>🔒</span>
-                    <p className="text-slate-600 text-sm font-semibold text-center">Feedback detallado bloqueado</p>
-                  </div>
-                </div>
-
-                {/* ── Bloque de desbloqueo ── */}
-                <div className="rounded-2xl overflow-hidden"
-                  style={{ border: '1.5px solid rgba(0,119,181,0.25)', boxShadow: '0 4px 20px rgba(0,119,181,0.10)' }}>
-
-                  {/* Header */}
-                  <div className="px-5 pt-5 pb-4 text-center"
-                    style={{ background: LI_GRADIENT }}>
-                    <p className="text-white font-bold text-base leading-snug">
-                      🔓 Desbloqueá el análisis completo de tu entrevista
-                    </p>
-                    <p className="mt-1.5 text-xs leading-relaxed max-w-xs mx-auto"
-                      style={{ color: 'rgba(255,255,255,0.82)' }}>
-                      Feedback detallado por respuesta, mejoras específicas y ejemplos para entrevistas reales.
-                    </p>
-                  </div>
-
-                  <div className="p-5 space-y-4 bg-white">
-                    <p className="text-slate-800 text-sm font-semibold">Para acceder al informe completo:</p>
-
-                    {/* Pasos */}
-                    <div className="space-y-3">
-                      {[
-                        { num: 1, text: 'Seguime en mi perfil de LinkedIn', href: RAMIRO_LINKEDIN_URL, cta: 'Ir al perfil de Ramiro →' },
-                        { num: 2, text: 'Seguí la página de LinkedIn', href: COMPANY_LINKEDIN_URL, cta: 'Ir a la página →' },
-                        { num: 3, text: 'Enviame un mensaje indicando que usaste la app', href: null, cta: null },
-                      ].map(s => (
-                        <div key={s.num} className="flex items-start gap-3">
-                          <span className="w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold text-white shrink-0 mt-0.5"
-                            style={{ background: LI_GRADIENT }}>
-                            {s.num}
-                          </span>
-                          <div className="flex-1 min-w-0">
-                            <p className="text-slate-700 text-sm">{s.text}</p>
-                            {s.href && (
-                              <a href={s.href} target="_blank" rel="noopener noreferrer"
-                                className="text-xs font-semibold mt-0.5 inline-block"
-                                style={{ color: '#0077B5' }}>
-                                {s.cta}
-                              </a>
-                            )}
-                          </div>
+                {/* Feedback detallado por respuesta — completo, visible */}
+                {(interviewFeedback.feedback_por_respuesta || []).length > 0 && (
+                  <ResultCard title="Feedback por respuesta" accent="#6366f1">
+                    <div className="space-y-4">
+                      {(interviewFeedback.feedback_por_respuesta || []).map((fb, i) => (
+                        <div key={i} className="rounded-xl p-4"
+                          style={{ background: '#f8fafc', border: '1px solid rgba(99,102,241,0.12)' }}>
+                          <p className="text-xs font-semibold uppercase tracking-wide mb-2" style={{ color: '#6366f1' }}>
+                            Pregunta {fb.numero}
+                          </p>
+                          {fb.aspecto_positivo && (
+                            <p className="text-sm text-slate-600 mb-1">✅ {fb.aspecto_positivo}</p>
+                          )}
+                          {fb.sugerencia && (
+                            <p className="text-sm text-slate-600">💡 {fb.sugerencia}</p>
+                          )}
                         </div>
                       ))}
                     </div>
+                  </ResultCard>
+                )}
 
-                    {/* Reductor de fricción */}
-                    <div className="rounded-xl px-4 py-3"
-                      style={{ background: 'rgba(0,119,181,0.05)', border: '1px solid rgba(0,119,181,0.12)' }}>
-                      <p className="text-slate-500 text-xs leading-relaxed">
-                        💬 Podés escribirme algo simple como:{' '}
-                        <span className="text-slate-700 font-medium">"Usé la app y quiero el informe completo"</span>
-                      </p>
-                    </div>
+                {/* Recomendación final */}
+                {interviewFeedback.recomendacion_final && (
+                  <div className="rounded-xl p-4"
+                    style={{ background: 'rgba(99,102,241,0.06)', border: '1px solid rgba(99,102,241,0.20)' }}>
+                    <p className="text-xs font-semibold uppercase tracking-wide mb-1.5" style={{ color: '#6366f1' }}>⚡ Recomendación final</p>
+                    <p className="text-sm text-slate-700 leading-relaxed">{interviewFeedback.recomendacion_final}</p>
+                  </div>
+                )}
 
-                    {/* CTA principal */}
-                    <a href={RAMIRO_LINKEDIN_URL} target="_blank" rel="noopener noreferrer"
-                      onClick={() => trackEvent('click_externo', { destino: 'linkedin_ramiro', ubicacion: 'unlock_entrevista' })}
-                      className="btn-glow w-full flex items-center justify-center gap-2 py-3 rounded-xl text-white text-sm font-semibold"
-                      style={{ background: LI_GRADIENT }}>
-                      <LinkedInIcon className="w-4 h-4" /> Escribirle a Ramiro →
+                {/* Contribución $5.000 — después del informe completo */}
+                <div className="rounded-2xl overflow-hidden"
+                  style={{ border: '1.5px solid rgba(0,180,150,0.30)', boxShadow: '0 4px 16px rgba(0,180,150,0.10)' }}>
+                  <div className="px-5 pt-4 pb-3 text-center"
+                    style={{ background: 'linear-gradient(135deg,rgba(0,180,150,0.10),rgba(0,212,170,0.06))' }}>
+                    <p className="text-slate-800 font-bold text-base">☕ ¿Te fue útil el informe?</p>
+                    <p className="text-slate-500 text-xs mt-1 leading-relaxed">
+                      La app es 100% gratuita. Una colaboración de $5.000 ayuda a mantenerla disponible para todos.
+                    </p>
+                  </div>
+                  <div className="px-5 py-4 bg-white space-y-3">
+                    <a href={MP_URL} target="_blank" rel="noopener noreferrer"
+                      onClick={() => trackEvent('click_externo', { destino: 'mercadopago', ubicacion: 'interview_feedback' })}
+                      className="btn-glow w-full flex items-center justify-center gap-2 py-3.5 rounded-xl text-white text-sm font-semibold"
+                      style={{ background: 'linear-gradient(135deg,#00b496,#00d4aa)' }}>
+                      ☕ Colaborar con $5.000
                     </a>
-
-                    <p className="text-slate-400 text-xs text-center leading-relaxed">
-                      Con eso te comparto el análisis completo y, si querés, vemos cómo prepararte para entrevistas reales.
+                    <p className="text-slate-400 text-xs text-center">
+                      Mercado Pago · Pago único · No es suscripción
                     </p>
                   </div>
                 </div>
@@ -3975,20 +3916,6 @@ Respondé con este JSON exacto:
                       <><LinkedInIcon className="w-4 h-4" /> Escribirle a Ramiro</>
                     )}
                   </button>
-                </div>
-
-                {/* MP — secundario */}
-                <div className="flex items-center justify-between gap-3 px-4 py-3 rounded-2xl"
-                  style={{ background: 'rgba(0,180,150,0.05)', border: '1px solid rgba(0,180,150,0.18)' }}>
-                  <p className="text-slate-500 text-xs leading-snug">
-                    ☕ $5.000 únicos — el precio de un café para mantener esto gratis para todos.
-                  </p>
-                  <a href={MP_URL} target="_blank" rel="noopener noreferrer"
-                    onClick={() => trackEvent('click_externo', { destino: 'mercadopago', ubicacion: 'interview_feedback' })}
-                    className="shrink-0 inline-flex items-center gap-1.5 px-4 py-2 rounded-xl text-white text-xs font-semibold transition-all duration-200"
-                    style={{ background: 'linear-gradient(135deg,#00b496,#00d4aa)' }}>
-                    ☕ Apoyar · $5.000
-                  </a>
                 </div>
 
                 {/* ── Sugerencia STAR ── */}
