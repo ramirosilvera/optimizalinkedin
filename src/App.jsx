@@ -312,6 +312,13 @@ REGLAS ANTI-ALUCINACIÓN (CRÍTICAS — no negociables):
 - PROHIBIDO usar frases genéricas: "orientado a resultados", "proactivo", "trabajo en equipo", "dinámico", "apasionado", "multitarea", "polivalente", "comprometido", "flexible".
 - Si un bullet no tiene verbo de acción concreto + resultado real, omitilo.
 
+REGLAS DE FECHAS (CRÍTICO — sin excepción):
+- Para CADA experiencia laboral y CADA título educativo, leé el período en el texto del perfil y copialo EXACTAMENTE para esa entrada.
+- Si el perfil tiene dos formaciones (por ejemplo grado y posgrado) con fechas distintas, cada una DEBE tener su propio período correcto en el JSON — NUNCA copies el período de una entrada en otra.
+- NUNCA pongas el mismo período para dos entradas distintas a menos que en el texto del perfil diga literalmente lo mismo para ambas.
+- Si no encontrás fecha para una entrada específica, usá null para ese campo. No coples la fecha de otra entrada como fallback.
+- Formato: representá el período tal como aparece en el perfil (ej: "mar 2018 – dic 2022", "2015 – 2019", "2020 – Presente").
+
 Reglas de estructura:
 - Máximo 3 experiencias laborales (las más recientes y relevantes)
 - Máximo 3 bullets por experiencia, comenzando con verbo de acción, con métricas SOLO si existen en el perfil
@@ -322,7 +329,7 @@ Reglas de estructura:
 - Todo en español (excepto términos técnicos que se usan en inglés en la industria)
 
 Usá las secciones "titular_propuesto" y "resumen_propuesto" del análisis previo si están disponibles.
-Extraé las experiencias y educación del texto del perfil.
+Extraé las experiencias y educación del texto del perfil, respetando ESTRICTAMENTE las fechas de cada entrada.
 Respondé SOLO en JSON válido, sin markdown, sin backticks.`
 
 const CV_QUALITY_SYSTEM_PROMPT = `Sos un evaluador experto de CVs con estándares de headhunter ejecutivo.
@@ -1147,6 +1154,17 @@ export default function App() {
     setProfileText('')
   }
 
+  // Solo actualiza la foto sin borrar el profileText (para el modal de CV)
+  const handleCvPhotoUpload = (e) => {
+    const file = e.target.files?.[0]
+    if (!file || !file.type.startsWith('image/') || file.size > 5 * 1024 * 1024) return
+    setProfilePhotoMime(file.type)
+    setProfilePhotoPreview(URL.createObjectURL(file))
+    const reader = new FileReader()
+    reader.onload = () => setProfilePhoto(reader.result.split(',')[1])
+    reader.readAsDataURL(file)
+  }
+
   // ── Upload and extract PDF ──
   const processPdfFile = useCallback(async (file) => {
     if (!file) return
@@ -1239,7 +1257,7 @@ ${contextText}`
 ${contextText}
 
 Perfil de LinkedIn:
-${profileText.slice(0, 4000)}
+${profileText.slice(0, 7000)}
 
 Generá un análisis en este formato JSON exacto:
 {
@@ -1652,8 +1670,9 @@ ${idiomasHtml}
     if (contacto.email)       p += `Email de contacto: ${contacto.email}\n`
     if (contacto.telefono)    p += `Teléfono: ${contacto.telefono}\n`
     if (contacto.linkedinUrl) p += `URL LinkedIn: ${contacto.linkedinUrl}\n`
-    p += `\nTexto completo del perfil LinkedIn (extraé experiencias y educación):\n${profileText.slice(0, 5000)}\n\n`
+    p += `\nTexto completo del perfil LinkedIn (extraé experiencias, educación y sus fechas individuales):\n${profileText.slice(0, 8000)}\n\n`
     p += `Usá el email, teléfono y URL de LinkedIn proporcionados arriba. No los inventes si no se dieron (poné null).
+IMPORTANTE sobre fechas: el campo "periodo" de cada experiencia y educación DEBE tomarse del texto del perfil para ESA entrada específica. Si hay dos formaciones distintas (grado y posgrado), cada una tiene su propio "periodo". NUNCA copies el mismo periodo para entradas distintas.
 Respondé con este JSON exacto:
 {
   "nombre": "string",
@@ -1663,8 +1682,8 @@ Respondé con este JSON exacto:
   "linkedin": "string o null",
   "ubicacion": "string o null",
   "resumen": "string (2 oraciones máx)",
-  "experiencias": [{ "cargo": "string", "empresa": "string", "periodo": "string", "logros": ["string"] }],
-  "educacion": [{ "titulo": "string", "institucion": "string", "periodo": "string" }],
+  "experiencias": [{ "cargo": "string", "empresa": "string", "periodo": "string — período exacto de esa experiencia", "logros": ["string"] }],
+  "educacion": [{ "titulo": "string", "institucion": "string", "periodo": "string — período exacto de ese título, diferente para cada uno" }],
   "habilidades": ["string"],
   "idiomas": ["string"]
 }`
@@ -4030,23 +4049,38 @@ Respondé con este JSON exacto:
               )}
             </div>
             <div className="flex items-center gap-2">
-              <button
-                onClick={printCv}
-                className="text-white text-xs px-3 py-1.5 rounded-lg font-semibold"
-                style={{ background: 'rgba(255,255,255,0.25)', border: '1px solid rgba(255,255,255,0.30)' }}>
-                🖨 Imprimir CV
-              </button>
-              <button
-                onClick={() => setCvPreviewHtml('')}
-                className="text-white text-xs px-3 py-1.5 rounded-lg"
-                style={{ background: 'rgba(255,255,255,0.15)' }}>
-                ✕
-              </button>
-            </div>
+                <button
+                  onClick={() => {
+                    const cvName = (cvFinalData?.nombre || cvDraft?.nombre || 'CV').replace(/[^a-zA-ZÀ-ÿ0-9 ]/g, '').replace(/\s+/g, '-')
+                    const blob = new Blob([cvPreviewHtml], { type: 'text/html; charset=utf-8' })
+                    const url = URL.createObjectURL(blob)
+                    const a = document.createElement('a')
+                    a.href = url; a.download = `CV-${cvName}.html`
+                    document.body.appendChild(a); a.click(); document.body.removeChild(a)
+                    setTimeout(() => URL.revokeObjectURL(url), 30000)
+                    trackEvent('cv_download_html')
+                  }}
+                  className="text-white text-xs px-3 py-1.5 rounded-lg font-medium"
+                  style={{ background: 'rgba(255,255,255,0.15)', border: '1px solid rgba(255,255,255,0.22)' }}>
+                  ⬇ Descargar
+                </button>
+                <button
+                  onClick={printCv}
+                  className="text-white text-xs px-3 py-1.5 rounded-lg font-semibold"
+                  style={{ background: 'rgba(255,255,255,0.25)', border: '1px solid rgba(255,255,255,0.30)' }}>
+                  🖨 Imprimir CV
+                </button>
+                <button
+                  onClick={() => setCvPreviewHtml('')}
+                  className="text-white text-xs px-3 py-1.5 rounded-lg"
+                  style={{ background: 'rgba(255,255,255,0.15)' }}>
+                  ✕
+                </button>
+              </div>
           </div>
           <div className="px-4 py-2 shrink-0 text-center text-xs text-slate-500 leading-relaxed"
             style={{ background: '#f0f7ff', borderBottom: '1px solid rgba(0,119,181,0.12)' }}>
-            Hacé clic en <strong>Imprimir CV</strong> → elegí <em>Guardar como PDF</em> en el diálogo
+            <strong>Imprimir CV</strong> → <em>Guardar como PDF</em> en el diálogo · o <strong>Descargar</strong> el HTML y abrilo para imprimir
           </div>
           <iframe
             id="cv-preview-iframe"
@@ -4185,6 +4219,38 @@ Respondé con este JSON exacto:
                   />
                 </div>
               </div>
+              {/* Foto para el CV */}
+              <div>
+                <label className="text-xs block mb-2" style={{ color: '#cbd5e1' }}>
+                  Foto de perfil <span style={{ color: '#64748b', fontWeight: 400 }}>(opcional — aparece en el CV)</span>
+                </label>
+                <div className="flex items-center gap-3">
+                  <div className="w-12 h-12 rounded-full overflow-hidden shrink-0 relative flex-shrink-0"
+                    style={{ border: '2px solid rgba(0,119,181,0.4)', background: '#0d2137' }}>
+                    {profilePhotoPreview
+                      ? <img src={profilePhotoPreview} alt="Foto" style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover' }} />
+                      : <span className="text-xl absolute inset-0 flex items-center justify-center">👤</span>
+                    }
+                  </div>
+                  <label htmlFor="cv-modal-photo" className="cursor-pointer px-3 py-1.5 rounded-lg text-xs font-medium transition-all"
+                    style={{ background: 'rgba(0,119,181,0.15)', color: '#60a5fa', border: '1px solid rgba(0,119,181,0.3)' }}>
+                    {profilePhotoPreview ? 'Cambiar foto' : 'Subir foto'}
+                  </label>
+                  <input id="cv-modal-photo" type="file" accept="image/*" className="hidden" onChange={handleCvPhotoUpload} />
+                  {profilePhotoPreview && (
+                    <button onClick={() => { setProfilePhotoPreview(null); setProfilePhoto(null); setProfilePhotoMime('image/jpeg') }}
+                      className="text-xs transition-colors" style={{ color: '#64748b' }}>
+                      ✕ Quitar
+                    </button>
+                  )}
+                </div>
+                {!profilePhotoPreview && (
+                  <p className="text-xs mt-1.5" style={{ color: '#475569' }}>
+                    Sin foto el CV se genera igualmente, pero con foto tiene más impacto.
+                  </p>
+                )}
+              </div>
+
               <p className="text-xs leading-relaxed pt-1" style={{ color: '#475569' }}>
                 🔒 Tus datos se usan solo para confeccionar el CV y no se comparten con terceros.
               </p>
