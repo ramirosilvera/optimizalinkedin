@@ -2044,7 +2044,7 @@ Respondé con este JSON exacto:
                 { icon: '📄', label: 'CV listo hoy',     text: 'Un CV moderno de 1 página, listo para enviar en cualquier proceso', accent: '#0d9488' },
               ].map(item => (
                 <div key={item.label} className="rounded-2xl p-4 text-center relative overflow-hidden"
-                  style={{ background: 'white', border: '1px solid rgba(0,119,181,0.12)', boxShadow: '0 2px 8px rgba(0,0,0,0.05)' }}>
+                  style={{ background: 'white', border: '1px solid rgba(0,119,181,0.15)', boxShadow: '0 2px 12px rgba(0,0,0,0.06)' }}>
                   <div className="text-2xl mb-2">{item.icon}</div>
                   <p className="text-xs font-semibold mb-1" style={{ color: item.accent }}>{item.label}</p>
                   <p className="text-slate-500 text-xs leading-snug">{item.text}</p>
@@ -2246,7 +2246,7 @@ Respondé con este JSON exacto:
               <button
                 onClick={() => { trackEvent('mode_select', { mode: 'diagnostico' }); setStep(STEPS.QUESTIONS) }}
                 className="w-full text-left rounded-2xl p-5 transition-all duration-200 hover:shadow-md active:scale-[0.99]"
-                style={{ background: 'white', border: '2px solid #0077B5', boxShadow: '0 2px 12px rgba(0,119,181,0.08)' }}
+                style={{ background: 'white', border: '1.5px solid rgba(0,119,181,0.35)', boxShadow: '0 2px 12px rgba(0,119,181,0.08)' }}
               >
                 <div className="flex items-start gap-4">
                   <div className="w-12 h-12 rounded-xl flex items-center justify-center text-2xl shrink-0"
@@ -2269,7 +2269,7 @@ Respondé con este JSON exacto:
               <button
                 onClick={() => { trackEvent('mode_select', { mode: 'entrevista' }); resetInterview(); setStep(STEPS.INTERVIEW_INTRO) }}
                 className="w-full text-left rounded-2xl p-5 transition-all duration-200 hover:shadow-md active:scale-[0.99]"
-                style={{ background: 'white', border: '2px solid #6366f1', boxShadow: '0 2px 12px rgba(99,102,241,0.08)' }}
+                style={{ background: 'white', border: '1.5px solid rgba(99,102,241,0.35)', boxShadow: '0 2px 12px rgba(99,102,241,0.08)' }}
               >
                 <div className="flex items-start gap-4">
                   <div className="w-12 h-12 rounded-xl flex items-center justify-center text-2xl shrink-0"
@@ -2288,7 +2288,7 @@ Respondé con este JSON exacto:
               <button
                 onClick={() => { trackEvent('mode_select', { mode: 'star' }); setStarPhase('theory'); setStep(STEPS.STAR_TRAINING) }}
                 className="w-full text-left rounded-2xl p-5 transition-all duration-200 hover:shadow-md active:scale-[0.99]"
-                style={{ background: 'white', border: '2px solid #0d9488', boxShadow: '0 2px 12px rgba(13,148,136,0.08)' }}
+                style={{ background: 'white', border: '1.5px solid rgba(13,148,136,0.35)', boxShadow: '0 2px 12px rgba(13,148,136,0.08)' }}
               >
                 <div className="flex items-start gap-4">
                   <div className="w-12 h-12 rounded-xl flex items-center justify-center text-2xl shrink-0"
@@ -3215,7 +3215,7 @@ Respondé con este JSON exacto:
             {/* Consentimiento para guardar análisis */}
             {showAnalisisConsent && !analisisSaved && (
               <div className="rounded-2xl p-4 space-y-3"
-                style={{ background: 'white', border: '1px solid rgba(0,119,181,0.18)', boxShadow: '0 2px 8px rgba(0,0,0,0.05)' }}>
+                style={{ background: 'white', border: '1px solid rgba(0,119,181,0.15)', boxShadow: '0 2px 12px rgba(0,0,0,0.06)' }}>
                 <div className="flex items-start gap-3">
                   <span className="text-xl shrink-0">🔒</span>
                   <div>
@@ -3691,7 +3691,7 @@ Respondé con este JSON exacto:
                 { icon: '🎯', label: 'Criterio real', text: 'Estándares de headhunter', accent: '#a855f7' },
               ].map(item => (
                 <div key={item.label} className="rounded-2xl p-4 text-center"
-                  style={{ background: 'white', border: '1px solid rgba(0,119,181,0.12)', boxShadow: '0 2px 8px rgba(0,0,0,0.05)' }}>
+                  style={{ background: 'white', border: '1px solid rgba(0,119,181,0.15)', boxShadow: '0 2px 12px rgba(0,0,0,0.06)' }}>
                   <div className="text-2xl mb-2">{item.icon}</div>
                   <p className="text-xs font-semibold mb-1" style={{ color: item.accent }}>{item.label}</p>
                   <p className="text-slate-500 text-xs leading-snug">{item.text}</p>
@@ -3941,38 +3941,47 @@ Respondé con este JSON exacto:
                 </div>
 
                 {/* Seguir en LinkedIn — Ramiro + página */}
-                <div className="rounded-2xl p-5 space-y-3"
-                  style={{ background: 'rgba(0,119,181,0.04)', border: '1px solid rgba(0,119,181,0.15)' }}>
-                  <div>
-                    <p className="text-xs font-semibold uppercase tracking-wide" style={{ color: '#0077B5' }}>
-                      🔗 Seguinos en LinkedIn
-                    </p>
-                    <p className="text-slate-500 text-xs mt-1 leading-relaxed">
-                      Tips de empleabilidad, novedades de la app y recursos para potenciar tu búsqueda laboral.
-                    </p>
+                <div className="rounded-2xl overflow-hidden"
+                  style={{ border: '1px solid rgba(0,119,181,0.15)', boxShadow: '0 2px 12px rgba(0,0,0,0.06)' }}>
+                  <div className="px-5 pt-4 pb-3 text-center"
+                    style={{ background: 'linear-gradient(135deg,rgba(0,119,181,0.06),rgba(14,165,233,0.08))' }}>
+                    <p className="text-slate-900 font-bold text-sm">Si este análisis te sirvió, seguinos</p>
+                    <p className="text-slate-500 text-xs mt-1 leading-relaxed">Tips de empleabilidad y recursos para potenciar tu búsqueda.</p>
                   </div>
-                  <a href={RAMIRO_LINKEDIN_URL} target="_blank" rel="noopener noreferrer"
-                    onClick={() => trackEvent('click_externo', { destino: 'linkedin_ramiro', ubicacion: 'interview_feedback' })}
-                    className="flex items-center gap-3 px-4 py-3 rounded-xl transition-all hover:opacity-80"
-                    style={{ background: 'white', border: '1px solid rgba(0,119,181,0.18)' }}>
-                    <LinkedInIcon className="w-5 h-5 shrink-0" style={{ color: '#0077B5' }} />
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm font-semibold text-slate-800">Ramiro Silvera</p>
-                      <p className="text-xs text-slate-500">Gerente de RRHH · Creador de la app</p>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 divide-y sm:divide-y-0 sm:divide-x divide-slate-100">
+                    <div className="p-4 flex flex-col gap-2.5 items-center text-center">
+                      <div className="w-9 h-9 rounded-xl flex items-center justify-center shrink-0"
+                        style={{ background: LI_GRADIENT }}>
+                        <LinkedInIcon className="w-4 h-4 text-white" />
+                      </div>
+                      <div>
+                        <p className="text-slate-900 text-xs font-semibold">Perfil de Ramiro</p>
+                        <p className="text-slate-500 text-xs mt-0.5 leading-relaxed">Mejoras concretas y casos reales de optimización.</p>
+                      </div>
+                      <a href={RAMIRO_LINKEDIN_URL} target="_blank" rel="noopener noreferrer"
+                        onClick={() => trackEvent('click_externo', { destino: 'linkedin_ramiro', ubicacion: 'interview_feedback' })}
+                        className="btn-glow w-full inline-flex items-center justify-center gap-1.5 py-2 rounded-xl text-white text-xs font-semibold mt-auto"
+                        style={{ background: LI_GRADIENT }}>
+                        <LinkedInIcon className="w-3.5 h-3.5" /> Seguir a Ramiro
+                      </a>
                     </div>
-                    <span className="text-xs font-semibold shrink-0" style={{ color: '#0077B5' }}>Seguir →</span>
-                  </a>
-                  <a href={COMPANY_LINKEDIN_URL} target="_blank" rel="noopener noreferrer"
-                    onClick={() => trackEvent('click_externo', { destino: 'linkedin_pagina', ubicacion: 'interview_feedback' })}
-                    className="flex items-center gap-3 px-4 py-3 rounded-xl transition-all hover:opacity-80"
-                    style={{ background: 'white', border: '1px solid rgba(0,119,181,0.18)' }}>
-                    <LinkedInIcon className="w-5 h-5 shrink-0" style={{ color: '#0077B5' }} />
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm font-semibold text-slate-800">OptimizaLinkedin</p>
-                      <p className="text-xs text-slate-500">Comunidad · Recursos de empleabilidad</p>
+                    <div className="p-4 flex flex-col gap-2.5 items-center text-center">
+                      <div className="w-9 h-9 rounded-xl flex items-center justify-center shrink-0"
+                        style={{ background: LI_GRADIENT }}>
+                        <LinkedInIcon className="w-4 h-4 text-white" />
+                      </div>
+                      <div>
+                        <p className="text-slate-900 text-xs font-semibold">Página OptimizaLK</p>
+                        <p className="text-slate-500 text-xs mt-0.5 leading-relaxed">Guías y contenido sobre búsqueda de empleo.</p>
+                      </div>
+                      <a href={COMPANY_LINKEDIN_URL} target="_blank" rel="noopener noreferrer"
+                        onClick={() => trackEvent('click_externo', { destino: 'linkedin_pagina', ubicacion: 'interview_feedback' })}
+                        className="btn-glow w-full inline-flex items-center justify-center gap-1.5 py-2 rounded-xl text-white text-xs font-semibold mt-auto"
+                        style={{ background: LI_GRADIENT }}>
+                        <LinkedInIcon className="w-3.5 h-3.5" /> Seguir la página
+                      </a>
                     </div>
-                    <span className="text-xs font-semibold shrink-0" style={{ color: '#0077B5' }}>Seguir →</span>
-                  </a>
+                  </div>
                 </div>
 
                 {/* Card Ramiro — asesoramiento personalizado */}
@@ -4071,7 +4080,7 @@ Respondé con este JSON exacto:
                 </div>
 
                 <div className="rounded-2xl p-5 space-y-3"
-                  style={{ background: 'white', border: '1px solid rgba(99,102,241,0.20)', boxShadow: '0 2px 12px rgba(0,0,0,0.05)' }}>
+                  style={{ background: 'white', border: '1px solid rgba(99,102,241,0.20)', boxShadow: '0 2px 12px rgba(0,0,0,0.06)' }}>
                   <p className="text-xs font-semibold uppercase tracking-wide" style={{ color: '#6366f1' }}>Ejemplo completo bien estructurado</p>
                   <p className="text-xs text-slate-500 italic mb-1">Pregunta: "Contame sobre un logro profesional del que estés orgulloso/a."</p>
                   <p className="text-slate-700 text-sm leading-relaxed">
@@ -4144,7 +4153,7 @@ Respondé con este JSON exacto:
                     <button
                       disabled={starAnswer.trim().length < 40 || starLoading}
                       onClick={() => { trackEvent('star_practice_submit', { question_idx: starQuestionIdx }); callStarFeedback() }}
-                      className="w-full py-4 rounded-2xl text-sm font-semibold text-white transition-all"
+                      className={`w-full py-4 rounded-2xl text-sm font-semibold text-white transition-all ${starAnswer.trim().length >= 40 && !starLoading ? 'btn-glow' : ''}`}
                       style={{
                         background: starAnswer.trim().length >= 40 && !starLoading ? 'linear-gradient(135deg,#6366f1,#8b5cf6)' : '#94a3b8',
                         opacity: starAnswer.trim().length < 40 || starLoading ? 0.6 : 1,
@@ -4156,7 +4165,7 @@ Respondé con este JSON exacto:
                 ) : (
                   <div className="space-y-4">
                     <div className="flex items-center gap-4 rounded-2xl p-4"
-                      style={{ background: 'white', border: '1px solid rgba(99,102,241,0.15)', boxShadow: '0 2px 8px rgba(0,0,0,0.05)' }}>
+                      style={{ background: 'white', border: '1px solid rgba(99,102,241,0.15)', boxShadow: '0 2px 12px rgba(0,0,0,0.06)' }}>
                       <div className="flex flex-col items-center shrink-0">
                         <span className="text-3xl font-black" style={{ color: starFeedback.puntaje >= 7 ? '#059669' : starFeedback.puntaje >= 5 ? '#6366f1' : '#f59e0b' }}>
                           {starFeedback.puntaje}
@@ -4217,7 +4226,7 @@ Respondé con este JSON exacto:
                           setStarError('')
                           trackEvent('star_next_question', { question_idx: next })
                         }}
-                        className="flex-1 py-3 rounded-xl text-sm font-semibold text-white"
+                        className="btn-glow flex-1 py-3 rounded-xl text-sm font-semibold text-white"
                         style={{ background: 'linear-gradient(135deg,#6366f1,#8b5cf6)' }}
                       >
                         Nueva pregunta →
@@ -4230,46 +4239,60 @@ Respondé con este JSON exacto:
                 {starFeedback && (
                   <>
                     {/* Follows */}
-                    <div className="rounded-2xl p-4 space-y-2"
-                      style={{ background: 'rgba(99,102,241,0.04)', border: '1px solid rgba(99,102,241,0.15)' }}>
-                      <p className="text-xs font-semibold uppercase tracking-wide" style={{ color: '#6366f1' }}>
-                        🔗 Seguinos en LinkedIn
-                      </p>
-                      <a href={RAMIRO_LINKEDIN_URL} target="_blank" rel="noopener noreferrer"
-                        onClick={() => trackEvent('click_externo', { destino: 'linkedin_ramiro', ubicacion: 'star_feedback' })}
-                        className="flex items-center gap-3 px-3 py-2.5 rounded-xl transition-all hover:opacity-80"
-                        style={{ background: 'white', border: '1px solid rgba(99,102,241,0.15)' }}>
-                        <LinkedInIcon className="w-4 h-4 shrink-0" style={{ color: '#0077B5' }} />
-                        <div className="flex-1 min-w-0">
-                          <p className="text-xs font-semibold text-slate-800">Ramiro Silvera</p>
-                          <p className="text-xs text-slate-400">Gerente de RRHH · Creador de la app</p>
+                    <div className="rounded-2xl overflow-hidden"
+                      style={{ border: '1px solid rgba(0,119,181,0.15)', boxShadow: '0 2px 12px rgba(0,0,0,0.06)' }}>
+                      <div className="px-5 pt-4 pb-3 text-center"
+                        style={{ background: 'linear-gradient(135deg,rgba(0,119,181,0.06),rgba(14,165,233,0.08))' }}>
+                        <p className="text-slate-900 font-bold text-sm">Si este análisis te sirvió, seguinos</p>
+                        <p className="text-slate-500 text-xs mt-1 leading-relaxed">Tips de empleabilidad y recursos para potenciar tu búsqueda.</p>
+                      </div>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 divide-y sm:divide-y-0 sm:divide-x divide-slate-100">
+                        <div className="p-4 flex flex-col gap-2.5 items-center text-center">
+                          <div className="w-9 h-9 rounded-xl flex items-center justify-center shrink-0"
+                            style={{ background: LI_GRADIENT }}>
+                            <LinkedInIcon className="w-4 h-4 text-white" />
+                          </div>
+                          <div>
+                            <p className="text-slate-900 text-xs font-semibold">Perfil de Ramiro</p>
+                            <p className="text-slate-500 text-xs mt-0.5 leading-relaxed">Mejoras concretas y casos reales de optimización.</p>
+                          </div>
+                          <a href={RAMIRO_LINKEDIN_URL} target="_blank" rel="noopener noreferrer"
+                            onClick={() => trackEvent('click_externo', { destino: 'linkedin_ramiro', ubicacion: 'star_feedback' })}
+                            className="btn-glow w-full inline-flex items-center justify-center gap-1.5 py-2 rounded-xl text-white text-xs font-semibold mt-auto"
+                            style={{ background: LI_GRADIENT }}>
+                            <LinkedInIcon className="w-3.5 h-3.5" /> Seguir a Ramiro
+                          </a>
                         </div>
-                        <span className="text-xs font-semibold shrink-0" style={{ color: '#0077B5' }}>Seguir →</span>
-                      </a>
-                      <a href={COMPANY_LINKEDIN_URL} target="_blank" rel="noopener noreferrer"
-                        onClick={() => trackEvent('click_externo', { destino: 'linkedin_pagina', ubicacion: 'star_feedback' })}
-                        className="flex items-center gap-3 px-3 py-2.5 rounded-xl transition-all hover:opacity-80"
-                        style={{ background: 'white', border: '1px solid rgba(99,102,241,0.15)' }}>
-                        <LinkedInIcon className="w-4 h-4 shrink-0" style={{ color: '#0077B5' }} />
-                        <div className="flex-1 min-w-0">
-                          <p className="text-xs font-semibold text-slate-800">OptimizaLinkedin</p>
-                          <p className="text-xs text-slate-400">Comunidad · Recursos de empleabilidad</p>
+                        <div className="p-4 flex flex-col gap-2.5 items-center text-center">
+                          <div className="w-9 h-9 rounded-xl flex items-center justify-center shrink-0"
+                            style={{ background: LI_GRADIENT }}>
+                            <LinkedInIcon className="w-4 h-4 text-white" />
+                          </div>
+                          <div>
+                            <p className="text-slate-900 text-xs font-semibold">Página OptimizaLK</p>
+                            <p className="text-slate-500 text-xs mt-0.5 leading-relaxed">Guías y contenido sobre búsqueda de empleo.</p>
+                          </div>
+                          <a href={COMPANY_LINKEDIN_URL} target="_blank" rel="noopener noreferrer"
+                            onClick={() => trackEvent('click_externo', { destino: 'linkedin_pagina', ubicacion: 'star_feedback' })}
+                            className="btn-glow w-full inline-flex items-center justify-center gap-1.5 py-2 rounded-xl text-white text-xs font-semibold mt-auto"
+                            style={{ background: LI_GRADIENT }}>
+                            <LinkedInIcon className="w-3.5 h-3.5" /> Seguir la página
+                          </a>
                         </div>
-                        <span className="text-xs font-semibold shrink-0" style={{ color: '#0077B5' }}>Seguir →</span>
-                      </a>
+                      </div>
                     </div>
 
                     {/* Contribución $5.000 */}
-                    <div className="flex items-center justify-between gap-3 px-4 py-3 rounded-2xl"
-                      style={{ background: 'rgba(0,180,150,0.05)', border: '1px solid rgba(0,180,150,0.18)' }}>
+                    <div className="flex items-center justify-between gap-3 px-5 py-3 rounded-2xl"
+                      style={{ borderTop: '1px solid rgba(0,180,150,0.15)', background: 'rgba(0,180,150,0.03)', border: '1px solid rgba(0,180,150,0.15)' }}>
                       <p className="text-slate-500 text-xs leading-snug">
-                        ☕ $5.000 únicos — ayudás a mantener esto gratis para todos.
+                        ☕ $5.000 únicos — el precio de un café para mantener esto gratis para todos.
                       </p>
                       <a href={MP_URL} target="_blank" rel="noopener noreferrer"
                         onClick={() => trackEvent('click_externo', { destino: 'mercadopago', ubicacion: 'star_feedback' })}
-                        className="shrink-0 inline-flex items-center gap-1.5 px-4 py-2 rounded-xl text-white text-xs font-semibold"
+                        className="shrink-0 inline-flex items-center gap-1.5 px-4 py-2 rounded-xl text-white text-xs font-semibold transition-all duration-200"
                         style={{ background: 'linear-gradient(135deg,#00b496,#00d4aa)' }}>
-                        ☕ Apoyar
+                        ☕ Apoyar · $5.000
                       </a>
                     </div>
                   </>
