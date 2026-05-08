@@ -121,19 +121,24 @@ export default {
       if (!env.MP_PLAN_ID) {
         return new Response(JSON.stringify({ error: 'MP_PLAN_ID no está configurado en el Worker' }), { status: 500, headers: corsHeaders })
       }
+      const mpRequest = {
+        preapproval_plan_id: env.MP_PLAN_ID,
+        payer_email: user_email,
+        back_url: 'https://optimizalinkedin.com/?premium=ok',
+        external_reference: user_id,
+        status: 'pending',
+      }
       try {
         const data = await mpFetch(env, '/preapproval', {
           method: 'POST',
-          body: JSON.stringify({
-            preapproval_plan_id: env.MP_PLAN_ID,
-            payer_email: user_email,
-            back_url: 'https://optimizalinkedin.com/?premium=ok',
-            external_reference: user_id,
-            status: 'pending',
-          }),
+          body: JSON.stringify(mpRequest),
         })
         if (!data.init_point) {
-          return new Response(JSON.stringify({ error: data.message || JSON.stringify(data) }), { status: 502, headers: corsHeaders })
+          return new Response(JSON.stringify({
+            error: data.message || 'MP no devolvió init_point',
+            mp_response: data,
+            mp_request_sent: mpRequest,
+          }), { status: 502, headers: corsHeaders })
         }
         return new Response(JSON.stringify({ init_point: data.init_point, id: data.id }), { status: 200, headers: corsHeaders })
       } catch (err) {
