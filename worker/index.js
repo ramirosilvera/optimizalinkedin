@@ -119,23 +119,30 @@ export default {
         return new Response(JSON.stringify({ error: 'Faltan user_id y user_email' }), { status: 400, headers: corsHeaders })
       }
       try {
+        const mpBody = {
+          reason: 'Suscripción Premium OptimizaLinkedin',
+          payer_email: user_email,
+          back_url: 'https://optimizalinkedin.com/?premium=ok',
+          external_reference: user_id,
+          status: 'pending',
+          auto_recurring: {
+            frequency: 1,
+            frequency_type: 'months',
+            transaction_amount: 3000,
+            currency_id: 'ARS',
+          },
+        }
+        if (env.MP_PLAN_ID) mpBody.preapproval_plan_id = env.MP_PLAN_ID
         const data = await mpFetch(env, '/preapproval', {
           method: 'POST',
-          body: JSON.stringify({
-            preapproval_plan_id: env.MP_PLAN_ID,
-            reason: 'Suscripción Premium OptimizaLinkedin',
-            payer_email: user_email,
-            back_url: 'https://optimizalinkedin.com/?premium=ok',
-            external_reference: user_id,
-            status: 'pending',
-          }),
+          body: JSON.stringify(mpBody),
         })
         if (!data.init_point) {
-          return new Response(JSON.stringify({ error: data.message || 'Error al crear suscripción' }), { status: 502, headers: corsHeaders })
+          return new Response(JSON.stringify({ error: data.message || JSON.stringify(data) }), { status: 502, headers: corsHeaders })
         }
         return new Response(JSON.stringify({ init_point: data.init_point, id: data.id }), { status: 200, headers: corsHeaders })
       } catch (err) {
-        return new Response(JSON.stringify({ error: 'Error al conectar con Mercado Pago' }), { status: 502, headers: corsHeaders })
+        return new Response(JSON.stringify({ error: err.message || 'Error al conectar con Mercado Pago' }), { status: 502, headers: corsHeaders })
       }
     }
 
