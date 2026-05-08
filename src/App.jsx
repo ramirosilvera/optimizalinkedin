@@ -872,8 +872,10 @@ export default function App() {
   const [authPassword, setAuthPassword] = useState('')
   const [authLoading, setAuthLoading] = useState(false)
   const [authError, setAuthError] = useState('')
+  const [authSuccess, setAuthSuccess] = useState(null) // null | 'login' | 'register'
   const [showHistorial, setShowHistorial] = useState(false)
   const [historial, setHistorial] = useState([])
+  const [showPremiumModal, setShowPremiumModal] = useState(false)
   const [historialLoading, setHistorialLoading] = useState(false)
   const [subscriptionLoading, setSubscriptionLoading] = useState(false)
 
@@ -947,9 +949,9 @@ export default function App() {
         premium_hasta: perfil?.premium_hasta || null,
       }
       applySession(data.access_token, data.refresh_token, userData)
-      setShowAuthModal(false)
       setAuthEmail('')
       setAuthPassword('')
+      setAuthSuccess('login')
       trackEvent('auth_login')
     } catch (err) {
       setAuthError(err.message || 'Email o contraseña incorrectos')
@@ -970,9 +972,9 @@ export default function App() {
         await upsertPerfil(data.user.id, { email: data.user.email, nombre: email.split('@')[0] }, data.access_token)
         const userData = { id: data.user.id, email: data.user.email, nombre: email.split('@')[0], es_premium: false, premium_hasta: null }
         applySession(data.access_token, data.refresh_token, userData)
-        setShowAuthModal(false)
         setAuthEmail('')
         setAuthPassword('')
+        setAuthSuccess('register')
         trackEvent('auth_register')
       } else {
         setAuthError('Te enviamos un email de confirmación. Revisá tu bandeja.')
@@ -1027,8 +1029,9 @@ export default function App() {
 
   const startSubscription = async () => {
     const currentUser = user
-    if (!currentUser) { setShowAuthModal(true); return }
+    if (!currentUser) { setShowPremiumModal(false); setShowAuthModal(true); return }
     setSubscriptionLoading(true)
+    setShowPremiumModal(false)
     try {
       const res = await fetch(WORKER_URL, {
         method: 'POST',
@@ -1037,10 +1040,14 @@ export default function App() {
       })
       const data = await res.json()
       if (data.init_point) {
-        window.open(data.init_point, '_blank')
         trackEvent('premium_checkout_opened')
+        window.location.href = data.init_point
+      } else {
+        alert('No se pudo iniciar el pago. Intentá de nuevo en unos segundos.')
       }
-    } catch { /* silencioso */ }
+    } catch {
+      alert('Error de conexión. Verificá tu internet e intentá de nuevo.')
+    }
     setSubscriptionLoading(false)
   }
 
@@ -1125,18 +1132,22 @@ export default function App() {
         if (data.headline) setFormTitular(data.headline)
         if (data.summary) setFormResumen(data.summary)
         setLinkedinAuthLoading(false)
-        setInputMode('linkedin')
-        setUrlAttempted(true)
-        setStep(STEPS.PROFILE_INPUT)
-        // Si venía del modal de auth, pre-llenar email y abrir registro
-        if (sessionStorage.getItem('li_auth_intent') === '1') {
+        const fromAuthModal = sessionStorage.getItem('li_auth_intent') === '1'
+        if (fromAuthModal) {
           sessionStorage.removeItem('li_auth_intent')
+          // Solo abrir modal de registro — no navegar al perfil
           if (data.email && !localStorage.getItem('ol_at')) {
             setAuthEmail(data.email)
             setAuthTab('register')
             setAuthError('')
+            setAuthSuccess(null)
             setShowAuthModal(true)
           }
+        } else {
+          // Flujo normal: ir a carga de perfil
+          setInputMode('linkedin')
+          setUrlAttempted(true)
+          setStep(STEPS.PROFILE_INPUT)
         }
       })
       .catch(() => { setLinkedinAuthError('Error de conexión. Intentá de nuevo.'); setLinkedinAuthLoading(false) })
@@ -2619,65 +2630,153 @@ Respondé con este JSON exacto:
       {/* ── Auth Modal ── */}
       {showAuthModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4"
-          style={{ background: 'rgba(0,0,0,0.55)', backdropFilter: 'blur(4px)' }}>
+          style={{ background: 'rgba(0,0,0,0.55)', backdropFilter: 'blur(4px)' }}
+          onClick={e => { if (e.target === e.currentTarget) { setShowAuthModal(false); setAuthError(''); setAuthSuccess(null) } }}>
           <div className="w-full max-w-sm rounded-3xl p-6 space-y-4"
             style={{ background: 'white', boxShadow: '0 25px 60px rgba(0,0,0,0.2)' }}>
-            <div className="flex items-center justify-between">
-              <h2 className="text-slate-900 font-bold text-lg">
-                {authTab === 'login' ? 'Ingresá a tu cuenta' : 'Creá tu cuenta'}
-              </h2>
-              <button onClick={() => { setShowAuthModal(false); setAuthError('') }}
-                className="text-slate-400 hover:text-slate-600 text-2xl leading-none w-8 h-8 flex items-center justify-center">×</button>
-            </div>
 
-            <div className="flex gap-1 p-1 rounded-xl" style={{ background: '#f1f5f9' }}>
-              {[['login','Ingresar'],['register','Registrarme']].map(([t,l]) => (
-                <button key={t} onClick={() => { setAuthTab(t); setAuthError('') }}
-                  className="flex-1 py-2 rounded-lg text-sm font-medium transition-all"
-                  style={authTab === t ? { background:'white', color:'#0077B5', boxShadow:'0 1px 4px rgba(0,0,0,0.1)' } : { color:'#64748b' }}>
-                  {l}
+            {authSuccess ? (
+              /* ── Pantalla de éxito ── */
+              <div className="text-center space-y-5 py-2">
+                <div className="w-16 h-16 rounded-full flex items-center justify-center mx-auto text-3xl"
+                  style={{ background: 'rgba(0,119,181,0.08)' }}>✓</div>
+                <div className="space-y-1">
+                  <p className="font-bold text-slate-900 text-xl">
+                    {authSuccess === 'register' ? '¡Cuenta creada!' : `¡Bienvenido/a, ${user?.nombre}!`}
+                  </p>
+                  <p className="text-slate-500 text-sm leading-relaxed">
+                    {authSuccess === 'register'
+                      ? 'Ya tenés tu cuenta. Activá Premium para guardar tu historial de análisis, CVs y entrevistas.'
+                      : 'Ya podés usar la app con tu historial guardado.'}
+                  </p>
+                </div>
+                {authSuccess === 'register' ? (
+                  <div className="space-y-2 pt-1">
+                    <button onClick={() => { setShowAuthModal(false); setAuthSuccess(null); setShowPremiumModal(true) }}
+                      className="btn-glow w-full py-3 rounded-xl text-white font-semibold text-sm"
+                      style={{ background: LI_GRADIENT }}>
+                      Ver qué incluye Premium →
+                    </button>
+                    <button onClick={() => { setShowAuthModal(false); setAuthSuccess(null) }}
+                      className="w-full py-2.5 text-sm font-medium rounded-xl"
+                      style={{ color: '#64748b' }}>
+                      Ahora no
+                    </button>
+                  </div>
+                ) : (
+                  <button onClick={() => { setShowAuthModal(false); setAuthSuccess(null) }}
+                    className="btn-glow w-full py-3 rounded-xl text-white font-semibold text-sm"
+                    style={{ background: LI_GRADIENT }}>
+                    Continuar →
+                  </button>
+                )}
+              </div>
+            ) : (
+              /* ── Formulario login/registro ── */
+              <>
+                <div className="flex items-center justify-between">
+                  <h2 className="text-slate-900 font-bold text-lg">
+                    {authTab === 'login' ? 'Ingresá a tu cuenta' : 'Creá tu cuenta gratis'}
+                  </h2>
+                  <button onClick={() => { setShowAuthModal(false); setAuthError('') }}
+                    className="text-slate-400 hover:text-slate-600 text-2xl leading-none w-8 h-8 flex items-center justify-center">×</button>
+                </div>
+
+                <div className="flex gap-1 p-1 rounded-xl" style={{ background: '#f1f5f9' }}>
+                  {[['login','Ingresar'],['register','Registrarme']].map(([t,l]) => (
+                    <button key={t} onClick={() => { setAuthTab(t); setAuthError('') }}
+                      className="flex-1 py-2 rounded-lg text-sm font-medium transition-all"
+                      style={authTab === t ? { background:'white', color:'#0077B5', boxShadow:'0 1px 4px rgba(0,0,0,0.1)' } : { color:'#64748b' }}>
+                      {l}
+                    </button>
+                  ))}
+                </div>
+
+                <button onClick={() => { sessionStorage.setItem('li_auth_intent', '1'); setShowAuthModal(false); handleLinkedinLogin() }}
+                  className="w-full py-3 rounded-xl flex items-center justify-center gap-2 text-sm font-semibold transition-opacity hover:opacity-90"
+                  style={{ background: '#0077B5', color: 'white' }}>
+                  <LinkedInIcon className="w-4 h-4" style={{ fill: 'white' }} />
+                  Continuar con LinkedIn
                 </button>
-              ))}
-            </div>
 
-            <button onClick={() => { sessionStorage.setItem('li_auth_intent', '1'); setShowAuthModal(false); handleLinkedinLogin() }}
-              className="w-full py-3 rounded-xl flex items-center justify-center gap-2 text-sm font-semibold"
-              style={{ background: '#0077B5', color: 'white' }}>
-              <LinkedInIcon className="w-4 h-4" style={{ fill: 'white' }} />
-              Continuar con LinkedIn
-            </button>
+                <div className="flex items-center gap-3">
+                  <div className="flex-1 h-px" style={{ background: '#e2e8f0' }} />
+                  <span className="text-xs text-slate-400">o con email</span>
+                  <div className="flex-1 h-px" style={{ background: '#e2e8f0' }} />
+                </div>
 
-            <div className="flex items-center gap-3">
-              <div className="flex-1 h-px" style={{ background: '#e2e8f0' }} />
-              <span className="text-xs text-slate-400">o con email</span>
-              <div className="flex-1 h-px" style={{ background: '#e2e8f0' }} />
-            </div>
+                <div className="space-y-3">
+                  <input type="email" placeholder="Email" value={authEmail}
+                    onChange={e => setAuthEmail(e.target.value)} autoComplete="email"
+                    className="w-full px-4 py-3 rounded-xl text-sm outline-none" style={INPUT_STYLE} />
+                  <input type="password" placeholder="Contraseña (mínimo 6 caracteres)" value={authPassword}
+                    onChange={e => setAuthPassword(e.target.value)}
+                    autoComplete={authTab === 'login' ? 'current-password' : 'new-password'}
+                    onKeyDown={e => e.key === 'Enter' && authEmail.includes('@') && authPassword.length >= 6 && (authTab === 'login' ? authLogin(authEmail, authPassword) : authRegister(authEmail, authPassword))}
+                    className="w-full px-4 py-3 rounded-xl text-sm outline-none" style={INPUT_STYLE} />
+                </div>
 
-            <div className="space-y-3">
-              <input type="email" placeholder="Email" value={authEmail}
-                onChange={e => setAuthEmail(e.target.value)} autoComplete="email"
-                className="w-full px-4 py-3 rounded-xl text-sm outline-none" style={INPUT_STYLE} />
-              <input type="password" placeholder="Contraseña (mínimo 6 caracteres)" value={authPassword}
-                onChange={e => setAuthPassword(e.target.value)} autoComplete={authTab === 'login' ? 'current-password' : 'new-password'}
-                onKeyDown={e => e.key === 'Enter' && authEmail.includes('@') && authPassword.length >= 6 && (authTab === 'login' ? authLogin(authEmail, authPassword) : authRegister(authEmail, authPassword))}
-                className="w-full px-4 py-3 rounded-xl text-sm outline-none" style={INPUT_STYLE} />
-            </div>
+                {authError && <p className="text-sm text-center font-medium" style={{ color: '#ef4444' }}>{authError}</p>}
 
-            {authError && <p className="text-sm text-center" style={{ color: '#ef4444' }}>{authError}</p>}
+                <button
+                  onClick={() => authTab === 'login' ? authLogin(authEmail, authPassword) : authRegister(authEmail, authPassword)}
+                  disabled={authLoading || !authEmail.includes('@') || authPassword.length < 6}
+                  className="btn-glow w-full py-3 rounded-xl text-white font-semibold text-sm"
+                  style={{ background: LI_GRADIENT, opacity: (authLoading || !authEmail.includes('@') || authPassword.length < 6) ? 0.5 : 1 }}>
+                  {authLoading ? 'Procesando...' : (authTab === 'login' ? 'Ingresar' : 'Crear cuenta gratis')}
+                </button>
 
-            <button
-              onClick={() => authTab === 'login' ? authLogin(authEmail, authPassword) : authRegister(authEmail, authPassword)}
-              disabled={authLoading || !authEmail.includes('@') || authPassword.length < 6}
-              className="btn-glow w-full py-3 rounded-xl text-white font-semibold text-sm"
-              style={{ background: LI_GRADIENT, opacity: (authLoading || !authEmail.includes('@') || authPassword.length < 6) ? 0.55 : 1 }}>
-              {authLoading ? '...' : (authTab === 'login' ? 'Ingresar' : 'Crear cuenta gratis')}
-            </button>
-
-            {authTab === 'register' && (
-              <p className="text-xs text-center text-slate-400 leading-relaxed">
-                La cuenta es gratis. El historial se activa con Premium ($3.000/mes).
-              </p>
+                <p className="text-xs text-center text-slate-400 leading-relaxed">
+                  {authTab === 'register'
+                    ? 'La cuenta es gratis. El historial se activa con Premium ($3.000/mes).'
+                    : <span>¿No tenés cuenta? <button onClick={() => setAuthTab('register')} className="underline" style={{ color: '#0077B5' }}>Registrate gratis</button></span>}
+                </p>
+              </>
             )}
+          </div>
+        </div>
+      )}
+
+      {/* ── Premium Modal ── */}
+      {showPremiumModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4"
+          style={{ background: 'rgba(0,0,0,0.55)', backdropFilter: 'blur(4px)' }}
+          onClick={e => { if (e.target === e.currentTarget) setShowPremiumModal(false) }}>
+          <div className="w-full max-w-sm rounded-3xl overflow-hidden"
+            style={{ boxShadow: '0 25px 60px rgba(0,0,0,0.2)' }}>
+            <div className="p-6 text-white" style={{ background: LI_GRADIENT }}>
+              <p className="text-xs font-semibold opacity-80 mb-1">OPTIMIZA LINKEDIN</p>
+              <h2 className="text-2xl font-bold">Premium</h2>
+              <p className="text-4xl font-bold mt-2">$3.000<span className="text-lg font-normal opacity-80">/mes</span></p>
+              <p className="text-sm opacity-75 mt-1">Cancelás cuando querés desde Mercado Pago</p>
+            </div>
+            <div className="p-6 space-y-5 bg-white">
+              <ul className="space-y-3">
+                {[
+                  ['💾', 'Historial completo', 'Todos tus análisis, CVs y entrevistas guardados y accesibles cuando quieras'],
+                  ['📊', 'Análisis guardados', 'Revisá tu progreso y compará resultados entre perfiles'],
+                  ['📄', 'CVs anteriores', 'Accedé y re-descargá cualquier CV que generaste'],
+                  ['🎙️', 'Entrevistas guardadas', 'Revisá tu feedback y seguí mejorando tus respuestas'],
+                ].map(([icon, title, desc]) => (
+                  <li key={title} className="flex gap-3">
+                    <span className="text-xl shrink-0">{icon}</span>
+                    <div>
+                      <p className="text-slate-800 font-semibold text-sm">{title}</p>
+                      <p className="text-slate-500 text-xs leading-snug">{desc}</p>
+                    </div>
+                  </li>
+                ))}
+              </ul>
+              <button onClick={startSubscription} disabled={subscriptionLoading}
+                className="btn-glow w-full py-3.5 rounded-xl text-white font-bold text-sm"
+                style={{ background: LI_GRADIENT, opacity: subscriptionLoading ? 0.7 : 1 }}>
+                {subscriptionLoading ? 'Procesando...' : 'Activar Premium · Ir a Mercado Pago →'}
+              </button>
+              <button onClick={() => setShowPremiumModal(false)}
+                className="w-full py-2 text-sm text-slate-400 text-center">
+                Ahora no
+              </button>
+            </div>
           </div>
         </div>
       )}
@@ -2743,7 +2842,7 @@ Respondé con este JSON exacto:
             )}
             <span className="text-sm text-slate-500 font-medium">{user.nombre || user.email}</span>
             {!user.es_premium && (
-              <button onClick={startSubscription} disabled={subscriptionLoading}
+              <button onClick={() => setShowPremiumModal(true)} disabled={subscriptionLoading}
                 className="text-xs font-semibold px-3 py-1.5 rounded-full"
                 style={{ background: LI_GRADIENT, color: 'white', opacity: subscriptionLoading ? 0.7 : 1 }}>
                 {subscriptionLoading ? '...' : '⬆ Activar Premium'}
@@ -4482,7 +4581,7 @@ Respondé con este JSON exacto:
                     {user ? 'Activá Premium para guardar tu historial completo de análisis, CVs y entrevistas.' : 'Creá una cuenta Premium para guardar tu historial por $3.000/mes.'}
                   </p>
                 </div>
-                <button onClick={user ? startSubscription : () => setShowAuthModal(true)}
+                <button onClick={user ? () => setShowPremiumModal(true) : () => setShowAuthModal(true)}
                   disabled={subscriptionLoading}
                   className="shrink-0 btn-glow px-4 py-2 rounded-xl text-white text-xs font-semibold"
                   style={{ background: LI_GRADIENT, opacity: subscriptionLoading ? 0.7 : 1 }}>
@@ -4872,7 +4971,7 @@ Respondé con este JSON exacto:
                         {user ? 'Con Premium tenés acceso a tu historial completo de entrevistas y análisis.' : 'Creá una cuenta Premium para guardar tu historial por $3.000/mes.'}
                       </p>
                     </div>
-                    <button onClick={user ? startSubscription : () => setShowAuthModal(true)}
+                    <button onClick={user ? () => setShowPremiumModal(true) : () => setShowAuthModal(true)}
                       disabled={subscriptionLoading}
                       className="shrink-0 btn-glow px-4 py-2 rounded-xl text-white text-xs font-semibold"
                       style={{ background: LI_GRADIENT, opacity: subscriptionLoading ? 0.7 : 1 }}>
