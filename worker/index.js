@@ -133,9 +133,16 @@ export default {
       }
       const mpRequest = {
         preapproval_plan_id: env.MP_PLAN_ID,
+        reason: 'Suscripción Premium OptimizaLinkedin',
         payer_email: user_email,
         back_url: 'https://optimizalinkedin.com/?premium=ok',
         external_reference: user_id,
+        auto_recurring: {
+          frequency: 1,
+          frequency_type: 'months',
+          transaction_amount: 3000,
+          currency_id: 'ARS',
+        },
         status: 'pending',
       }
       try {
