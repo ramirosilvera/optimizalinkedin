@@ -883,6 +883,12 @@ export default function App() {
   const [postPaymentError, setPostPaymentError] = useState('')
   const [historialLoading, setHistorialLoading] = useState(false)
   const [subscriptionLoading, setSubscriptionLoading] = useState(false)
+  const [showCouponField, setShowCouponField] = useState(false)
+  const [couponCode, setCouponCode] = useState('')
+  const [couponEmail, setCouponEmail] = useState('')
+  const [couponLoading, setCouponLoading] = useState(false)
+  const [couponError, setCouponError] = useState('')
+  const [couponSuccess, setCouponSuccess] = useState(false)
 
   // ── Auth helpers ─────────────────────────────────────────────────────────
   const sbAuthFetch = async (path, options = {}) => {
@@ -1057,6 +1063,39 @@ export default function App() {
       alert(`Error de conexión: ${err.message || 'no se pudo contactar al servidor'}`)
     }
     setSubscriptionLoading(false)
+  }
+
+  const applyCoupon = async () => {
+    const emailToUse = user?.email || couponEmail.trim()
+    if (!couponCode.trim() || !emailToUse) return
+    setCouponLoading(true)
+    setCouponError('')
+    try {
+      const res = await fetch(WORKER_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'grant_premium', admin_key: couponCode.trim(), email: emailToUse, months: 12 }),
+      })
+      const data = await res.json()
+      if (data.ok) {
+        setCouponSuccess(true)
+        localStorage.setItem('ol_premium', '1')
+        setUser(prev => prev ? { ...prev, es_premium: true } : prev)
+        trackEvent('premium_coupon_applied')
+        setTimeout(() => {
+          setShowPremiumModal(false)
+          setCouponCode('')
+          setCouponEmail('')
+          setCouponSuccess(false)
+          setShowCouponField(false)
+        }, 2000)
+      } else {
+        setCouponError(data.error || 'Código incorrecto o email no encontrado')
+      }
+    } catch {
+      setCouponError('Error de conexión. Intentá de nuevo.')
+    }
+    setCouponLoading(false)
   }
 
   const createAccountPostPayment = async () => {
@@ -2826,7 +2865,7 @@ Respondé con este JSON exacto:
       {showPremiumModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4"
           style={{ background: 'rgba(0,0,0,0.55)', backdropFilter: 'blur(4px)' }}
-          onClick={e => { if (e.target === e.currentTarget) setShowPremiumModal(false) }}>
+          onClick={e => { if (e.target === e.currentTarget) { setShowPremiumModal(false); setShowCouponField(false); setCouponCode(''); setCouponError(''); setCouponSuccess(false) } }}>
           <div className="w-full max-w-sm rounded-3xl overflow-hidden"
             style={{ boxShadow: '0 25px 60px rgba(0,0,0,0.2)' }}>
             <div className="p-6 text-white" style={{ background: LI_GRADIENT }}>
@@ -2881,6 +2920,41 @@ Respondé con este JSON exacto:
                 className="w-full py-2 text-sm text-slate-400 text-center">
                 Ahora no
               </button>
+
+              {/* ── Cupón / código de acceso ── */}
+              {!showCouponField ? (
+                <button
+                  onClick={() => { setShowCouponField(true); setCouponError(''); setCouponSuccess(false) }}
+                  className="w-full py-1 text-xs text-slate-400 text-center hover:text-slate-600 transition-colors">
+                  ¿Tenés un código de acceso?
+                </button>
+              ) : couponSuccess ? (
+                <p className="text-center text-sm font-semibold py-2" style={{ color: '#16a34a' }}>
+                  ✓ ¡Premium activado correctamente!
+                </p>
+              ) : (
+                <div className="space-y-2 pt-1 border-t" style={{ borderColor: 'rgba(0,119,181,0.1)' }}>
+                  <p className="text-xs text-slate-500 text-center pt-2">Ingresá tu código de acceso</p>
+                  {!user && (
+                    <input type="email" placeholder="Tu email"
+                      value={couponEmail} onChange={e => setCouponEmail(e.target.value)}
+                      className="w-full px-3 py-2.5 rounded-xl text-sm outline-none" style={INPUT_STYLE} />
+                  )}
+                  <div className="flex gap-2">
+                    <input type="text" placeholder="Código"
+                      value={couponCode} onChange={e => { setCouponCode(e.target.value); setCouponError('') }}
+                      onKeyDown={e => e.key === 'Enter' && applyCoupon()}
+                      className="flex-1 px-3 py-2.5 rounded-xl text-sm outline-none" style={INPUT_STYLE} />
+                    <button onClick={applyCoupon}
+                      disabled={couponLoading || !couponCode.trim() || (!user && !couponEmail.includes('@'))}
+                      className="px-4 py-2.5 rounded-xl text-sm font-semibold text-white shrink-0"
+                      style={{ background: LI_GRADIENT, opacity: (couponLoading || !couponCode.trim() || (!user && !couponEmail.includes('@'))) ? 0.5 : 1 }}>
+                      {couponLoading ? '...' : 'Aplicar'}
+                    </button>
+                  </div>
+                  {couponError && <p className="text-xs text-center" style={{ color: '#ef4444' }}>{couponError}</p>}
+                </div>
+              )}
             </div>
           </div>
         </div>
