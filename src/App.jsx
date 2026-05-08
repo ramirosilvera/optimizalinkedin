@@ -405,6 +405,36 @@ Respondé SOLO en JSON válido, sin markdown, sin backticks:
   ]
 }`
 
+const JOB_ADAPTER_SYSTEM_PROMPT = `Sos un experto en empleabilidad y redacción de CVs para el mercado laboral argentino y latinoamericano.
+Tu tarea es analizar un aviso de empleo, adaptar el CV del candidato para maximizar su fit con la posición, y generar una carta de presentación profesional y personalizada.
+
+REGLAS ANTI-ALUCINACIÓN (críticas — no negociables):
+- NUNCA inventes métricas, tecnologías, empresas, logros ni responsabilidades que no estén en el CV original
+- Solo podés reorganizar, destacar y reformular lo que ya existe en el CV
+- El campo "cv_adaptado" debe tener exactamente la misma estructura JSON que el CV original
+
+ADAPTACIÓN DEL CV:
+- Ajustá el titular para alinear con el título/rol del aviso
+- Revisá el resumen para incorporar las palabras clave del aviso que apliquen al candidato
+- Reorganizá o reformulá bullets de experiencia para destacar lo más relevante para esta posición
+- Reordenás habilidades poniendo primero las que menciona el aviso
+
+CARTA DE PRESENTACIÓN:
+- Extensión: 3-4 párrafos concisos
+- Párrafo 1: quién es el candidato y por qué aplica a esta posición específica
+- Párrafos 2-3: sus logros y experiencias más relevantes para el rol (usando datos concretos del CV)
+- Párrafo final: cierre con llamada a la acción clara
+- Tono: profesional, directo, sin frases genéricas ni clichés
+- Respondé en español rioplatense (Argentina)
+
+Respondé SOLO en JSON válido, sin markdown, sin backticks:
+{
+  "cv_adaptado": { "mismo esquema que el CV original" },
+  "carta_de_presentacion": "texto completo de la carta",
+  "palabras_clave_incorporadas": ["keyword1", "keyword2"],
+  "ajustes_principales": ["descripción del ajuste 1", "descripción del ajuste 2"]
+}`
+
 function escapeHtml(s) {
   return String(s ?? '')
     .replace(/&/g, '&amp;')
@@ -890,6 +920,14 @@ export default function App() {
   const [couponError, setCouponError] = useState('')
   const [couponSuccess, setCouponSuccess] = useState(false)
 
+  // Job adapter + cover letter
+  const [showJobModal, setShowJobModal] = useState(false)
+  const [jobPosting, setJobPosting] = useState('')
+  const [jobResult, setJobResult] = useState(null)
+  const [jobLoading, setJobLoading] = useState(false)
+  const [jobError, setJobError] = useState('')
+  const [jobCvForAdapter, setJobCvForAdapter] = useState(null)
+
   // ── Auth helpers ─────────────────────────────────────────────────────────
   const sbAuthFetch = async (path, options = {}) => {
     const res = await fetch(`${SUPABASE_URL}/auth/v1${path}`, {
@@ -1063,6 +1101,69 @@ export default function App() {
       alert(`Error de conexión: ${err.message || 'no se pudo contactar al servidor'}`)
     }
     setSubscriptionLoading(false)
+  }
+
+  const restoreFromHistorial = (item) => {
+    setShowHistorial(false)
+    switch (item.tipo) {
+      case 'analisis':
+        setResult(item.datos)
+        setStep(STEPS.RESULTS)
+        break
+      case 'cv':
+        setCvFinalData(item.datos)
+        setCvDraft(item.datos)
+        setCvPreviewHtml(buildCvHtml(item.datos))
+        setCvStage('done')
+        setStep(STEPS.RESULTS)
+        break
+      case 'entrevista':
+        setInterviewFeedback(item.datos?.feedback || item.datos)
+        setInterviewAnswers(item.datos?.respuestas || [])
+        setStep(STEPS.INTERVIEW_FEEDBACK)
+        break
+      default:
+        break
+    }
+  }
+
+  const callAdaptCvForJob = async () => {
+    if (!jobPosting.trim() || !jobCvForAdapter || jobLoading) return
+    setJobLoading(true)
+    setJobError('')
+    setJobResult(null)
+    const cvText = JSON.stringify(jobCvForAdapter)
+    const userPrompt = `CV del candidato (JSON):\n${cvText}\n\nAviso de empleo:\n${jobPosting.trim()}`
+    const controller = new AbortController()
+    const timeoutId = setTimeout(() => controller.abort(), 58000)
+    try {
+      const res = await fetch(WORKER_URL, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        signal: controller.signal,
+        body: JSON.stringify({
+          system_instruction: { parts: [{ text: JOB_ADAPTER_SYSTEM_PROMPT }] },
+          contents: [{ parts: [{ text: userPrompt }] }],
+          generationConfig: { responseMimeType: 'application/json', maxOutputTokens: 3000 },
+        }),
+      })
+      if (!res.ok) {
+        const e = await res.json().catch(() => ({}))
+        throw new Error(parseGeminiError(res.status, e))
+      }
+      const data = await res.json()
+      const raw = data?.candidates?.[0]?.content?.parts?.[0]?.text || ''
+      let parsed
+      try { parsed = JSON.parse(raw) }
+      catch { const m = raw.match(/\{[\s\S]*\}/); if (m) parsed = JSON.parse(m[0]); else throw new Error('No se pudo procesar la respuesta. Intentá de nuevo.') }
+      setJobResult(parsed)
+      trackEvent('job_adapter_generated')
+    } catch (err) {
+      setJobError(err.name === 'AbortError' ? 'El pedido tardó demasiado. Intentá de nuevo.' : err.message || 'Error al generar. Intentá de nuevo.')
+    } finally {
+      clearTimeout(timeoutId)
+      setJobLoading(false)
+    }
   }
 
   const applyCoupon = async () => {
@@ -2989,9 +3090,12 @@ Respondé con este JSON exacto:
                     entrevista: { background: '#f3e8ff', color: '#7c3aed' },
                     star:     { background: '#fef3c7', color: '#b45309' },
                   }
+                  const isRestorable = item.tipo === 'analisis' || item.tipo === 'cv' || item.tipo === 'entrevista'
                   return (
-                    <div key={item.id} className="rounded-2xl p-4 flex items-center justify-between gap-3"
-                      style={{ border: '1px solid rgba(0,119,181,0.12)', background: '#f8fafc' }}>
+                    <div key={item.id}
+                      onClick={isRestorable ? () => restoreFromHistorial(item) : undefined}
+                      className={`rounded-2xl p-4 flex items-center justify-between gap-3 transition-all duration-150 ${isRestorable ? 'cursor-pointer hover:shadow-md active:scale-[0.99]' : ''}`}
+                      style={{ border: '1px solid rgba(0,119,181,0.12)', background: isRestorable ? 'white' : '#f8fafc' }}>
                       <div className="flex items-center gap-2 min-w-0">
                         <span className="text-xs font-semibold px-2 py-0.5 rounded-full shrink-0"
                           style={colors[item.tipo] || colors.analisis}>
@@ -2999,9 +3103,12 @@ Respondé con este JSON exacto:
                         </span>
                         <span className="text-slate-700 text-sm font-medium truncate">{item.titulo || '—'}</span>
                       </div>
-                      <span className="text-xs text-slate-400 shrink-0">
-                        {new Date(item.created_at).toLocaleDateString('es-AR', { day: 'numeric', month: 'short', year: '2-digit' })}
-                      </span>
+                      <div className="flex items-center gap-2 shrink-0">
+                        <span className="text-xs text-slate-400">
+                          {new Date(item.created_at).toLocaleDateString('es-AR', { day: 'numeric', month: 'short', year: '2-digit' })}
+                        </span>
+                        {isRestorable && <span className="text-slate-300 text-base">›</span>}
+                      </div>
                     </div>
                   )
                 })}
@@ -3043,6 +3150,123 @@ Respondé con este JSON exacto:
               style={{ background: LI_GRADIENT, opacity: (postPaymentLoading || postPaymentPassword.length < 6) ? 0.5 : 1 }}>
               {postPaymentLoading ? 'Creando cuenta...' : 'Crear mi cuenta →'}
             </button>
+          </div>
+        </div>
+      )}
+
+      {/* ── Job Adapter Modal ── */}
+      {showJobModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4"
+          style={{ background: 'rgba(0,0,0,0.60)', backdropFilter: 'blur(4px)' }}
+          onClick={e => { if (e.target === e.currentTarget) { setShowJobModal(false); setJobResult(null); setJobError('') } }}>
+          <div className="w-full max-w-lg rounded-3xl overflow-hidden flex flex-col max-h-[90vh]"
+            style={{ background: 'white', boxShadow: '0 25px 60px rgba(0,0,0,0.25)' }}>
+
+            {/* Header */}
+            <div className="flex items-center justify-between p-5 border-b shrink-0" style={{ borderColor: 'rgba(0,119,181,0.12)' }}>
+              <div>
+                <h2 className="text-slate-900 font-bold text-base">Adaptar CV para un aviso</h2>
+                <p className="text-slate-500 text-xs mt-0.5">Gemini ajusta tu CV y genera la carta de presentación</p>
+              </div>
+              <button onClick={() => { setShowJobModal(false); setJobResult(null); setJobError('') }}
+                className="text-slate-400 hover:text-slate-600 text-2xl leading-none w-8 h-8 flex items-center justify-center shrink-0">×</button>
+            </div>
+
+            <div className="overflow-y-auto flex-1 p-5 space-y-4">
+              {!jobResult ? (
+                <>
+                  <div className="space-y-2">
+                    <label className="text-xs font-semibold text-slate-600 uppercase tracking-wide">Pegá el aviso de empleo</label>
+                    <textarea
+                      value={jobPosting}
+                      onChange={e => { setJobPosting(e.target.value); setJobError('') }}
+                      placeholder="Pegá acá el texto completo del aviso: título del puesto, responsabilidades, requisitos, empresa, etc."
+                      rows={9}
+                      className="w-full rounded-2xl px-4 py-3 text-sm resize-none outline-none"
+                      style={{ background: '#f8fafc', border: '1px solid rgba(0,119,181,0.18)', color: '#0d2137' }}
+                    />
+                    <p className="text-xs text-slate-400 text-right">{jobPosting.length} caracteres</p>
+                  </div>
+                  {jobError && <p className="text-xs text-center" style={{ color: '#ef4444' }}>{jobError}</p>}
+                  <button
+                    onClick={callAdaptCvForJob}
+                    disabled={jobLoading || jobPosting.trim().length < 50}
+                    className="btn-glow w-full py-3.5 rounded-xl text-white font-bold text-sm"
+                    style={{ background: LI_GRADIENT, opacity: (jobLoading || jobPosting.trim().length < 50) ? 0.5 : 1 }}>
+                    {jobLoading ? (
+                      <span className="flex items-center justify-center gap-2"><Spinner size={4} /><span>Generando CV adaptado y carta...</span></span>
+                    ) : 'Generar CV adaptado + Carta →'}
+                  </button>
+                </>
+              ) : (
+                <div className="space-y-5">
+                  {/* Ajustes realizados */}
+                  {jobResult.ajustes_principales?.length > 0 && (
+                    <div className="rounded-2xl p-4 space-y-2"
+                      style={{ background: 'rgba(0,119,181,0.04)', border: '1px solid rgba(0,119,181,0.15)' }}>
+                      <p className="text-xs font-semibold uppercase tracking-wide" style={{ color: '#0077B5' }}>Ajustes realizados al CV</p>
+                      {jobResult.ajustes_principales.map((a, i) => (
+                        <div key={i} className="flex items-start gap-2">
+                          <span className="text-blue-400 shrink-0 text-xs mt-0.5">✓</span>
+                          <p className="text-slate-600 text-xs leading-snug">{a}</p>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
+                  {/* Keywords */}
+                  {jobResult.palabras_clave_incorporadas?.length > 0 && (
+                    <div>
+                      <p className="text-xs font-semibold uppercase tracking-wide text-slate-500 mb-2">Keywords incorporadas</p>
+                      <div className="flex flex-wrap gap-1.5">
+                        {jobResult.palabras_clave_incorporadas.map((kw, i) => (
+                          <span key={i} className="text-xs px-2.5 py-1 rounded-full font-medium"
+                            style={{ background: 'rgba(0,119,181,0.08)', border: '1px solid rgba(0,119,181,0.2)', color: '#0077B5' }}>
+                            {kw}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* CV adaptado — descargar */}
+                  {jobResult.cv_adaptado && (
+                    <button
+                      onClick={() => {
+                        const html = buildCvHtml(jobResult.cv_adaptado, profilePhoto, profilePhotoMime)
+                        const win = window.open('', '_blank')
+                        if (win) { win.document.write(html); win.document.close(); win.focus(); setTimeout(() => { try { win.print() } catch {} }, 300) }
+                        trackEvent('job_adapter_cv_download')
+                      }}
+                      className="w-full py-3.5 rounded-xl text-sm font-semibold text-white"
+                      style={{ background: 'linear-gradient(135deg,#059669,#10b981)', boxShadow: '0 4px 12px rgba(5,150,105,0.25)' }}>
+                      📥 Descargar CV adaptado →
+                    </button>
+                  )}
+
+                  {/* Carta de presentación */}
+                  {jobResult.carta_de_presentacion && (
+                    <div className="rounded-2xl overflow-hidden"
+                      style={{ border: '1px solid rgba(99,102,241,0.25)' }}>
+                      <div className="flex items-center justify-between px-4 py-3"
+                        style={{ background: 'rgba(99,102,241,0.06)' }}>
+                        <p className="text-sm font-semibold text-slate-800">✉ Carta de presentación</p>
+                        <CopyButton text={jobResult.carta_de_presentacion} />
+                      </div>
+                      <div className="px-4 py-4 bg-white">
+                        <p className="text-sm text-slate-700 leading-relaxed whitespace-pre-wrap">{jobResult.carta_de_presentacion}</p>
+                      </div>
+                    </div>
+                  )}
+
+                  <button
+                    onClick={() => { setJobResult(null); setJobPosting(''); setJobError('') }}
+                    className="w-full py-2.5 rounded-xl text-sm text-slate-400 hover:text-slate-600 transition-colors">
+                    ← Adaptar para otro aviso
+                  </button>
+                </div>
+              )}
+            </div>
           </div>
         </div>
       )}
@@ -4604,6 +4828,13 @@ Respondé con este JSON exacto:
                     Se abre el diálogo de impresión → seleccioná <strong>Guardar como PDF</strong>
                   </p>
                   {cvSuccess && <p className="text-xs text-center" style={{ color: '#059669' }}>✓ {cvSuccess}</p>}
+                  <button
+                    onClick={() => { setJobCvForAdapter(cvFinalData); setJobPosting(''); setJobResult(null); setJobError(''); setShowJobModal(true); trackEvent('job_adapter_opened') }}
+                    className="w-full py-3.5 rounded-xl text-sm font-semibold transition-all"
+                    style={{ background: 'rgba(99,102,241,0.08)', border: '1px solid rgba(99,102,241,0.25)', color: '#6366f1' }}
+                  >
+                    📝 Adaptar para un aviso de empleo →
+                  </button>
                   <button
                     onClick={() => { setCvStage('idle'); setCvDraft(null); setCvFinalData(null); setCvQuality(null); setCvPreviewHtml('') }}
                     className="w-full py-2 rounded-xl text-xs text-slate-400 hover:text-slate-600 transition-all"
