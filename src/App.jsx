@@ -1160,8 +1160,14 @@ export default function App() {
           es_premium: perfil?.es_premium || false,
           premium_hasta: perfil?.premium_hasta || null,
         }
-        applySession(accessToken, refreshToken || '', userObj)
-        setAuthSuccess(type === 'signup' ? 'register' : 'login')
+        if (userObj.es_premium) {
+          applySession(accessToken, refreshToken || '', userObj)
+          setAuthSuccess('login')
+        } else {
+          // No es premium: aplicar sesión temporalmente y pedir que active
+          applySession(accessToken, refreshToken || '', userObj)
+          setAuthSuccess('linkedin_needs_premium')
+        }
         setShowAuthModal(true)
         trackEvent('auth_linkedin_supabase', { type })
       })
@@ -2716,15 +2722,32 @@ Respondé con este JSON exacto:
                   style={{ background: 'rgba(0,119,181,0.08)' }}>✓</div>
                 <div className="space-y-1">
                   <p className="font-bold text-slate-900 text-xl">
-                    {authSuccess === 'register' ? '¡Cuenta creada!' : `¡Bienvenido/a, ${user?.nombre}!`}
+                    {authSuccess === 'linkedin_needs_premium'
+                      ? `Hola, ${user?.nombre}!`
+                      : authSuccess === 'register' ? '¡Cuenta creada!' : `¡Bienvenido/a, ${user?.nombre}!`}
                   </p>
                   <p className="text-slate-500 text-sm leading-relaxed">
-                    {authSuccess === 'register'
-                      ? 'Ya tenés tu cuenta. Activá Premium para guardar tu historial de análisis, CVs y entrevistas.'
-                      : 'Ya podés usar la app con tu historial guardado.'}
+                    {authSuccess === 'linkedin_needs_premium'
+                      ? 'Conectaste con LinkedIn. Para guardar tu historial necesitás activar Premium ($3.000/mes).'
+                      : authSuccess === 'register'
+                        ? 'Ya tenés tu cuenta. Activá Premium para guardar tu historial de análisis, CVs y entrevistas.'
+                        : 'Ya podés usar la app con tu historial guardado.'}
                   </p>
                 </div>
-                {authSuccess === 'register' ? (
+                {authSuccess === 'linkedin_needs_premium' ? (
+                  <div className="space-y-2 pt-1">
+                    <button onClick={() => { setShowAuthModal(false); setAuthSuccess(null); setShowPremiumModal(true) }}
+                      className="btn-glow w-full py-3 rounded-xl text-white font-semibold text-sm"
+                      style={{ background: LI_GRADIENT }}>
+                      Activar Premium · $3.000/mes →
+                    </button>
+                    <button onClick={() => { authLogout(); setShowAuthModal(false); setAuthSuccess(null) }}
+                      className="w-full py-2.5 text-sm font-medium rounded-xl"
+                      style={{ color: '#64748b' }}>
+                      Continuar sin cuenta
+                    </button>
+                  </div>
+                ) : authSuccess === 'register' ? (
                   <div className="space-y-2 pt-1">
                     <button onClick={() => { setShowAuthModal(false); setAuthSuccess(null); setShowPremiumModal(true) }}
                       className="btn-glow w-full py-3 rounded-xl text-white font-semibold text-sm"
