@@ -118,24 +118,18 @@ export default {
       if (!user_id || !user_email) {
         return new Response(JSON.stringify({ error: 'Faltan user_id y user_email' }), { status: 400, headers: corsHeaders })
       }
+      if (!env.MP_PLAN_ID) {
+        return new Response(JSON.stringify({ error: 'MP_PLAN_ID no está configurado en el Worker' }), { status: 500, headers: corsHeaders })
+      }
       try {
-        const mpBody = {
-          reason: 'Suscripción Premium OptimizaLinkedin',
-          payer_email: user_email,
-          back_url: 'https://optimizalinkedin.com/?premium=ok',
-          external_reference: user_id,
-          status: 'pending',
-          auto_recurring: {
-            frequency: 1,
-            frequency_type: 'months',
-            transaction_amount: 3000,
-            currency_id: 'ARS',
-          },
-        }
-        if (env.MP_PLAN_ID) mpBody.preapproval_plan_id = env.MP_PLAN_ID
         const data = await mpFetch(env, '/preapproval', {
           method: 'POST',
-          body: JSON.stringify(mpBody),
+          body: JSON.stringify({
+            preapproval_plan_id: env.MP_PLAN_ID,
+            payer_email: user_email,
+            back_url: 'https://optimizalinkedin.com/?premium=ok',
+            external_reference: user_id,
+          }),
         })
         if (!data.init_point) {
           return new Response(JSON.stringify({ error: data.message || JSON.stringify(data) }), { status: 502, headers: corsHeaders })

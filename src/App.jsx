@@ -2744,7 +2744,7 @@ Respondé con este JSON exacto:
                     <button onClick={() => { authLogout(); setShowAuthModal(false); setAuthSuccess(null) }}
                       className="w-full py-2.5 text-sm font-medium rounded-xl"
                       style={{ color: '#64748b' }}>
-                      Continuar sin cuenta
+                      Continuar gratis sin cuenta
                     </button>
                   </div>
                 ) : authSuccess === 'register' ? (
