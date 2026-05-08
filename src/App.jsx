@@ -863,6 +863,242 @@ export default function App() {
   const [waitlistSent, setWaitlistSent] = useState(false)
   const [waitlistLoading, setWaitlistLoading] = useState(false)
 
+  // ── Auth & Premium state ──
+  const [user, setUser] = useState(null)
+  const [authToken, setAuthToken] = useState(null)
+  const [showAuthModal, setShowAuthModal] = useState(false)
+  const [authTab, setAuthTab] = useState('login')
+  const [authEmail, setAuthEmail] = useState('')
+  const [authPassword, setAuthPassword] = useState('')
+  const [authLoading, setAuthLoading] = useState(false)
+  const [authError, setAuthError] = useState('')
+  const [showHistorial, setShowHistorial] = useState(false)
+  const [historial, setHistorial] = useState([])
+  const [historialLoading, setHistorialLoading] = useState(false)
+  const [subscriptionLoading, setSubscriptionLoading] = useState(false)
+
+  // ── Auth helpers ─────────────────────────────────────────────────────────
+  const sbAuthFetch = async (path, options = {}) => {
+    const res = await fetch(`${SUPABASE_URL}/auth/v1${path}`, {
+      ...options,
+      headers: { apikey: SUPABASE_KEY, 'Content-Type': 'application/json', ...options.headers },
+    })
+    const data = await res.json().catch(() => ({}))
+    if (!res.ok) throw new Error(data.error_description || data.msg || data.message || 'Error de autenticación')
+    return data
+  }
+
+  const loadPerfil = async (userId, token) => {
+    try {
+      const res = await fetch(`${SUPABASE_URL}/rest/v1/perfiles?id=eq.${userId}&select=*`, {
+        headers: { apikey: SUPABASE_KEY, Authorization: `Bearer ${token}` },
+      })
+      const rows = await res.json()
+      return rows?.[0] || null
+    } catch { return null }
+  }
+
+  const upsertPerfil = async (userId, data, token) => {
+    try {
+      await fetch(`${SUPABASE_URL}/rest/v1/perfiles`, {
+        method: 'POST',
+        headers: {
+          apikey: SUPABASE_KEY, Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json', Prefer: 'resolution=merge-duplicates',
+        },
+        body: JSON.stringify({ id: userId, ...data }),
+      })
+    } catch { /* silencioso */ }
+  }
+
+  const applySession = (accessToken, refreshToken, userData) => {
+    localStorage.setItem('ol_at', accessToken)
+    localStorage.setItem('ol_rt', refreshToken)
+    localStorage.setItem('ol_uid', userData.id)
+    localStorage.setItem('ol_premium', userData.es_premium ? '1' : '0')
+    setAuthToken(accessToken)
+    setUser(userData)
+  }
+
+  const clearSession = () => {
+    localStorage.removeItem('ol_at')
+    localStorage.removeItem('ol_rt')
+    localStorage.removeItem('ol_uid')
+    localStorage.removeItem('ol_premium')
+    setAuthToken(null)
+    setUser(null)
+    setHistorial([])
+  }
+
+  const authLogin = async (email, password) => {
+    setAuthLoading(true)
+    setAuthError('')
+    try {
+      const data = await sbAuthFetch('/token?grant_type=password', {
+        method: 'POST',
+        body: JSON.stringify({ email, password }),
+      })
+      const perfil = await loadPerfil(data.user.id, data.access_token)
+      const userData = {
+        id: data.user.id,
+        email: data.user.email,
+        nombre: perfil?.nombre || data.user.email.split('@')[0],
+        es_premium: perfil?.es_premium || false,
+        premium_hasta: perfil?.premium_hasta || null,
+      }
+      applySession(data.access_token, data.refresh_token, userData)
+      setShowAuthModal(false)
+      setAuthEmail('')
+      setAuthPassword('')
+      trackEvent('auth_login')
+    } catch (err) {
+      setAuthError(err.message || 'Email o contraseña incorrectos')
+    } finally {
+      setAuthLoading(false)
+    }
+  }
+
+  const authRegister = async (email, password) => {
+    setAuthLoading(true)
+    setAuthError('')
+    try {
+      const data = await sbAuthFetch('/signup', {
+        method: 'POST',
+        body: JSON.stringify({ email, password }),
+      })
+      if (data.access_token) {
+        await upsertPerfil(data.user.id, { email: data.user.email, nombre: email.split('@')[0] }, data.access_token)
+        const userData = { id: data.user.id, email: data.user.email, nombre: email.split('@')[0], es_premium: false, premium_hasta: null }
+        applySession(data.access_token, data.refresh_token, userData)
+        setShowAuthModal(false)
+        setAuthEmail('')
+        setAuthPassword('')
+        trackEvent('auth_register')
+      } else {
+        setAuthError('Te enviamos un email de confirmación. Revisá tu bandeja.')
+      }
+    } catch (err) {
+      setAuthError(err.message || 'Error al registrarse')
+    } finally {
+      setAuthLoading(false)
+    }
+  }
+
+  const authLogout = async () => {
+    try {
+      const at = localStorage.getItem('ol_at')
+      if (at) await fetch(`${SUPABASE_URL}/auth/v1/logout`, { method: 'POST', headers: { apikey: SUPABASE_KEY, Authorization: `Bearer ${at}` } })
+    } catch { /* silencioso */ }
+    clearSession()
+    trackEvent('auth_logout')
+  }
+
+  const saveToHistorial = async (tipo, datos, titulo = '') => {
+    const token = localStorage.getItem('ol_at')
+    const uid = localStorage.getItem('ol_uid')
+    const isPremium = localStorage.getItem('ol_premium') === '1'
+    if (!token || !uid || !isPremium) return
+    try {
+      await fetch(`${SUPABASE_URL}/rest/v1/historial`, {
+        method: 'POST',
+        headers: {
+          apikey: SUPABASE_KEY, Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json', Prefer: 'return=minimal',
+        },
+        body: JSON.stringify({ user_id: uid, tipo, titulo, datos }),
+      })
+    } catch { /* silencioso */ }
+  }
+
+  const loadHistorial = async () => {
+    const token = localStorage.getItem('ol_at')
+    const uid = localStorage.getItem('ol_uid')
+    if (!token || !uid) return
+    setHistorialLoading(true)
+    try {
+      const res = await fetch(`${SUPABASE_URL}/rest/v1/historial?user_id=eq.${uid}&order=created_at.desc&limit=30`, {
+        headers: { apikey: SUPABASE_KEY, Authorization: `Bearer ${token}` },
+      })
+      const rows = await res.json()
+      setHistorial(Array.isArray(rows) ? rows : [])
+    } catch { /* silencioso */ }
+    setHistorialLoading(false)
+  }
+
+  const startSubscription = async () => {
+    const currentUser = user
+    if (!currentUser) { setShowAuthModal(true); return }
+    setSubscriptionLoading(true)
+    try {
+      const res = await fetch(WORKER_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'create_subscription', user_id: currentUser.id, user_email: currentUser.email }),
+      })
+      const data = await res.json()
+      if (data.init_point) {
+        window.open(data.init_point, '_blank')
+        trackEvent('premium_checkout_opened')
+      }
+    } catch { /* silencioso */ }
+    setSubscriptionLoading(false)
+  }
+
+  const checkSubscriptionStatus = async (userId, token) => {
+    try {
+      const res = await fetch(WORKER_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'subscription_status', user_id: userId }),
+      })
+      const data = await res.json()
+      if (data.es_premium) {
+        localStorage.setItem('ol_premium', '1')
+        setUser(prev => prev ? { ...prev, es_premium: true, premium_hasta: data.premium_hasta } : prev)
+        trackEvent('premium_activated')
+      }
+    } catch { /* silencioso */ }
+  }
+
+  // Restaurar sesión desde localStorage al cargar
+  useEffect(() => {
+    const at = localStorage.getItem('ol_at')
+    const rt = localStorage.getItem('ol_rt')
+    const uid = localStorage.getItem('ol_uid')
+    if (!at || !rt || !uid) return
+    fetch(`${SUPABASE_URL}/auth/v1/token?grant_type=refresh_token`, {
+      method: 'POST',
+      headers: { apikey: SUPABASE_KEY, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ refresh_token: rt }),
+    })
+      .then(r => r.json())
+      .then(async data => {
+        if (!data.access_token) { clearSession(); return }
+        const perfil = await loadPerfil(uid, data.access_token)
+        const userData = {
+          id: uid,
+          email: data.user?.email || '',
+          nombre: perfil?.nombre || (data.user?.email || '').split('@')[0],
+          es_premium: perfil?.es_premium || false,
+          premium_hasta: perfil?.premium_hasta || null,
+        }
+        applySession(data.access_token, data.refresh_token, userData)
+      })
+      .catch(() => clearSession())
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  // Detectar ?premium=ok redirect de Mercado Pago
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search)
+    if (params.get('premium') !== 'ok') return
+    window.history.replaceState({}, '', window.location.pathname)
+    const uid = localStorage.getItem('ol_uid')
+    const token = localStorage.getItem('ol_at')
+    if (uid && token) setTimeout(() => checkSubscriptionStatus(uid, token), 2500)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
   // LinkedIn OAuth callback — lee ?code=&state= del URL al cargar
   useEffect(() => {
     const params = new URLSearchParams(window.location.search)
@@ -1382,6 +1618,7 @@ Generá un análisis en este formato JSON exacto:
       setShowAnalisisConsent(true)
       trackEvent('analisis_consent_shown', { puntaje: parsed.puntaje_general })
       setStep(STEPS.RESULTS)
+      saveToHistorial('analisis', { ...parsed, fortalezas: parsed.fortalezas||[], areas_de_mejora: parsed.areas_de_mejora||[], palabras_clave_sugeridas: parsed.palabras_clave_sugeridas||[] }, parsed.nombre_titular || 'Análisis LinkedIn')
     } catch (err) {
       if (err.isRateLimit) { setStep(STEPS.PROFILE_INPUT) }
       else if (err.name === 'AbortError') {
@@ -1503,6 +1740,7 @@ Generá el feedback en este JSON exacto:
       setInterviewFeedback(parsed)
       trackEvent('entrevista_completada', { puntaje: parsed.puntaje_entrevista })
       saveEntrevista(parsed, answers).catch(err => console.error('[entrevistas save]', err))
+      saveToHistorial('entrevista', { feedback: parsed, respuestas: answers }, 'Simulación de entrevista')
     } catch (err) {
       if (!err.isRateLimit) {
         const msg = err.name === 'AbortError' ? 'El análisis tardó demasiado. Intentá de nuevo.' : err.message || 'Error al generar el feedback.'
@@ -2240,6 +2478,7 @@ Respondé con este JSON exacto:
         setCvFinalData(cv)
         setCvStage('done')
         setCvPreviewHtml(buildCvHtml(cv, profilePhoto, profilePhotoMime))
+        saveToHistorial('cv', cv, cv.nombre || 'CV generado')
       } else {
         trackEvent('cv_gap_form_shown', { gap_count: mergedQuality.gaps?.length || 0 })
         setCvStage('gap_form')
@@ -2298,6 +2537,7 @@ Respondé con este JSON exacto:
       setCvPreviewHtml(buildCvHtml(cv, profilePhoto, profilePhotoMime))
       trackEvent('cv_regenerated', { answered_count: Object.keys(gapAnswers).length })
       saveCvGenerado({ contacto: cvContacto, cv }).catch(err => console.error('[cv_generados regen save]', err))
+      saveToHistorial('cv', cv, cv.nombre || 'CV generado')
     } catch (err) {
       if (!err.isRateLimit) {
         setCvStage('gap_form')
@@ -2365,6 +2605,160 @@ Respondé con este JSON exacto:
 
   return (
     <main className="min-h-dvh flex flex-col items-center px-4 py-8 sm:py-14">
+
+      {/* ── Auth Modal ── */}
+      {showAuthModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4"
+          style={{ background: 'rgba(0,0,0,0.55)', backdropFilter: 'blur(4px)' }}>
+          <div className="w-full max-w-sm rounded-3xl p-6 space-y-4"
+            style={{ background: 'white', boxShadow: '0 25px 60px rgba(0,0,0,0.2)' }}>
+            <div className="flex items-center justify-between">
+              <h2 className="text-slate-900 font-bold text-lg">
+                {authTab === 'login' ? 'Ingresá a tu cuenta' : 'Creá tu cuenta'}
+              </h2>
+              <button onClick={() => { setShowAuthModal(false); setAuthError('') }}
+                className="text-slate-400 hover:text-slate-600 text-2xl leading-none w-8 h-8 flex items-center justify-center">×</button>
+            </div>
+
+            <div className="flex gap-1 p-1 rounded-xl" style={{ background: '#f1f5f9' }}>
+              {[['login','Ingresar'],['register','Registrarme']].map(([t,l]) => (
+                <button key={t} onClick={() => { setAuthTab(t); setAuthError('') }}
+                  className="flex-1 py-2 rounded-lg text-sm font-medium transition-all"
+                  style={authTab === t ? { background:'white', color:'#0077B5', boxShadow:'0 1px 4px rgba(0,0,0,0.1)' } : { color:'#64748b' }}>
+                  {l}
+                </button>
+              ))}
+            </div>
+
+            <button onClick={() => { setShowAuthModal(false); handleLinkedinLogin() }}
+              className="w-full py-3 rounded-xl flex items-center justify-center gap-2 text-sm font-semibold"
+              style={{ background: '#0077B5', color: 'white' }}>
+              <LinkedInIcon className="w-4 h-4" style={{ fill: 'white' }} />
+              Continuar con LinkedIn
+            </button>
+
+            <div className="flex items-center gap-3">
+              <div className="flex-1 h-px" style={{ background: '#e2e8f0' }} />
+              <span className="text-xs text-slate-400">o con email</span>
+              <div className="flex-1 h-px" style={{ background: '#e2e8f0' }} />
+            </div>
+
+            <div className="space-y-3">
+              <input type="email" placeholder="Email" value={authEmail}
+                onChange={e => setAuthEmail(e.target.value)} autoComplete="email"
+                className="w-full px-4 py-3 rounded-xl text-sm outline-none" style={INPUT_STYLE} />
+              <input type="password" placeholder="Contraseña (mínimo 6 caracteres)" value={authPassword}
+                onChange={e => setAuthPassword(e.target.value)} autoComplete={authTab === 'login' ? 'current-password' : 'new-password'}
+                onKeyDown={e => e.key === 'Enter' && authEmail.includes('@') && authPassword.length >= 6 && (authTab === 'login' ? authLogin(authEmail, authPassword) : authRegister(authEmail, authPassword))}
+                className="w-full px-4 py-3 rounded-xl text-sm outline-none" style={INPUT_STYLE} />
+            </div>
+
+            {authError && <p className="text-sm text-center" style={{ color: '#ef4444' }}>{authError}</p>}
+
+            <button
+              onClick={() => authTab === 'login' ? authLogin(authEmail, authPassword) : authRegister(authEmail, authPassword)}
+              disabled={authLoading || !authEmail.includes('@') || authPassword.length < 6}
+              className="btn-glow w-full py-3 rounded-xl text-white font-semibold text-sm"
+              style={{ background: LI_GRADIENT, opacity: (authLoading || !authEmail.includes('@') || authPassword.length < 6) ? 0.55 : 1 }}>
+              {authLoading ? '...' : (authTab === 'login' ? 'Ingresar' : 'Crear cuenta gratis')}
+            </button>
+
+            {authTab === 'register' && (
+              <p className="text-xs text-center text-slate-400 leading-relaxed">
+                La cuenta es gratis. El historial se activa con Premium ($3.000/mes).
+              </p>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* ── Historial Modal ── */}
+      {showHistorial && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4"
+          style={{ background: 'rgba(0,0,0,0.55)', backdropFilter: 'blur(4px)' }}>
+          <div className="w-full max-w-lg rounded-3xl p-6 space-y-4 max-h-[85vh] overflow-y-auto"
+            style={{ background: 'white', boxShadow: '0 25px 60px rgba(0,0,0,0.2)' }}>
+            <div className="flex items-center justify-between">
+              <h2 className="text-slate-900 font-bold text-lg">Mi historial</h2>
+              <button onClick={() => setShowHistorial(false)}
+                className="text-slate-400 hover:text-slate-600 text-2xl leading-none w-8 h-8 flex items-center justify-center">×</button>
+            </div>
+            {historialLoading ? (
+              <div className="flex justify-center py-10"><Spinner size={8} /></div>
+            ) : historial.length === 0 ? (
+              <p className="text-center text-slate-500 text-sm py-10 leading-relaxed">
+                Todavía no hay items guardados.<br />
+                Los análisis, CVs y entrevistas se guardan automáticamente.
+              </p>
+            ) : (
+              <div className="space-y-2">
+                {historial.map(item => {
+                  const icons = { analisis: '📊', cv: '📄', entrevista: '🎙️', star: '⭐' }
+                  const labels = { analisis: 'Análisis', cv: 'CV', entrevista: 'Entrevista', star: 'STAR' }
+                  const colors = {
+                    analisis: { background: '#dbeafe', color: '#1d4ed8' },
+                    cv:       { background: '#dcfce7', color: '#15803d' },
+                    entrevista: { background: '#f3e8ff', color: '#7c3aed' },
+                    star:     { background: '#fef3c7', color: '#b45309' },
+                  }
+                  return (
+                    <div key={item.id} className="rounded-2xl p-4 flex items-center justify-between gap-3"
+                      style={{ border: '1px solid rgba(0,119,181,0.12)', background: '#f8fafc' }}>
+                      <div className="flex items-center gap-2 min-w-0">
+                        <span className="text-xs font-semibold px-2 py-0.5 rounded-full shrink-0"
+                          style={colors[item.tipo] || colors.analisis}>
+                          {icons[item.tipo]} {labels[item.tipo]}
+                        </span>
+                        <span className="text-slate-700 text-sm font-medium truncate">{item.titulo || '—'}</span>
+                      </div>
+                      <span className="text-xs text-slate-400 shrink-0">
+                        {new Date(item.created_at).toLocaleDateString('es-AR', { day: 'numeric', month: 'short', year: '2-digit' })}
+                      </span>
+                    </div>
+                  )
+                })}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* ── Barra de usuario ── */}
+      <div className="w-full max-w-xl mb-2 flex justify-end items-center gap-2 flex-wrap">
+        {user ? (
+          <>
+            {user.es_premium && (
+              <span className="text-xs font-bold px-2.5 py-1 rounded-full"
+                style={{ background: LI_GRADIENT, color: 'white' }}>✦ Premium</span>
+            )}
+            <span className="text-sm text-slate-500 font-medium">{user.nombre || user.email}</span>
+            {!user.es_premium && (
+              <button onClick={startSubscription} disabled={subscriptionLoading}
+                className="text-xs font-semibold px-3 py-1.5 rounded-full"
+                style={{ background: LI_GRADIENT, color: 'white', opacity: subscriptionLoading ? 0.7 : 1 }}>
+                {subscriptionLoading ? '...' : '⬆ Activar Premium'}
+              </button>
+            )}
+            {user.es_premium && (
+              <button onClick={() => { loadHistorial(); setShowHistorial(true) }}
+                className="text-xs font-medium px-3 py-1.5 rounded-full"
+                style={BTN_GHOST_STYLE}>
+                📋 Historial
+              </button>
+            )}
+            <button onClick={authLogout} className="text-xs text-slate-400 hover:text-slate-600 transition-colors px-1">
+              Salir
+            </button>
+          </>
+        ) : (
+          <button onClick={() => setShowAuthModal(true)}
+            className="text-sm font-semibold px-4 py-2 rounded-full transition-all"
+            style={BTN_GHOST_STYLE}>
+            Crear cuenta / Ingresar
+          </button>
+        )}
+      </div>
+
       <div className="w-full max-w-xl">
 
         {/* ── WELCOME ── */}
@@ -4068,6 +4462,25 @@ Respondé con este JSON exacto:
 
             </div>
 
+            {/* Premium banner */}
+            {!user?.es_premium && (
+              <div className="rounded-2xl p-4 flex items-center justify-between gap-4"
+                style={{ background: 'linear-gradient(135deg,rgba(0,119,181,0.05),rgba(14,165,233,0.05))', border: '1.5px solid rgba(0,119,181,0.18)' }}>
+                <div className="flex-1 min-w-0">
+                  <p className="text-slate-800 text-sm font-semibold">💾 Guardá este análisis</p>
+                  <p className="text-slate-500 text-xs mt-0.5 leading-snug">
+                    {user ? 'Activá Premium para guardar tu historial completo de análisis, CVs y entrevistas.' : 'Creá una cuenta Premium para guardar tu historial por $3.000/mes.'}
+                  </p>
+                </div>
+                <button onClick={user ? startSubscription : () => setShowAuthModal(true)}
+                  disabled={subscriptionLoading}
+                  className="shrink-0 btn-glow px-4 py-2 rounded-xl text-white text-xs font-semibold"
+                  style={{ background: LI_GRADIENT, opacity: subscriptionLoading ? 0.7 : 1 }}>
+                  {subscriptionLoading ? '...' : (user ? 'Activar' : 'Crear cuenta')}
+                </button>
+              </div>
+            )}
+
             <button
               onClick={() => { trackEvent('click_simulador', { location: 'post_analisis' }); resetInterview(); setStep(STEPS.INTERVIEW_INTRO) }}
               className="btn-glow w-full font-semibold py-4 rounded-2xl text-white text-sm"
@@ -4438,6 +4851,25 @@ Respondé con este JSON exacto:
                     )}
                   </button>
                 </div>
+
+                {/* Premium banner */}
+                {!user?.es_premium && (
+                  <div className="rounded-2xl p-4 flex items-center justify-between gap-4"
+                    style={{ background: 'linear-gradient(135deg,rgba(0,119,181,0.05),rgba(14,165,233,0.05))', border: '1.5px solid rgba(0,119,181,0.18)' }}>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-slate-800 text-sm font-semibold">💾 Guardá esta entrevista</p>
+                      <p className="text-slate-500 text-xs mt-0.5 leading-snug">
+                        {user ? 'Con Premium tenés acceso a tu historial completo de entrevistas y análisis.' : 'Creá una cuenta Premium para guardar tu historial por $3.000/mes.'}
+                      </p>
+                    </div>
+                    <button onClick={user ? startSubscription : () => setShowAuthModal(true)}
+                      disabled={subscriptionLoading}
+                      className="shrink-0 btn-glow px-4 py-2 rounded-xl text-white text-xs font-semibold"
+                      style={{ background: LI_GRADIENT, opacity: subscriptionLoading ? 0.7 : 1 }}>
+                      {subscriptionLoading ? '...' : (user ? 'Activar' : 'Crear cuenta')}
+                    </button>
+                  </div>
+                )}
 
                 {/* ── Sugerencia STAR ── */}
                 <div className="rounded-2xl p-5 space-y-3"
