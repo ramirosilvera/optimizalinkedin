@@ -1901,8 +1901,10 @@ Generá un análisis en este formato JSON exacto:
         analisis_foto: parsed.analisis_foto || '',
       })
       trackEvent('analisis_recibido', { puntaje: parsed.puntaje_general, nivel_seo: parsed.nivel_seo })
-      setShowAnalisisConsent(true)
-      trackEvent('analisis_consent_shown', { puntaje: parsed.puntaje_general })
+      if (localStorage.getItem('ol_premium') === '1') {
+        setShowAnalisisConsent(true)
+        trackEvent('analisis_consent_shown', { puntaje: parsed.puntaje_general })
+      }
       setStep(STEPS.RESULTS)
       saveToHistorial('analisis', { ...parsed, fortalezas: parsed.fortalezas||[], areas_de_mejora: parsed.areas_de_mejora||[], palabras_clave_sugeridas: parsed.palabras_clave_sugeridas||[] }, parsed.nombre_titular || 'Análisis LinkedIn')
     } catch (err) {
@@ -2086,6 +2088,7 @@ Generá el feedback en este JSON exacto:
 
   const saveAnalisis = async () => {
     if (analisisSaving || analisisSaved) return
+    if (localStorage.getItem('ol_premium') !== '1') return
     if (!SUPABASE_URL || !SUPABASE_KEY) {
       setAnalisisError('Servicio de guardado no disponible. Intentá más tarde.')
       return
@@ -2130,6 +2133,7 @@ Generá el feedback en este JSON exacto:
   }
 
   const saveCvGenerado = async ({ contacto, cv }) => {
+    if (localStorage.getItem('ol_premium') !== '1') return
     if (!SUPABASE_URL || !SUPABASE_KEY) return
     await fetch(`${SUPABASE_URL}/rest/v1/cv_generados`, {
       method: 'POST',
@@ -2151,6 +2155,7 @@ Generá el feedback en este JSON exacto:
   }
 
   const saveStarPractica = async (pregunta, respuesta, feedback) => {
+    if (localStorage.getItem('ol_premium') !== '1') return
     if (!SUPABASE_URL || !SUPABASE_KEY) return
     try {
       await fetch(`${SUPABASE_URL}/rest/v1/star_practicas`, {
@@ -2176,6 +2181,7 @@ Generá el feedback en este JSON exacto:
   }
 
   const saveEntrevista = async (feedback, answers) => {
+    if (localStorage.getItem('ol_premium') !== '1') return
     if (!SUPABASE_URL || !SUPABASE_KEY) return
     try {
       await fetch(`${SUPABASE_URL}/rest/v1/entrevistas`, {
