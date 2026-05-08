@@ -867,15 +867,20 @@ export default function App() {
   const [user, setUser] = useState(null)
   const [authToken, setAuthToken] = useState(null)
   const [showAuthModal, setShowAuthModal] = useState(false)
-  const [authTab, setAuthTab] = useState('login')
   const [authEmail, setAuthEmail] = useState('')
   const [authPassword, setAuthPassword] = useState('')
   const [authLoading, setAuthLoading] = useState(false)
   const [authError, setAuthError] = useState('')
-  const [authSuccess, setAuthSuccess] = useState(null) // null | 'login' | 'register'
+  const [authSuccess, setAuthSuccess] = useState(null) // null | 'login'
   const [showHistorial, setShowHistorial] = useState(false)
   const [historial, setHistorial] = useState([])
   const [showPremiumModal, setShowPremiumModal] = useState(false)
+  const [premiumEmail, setPremiumEmail] = useState('')
+  const [showPostPayment, setShowPostPayment] = useState(false)
+  const [postPaymentEmail, setPostPaymentEmail] = useState('')
+  const [postPaymentPassword, setPostPaymentPassword] = useState('')
+  const [postPaymentLoading, setPostPaymentLoading] = useState(false)
+  const [postPaymentError, setPostPaymentError] = useState('')
   const [historialLoading, setHistorialLoading] = useState(false)
   const [subscriptionLoading, setSubscriptionLoading] = useState(false)
 
@@ -1027,16 +1032,19 @@ export default function App() {
     setHistorialLoading(false)
   }
 
-  const startSubscription = async () => {
-    const currentUser = user
-    if (!currentUser) { setShowPremiumModal(false); setShowAuthModal(true); return }
+  const startSubscription = async (emailOverride) => {
+    const emailToUse = emailOverride || user?.email || premiumEmail
+    if (!emailToUse) return
+    // Si tiene sesión usamos su user_id; si no, lo asignará el webhook cuando cree la cuenta
+    const userId = user?.id || 'pending'
     setSubscriptionLoading(true)
     setShowPremiumModal(false)
+    if (!user) localStorage.setItem('ol_pending_email', emailToUse)
     try {
       const res = await fetch(WORKER_URL, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'create_subscription', user_id: currentUser.id, user_email: currentUser.email }),
+        body: JSON.stringify({ action: 'create_subscription', user_id: userId, user_email: emailToUse }),
       })
       const data = await res.json()
       if (data.init_point) {
@@ -1046,9 +1054,36 @@ export default function App() {
         alert('No se pudo iniciar el pago. Intentá de nuevo en unos segundos.')
       }
     } catch {
-      alert('Error de conexión. Verificá tu internet e intentá de nuevo.')
+      alert('Error de conexión con el servidor. Verificá que el Worker esté deployado.')
     }
     setSubscriptionLoading(false)
+  }
+
+  const createAccountPostPayment = async () => {
+    if (!postPaymentEmail || postPaymentPassword.length < 6) return
+    setPostPaymentLoading(true)
+    setPostPaymentError('')
+    try {
+      const data = await sbAuthFetch('/signup', {
+        method: 'POST',
+        body: JSON.stringify({ email: postPaymentEmail, password: postPaymentPassword }),
+      })
+      if (data.access_token) {
+        localStorage.removeItem('ol_pending_email')
+        await upsertPerfil(data.user.id, { email: postPaymentEmail, nombre: postPaymentEmail.split('@')[0] }, data.access_token)
+        const userData = { id: data.user.id, email: postPaymentEmail, nombre: postPaymentEmail.split('@')[0], es_premium: false, premium_hasta: null }
+        applySession(data.access_token, data.refresh_token, userData)
+        setShowPostPayment(false)
+        // Esperar un momento para que el webhook de MP procese el pago
+        setTimeout(() => checkSubscriptionStatus(data.user.id, data.access_token), 3000)
+        trackEvent('auth_register_post_payment')
+      } else {
+        setPostPaymentError('No se pudo crear la cuenta. Si ya tenés una, ingresá desde "Ingresar".')
+      }
+    } catch (err) {
+      setPostPaymentError(err.message || 'Error al crear la cuenta')
+    }
+    setPostPaymentLoading(false)
   }
 
   const checkSubscriptionStatus = async (userId, token) => {
@@ -1141,7 +1176,15 @@ export default function App() {
     window.history.replaceState({}, '', window.location.pathname)
     const uid = localStorage.getItem('ol_uid')
     const token = localStorage.getItem('ol_at')
-    if (uid && token) setTimeout(() => checkSubscriptionStatus(uid, token), 2500)
+    if (uid && token) {
+      // Ya tiene sesión (ej: entró con LinkedIn antes de pagar)
+      setTimeout(() => checkSubscriptionStatus(uid, token), 2500)
+    } else {
+      // No tiene sesión: mostrar flujo de creación de contraseña
+      const pending = localStorage.getItem('ol_pending_email') || ''
+      setPostPaymentEmail(pending)
+      setShowPostPayment(true)
+    }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
@@ -1171,23 +1214,9 @@ export default function App() {
         if (data.headline) setFormTitular(data.headline)
         if (data.summary) setFormResumen(data.summary)
         setLinkedinAuthLoading(false)
-        const fromAuthModal = sessionStorage.getItem('li_auth_intent') === '1'
-        if (fromAuthModal) {
-          sessionStorage.removeItem('li_auth_intent')
-          // Solo abrir modal de registro — no navegar al perfil
-          if (data.email && !localStorage.getItem('ol_at')) {
-            setAuthEmail(data.email)
-            setAuthTab('register')
-            setAuthError('')
-            setAuthSuccess(null)
-            setShowAuthModal(true)
-          }
-        } else {
-          // Flujo normal: ir a carga de perfil
-          setInputMode('linkedin')
-          setUrlAttempted(true)
-          setStep(STEPS.PROFILE_INPUT)
-        }
+        setInputMode('linkedin')
+        setUrlAttempted(true)
+        setStep(STEPS.PROFILE_INPUT)
       })
       .catch(() => { setLinkedinAuthError('Error de conexión. Intentá de nuevo.'); setLinkedinAuthLoading(false) })
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -2717,24 +2746,12 @@ Respondé con este JSON exacto:
                 )}
               </div>
             ) : (
-              /* ── Formulario login/registro ── */
+              /* ── Formulario login ── */
               <>
                 <div className="flex items-center justify-between">
-                  <h2 className="text-slate-900 font-bold text-lg">
-                    {authTab === 'login' ? 'Ingresá a tu cuenta' : 'Creá tu cuenta gratis'}
-                  </h2>
+                  <h2 className="text-slate-900 font-bold text-lg">Ingresá a tu cuenta</h2>
                   <button onClick={() => { setShowAuthModal(false); setAuthError('') }}
                     className="text-slate-400 hover:text-slate-600 text-2xl leading-none w-8 h-8 flex items-center justify-center">×</button>
-                </div>
-
-                <div className="flex gap-1 p-1 rounded-xl" style={{ background: '#f1f5f9' }}>
-                  {[['login','Ingresar'],['register','Registrarme']].map(([t,l]) => (
-                    <button key={t} onClick={() => { setAuthTab(t); setAuthError('') }}
-                      className="flex-1 py-2 rounded-lg text-sm font-medium transition-all"
-                      style={authTab === t ? { background:'white', color:'#0077B5', boxShadow:'0 1px 4px rgba(0,0,0,0.1)' } : { color:'#64748b' }}>
-                      {l}
-                    </button>
-                  ))}
                 </div>
 
                 <button onClick={handleLinkedinAuthViaSupabase}
@@ -2754,27 +2771,24 @@ Respondé con este JSON exacto:
                   <input type="email" placeholder="Email" value={authEmail}
                     onChange={e => setAuthEmail(e.target.value)} autoComplete="email"
                     className="w-full px-4 py-3 rounded-xl text-sm outline-none" style={INPUT_STYLE} />
-                  <input type="password" placeholder="Contraseña (mínimo 6 caracteres)" value={authPassword}
-                    onChange={e => setAuthPassword(e.target.value)}
-                    autoComplete={authTab === 'login' ? 'current-password' : 'new-password'}
-                    onKeyDown={e => e.key === 'Enter' && authEmail.includes('@') && authPassword.length >= 6 && (authTab === 'login' ? authLogin(authEmail, authPassword) : authRegister(authEmail, authPassword))}
+                  <input type="password" placeholder="Contraseña" value={authPassword}
+                    onChange={e => setAuthPassword(e.target.value)} autoComplete="current-password"
+                    onKeyDown={e => e.key === 'Enter' && authEmail.includes('@') && authPassword.length >= 6 && authLogin(authEmail, authPassword)}
                     className="w-full px-4 py-3 rounded-xl text-sm outline-none" style={INPUT_STYLE} />
                 </div>
 
                 {authError && <p className="text-sm text-center font-medium" style={{ color: '#ef4444' }}>{authError}</p>}
 
                 <button
-                  onClick={() => authTab === 'login' ? authLogin(authEmail, authPassword) : authRegister(authEmail, authPassword)}
+                  onClick={() => authLogin(authEmail, authPassword)}
                   disabled={authLoading || !authEmail.includes('@') || authPassword.length < 6}
                   className="btn-glow w-full py-3 rounded-xl text-white font-semibold text-sm"
                   style={{ background: LI_GRADIENT, opacity: (authLoading || !authEmail.includes('@') || authPassword.length < 6) ? 0.5 : 1 }}>
-                  {authLoading ? 'Procesando...' : (authTab === 'login' ? 'Ingresar' : 'Crear cuenta gratis')}
+                  {authLoading ? 'Procesando...' : 'Ingresar'}
                 </button>
 
                 <p className="text-xs text-center text-slate-400 leading-relaxed">
-                  {authTab === 'register'
-                    ? 'La cuenta es gratis. El historial se activa con Premium ($3.000/mes).'
-                    : <span>¿No tenés cuenta? <button onClick={() => setAuthTab('register')} className="underline" style={{ color: '#0077B5' }}>Registrate gratis</button></span>}
+                  ¿Todavía no tenés cuenta? <button onClick={() => { setShowAuthModal(false); setShowPremiumModal(true) }} className="underline" style={{ color: '#0077B5' }}>Activá Premium</button> para crear una.
                 </p>
               </>
             )}
@@ -2812,9 +2826,29 @@ Respondé con este JSON exacto:
                   </li>
                 ))}
               </ul>
-              <button onClick={startSubscription} disabled={subscriptionLoading}
+
+              {!user && (
+                <>
+                  <button onClick={() => { setShowPremiumModal(false); handleLinkedinAuthViaSupabase() }}
+                    className="w-full py-3 rounded-xl flex items-center justify-center gap-2 text-sm font-semibold transition-opacity hover:opacity-90"
+                    style={{ background: '#0077B5', color: 'white' }}>
+                    <LinkedInIcon className="w-4 h-4" style={{ fill: 'white' }} />
+                    Continuar con LinkedIn
+                  </button>
+                  <div className="flex items-center gap-3">
+                    <div className="flex-1 h-px" style={{ background: '#e2e8f0' }} />
+                    <span className="text-xs text-slate-400">o con email</span>
+                    <div className="flex-1 h-px" style={{ background: '#e2e8f0' }} />
+                  </div>
+                  <input type="email" placeholder="Tu email para crear la cuenta"
+                    value={premiumEmail} onChange={e => setPremiumEmail(e.target.value)}
+                    className="w-full px-4 py-3 rounded-xl text-sm outline-none" style={INPUT_STYLE} />
+                </>
+              )}
+
+              <button onClick={() => startSubscription()} disabled={subscriptionLoading || (!user && !premiumEmail.includes('@'))}
                 className="btn-glow w-full py-3.5 rounded-xl text-white font-bold text-sm"
-                style={{ background: LI_GRADIENT, opacity: subscriptionLoading ? 0.7 : 1 }}>
+                style={{ background: LI_GRADIENT, opacity: (subscriptionLoading || (!user && !premiumEmail.includes('@'))) ? 0.6 : 1 }}>
                 {subscriptionLoading ? 'Procesando...' : 'Activar Premium · Ir a Mercado Pago →'}
               </button>
               <button onClick={() => setShowPremiumModal(false)}
@@ -2877,6 +2911,42 @@ Respondé con este JSON exacto:
         </div>
       )}
 
+      {/* ── Post-Payment Modal ── */}
+      {showPostPayment && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4"
+          style={{ background: 'rgba(0,0,0,0.55)', backdropFilter: 'blur(4px)' }}>
+          <div className="w-full max-w-sm rounded-3xl p-6 space-y-4"
+            style={{ background: 'white', boxShadow: '0 25px 60px rgba(0,0,0,0.2)' }}>
+            <div className="text-center space-y-1">
+              <div className="w-14 h-14 rounded-full flex items-center justify-center mx-auto text-2xl mb-3"
+                style={{ background: 'rgba(0,119,181,0.08)' }}>✦</div>
+              <h2 className="text-slate-900 font-bold text-xl">¡Suscripción activada!</h2>
+              <p className="text-slate-500 text-sm leading-relaxed">Creá tu contraseña para acceder a tu historial desde cualquier dispositivo.</p>
+            </div>
+
+            <div className="space-y-3">
+              <input type="email" value={postPaymentEmail} readOnly
+                className="w-full px-4 py-3 rounded-xl text-sm outline-none"
+                style={{ ...INPUT_STYLE, background: '#f8fafc', color: '#64748b' }} />
+              <input type="password" placeholder="Elegí una contraseña (mínimo 6 caracteres)"
+                value={postPaymentPassword} onChange={e => setPostPaymentPassword(e.target.value)}
+                autoComplete="new-password"
+                onKeyDown={e => e.key === 'Enter' && postPaymentPassword.length >= 6 && createAccountPostPayment()}
+                className="w-full px-4 py-3 rounded-xl text-sm outline-none" style={INPUT_STYLE} />
+            </div>
+
+            {postPaymentError && <p className="text-sm text-center font-medium" style={{ color: '#ef4444' }}>{postPaymentError}</p>}
+
+            <button onClick={createAccountPostPayment}
+              disabled={postPaymentLoading || postPaymentPassword.length < 6}
+              className="btn-glow w-full py-3 rounded-xl text-white font-semibold text-sm"
+              style={{ background: LI_GRADIENT, opacity: (postPaymentLoading || postPaymentPassword.length < 6) ? 0.5 : 1 }}>
+              {postPaymentLoading ? 'Creando cuenta...' : 'Crear mi cuenta →'}
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* ── Barra de usuario ── */}
       <div className="w-full max-w-xl mb-2 flex justify-end items-center gap-2 flex-wrap">
         {user ? (
@@ -2908,7 +2978,7 @@ Respondé con este JSON exacto:
           <button onClick={() => setShowAuthModal(true)}
             className="text-sm font-semibold px-4 py-2 rounded-full transition-all"
             style={BTN_GHOST_STYLE}>
-            Crear cuenta / Ingresar
+            Ingresar
           </button>
         )}
       </div>
