@@ -136,6 +136,32 @@ export default {
       return new Response(JSON.stringify({ init_point }), { status: 200, headers: corsHeaders })
     }
 
+    // ── Grant premium manually (for gifting accounts) ────────────────────────
+    if (body.action === 'grant_premium') {
+      const { admin_key, email, months } = body
+      if (admin_key !== env.ADMIN_KEY) {
+        return new Response(JSON.stringify({ error: 'No autorizado' }), { status: 401, headers: corsHeaders })
+      }
+      if (!email) {
+        return new Response(JSON.stringify({ error: 'Falta email' }), { status: 400, headers: corsHeaders })
+      }
+      const premiumHasta = new Date(Date.now() + (months || 1) * 30 * 24 * 60 * 60 * 1000).toISOString()
+      // Find user by email in auth.users via Supabase admin
+      const userRes = await fetch(`${env.SUPABASE_URL}/auth/v1/admin/users?email=${encodeURIComponent(email)}`, {
+        headers: { apikey: env.SUPABASE_SERVICE_ROLE_KEY, Authorization: `Bearer ${env.SUPABASE_SERVICE_ROLE_KEY}` },
+      })
+      const userData = await userRes.json()
+      const userId = userData?.users?.[0]?.id
+      if (!userId) {
+        return new Response(JSON.stringify({ error: `No se encontró usuario con email ${email}` }), { status: 404, headers: corsHeaders })
+      }
+      await supabaseServiceFetch(env, `perfiles?id=eq.${userId}`, {
+        method: 'PATCH',
+        body: JSON.stringify({ es_premium: true, premium_hasta: premiumHasta, updated_at: new Date().toISOString() }),
+      })
+      return new Response(JSON.stringify({ ok: true, user_id: userId, premium_hasta: premiumHasta }), { status: 200, headers: corsHeaders })
+    }
+
     // ── Check subscription status ─────────────────────────────────────────────
     if (body.action === 'subscription_status') {
       const { user_id } = body

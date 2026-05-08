@@ -1098,6 +1098,9 @@ export default function App() {
         localStorage.setItem('ol_premium', '1')
         setUser(prev => prev ? { ...prev, es_premium: true, premium_hasta: data.premium_hasta } : prev)
         trackEvent('premium_activated')
+      } else {
+        localStorage.setItem('ol_premium', '0')
+        setUser(prev => prev ? { ...prev, es_premium: false, premium_hasta: null } : prev)
       }
     } catch { /* silencioso */ }
   }
@@ -4716,14 +4719,14 @@ Respondé con este JSON exacto:
                 <div className="flex-1 min-w-0">
                   <p className="text-slate-800 text-sm font-semibold">💾 Guardá este análisis</p>
                   <p className="text-slate-500 text-xs mt-0.5 leading-snug">
-                    {user ? 'Activá Premium para guardar tu historial completo de análisis, CVs y entrevistas.' : 'Creá una cuenta Premium para guardar tu historial por $3.000/mes.'}
+                    Guardá tu historial completo de análisis, CVs y entrevistas por $3.000/mes.
                   </p>
                 </div>
-                <button onClick={user ? () => setShowPremiumModal(true) : () => setShowAuthModal(true)}
+                <button onClick={() => setShowPremiumModal(true)}
                   disabled={subscriptionLoading}
                   className="shrink-0 btn-glow px-4 py-2 rounded-xl text-white text-xs font-semibold"
                   style={{ background: LI_GRADIENT, opacity: subscriptionLoading ? 0.7 : 1 }}>
-                  {subscriptionLoading ? '...' : (user ? 'Activar' : 'Crear cuenta')}
+                  {subscriptionLoading ? '...' : 'Activar'}
                 </button>
               </div>
             )}
@@ -5106,14 +5109,14 @@ Respondé con este JSON exacto:
                     <div className="flex-1 min-w-0">
                       <p className="text-slate-800 text-sm font-semibold">💾 Guardá esta entrevista</p>
                       <p className="text-slate-500 text-xs mt-0.5 leading-snug">
-                        {user ? 'Con Premium tenés acceso a tu historial completo de entrevistas y análisis.' : 'Creá una cuenta Premium para guardar tu historial por $3.000/mes.'}
+                        Guardá tu historial completo de entrevistas y análisis por $3.000/mes.
                       </p>
                     </div>
-                    <button onClick={user ? () => setShowPremiumModal(true) : () => setShowAuthModal(true)}
+                    <button onClick={() => setShowPremiumModal(true)}
                       disabled={subscriptionLoading}
                       className="shrink-0 btn-glow px-4 py-2 rounded-xl text-white text-xs font-semibold"
                       style={{ background: LI_GRADIENT, opacity: subscriptionLoading ? 0.7 : 1 }}>
-                      {subscriptionLoading ? '...' : (user ? 'Activar' : 'Crear cuenta')}
+                      {subscriptionLoading ? '...' : 'Activar'}
                     </button>
                   </div>
                 )}
