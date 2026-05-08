@@ -1095,6 +1095,42 @@ export default function App() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
+  // Detectar #access_token=... hash del redirect de Supabase LinkedIn OAuth
+  useEffect(() => {
+    const hash = window.location.hash
+    if (!hash.includes('access_token')) return
+    const params = new URLSearchParams(hash.slice(1))
+    const accessToken = params.get('access_token')
+    const refreshToken = params.get('refresh_token')
+    const type = params.get('type') // 'signup' | 'recovery' | etc
+    if (!accessToken) return
+    window.history.replaceState({}, '', window.location.pathname)
+    fetch(`${SUPABASE_URL}/auth/v1/user`, {
+      headers: { apikey: SUPABASE_KEY, Authorization: `Bearer ${accessToken}` },
+    })
+      .then(r => r.json())
+      .then(async userData => {
+        const userId = userData.id
+        const email = userData.email || ''
+        const name = userData.user_metadata?.full_name || userData.user_metadata?.name || email.split('@')[0]
+        await upsertPerfil(userId, { email, nombre: name }, accessToken)
+        const perfil = await loadPerfil(userId, accessToken)
+        const userObj = {
+          id: userId,
+          email,
+          nombre: perfil?.nombre || name,
+          es_premium: perfil?.es_premium || false,
+          premium_hasta: perfil?.premium_hasta || null,
+        }
+        applySession(accessToken, refreshToken || '', userObj)
+        setAuthSuccess(type === 'signup' ? 'register' : 'login')
+        setShowAuthModal(true)
+        trackEvent('auth_linkedin_supabase', { type })
+      })
+      .catch(() => { /* silencioso */ })
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
   // Detectar ?premium=ok redirect de Mercado Pago
   useEffect(() => {
     const params = new URLSearchParams(window.location.search)
@@ -1332,7 +1368,13 @@ export default function App() {
     }
   }
 
-  // ── LinkedIn OAuth: iniciar login ──
+  // ── LinkedIn OAuth via Supabase (para auth/cuenta) ──
+  const handleLinkedinAuthViaSupabase = () => {
+    const redirectTo = encodeURIComponent(window.location.origin + window.location.pathname)
+    window.location.href = `${SUPABASE_URL}/auth/v1/authorize?provider=linkedin_oidc&redirect_to=${redirectTo}`
+  }
+
+  // ── LinkedIn OAuth directo (para rellenar perfil) ──
   const handleLinkedinLogin = () => {
     const clientId = import.meta.env.VITE_LINKEDIN_CLIENT_ID
     if (!clientId) {
@@ -2692,7 +2734,7 @@ Respondé con este JSON exacto:
                   ))}
                 </div>
 
-                <button onClick={() => { sessionStorage.setItem('li_auth_intent', '1'); setShowAuthModal(false); handleLinkedinLogin() }}
+                <button onClick={handleLinkedinAuthViaSupabase}
                   className="w-full py-3 rounded-xl flex items-center justify-center gap-2 text-sm font-semibold transition-opacity hover:opacity-90"
                   style={{ background: '#0077B5', color: 'white' }}>
                   <LinkedInIcon className="w-4 h-4" style={{ fill: 'white' }} />
