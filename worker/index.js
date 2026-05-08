@@ -129,6 +129,7 @@ export default {
             payer_email: user_email,
             back_url: 'https://optimizalinkedin.com/?premium=ok',
             external_reference: user_id,
+            status: 'pending',
           }),
         })
         if (!data.init_point) {
