@@ -1113,8 +1113,11 @@ export default function App() {
         const userId = userData.id
         const email = userData.email || ''
         const name = userData.user_metadata?.full_name || userData.user_metadata?.name || email.split('@')[0]
-        await upsertPerfil(userId, { email, nombre: name }, accessToken)
-        const perfil = await loadPerfil(userId, accessToken)
+        let perfil = null
+        try {
+          await upsertPerfil(userId, { email, nombre: name }, accessToken)
+          perfil = await loadPerfil(userId, accessToken)
+        } catch { /* silencioso — no bloquea el login */ }
         const userObj = {
           id: userId,
           email,
