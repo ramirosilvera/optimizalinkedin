@@ -112,6 +112,16 @@ export default {
     const body = await request.json().catch(() => null)
     if (!body) return new Response('Invalid JSON', { status: 400 })
 
+    // ── Debug: check MP plan ──────────────────────────────────────────────────
+    if (body.action === 'check_mp_plan') {
+      const planData = await mpFetch(env, `/preapproval_plan/${env.MP_PLAN_ID || 'NOT_SET'}`)
+      return new Response(JSON.stringify({
+        plan_id_in_env: env.MP_PLAN_ID || 'NOT SET',
+        token_prefix: (env.MP_ACCESS_TOKEN || '').slice(0, 10) + '...',
+        plan: planData,
+      }), { status: 200, headers: corsHeaders })
+    }
+
     // ── Create MP subscription ────────────────────────────────────────────────
     if (body.action === 'create_subscription') {
       const { user_id, user_email } = body
