@@ -1114,15 +1114,23 @@ export default function App() {
     switch (item.tipo) {
       case 'analisis':
         setResult(item.datos)
+        setCvStage('idle')
+        setCvFinalData(null)
+        setCvPreviewHtml('')
         setStep(STEPS.RESULTS)
         break
-      case 'cv':
+      case 'cv': {
+        // Also restore the most recent analysis so the full RESULTS page loads
+        const latestAnalisis = historial.find(i => i.tipo === 'analisis')
+        if (latestAnalisis) setResult(latestAnalisis.datos)
+        else setResult(null)
         setCvFinalData(item.datos)
         setCvDraft(item.datos)
         setCvPreviewHtml(buildCvHtml(item.datos))
         setCvStage('done')
         setStep(STEPS.RESULTS)
         break
+      }
       case 'entrevista':
         setInterviewFeedback(item.datos?.feedback || item.datos)
         setInterviewAnswers(item.datos?.respuestas || [])
@@ -4586,7 +4594,7 @@ Respondé con este JSON exacto:
         )}
 
         {/* ── RESULTS ── */}
-        {step === STEPS.RESULTS && result && (
+        {step === STEPS.RESULTS && (result || (cvStage === 'done' && cvFinalData)) && (
           <div className="step-transition space-y-6">
             <Logo />
 
@@ -4862,6 +4870,23 @@ Respondé con este JSON exacto:
               {/* CV listo — score + revisión consultor + botón imprimir */}
               {cvStage === 'done' && cvFinalData && (
                 <div className="space-y-3">
+                  {/* Cuando el CV se restauró desde historial sin análisis asociado */}
+                  {!result && (
+                    <div className="flex gap-2">
+                      <button
+                        onClick={() => setStep(STEPS.MODE_SELECT)}
+                        className="flex-1 py-3 rounded-xl text-sm font-medium"
+                        style={BTN_BACK_STYLE}>
+                        ← Menú
+                      </button>
+                      <button
+                        onClick={() => { setCvStage('idle'); setCvFinalData(null); setCvPreviewHtml(''); setStep(STEPS.MODE_SELECT) }}
+                        className="flex-[2] py-3 rounded-xl text-sm font-medium"
+                        style={BTN_BACK_STYLE}>
+                        ↺ Hacer nuevo análisis
+                      </button>
+                    </div>
+                  )}
                   {cvQuality && (
                     <div className="rounded-2xl overflow-hidden"
                       style={{ border: `1px solid ${cvQuality.score >= 8 ? 'rgba(34,197,94,0.25)' : 'rgba(0,119,181,0.18)'}` }}>
