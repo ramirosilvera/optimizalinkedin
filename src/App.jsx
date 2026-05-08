@@ -1738,7 +1738,13 @@ export default function App() {
     setProfilePhotoMime(file.type)
     setProfilePhotoPreview(URL.createObjectURL(file))
     const reader = new FileReader()
-    reader.onload = () => setProfilePhoto(reader.result.split(',')[1])
+    reader.onload = () => {
+      const base64 = reader.result.split(',')[1]
+      setProfilePhoto(base64)
+      if (cvFinalData && cvStage === 'done') {
+        setCvPreviewHtml(buildCvHtml(cvFinalData, base64, file.type))
+      }
+    }
     reader.readAsDataURL(file)
   }
 
@@ -3277,19 +3283,49 @@ Respondé con este JSON exacto:
                     </div>
                   )}
 
-                  {/* CV adaptado — descargar */}
+                  {/* CV adaptado — foto + descargar */}
                   {jobResult.cv_adaptado && (
-                    <button
-                      onClick={() => {
-                        const html = buildCvHtml(jobResult.cv_adaptado, profilePhoto, profilePhotoMime)
-                        const win = window.open('', '_blank')
-                        if (win) { win.document.write(html); win.document.close(); win.focus(); setTimeout(() => { try { win.print() } catch {} }, 300) }
-                        trackEvent('job_adapter_cv_download')
-                      }}
-                      className="w-full py-3.5 rounded-xl text-sm font-semibold text-white"
-                      style={{ background: 'linear-gradient(135deg,#059669,#10b981)', boxShadow: '0 4px 12px rgba(5,150,105,0.25)' }}>
-                      📥 Descargar CV adaptado →
-                    </button>
+                    <>
+                      <div className="rounded-2xl p-4 space-y-3"
+                        style={{ background: profilePhotoPreview ? 'rgba(5,150,105,0.05)' : 'rgba(0,119,181,0.05)', border: `1px solid ${profilePhotoPreview ? 'rgba(5,150,105,0.2)' : 'rgba(0,119,181,0.18)'}` }}>
+                        <p className="text-xs font-semibold text-slate-700">
+                          {profilePhotoPreview ? '📸 Foto de perfil cargada' : '📸 ¿Querés incluir tu foto de perfil?'}
+                        </p>
+                        {!profilePhotoPreview && (
+                          <p className="text-xs text-slate-500">Las fotos no se guardan en el historial. Podés cargarla ahora o descargar sin ella.</p>
+                        )}
+                        <div className="flex items-center gap-3">
+                          {profilePhotoPreview && (
+                            <div className="w-10 h-10 rounded-full overflow-hidden shrink-0 relative"
+                              style={{ border: '2px solid rgba(5,150,105,0.4)' }}>
+                              <img src={profilePhotoPreview} alt="Foto" style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover' }} />
+                            </div>
+                          )}
+                          <label htmlFor="job-modal-photo" className="cursor-pointer px-3 py-1.5 rounded-lg text-xs font-semibold transition-all"
+                            style={{ background: 'rgba(0,119,181,0.12)', color: '#0077B5', border: '1px solid rgba(0,119,181,0.25)' }}>
+                            {profilePhotoPreview ? 'Cambiar foto' : 'Cargar foto'}
+                          </label>
+                          <input id="job-modal-photo" type="file" accept="image/*" className="hidden" onChange={handleCvPhotoUpload} />
+                          {profilePhotoPreview && (
+                            <button onClick={() => { setProfilePhotoPreview(null); setProfilePhoto(null); setProfilePhotoMime('image/jpeg') }}
+                              className="text-xs transition-colors" style={{ color: '#94a3b8' }}>
+                              ✕ Quitar
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                      <button
+                        onClick={() => {
+                          const html = buildCvHtml(jobResult.cv_adaptado, profilePhoto, profilePhotoMime)
+                          const win = window.open('', '_blank')
+                          if (win) { win.document.write(html); win.document.close(); win.focus(); setTimeout(() => { try { win.print() } catch {} }, 300) }
+                          trackEvent('job_adapter_cv_download')
+                        }}
+                        className="w-full py-3.5 rounded-xl text-sm font-semibold text-white"
+                        style={{ background: 'linear-gradient(135deg,#059669,#10b981)', boxShadow: '0 4px 12px rgba(5,150,105,0.25)' }}>
+                        📥 Descargar CV adaptado →
+                      </button>
+                    </>
                   )}
 
                   {/* Carta de presentación */}
@@ -4934,6 +4970,36 @@ Respondé con este JSON exacto:
                       )}
                     </div>
                   )}
+                  {/* Foto de perfil — prompt cuando se restaura desde historial */}
+                  <div className="rounded-2xl p-4 space-y-3"
+                    style={{ background: profilePhotoPreview ? 'rgba(5,150,105,0.05)' : 'rgba(0,119,181,0.05)', border: `1px solid ${profilePhotoPreview ? 'rgba(5,150,105,0.2)' : 'rgba(0,119,181,0.18)'}` }}>
+                    <p className="text-xs font-semibold text-slate-700">
+                      {profilePhotoPreview ? '📸 Foto de perfil cargada' : '📸 ¿Querés agregar tu foto de perfil al CV?'}
+                    </p>
+                    {!profilePhotoPreview && (
+                      <p className="text-xs text-slate-500">Las fotos no se guardan en el historial. Podés cargarla ahora o continuar sin ella.</p>
+                    )}
+                    <div className="flex items-center gap-3">
+                      {profilePhotoPreview && (
+                        <div className="w-10 h-10 rounded-full overflow-hidden shrink-0 relative"
+                          style={{ border: '2px solid rgba(5,150,105,0.4)' }}>
+                          <img src={profilePhotoPreview} alt="Foto" style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover' }} />
+                        </div>
+                      )}
+                      <label htmlFor="cv-done-photo" className="cursor-pointer px-3 py-1.5 rounded-lg text-xs font-semibold transition-all"
+                        style={{ background: 'rgba(0,119,181,0.12)', color: '#0077B5', border: '1px solid rgba(0,119,181,0.25)' }}>
+                        {profilePhotoPreview ? 'Cambiar foto' : 'Cargar foto'}
+                      </label>
+                      <input id="cv-done-photo" type="file" accept="image/*" className="hidden" onChange={handleCvPhotoUpload} />
+                      {profilePhotoPreview && (
+                        <button onClick={() => { setProfilePhotoPreview(null); setProfilePhoto(null); setProfilePhotoMime('image/jpeg'); if (cvFinalData) setCvPreviewHtml(buildCvHtml(cvFinalData, null, 'image/jpeg')) }}
+                          className="text-xs transition-colors" style={{ color: '#94a3b8' }}>
+                          ✕ Quitar
+                        </button>
+                      )}
+                    </div>
+                  </div>
+
                   <button
                     onClick={printCv}
                     className="w-full py-4 rounded-xl text-sm font-semibold text-white transition-all"
