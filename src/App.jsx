@@ -2995,9 +2995,9 @@ Respondé con este JSON exacto:
                   </p>
                   <p className="text-slate-500 text-sm leading-relaxed">
                     {authSuccess === 'linkedin_needs_premium'
-                      ? 'Conectaste con LinkedIn. Para guardar tu historial necesitás activar Premium ($3.000/mes).'
+                      ? 'Conectaste con LinkedIn. La app es gratuita — si querés guardar tu historial, podés probar Premium 7 días gratis.'
                       : authSuccess === 'register'
-                        ? 'Ya tenés tu cuenta. Activá Premium para guardar tu historial de análisis, CVs y entrevistas.'
+                        ? 'Cuenta creada. La app funciona completa sin Premium. Si querés guardar tu historial, podés probarlo 7 días gratis.'
                         : 'Ya podés usar la app con tu historial guardado.'}
                   </p>
                 </div>
@@ -3006,12 +3006,12 @@ Respondé con este JSON exacto:
                     <button onClick={() => { setShowAuthModal(false); setAuthSuccess(null); setShowPremiumModal(true) }}
                       className="btn-glow w-full py-3 rounded-xl text-white font-semibold text-sm"
                       style={{ background: LI_GRADIENT }}>
-                      Activar Premium · $3.000/mes →
+                      Probar Premium 7 días gratis →
                     </button>
                     <button onClick={() => { authLogout(); setShowAuthModal(false); setAuthSuccess(null) }}
                       className="w-full py-2.5 text-sm font-medium rounded-xl"
                       style={{ color: '#64748b' }}>
-                      Continuar gratis sin cuenta
+                      Seguir usando gratis sin guardar
                     </button>
                   </div>
                 ) : authSuccess === 'register' ? (
@@ -3019,12 +3019,12 @@ Respondé con este JSON exacto:
                     <button onClick={() => { setShowAuthModal(false); setAuthSuccess(null); setShowPremiumModal(true) }}
                       className="btn-glow w-full py-3 rounded-xl text-white font-semibold text-sm"
                       style={{ background: LI_GRADIENT }}>
-                      Ver qué incluye Premium →
+                      Probar Premium 7 días gratis →
                     </button>
                     <button onClick={() => { setShowAuthModal(false); setAuthSuccess(null) }}
                       className="w-full py-2.5 text-sm font-medium rounded-xl"
                       style={{ color: '#64748b' }}>
-                      Ahora no
+                      Ahora no, seguir usando gratis
                     </button>
                   </div>
                 ) : (
@@ -3078,7 +3078,7 @@ Respondé con este JSON exacto:
                 </button>
 
                 <p className="text-xs text-center text-slate-400 leading-relaxed">
-                  ¿Todavía no tenés cuenta? <button onClick={() => { setShowAuthModal(false); setShowPremiumModal(true) }} className="underline" style={{ color: '#0077B5' }}>Activá Premium</button> para crear una.
+                  ¿Todavía no tenés cuenta? <button onClick={() => { setShowAuthModal(false); setShowPremiumModal(true) }} className="underline" style={{ color: '#0077B5' }}>Probá Premium gratis 7 días</button> para crear una y guardar tu historial.
                 </p>
               </>
             )}
@@ -3096,8 +3096,11 @@ Respondé con este JSON exacto:
             <div className="p-6 text-white" style={{ background: LI_GRADIENT }}>
               <p className="text-xs font-semibold opacity-80 mb-1">OPTIMIZA LINKEDIN</p>
               <h2 className="text-2xl font-bold">Premium</h2>
-              <p className="text-4xl font-bold mt-2">$3.000<span className="text-lg font-normal opacity-80">/mes</span></p>
-              <p className="text-sm opacity-75 mt-1">Cancelás cuando querés desde Mercado Pago</p>
+              <div className="flex items-baseline gap-2 mt-2">
+                <p className="text-4xl font-bold">$3.000<span className="text-lg font-normal opacity-80">/mes</span></p>
+                <span className="text-xs font-bold px-2 py-0.5 rounded-full" style={{ background: 'rgba(255,255,255,0.22)', color: 'white' }}>7 DÍAS GRATIS</span>
+              </div>
+              <p className="text-sm opacity-75 mt-1">Cancelás antes del día 7 y no te cobramos nada</p>
             </div>
             <div className="p-6 space-y-5 bg-white">
               <ul className="space-y-3">
@@ -3139,11 +3142,14 @@ Respondé con este JSON exacto:
               <button onClick={() => startSubscription()} disabled={subscriptionLoading || (!user && !premiumEmail.includes('@'))}
                 className="btn-glow w-full py-3.5 rounded-xl text-white font-bold text-sm"
                 style={{ background: LI_GRADIENT, opacity: (subscriptionLoading || (!user && !premiumEmail.includes('@'))) ? 0.6 : 1 }}>
-                {subscriptionLoading ? 'Procesando...' : 'Activar Premium · Ir a Mercado Pago →'}
+                {subscriptionLoading ? 'Procesando...' : 'Probar 7 días gratis → Mercado Pago'}
               </button>
+              <p className="text-center text-xs text-slate-400 -mt-1">
+                La app seguirá siendo 100% gratuita. Premium es solo para guardar tu historial.
+              </p>
               <button onClick={() => setShowPremiumModal(false)}
                 className="w-full py-2 text-sm text-slate-400 text-center">
-                Ahora no
+                Ahora no, seguir usando gratis
               </button>
 
               {/* ── Cupón / código de acceso ── */}
@@ -5312,19 +5318,19 @@ Respondé con este JSON exacto:
 
             {/* Premium banner */}
             {!user?.es_premium && (
-              <div className="rounded-2xl p-4 flex items-center justify-between gap-4"
-                style={{ background: 'linear-gradient(135deg,rgba(0,119,181,0.05),rgba(14,165,233,0.05))', border: '1.5px solid rgba(0,119,181,0.18)' }}>
-                <div className="flex-1 min-w-0">
-                  <p className="text-slate-800 text-sm font-semibold">💾 Guardá este análisis</p>
+              <div className="rounded-2xl p-4 space-y-2.5"
+                style={{ background: 'rgba(0,119,181,0.04)', border: '1px solid rgba(0,119,181,0.15)' }}>
+                <div>
+                  <p className="text-slate-700 text-sm font-semibold">💾 ¿Querés guardar este resultado?</p>
                   <p className="text-slate-500 text-xs mt-0.5 leading-snug">
-                    Guardá tu historial completo de análisis, CVs y entrevistas por $3.000/mes.
+                    Podés seguir usando la app sin guardar nada. Si querés acceder a tu historial después, Premium incluye <strong>7 días gratis</strong> — luego $3.000/mes.
                   </p>
                 </div>
                 <button onClick={() => setShowPremiumModal(true)}
                   disabled={subscriptionLoading}
-                  className="shrink-0 btn-glow px-4 py-2 rounded-xl text-white text-xs font-semibold"
+                  className="px-4 py-2 rounded-xl text-white text-xs font-semibold"
                   style={{ background: LI_GRADIENT, opacity: subscriptionLoading ? 0.7 : 1 }}>
-                  {subscriptionLoading ? '...' : 'Activar'}
+                  {subscriptionLoading ? '...' : 'Probar 7 días gratis'}
                 </button>
               </div>
             )}
@@ -5711,19 +5717,19 @@ Respondé con este JSON exacto:
 
                 {/* Premium banner */}
                 {!user?.es_premium && (
-                  <div className="rounded-2xl p-4 flex items-center justify-between gap-4"
-                    style={{ background: 'linear-gradient(135deg,rgba(0,119,181,0.05),rgba(14,165,233,0.05))', border: '1.5px solid rgba(0,119,181,0.18)' }}>
-                    <div className="flex-1 min-w-0">
-                      <p className="text-slate-800 text-sm font-semibold">💾 Guardá esta entrevista</p>
+                  <div className="rounded-2xl p-4 space-y-2.5"
+                    style={{ background: 'rgba(0,119,181,0.04)', border: '1px solid rgba(0,119,181,0.15)' }}>
+                    <div>
+                      <p className="text-slate-700 text-sm font-semibold">💾 ¿Querés guardar esta entrevista?</p>
                       <p className="text-slate-500 text-xs mt-0.5 leading-snug">
-                        Guardá tu historial completo de entrevistas y análisis por $3.000/mes.
+                        Podés seguir usando la app sin guardar nada. Si querés acceder a tu historial después, Premium incluye <strong>7 días gratis</strong> — luego $3.000/mes.
                       </p>
                     </div>
                     <button onClick={() => setShowPremiumModal(true)}
                       disabled={subscriptionLoading}
-                      className="shrink-0 btn-glow px-4 py-2 rounded-xl text-white text-xs font-semibold"
+                      className="px-4 py-2 rounded-xl text-white text-xs font-semibold"
                       style={{ background: LI_GRADIENT, opacity: subscriptionLoading ? 0.7 : 1 }}>
-                      {subscriptionLoading ? '...' : 'Activar'}
+                      {subscriptionLoading ? '...' : 'Probar 7 días gratis'}
                     </button>
                   </div>
                 )}
