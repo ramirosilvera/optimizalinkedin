@@ -3363,11 +3363,12 @@ Respondé con este JSON exacto:
               </p>
             </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+            <div className="grid grid-cols-2 gap-3">
               {[
                 { icon: '📬', label: 'Que te contacten', text: 'Aparecer en búsquedas de reclutadores que buscan tu perfil exacto', accent: '#0ea5e9' },
                 { icon: '✅', label: 'Pasá los filtros', text: 'ATS-compatible: que tu postulación no quede fuera por un algoritmo', accent: '#6366f1' },
                 { icon: '📄', label: 'CV listo hoy',     text: 'Un CV moderno de 1 página, listo para enviar en cualquier proceso', accent: '#0d9488' },
+                { icon: '📝', label: 'CV para cada aviso', text: 'Adaptá tu CV a cada búsqueda y generá la carta de presentación', accent: '#8b5cf6' },
               ].map(item => (
                 <div key={item.label} className="rounded-2xl p-4 text-center relative overflow-hidden"
                   style={{ background: 'white', border: '1px solid rgba(0,119,181,0.15)', boxShadow: '0 2px 12px rgba(0,0,0,0.06)' }}>
@@ -3386,6 +3387,22 @@ Respondé con este JSON exacto:
               >
                 Obtener mi diagnóstico gratis →
               </button>
+              <button
+                onClick={() => { trackEvent('click_job_adapter', { location: 'hero' }); handleModeSelectJobAdapter() }}
+                disabled={jobAdapterCheckLoading}
+                className="w-full font-semibold py-3.5 px-8 rounded-2xl text-sm transition-all"
+                style={{ border: '1.5px solid rgba(99,102,241,0.35)', color: '#6366f1', background: 'rgba(99,102,241,0.06)' }}
+              >
+                {jobAdapterCheckLoading ? '...' : '📝 Adaptar mi CV para un aviso →'}
+              </button>
+              {jobAdapterNoCv && (
+                <p className="text-xs text-center leading-relaxed" style={{ color: '#6366f1' }}>
+                  Primero necesitás generar tu CV con el diagnóstico →{' '}
+                  <button onClick={() => { setJobAdapterNoCv(false); setStep(STEPS.QUESTIONS) }} className="underline font-semibold">
+                    Empezar ahora
+                  </button>
+                </p>
+              )}
               <p className="text-slate-500 text-xs">Sin registro · Resultado en 2 minutos · 100% gratis</p>
             </div>
 
@@ -3407,6 +3424,7 @@ Respondé con este JSON exacto:
                     { icon: '📣', title: 'Estrategia de contenido', desc: 'Qué publicar en LinkedIn según tu objetivo profesional para aumentar tu visibilidad.' },
                     { icon: '🎙️', title: 'Simulador de entrevista con IA', desc: 'Practicá una entrevista inicial y recibí feedback detallado con criterio de RRHH.' },
                     { icon: '⭐', title: 'Entrenamiento metodología STAR', desc: 'Aprendé el framework que usan los mejores candidatos y practicá con feedback instantáneo de IA para estructurar respuestas de alto impacto.' },
+                    { icon: '📝', title: 'CV adaptado por aviso + carta de presentación', desc: 'Pegás el aviso de empleo y la IA ajusta tu CV para esa posición específica e incluye una carta de presentación personalizada lista para enviar.' },
                   ].map(item => (
                     <div key={item.title} className="flex items-start gap-3 rounded-2xl p-4"
                       style={{ background: 'white', border: '1px solid rgba(0,119,181,0.10)' }}>
