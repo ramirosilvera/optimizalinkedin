@@ -2851,17 +2851,35 @@ Respondé con este JSON exacto:
     if (!cvPreviewHtml) return
     const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent)
     trackEvent('cv_print_clicked', { via: isMobile ? 'mobile' : 'desktop' })
+    const cvName = (cvFinalData?.nombre || cvDraft?.nombre || 'CV').replace(/[^a-zA-ZÀ-ÿ0-9 ]/g, '').replace(/\s+/g, '-')
 
-    // Estrategia unificada: abrir en nueva ventana/tab y llamar print()
-    // Esto funciona en desktop (Ctrl+P → Guardar como PDF) y en mobile
-    // (Android Chrome muestra "Guardar como PDF" / iOS Safari muestra AirPrint → Guardar en Archivos)
-    const win = window.open('', isMobile ? '_blank' : '_blank', isMobile ? '' : 'width=900,height=700')
+    if (isMobile) {
+      // En mobile window.print() no funciona en nueva pestaña.
+      // Abrimos el HTML como Blob URL: el browser lo trata como página real
+      // y el usuario puede usar el menú nativo (⋮ → Imprimir / Compartir → Guardar como PDF).
+      const blob = new Blob([cvPreviewHtml], { type: 'text/html; charset=utf-8' })
+      const url = URL.createObjectURL(blob)
+      const win = window.open(url, '_blank')
+      if (!win) {
+        // Popup bloqueado → descargar HTML
+        const a = document.createElement('a')
+        a.href = url; a.download = `CV-${cvName}.html`
+        document.body.appendChild(a); a.click(); document.body.removeChild(a)
+        setCvSuccess('CV descargado — abrilo y usá Compartir → Imprimir para guardarlo como PDF')
+      } else {
+        setCvSuccess('CV abierto en nueva pestaña — usá el menú del navegador → Imprimir → Guardar como PDF')
+      }
+      setTimeout(() => URL.revokeObjectURL(url), 60000)
+      return
+    }
+
+    // Desktop: ventana nueva con print() automático
+    const win = window.open('', '_blank', 'width=900,height=700')
     if (!win) {
-      // Popup bloqueado — descargar HTML como fallback
+      // Popup bloqueado → descargar HTML como fallback
       const blob = new Blob([cvPreviewHtml], { type: 'text/html; charset=utf-8' })
       const url = URL.createObjectURL(blob)
       const a = document.createElement('a')
-      const cvName = (cvFinalData?.nombre || cvDraft?.nombre || 'CV').replace(/[^a-zA-ZÀ-ÿ0-9 ]/g, '').replace(/\s+/g, '-')
       a.href = url; a.download = `CV-${cvName}.html`
       document.body.appendChild(a); a.click(); document.body.removeChild(a)
       setTimeout(() => URL.revokeObjectURL(url), 30000)
@@ -2871,8 +2889,7 @@ Respondé con este JSON exacto:
     win.document.write(cvPreviewHtml)
     win.document.close()
     win.focus()
-    // En mobile damos más tiempo para que cargue antes de llamar print()
-    setTimeout(() => { try { win.print() } catch { /* algunos browsers bloquean en mobile */ } }, isMobile ? 800 : 300)
+    setTimeout(() => { try { win.print() } catch {} }, 300)
   }
 
   // ── Avanzar en la entrevista ──
@@ -5008,7 +5025,9 @@ Respondé con este JSON exacto:
                     📥 Guardar como PDF
                   </button>
                   <p className="text-center text-xs text-slate-400">
-                    Se abre el diálogo de impresión → seleccioná <strong>Guardar como PDF</strong>
+                    {/iPhone|iPad|iPod|Android/i.test(navigator.userAgent)
+                      ? <>Se abre en nueva pestaña → menú del navegador → <strong>Imprimir</strong> → Guardar como PDF</>
+                      : <>Se abre el diálogo de impresión → seleccioná <strong>Guardar como PDF</strong></>}
                   </p>
                   {cvSuccess && <p className="text-xs text-center" style={{ color: '#059669' }}>✓ {cvSuccess}</p>}
                   <button
