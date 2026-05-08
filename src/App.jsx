@@ -2847,42 +2847,40 @@ Respondé con este JSON exacto:
     }
   }
 
-  const printCv = () => {
+  const printCv = async () => {
     if (!cvPreviewHtml) return
     const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent)
     trackEvent('cv_print_clicked', { via: isMobile ? 'mobile' : 'desktop' })
     const cvName = (cvFinalData?.nombre || cvDraft?.nombre || 'CV').replace(/[^a-zA-ZÀ-ÿ0-9 ]/g, '').replace(/\s+/g, '-')
+    const blob = new Blob([cvPreviewHtml], { type: 'text/html; charset=utf-8' })
 
     if (isMobile) {
-      // En mobile window.print() no funciona en nueva pestaña.
-      // Abrimos el HTML como Blob URL: el browser lo trata como página real
-      // y el usuario puede usar el menú nativo (⋮ → Imprimir / Compartir → Guardar como PDF).
-      const blob = new Blob([cvPreviewHtml], { type: 'text/html; charset=utf-8' })
-      const url = URL.createObjectURL(blob)
-      const win = window.open(url, '_blank')
-      if (!win) {
-        // Popup bloqueado → descargar HTML
-        const a = document.createElement('a')
-        a.href = url; a.download = `CV-${cvName}.html`
-        document.body.appendChild(a); a.click(); document.body.removeChild(a)
-        setCvSuccess('CV descargado — abrilo y usá Compartir → Imprimir para guardarlo como PDF')
-      } else {
-        setCvSuccess('CV abierto en nueva pestaña — usá el menú del navegador → Imprimir → Guardar como PDF')
+      // iOS Safari cierra inmediatamente las tabs con blob URLs abiertas via window.open().
+      // La alternativa más confiable: Web Share API → abre el share sheet nativo
+      // (iOS: incluye Imprimir → Guardar como PDF; Android: incluye Imprimir / Compartir).
+      const file = new File([blob], `CV-${cvName}.html`, { type: 'text/html' })
+      if (navigator.share && navigator.canShare?.({ files: [file] })) {
+        try {
+          await navigator.share({ files: [file], title: `CV – ${cvName}` })
+        } catch (e) {
+          if (e.name !== 'AbortError') {
+            // share fallido por razón distinta a que el usuario canceló → descargar
+            downloadCvHtml(blob, cvName)
+          }
+        }
+        return
       }
-      setTimeout(() => URL.revokeObjectURL(url), 60000)
+      // Fallback: descarga directa del HTML
+      downloadCvHtml(blob, cvName)
+      setCvSuccess('CV descargado — abrilo en Chrome y usá el menú → Imprimir → Guardar como PDF')
       return
     }
 
     // Desktop: ventana nueva con print() automático
     const win = window.open('', '_blank', 'width=900,height=700')
     if (!win) {
-      // Popup bloqueado → descargar HTML como fallback
-      const blob = new Blob([cvPreviewHtml], { type: 'text/html; charset=utf-8' })
-      const url = URL.createObjectURL(blob)
-      const a = document.createElement('a')
-      a.href = url; a.download = `CV-${cvName}.html`
-      document.body.appendChild(a); a.click(); document.body.removeChild(a)
-      setTimeout(() => URL.revokeObjectURL(url), 30000)
+      // Popup bloqueado → descargar HTML
+      downloadCvHtml(blob, cvName)
       setCvSuccess('HTML descargado — abrilo en el navegador y usá Ctrl+P → Guardar como PDF')
       return
     }
@@ -2890,6 +2888,14 @@ Respondé con este JSON exacto:
     win.document.close()
     win.focus()
     setTimeout(() => { try { win.print() } catch {} }, 300)
+  }
+
+  const downloadCvHtml = (blob, cvName) => {
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url; a.download = `CV-${cvName}.html`
+    document.body.appendChild(a); a.click(); document.body.removeChild(a)
+    setTimeout(() => URL.revokeObjectURL(url), 10000)
   }
 
   // ── Avanzar en la entrevista ──
@@ -5026,7 +5032,7 @@ Respondé con este JSON exacto:
                   </button>
                   <p className="text-center text-xs text-slate-400">
                     {/iPhone|iPad|iPod|Android/i.test(navigator.userAgent)
-                      ? <>Se abre en nueva pestaña → menú del navegador → <strong>Imprimir</strong> → Guardar como PDF</>
+                      ? <>Se abre el menú de compartir → elegí <strong>Imprimir</strong> → Guardar como PDF</>
                       : <>Se abre el diálogo de impresión → seleccioná <strong>Guardar como PDF</strong></>}
                   </p>
                   {cvSuccess && <p className="text-xs text-center" style={{ color: '#059669' }}>✓ {cvSuccess}</p>}
@@ -5963,9 +5969,9 @@ Respondé con este JSON exacto:
           <div className="px-4 py-2 shrink-0 text-center text-xs leading-relaxed"
             style={{ background: '#f0f7ff', borderBottom: '1px solid rgba(0,119,181,0.12)', color: '#475569' }}>
             {/iPhone|iPad|iPod/i.test(navigator.userAgent)
-              ? <>Tocá <strong>Guardar PDF</strong> → en el diálogo elegí el ícono <strong>Compartir</strong> → <em>Guardar en Archivos</em></>
+              ? <>Tocá <strong>Guardar PDF</strong> → en el menú que aparece elegí <strong>Imprimir</strong> → pellizco para ampliar → <em>Guardar en Archivos</em></>
               : /Android/i.test(navigator.userAgent)
-                ? <>Tocá <strong>Guardar PDF</strong> → en el menú de impresión elegí <em>Guardar como PDF</em></>
+                ? <>Tocá <strong>Guardar PDF</strong> → en el menú que aparece elegí <strong>Imprimir</strong> → <em>Guardar como PDF</em></>
                 : <>Hacé clic en <strong>Guardar PDF</strong> → en el diálogo de impresión seleccioná <em>Guardar como PDF</em></>
             }
           </div>
