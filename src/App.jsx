@@ -927,6 +927,8 @@ export default function App() {
   const [jobLoading, setJobLoading] = useState(false)
   const [jobError, setJobError] = useState('')
   const [jobCvForAdapter, setJobCvForAdapter] = useState(null)
+  const [jobAdapterNoCv, setJobAdapterNoCv] = useState(false)
+  const [jobAdapterCheckLoading, setJobAdapterCheckLoading] = useState(false)
 
   // ── Auth helpers ─────────────────────────────────────────────────────────
   const sbAuthFetch = async (path, options = {}) => {
@@ -1064,16 +1066,20 @@ export default function App() {
   const loadHistorial = async () => {
     const token = localStorage.getItem('ol_at')
     const uid = localStorage.getItem('ol_uid')
-    if (!token || !uid) return
+    if (!token || !uid) return []
     setHistorialLoading(true)
     try {
       const res = await fetch(`${SUPABASE_URL}/rest/v1/historial?user_id=eq.${uid}&order=created_at.desc&limit=30`, {
         headers: { apikey: SUPABASE_KEY, Authorization: `Bearer ${token}` },
       })
       const rows = await res.json()
-      setHistorial(Array.isArray(rows) ? rows : [])
+      const items = Array.isArray(rows) ? rows : []
+      setHistorial(items)
+      setHistorialLoading(false)
+      return items
     } catch { /* silencioso */ }
     setHistorialLoading(false)
+    return []
   }
 
   const startSubscription = async (emailOverride) => {
@@ -1124,6 +1130,34 @@ export default function App() {
         break
       default:
         break
+    }
+  }
+
+  const handleModeSelectJobAdapter = async () => {
+    setJobAdapterNoCv(false)
+    // Current session CV takes priority
+    if (cvFinalData) {
+      setJobCvForAdapter(cvFinalData)
+      setJobPosting('')
+      setJobResult(null)
+      setJobError('')
+      setShowJobModal(true)
+      return
+    }
+    // No session CV — check historial
+    if (!user) { setShowAuthModal(true); return }
+    setJobAdapterCheckLoading(true)
+    const items = historial.length > 0 ? historial : await loadHistorial()
+    setJobAdapterCheckLoading(false)
+    const latestCv = items.find(item => item.tipo === 'cv')
+    if (latestCv) {
+      setJobCvForAdapter(latestCv.datos)
+      setJobPosting('')
+      setJobResult(null)
+      setJobError('')
+      setShowJobModal(true)
+    } else {
+      setJobAdapterNoCv(true)
     }
   }
 
@@ -3594,6 +3628,40 @@ Respondé con este JSON exacto:
                   <span className="text-slate-300 text-xl shrink-0 self-center">›</span>
                 </div>
               </button>
+
+              {/* Card 4: Adaptar CV para un aviso */}
+              <div>
+                <button
+                  onClick={() => { trackEvent('mode_select', { mode: 'job_adapter' }); handleModeSelectJobAdapter() }}
+                  disabled={jobAdapterCheckLoading}
+                  className="w-full text-left rounded-2xl p-5 transition-all duration-200 hover:shadow-md active:scale-[0.99]"
+                  style={{ background: 'white', border: '1.5px solid rgba(99,102,241,0.35)', boxShadow: '0 2px 12px rgba(99,102,241,0.08)', opacity: jobAdapterCheckLoading ? 0.7 : 1 }}
+                >
+                  <div className="flex items-start gap-4">
+                    <div className="w-12 h-12 rounded-xl flex items-center justify-center text-2xl shrink-0"
+                      style={{ background: 'rgba(99,102,241,0.08)' }}>
+                      {jobAdapterCheckLoading ? <Spinner size={5} /> : '📝'}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <span className="font-bold text-slate-900 text-base block mb-1">Adaptar CV para un aviso</span>
+                      <p className="text-slate-500 text-xs leading-relaxed">
+                        Pegá un aviso de empleo y la IA adapta tu CV y genera la carta de presentación personalizada.
+                      </p>
+                    </div>
+                    <span className="text-slate-300 text-xl shrink-0 self-center">›</span>
+                  </div>
+                </button>
+                {jobAdapterNoCv && (
+                  <div className="mt-2 rounded-xl px-4 py-3 text-xs leading-relaxed"
+                    style={{ background: 'rgba(99,102,241,0.06)', border: '1px solid rgba(99,102,241,0.2)', color: '#6366f1' }}>
+                    <strong>Primero necesitás generar tu CV.</strong> Hacé el diagnóstico LinkedIn, generá tu CV, y después vas a poder adaptarlo para cualquier búsqueda.
+                    <button onClick={() => { setJobAdapterNoCv(false); trackEvent('mode_select', { mode: 'diagnostico' }); setStep(STEPS.QUESTIONS) }}
+                      className="block mt-2 font-semibold underline">
+                      Hacer el diagnóstico ahora →
+                    </button>
+                  </div>
+                )}
+              </div>
             </div>
 
             <button
@@ -5044,13 +5112,22 @@ Respondé con este JSON exacto:
               🎙️ Simulá una entrevista inicial →
             </button>
 
-            <button
-              onClick={() => { trackEvent('click_analizar_otro', { location: 'post_analisis' }); reset() }}
-              className="w-full font-semibold py-4 rounded-2xl transition-all duration-200 text-sm"
-              style={BTN_BACK_STYLE}
-            >
-              ↺ Analizar otro perfil
-            </button>
+            <div className="flex gap-2">
+              <button
+                onClick={() => setStep(STEPS.MODE_SELECT)}
+                className="flex-1 font-medium py-3.5 rounded-2xl text-sm transition-all"
+                style={BTN_BACK_STYLE}
+              >
+                ← Menú
+              </button>
+              <button
+                onClick={() => { trackEvent('click_analizar_otro', { location: 'post_analisis' }); reset() }}
+                className="flex-[2] font-semibold py-3.5 rounded-2xl text-sm transition-all"
+                style={BTN_BACK_STYLE}
+              >
+                ↺ Analizar otro perfil
+              </button>
+            </div>
           </div>
         )}
 
@@ -5504,9 +5581,9 @@ Respondé con este JSON exacto:
                 >
                   Practicar ahora →
                 </button>
-                <button onClick={() => { trackEvent('star_back', { from: 'theory' }); setStep(STEPS.INTERVIEW_FEEDBACK) }}
+                <button onClick={() => { trackEvent('star_back', { from: 'theory' }); interviewFeedback ? setStep(STEPS.INTERVIEW_FEEDBACK) : setStep(STEPS.MODE_SELECT) }}
                   className="w-full py-3 rounded-2xl text-sm font-semibold" style={BTN_BACK_STYLE}>
-                  ← Volver al feedback
+                  {interviewFeedback ? '← Volver al feedback' : '← Menú'}
                 </button>
               </>
             )}
