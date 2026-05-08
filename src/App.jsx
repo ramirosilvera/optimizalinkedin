@@ -1128,6 +1128,16 @@ export default function App() {
         setInputMode('linkedin')
         setUrlAttempted(true)
         setStep(STEPS.PROFILE_INPUT)
+        // Si venía del modal de auth, pre-llenar email y abrir registro
+        if (sessionStorage.getItem('li_auth_intent') === '1') {
+          sessionStorage.removeItem('li_auth_intent')
+          if (data.email && !localStorage.getItem('ol_at')) {
+            setAuthEmail(data.email)
+            setAuthTab('register')
+            setAuthError('')
+            setShowAuthModal(true)
+          }
+        }
       })
       .catch(() => { setLinkedinAuthError('Error de conexión. Intentá de nuevo.'); setLinkedinAuthLoading(false) })
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -2630,7 +2640,7 @@ Respondé con este JSON exacto:
               ))}
             </div>
 
-            <button onClick={() => { setShowAuthModal(false); handleLinkedinLogin() }}
+            <button onClick={() => { sessionStorage.setItem('li_auth_intent', '1'); setShowAuthModal(false); handleLinkedinLogin() }}
               className="w-full py-3 rounded-xl flex items-center justify-center gap-2 text-sm font-semibold"
               style={{ background: '#0077B5', color: 'white' }}>
               <LinkedInIcon className="w-4 h-4" style={{ fill: 'white' }} />
