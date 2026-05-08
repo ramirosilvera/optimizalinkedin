@@ -2471,7 +2471,27 @@ Generá el feedback en este JSON exacto:
   .exp-prev-co   { font-style: italic; }
 
   @media print {
-    body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+    @page { size: A4 portrait; margin: 0; }
+    html {
+      height: 297mm;
+      overflow: hidden;
+    }
+    body {
+      width: 210mm;
+      height: 297mm;
+      overflow: hidden;
+      -webkit-print-color-adjust: exact;
+      print-color-adjust: exact;
+    }
+    .cv-wrap {
+      width: 210mm !important;
+      height: 297mm !important;
+      min-height: unset !important;
+      overflow: hidden;
+      break-inside: avoid;
+      page-break-inside: avoid;
+      zoom: 1 !important;
+    }
   }
 </style>
 </head>
@@ -2528,13 +2548,13 @@ Generá el feedback en este JSON exacto:
 </div>
 <script>
 (function () {
-  // Auto-scale to fill A4 page when content is sparse.
-  // Uses zoom (Chrome-native, respects print layout) capped at 1.35×.
+  // Auto-scale solo en pantalla (no en impresión) para llenar el A4 cuando el contenido es corto.
   function autofit() {
+    if (window.matchMedia('print').matches) return;
     var wrap = document.getElementById('cv-wrap');
     if (!wrap) return;
     var h = wrap.scrollHeight;
-    var a4 = Math.round(297 * 3.7795); // 297mm → px at 96 dpi ≈ 1123
+    var a4 = Math.round(297 * 3.7795); // 297mm → px a 96 dpi ≈ 1123px
     if (h > 0 && h < a4 * 0.84) {
       var z = Math.min((a4 * 0.93) / h, 1.35);
       wrap.style.zoom = z.toFixed(4);
@@ -2545,6 +2565,11 @@ Generá el feedback en este JSON exacto:
   } else {
     autofit();
   }
+  // Remover zoom antes de imprimir para que @media print tenga control
+  window.addEventListener('beforeprint', function () {
+    var wrap = document.getElementById('cv-wrap');
+    if (wrap) wrap.style.zoom = '';
+  });
 })();
 </script>
 </body></html>`
@@ -2852,34 +2877,38 @@ Respondé con este JSON exacto:
     const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent)
     trackEvent('cv_print_clicked', { via: isMobile ? 'mobile' : 'desktop' })
     const cvName = (cvFinalData?.nombre || cvDraft?.nombre || 'CV').replace(/[^a-zA-ZÀ-ÿ0-9 ]/g, '').replace(/\s+/g, '-')
-    const blob = new Blob([cvPreviewHtml], { type: 'text/html; charset=utf-8' })
 
+    // Estrategia 1: imprimir el iframe directamente (más confiable en iOS y desktop)
+    // Imprime solo el contenido del CV, no toda la app.
+    const iframe = document.getElementById('cv-preview-iframe')
+    if (iframe?.contentWindow) {
+      try {
+        iframe.contentWindow.focus()
+        iframe.contentWindow.print()
+        return
+      } catch { /* continuar con fallback */ }
+    }
+
+    // Fallback mobile: Web Share API → share sheet nativo con opción Imprimir
+    const blob = new Blob([cvPreviewHtml], { type: 'text/html; charset=utf-8' })
     if (isMobile) {
-      // iOS Safari cierra inmediatamente las tabs con blob URLs abiertas via window.open().
-      // La alternativa más confiable: Web Share API → abre el share sheet nativo
-      // (iOS: incluye Imprimir → Guardar como PDF; Android: incluye Imprimir / Compartir).
       const file = new File([blob], `CV-${cvName}.html`, { type: 'text/html' })
       if (navigator.share && navigator.canShare?.({ files: [file] })) {
         try {
           await navigator.share({ files: [file], title: `CV – ${cvName}` })
         } catch (e) {
-          if (e.name !== 'AbortError') {
-            // share fallido por razón distinta a que el usuario canceló → descargar
-            downloadCvHtml(blob, cvName)
-          }
+          if (e.name !== 'AbortError') downloadCvHtml(blob, cvName)
         }
         return
       }
-      // Fallback: descarga directa del HTML
       downloadCvHtml(blob, cvName)
       setCvSuccess('CV descargado — abrilo en Chrome y usá el menú → Imprimir → Guardar como PDF')
       return
     }
 
-    // Desktop: ventana nueva con print() automático
+    // Fallback desktop: ventana nueva con print() automático
     const win = window.open('', '_blank', 'width=900,height=700')
     if (!win) {
-      // Popup bloqueado → descargar HTML
       downloadCvHtml(blob, cvName)
       setCvSuccess('HTML descargado — abrilo en el navegador y usá Ctrl+P → Guardar como PDF')
       return
@@ -5937,7 +5966,7 @@ Respondé con este JSON exacto:
 
       {/* ── Preview CV — overlay unificado (mobile + desktop) ── */}
       {cvPreviewHtml && cvStage === 'done' && (
-        <div className="fixed inset-0 z-50 flex flex-col" style={{ background: '#fff' }}>
+        <div className="cv-print-overlay fixed inset-0 z-50 flex flex-col" style={{ background: '#fff' }}>
           {/* Barra superior */}
           <div className="flex items-center justify-between px-4 py-3 shrink-0"
             style={{ background: 'linear-gradient(135deg,#0077B5,#0ea5e9)', boxShadow: '0 2px 8px rgba(0,0,0,0.15)' }}>

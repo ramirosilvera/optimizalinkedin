@@ -83,6 +83,30 @@ body::before {
   100% { transform: scale(1); }
 }
 
+/* ── Impresión: ocultar app, mostrar solo el CV ── */
+@media print {
+  /* Ocultar decoraciones y app completa */
+  body::before { display: none !important; }
+  #root > * { display: none !important; }
+
+  /* Mostrar overlay del CV si está activo */
+  .cv-print-overlay {
+    display: flex !important;
+    position: fixed !important;
+    inset: 0 !important;
+    z-index: 9999 !important;
+    background: white !important;
+    flex-direction: column !important;
+  }
+  .cv-print-overlay > *:not(iframe) { display: none !important; }
+  .cv-print-overlay iframe {
+    display: block !important;
+    flex: 1 !important;
+    width: 100% !important;
+    border: 0 !important;
+  }
+}
+
 /* Scrollbar discreta sobre fondo claro */
 ::-webkit-scrollbar { width: 5px; }
 ::-webkit-scrollbar-track { background: transparent; }
