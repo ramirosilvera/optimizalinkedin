@@ -1051,10 +1051,10 @@ export default function App() {
         trackEvent('premium_checkout_opened')
         window.location.href = data.init_point
       } else {
-        alert('No se pudo iniciar el pago. Intentá de nuevo en unos segundos.')
+        alert(`Error al iniciar el pago: ${data.error || 'respuesta inesperada de Mercado Pago'}`)
       }
-    } catch {
-      alert('Error de conexión con el servidor. Verificá que el Worker esté deployado.')
+    } catch (err) {
+      alert(`Error de conexión: ${err.message || 'no se pudo contactar al servidor'}`)
     }
     setSubscriptionLoading(false)
   }
@@ -1402,7 +1402,7 @@ export default function App() {
 
   // ── LinkedIn OAuth via Supabase (para auth/cuenta) ──
   const handleLinkedinAuthViaSupabase = () => {
-    const redirectTo = encodeURIComponent(window.location.origin + window.location.pathname)
+    const redirectTo = encodeURIComponent('https://optimizalinkedin.com/')
     window.location.href = `${SUPABASE_URL}/auth/v1/authorize?provider=linkedin_oidc&redirect_to=${redirectTo}`
   }
 
