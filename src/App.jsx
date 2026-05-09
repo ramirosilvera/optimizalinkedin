@@ -457,7 +457,7 @@ function Logo() {
     <div className="mb-8 sm:mb-10">
       <img
         src="/logo.PNG"
-        alt="OptimizaLinkedin"
+        alt="Optimiza LK"
         style={{ height: '80px', width: 'auto', display: 'block', mixBlendMode: 'multiply' }}
       />
     </div>
@@ -3514,7 +3514,7 @@ Respondé con este JSON exacto:
             <div className="space-y-5">
               <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full text-xs font-semibold tracking-wide badge-shimmer"
                 style={{ border: '1px solid rgba(0,119,181,0.4)', color: '#0077B5' }}>
-                ✦ &nbsp;Análisis profesional con IA
+                ✦ &nbsp;Optimiza LK · Con criterio de headhunter
               </div>
               <h1 className="text-4xl sm:text-5xl font-bold leading-tight tracking-tight" style={{ letterSpacing: '-0.02em' }}>
                 <span className="text-slate-900">Que los reclutadores</span><br />
@@ -3523,7 +3523,7 @@ Respondé con este JSON exacto:
                 </span>
               </h1>
               <p className="text-slate-600 text-base max-w-sm mx-auto leading-relaxed">
-                Aparecer cuando buscan tu perfil. Pasar los filtros automáticos al postularte. Tener un CV moderno listo para enviar. Todo eso, gratis.
+                <strong className="text-slate-700">Optimiza LK</strong> analiza tu perfil con ojo de headhunter: para que aparezcas en las búsquedas correctas, pases los filtros ATS y tengas un CV moderno listo para enviar. Todo gratis.
               </p>
             </div>
 
@@ -3618,7 +3618,7 @@ Respondé con este JSON exacto:
                       <tr>
                         <th className="text-left py-3 pl-4 pr-2 text-slate-400 font-normal" style={{ width: 160 }}></th>
                         <th className="py-3 px-2 text-center font-bold text-white" style={{ background: 'linear-gradient(135deg,#6366f1,#0ea5e9)', minWidth: 86 }}>
-                          <div className="text-[10px] font-normal opacity-80 mb-0.5">Esta app</div>
+                          <div className="text-[10px] font-normal opacity-80 mb-0.5">Optimiza LK</div>
                           <div className="text-emerald-200">GRATIS 🎉</div>
                         </th>
                         <th className="py-3 px-2 text-center text-slate-500 font-medium bg-slate-50" style={{ minWidth: 86 }}>
@@ -3702,7 +3702,7 @@ Respondé con este JSON exacto:
                     <p className="text-slate-900 font-semibold text-sm">Ramiro Silvera</p>
                     <p className="text-slate-500 text-xs mt-0.5">Gerente de RRHH · Headhunter</p>
                     <p className="text-slate-600 text-sm mt-2 leading-relaxed">
-                      Con más de 10 años seleccionando profesionales en Argentina y la región, creé esta herramienta para que cualquier persona pueda acceder al mismo análisis que haría un headhunter real — sin costo.
+                      Con más de 10 años seleccionando profesionales en Argentina y la región, creé <strong className="text-slate-700">Optimiza LK</strong> para que cualquier persona pueda acceder al mismo análisis que haría un headhunter real — sin costo.
                     </p>
                     <a href={RAMIRO_LINKEDIN_URL} target="_blank" rel="noopener noreferrer"
                       onClick={() => trackEvent('click_externo', { destino: 'linkedin_ramiro', ubicacion: 'seccion_quien' })}
@@ -3719,6 +3719,7 @@ Respondé con este JSON exacto:
                 <h2 className="text-xl font-bold text-slate-900 mb-4">Preguntas frecuentes</h2>
                 <div className="space-y-3">
                   {[
+                    { q: '¿Qué es Optimiza LK?', a: 'Optimiza LK es una herramienta gratuita creada por Ramiro Silvera (Gerente de RRHH y Headhunter) que analiza tu perfil de LinkedIn con criterio profesional. También generás tu CV, practicás entrevistas con IA y adaptás tu CV a avisos de empleo — todo sin costo y sin registro.' },
                     { q: '¿Es realmente gratis?', a: 'Sí, 100% gratis y sin registro. No necesitás crear una cuenta ni dejar tu email para recibir el análisis.' },
                     { q: '¿Qué pasa con mi CV o perfil?', a: 'Tu información se usa para generar el análisis. Solo se guarda si vos lo autorizás — por ejemplo, al solicitar contacto con Ramiro o generar tu CV, para poder brindarte un servicio más personalizado. En ningún caso se comparte con terceros.' },
                     { q: '¿Cuánto tarda el análisis?', a: 'Menos de 60 segundos una vez que subís tu perfil. El cuestionario previo tarda unos 3 minutos.' },
@@ -3734,6 +3735,14 @@ Respondé con este JSON exacto:
                   ))}
                 </div>
               </section>
+
+              {/* Footer de marca */}
+              <div className="pt-4 pb-2 text-center border-t" style={{ borderColor: 'rgba(0,119,181,0.1)' }}>
+                <p className="text-xs text-slate-400 leading-relaxed">
+                  <strong className="text-slate-500">Optimiza LK</strong> · Creado por Ramiro Silvera · Argentina<br />
+                  <span>Análisis de perfiles LinkedIn con IA · Generador de CV · Simulador de entrevista</span>
+                </p>
+              </div>
 
             </div>
 
