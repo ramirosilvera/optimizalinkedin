@@ -143,17 +143,18 @@ export default {
         })
         console.log('[mp-webhook] suscripciones upsert status:', subRes.status)
 
-        // Update perfiles
-        const perfilRes = await supabaseServiceFetch(env, `perfiles?id=eq.${userId}`, {
-          method: 'PATCH',
+        // Upsert perfiles (POST con merge-duplicates crea el registro si no existe)
+        const perfilRes = await supabaseServiceFetch(env, 'perfiles', {
+          method: 'POST',
           body: JSON.stringify({
+            id: userId,
             es_premium: isPremium,
             premium_hasta: premiumHasta,
             mp_subscription_id: subId,
             updated_at: new Date().toISOString(),
           }),
         })
-        console.log('[mp-webhook] perfiles patch status:', perfilRes.status)
+        console.log('[mp-webhook] perfiles upsert status:', perfilRes.status)
       } catch (e) {
         console.error('[mp-webhook] error:', e.message)
       }
