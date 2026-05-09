@@ -2306,6 +2306,7 @@ Generá el feedback en este JSON exacto:
 <html lang="es">
 <head>
 <meta charset="UTF-8">
+<meta name="viewport" content="width=210mm, initial-scale=1">
 <title>${e(pdfTitle)}</title>
 <style>
   @page { size: A4; margin: 0; }
@@ -2503,25 +2504,25 @@ Generá el feedback en este JSON exacto:
 
   @media print {
     @page { size: A4 portrait; margin: 0; }
-    html {
-      height: 297mm;
-      overflow: hidden;
+    /* Forzar colores reales en todos los elementos (sidebar, fondos, etc.) */
+    * {
+      -webkit-print-color-adjust: exact !important;
+      print-color-adjust: exact !important;
     }
-    body {
-      width: 210mm;
-      height: 297mm;
-      overflow: hidden;
-      -webkit-print-color-adjust: exact;
-      print-color-adjust: exact;
+    /* SIN overflow:hidden ni height fijos — en iOS Safari clipa todo → página en blanco */
+    html, body {
+      margin: 0 !important;
+      padding: 0 !important;
+      width: 210mm !important;
     }
     .cv-wrap {
       width: 210mm !important;
-      height: 297mm !important;
       min-height: unset !important;
-      overflow: hidden;
+      /* Resetear zoom inline puesto por el script de autofit */
+      zoom: 1 !important;
+      transform: none !important;
       break-inside: avoid;
       page-break-inside: avoid;
-      zoom: 1 !important;
     }
   }
 </style>
@@ -2596,11 +2597,17 @@ Generá el feedback en este JSON exacto:
   } else {
     autofit();
   }
-  // Remover zoom antes de imprimir para que @media print tenga control
-  window.addEventListener('beforeprint', function () {
+  // Remover zoom antes de imprimir — beforeprint no dispara en iOS Safari,
+  // así que también lo removemos con matchMedia para cubrir ese caso.
+  function clearZoomForPrint() {
     var wrap = document.getElementById('cv-wrap');
     if (wrap) wrap.style.zoom = '';
-  });
+  }
+  window.addEventListener('beforeprint', clearZoomForPrint);
+  // Fallback iOS: matchMedia listener
+  var mq = window.matchMedia('print');
+  if (mq.addListener) { mq.addListener(function(e){ if(e.matches) clearZoomForPrint(); }); }
+  else if (mq.addEventListener) { mq.addEventListener('change', function(e){ if(e.matches) clearZoomForPrint(); }); }
 })();
 </script>
 </body></html>`
