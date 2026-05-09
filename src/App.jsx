@@ -2593,22 +2593,6 @@ Generá el feedback en este JSON exacto:
 </body></html>`
   }
 
-  const downloadCvHtml = (cv) => {
-    const html = buildCvHtml(cv)
-    const blob = new Blob([html], { type: 'text/html; charset=utf-8' })
-    const url = URL.createObjectURL(blob)
-    const filename = cv.nombre
-      ? `CV-${cv.nombre.replace(/[^a-zA-ZÀ-ÿ0-9 ]/g, '').replace(/\s+/g, '-')}.html`
-      : 'CV.html'
-    const a = document.createElement('a')
-    a.href = url
-    a.download = filename
-    document.body.appendChild(a)
-    a.click()
-    document.body.removeChild(a)
-    setTimeout(() => URL.revokeObjectURL(url), 30000)
-    setCvSuccess(`${filename} — abrilo y guardá como PDF con Ctrl+P → Guardar como PDF`)
-  }
 
   const buildCvPromptBase = (contacto, preAnswers = {}) => {
     const nombre = result?.nombre_completo || ''
