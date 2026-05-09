@@ -70,13 +70,25 @@ export default {
 
       try {
         const sub = await mpFetch(env, `/preapproval/${subId}`)
-        const userId = sub.external_reference
         const status = sub.status // 'authorized' | 'paused' | 'cancelled'
         const isPremium = status === 'authorized'
         const nextPayment = sub.next_payment_date ? new Date(sub.next_payment_date).toISOString() : null
         const premiumHasta = isPremium && nextPayment ? nextPayment : null
 
-        if (!userId) return new Response('OK', { status: 200 })
+        // external_reference debería traer el user_id de Supabase.
+        // Fallback: buscar por email del pagador si llega vacío.
+        let userId = sub.external_reference
+        if (!userId) {
+          const payerEmail = sub.payer?.email
+          if (!payerEmail) return new Response('OK', { status: 200 })
+          const userRes = await fetch(
+            `${env.SUPABASE_URL}/auth/v1/admin/users?email=${encodeURIComponent(payerEmail)}`,
+            { headers: { apikey: env.SUPABASE_SERVICE_ROLE_KEY, Authorization: `Bearer ${env.SUPABASE_SERVICE_ROLE_KEY}` } }
+          )
+          const userData = await userRes.json()
+          userId = userData?.users?.[0]?.id
+          if (!userId) return new Response('OK', { status: 200 })
+        }
 
         // Upsert suscripciones
         await supabaseServiceFetch(env, 'suscripciones', {
@@ -131,9 +143,30 @@ export default {
       if (!env.MP_PLAN_ID) {
         return new Response(JSON.stringify({ error: 'MP_PLAN_ID no está configurado en el Worker' }), { status: 500, headers: corsHeaders })
       }
-      const params = new URLSearchParams({ external_reference: user_id, payer_email: user_email })
-      const init_point = `https://www.mercadopago.com.ar/subscriptions/checkout?preapproval_plan_id=${env.MP_PLAN_ID}&${params}`
-      return new Response(JSON.stringify({ init_point }), { status: 200, headers: corsHeaders })
+
+      // Crear el preapproval vía API para que external_reference quede
+      // grabado en el objeto de suscripción de MP. Sin esto, el campo
+      // llega null al webhook y no podemos linkear el pago al usuario.
+      const backUrl = 'https://ramirosilvera.github.io/optimizalinkedin/?premium=ok'
+      const preapprovalRes = await mpFetch(env, '/preapproval', {
+        method: 'POST',
+        body: JSON.stringify({
+          preapproval_plan_id: env.MP_PLAN_ID,
+          reason: 'Optimiza LK Premium',
+          external_reference: user_id,
+          payer_email: user_email,
+          back_url: backUrl,
+        }),
+      })
+
+      if (!preapprovalRes?.init_point) {
+        // Fallback: URL manual (sin external_reference garantizado)
+        const params = new URLSearchParams({ preapproval_plan_id: env.MP_PLAN_ID, external_reference: user_id, payer_email: user_email })
+        const init_point = `https://www.mercadopago.com.ar/subscriptions/checkout?${params}`
+        return new Response(JSON.stringify({ init_point }), { status: 200, headers: corsHeaders })
+      }
+
+      return new Response(JSON.stringify({ init_point: preapprovalRes.init_point }), { status: 200, headers: corsHeaders })
     }
 
     // ── Grant premium manually (for gifting accounts) ────────────────────────
