@@ -2886,59 +2886,48 @@ Respondé con este JSON exacto:
     }
   }
 
-  const printCv = async () => {
+  const printCv = () => {
     if (!cvPreviewHtml) return
-    const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent)
+    const ua = navigator.userAgent
+    const isMobile = /iPhone|iPad|iPod|Android/i.test(ua)
+    const isIOS = /iPhone|iPad|iPod/i.test(ua)
     trackEvent('cv_print_clicked', { via: isMobile ? 'mobile' : 'desktop' })
-    const cvName = (cvFinalData?.nombre || cvDraft?.nombre || 'CV').replace(/[^a-zA-ZÀ-ÿ0-9 ]/g, '').replace(/\s+/g, '-')
+    const cvName = (cvFinalData?.nombre || cvDraft?.nombre || 'CV')
+      .replace(/[^a-zA-ZÀ-ÿ0-9 ]/g, '').replace(/\s+/g, '-')
 
-    // Estrategia 1: imprimir el iframe directamente (más confiable en iOS y desktop)
-    // Imprime solo el contenido del CV, no toda la app.
-    const iframe = document.getElementById('cv-preview-iframe')
-    if (iframe?.contentWindow) {
-      try {
-        iframe.contentWindow.focus()
-        iframe.contentWindow.print()
-        return
-      } catch { /* continuar con fallback */ }
+    // Abrir nueva ventana de forma SINCRÓNICA (antes de cualquier await/async)
+    // para que iOS y Android no la bloqueen como popup.
+    const win = window.open('', '_blank')
+    if (win) {
+      win.document.open()
+      win.document.write(cvPreviewHtml)
+      win.document.close()
+      // Esperar a que el DOM + imágenes estén listos antes de imprimir
+      win.addEventListener('load', () => {
+        setTimeout(() => { try { win.focus(); win.print() } catch {} }, 150)
+      })
+      // Belt-and-suspenders: si load ya disparó o no dispara
+      setTimeout(() => { try { win.focus(); win.print() } catch {} }, 900)
+      return
     }
 
-    // Fallback mobile: Web Share API → share sheet nativo con opción Imprimir
+    // Popup bloqueado → descarga el HTML con instrucciones
     const blob = new Blob([cvPreviewHtml], { type: 'text/html; charset=utf-8' })
-    if (isMobile) {
-      const file = new File([blob], `CV-${cvName}.html`, { type: 'text/html' })
-      if (navigator.share && navigator.canShare?.({ files: [file] })) {
-        try {
-          await navigator.share({ files: [file], title: `CV – ${cvName}` })
-        } catch (e) {
-          if (e.name !== 'AbortError') downloadCvHtml(blob, cvName)
-        }
-        return
-      }
-      downloadCvHtml(blob, cvName)
-      setCvSuccess('CV descargado — abrilo en Chrome y usá el menú → Imprimir → Guardar como PDF')
-      return
-    }
-
-    // Fallback desktop: ventana nueva con print() automático
-    const win = window.open('', '_blank', 'width=900,height=700')
-    if (!win) {
-      downloadCvHtml(blob, cvName)
-      setCvSuccess('HTML descargado — abrilo en el navegador y usá Ctrl+P → Guardar como PDF')
-      return
-    }
-    win.document.write(cvPreviewHtml)
-    win.document.close()
-    win.focus()
-    setTimeout(() => { try { win.print() } catch {} }, 300)
-  }
-
-  const downloadCvHtml = (blob, cvName) => {
     const url = URL.createObjectURL(blob)
     const a = document.createElement('a')
-    a.href = url; a.download = `CV-${cvName}.html`
-    document.body.appendChild(a); a.click(); document.body.removeChild(a)
+    a.href = url
+    a.download = `CV-${cvName}.html`
+    document.body.appendChild(a)
+    a.click()
+    document.body.removeChild(a)
     setTimeout(() => URL.revokeObjectURL(url), 10000)
+    setCvSuccess(
+      isIOS
+        ? 'Abrí el archivo en Safari → ícono Compartir → Imprimir → pellizco para ampliar → Guardar en Archivos'
+        : isMobile
+        ? 'Abrí el archivo en Chrome → menú ⋮ → Imprimir → Guardar como PDF'
+        : 'Abrí el archivo en Chrome/Edge → Ctrl+P → Destino: Guardar como PDF'
+    )
   }
 
   // ── Avanzar en la entrevista ──
@@ -5134,8 +5123,8 @@ Respondé con este JSON exacto:
                   </button>
                   <p className="text-center text-xs text-slate-400">
                     {/iPhone|iPad|iPod|Android/i.test(navigator.userAgent)
-                      ? <>Se abre el menú de compartir → elegí <strong>Imprimir</strong> → Guardar como PDF</>
-                      : <>Se abre el diálogo de impresión → seleccioná <strong>Guardar como PDF</strong></>}
+                      ? <>Se abre tu CV en nueva pestaña → elegí <strong>Imprimir</strong> → Guardar como PDF</>
+                      : <>Se abre el diálogo de impresión → destino: <strong>Guardar como PDF</strong></>}
                   </p>
                   {cvSuccess && <p className="text-xs text-center" style={{ color: '#059669' }}>✓ {cvSuccess}</p>}
                   <button
@@ -6071,10 +6060,10 @@ Respondé con este JSON exacto:
           <div className="px-4 py-2 shrink-0 text-center text-xs leading-relaxed"
             style={{ background: '#f0f7ff', borderBottom: '1px solid rgba(0,119,181,0.12)', color: '#475569' }}>
             {/iPhone|iPad|iPod/i.test(navigator.userAgent)
-              ? <>Tocá <strong>Guardar PDF</strong> → en el menú que aparece elegí <strong>Imprimir</strong> → pellizco para ampliar → <em>Guardar en Archivos</em></>
+              ? <>Tocá <strong>Guardar PDF</strong> → se abre tu CV en una nueva pestaña → elegí <strong>Imprimir</strong> → pellizco para ampliar → <em>Guardar en Archivos</em></>
               : /Android/i.test(navigator.userAgent)
-                ? <>Tocá <strong>Guardar PDF</strong> → en el menú que aparece elegí <strong>Imprimir</strong> → <em>Guardar como PDF</em></>
-                : <>Hacé clic en <strong>Guardar PDF</strong> → en el diálogo de impresión seleccioná <em>Guardar como PDF</em></>
+                ? <>Tocá <strong>Guardar PDF</strong> → se abre tu CV → elegí <strong>Imprimir</strong> → <em>Guardar como PDF</em></>
+                : <>Clic en <strong>Guardar PDF</strong> → se abre el diálogo de impresión → destino: <em>Guardar como PDF</em></>
             }
           </div>
           <iframe
@@ -6082,7 +6071,7 @@ Respondé con este JSON exacto:
             srcDoc={cvPreviewHtml}
             title="Vista previa de tu CV"
             className="flex-1 w-full border-0"
-            sandbox="allow-same-origin allow-scripts"
+            sandbox="allow-same-origin allow-scripts allow-modals"
           />
         </div>
       )}
