@@ -857,6 +857,7 @@ export default function App() {
   const [cvLoading, setCvLoading] = useState(false)
   const [cvError, setCvError] = useState('')
   const [cvSuccess, setCvSuccess] = useState('')
+  const [cvMobileStep, setCvMobileStep] = useState(null) // null | 'ios' | 'android'
   const [cvPreviewHtml, setCvPreviewHtml] = useState('')
   const [showCvModal, setShowCvModal] = useState(false)
   const [pendingWithSupport, setPendingWithSupport] = useState(false)
@@ -2886,48 +2887,50 @@ Respondé con este JSON exacto:
     }
   }
 
-  const printCv = () => {
-    if (!cvPreviewHtml) return
-    const ua = navigator.userAgent
-    const isMobile = /iPhone|iPad|iPod|Android/i.test(ua)
-    const isIOS = /iPhone|iPad|iPod/i.test(ua)
-    trackEvent('cv_print_clicked', { via: isMobile ? 'mobile' : 'desktop' })
-    const cvName = (cvFinalData?.nombre || cvDraft?.nombre || 'CV')
+  const _cvFileName = () =>
+    (cvFinalData?.nombre || cvDraft?.nombre || 'CV')
       .replace(/[^a-zA-ZÀ-ÿ0-9 ]/g, '').replace(/\s+/g, '-')
 
-    // Abrir nueva ventana de forma SINCRÓNICA (antes de cualquier await/async)
-    // para que iOS y Android no la bloqueen como popup.
+  // ── Desktop: abre ventana nueva → diálogo de impresión automático ──────────
+  const saveCvDesktop = () => {
+    if (!cvPreviewHtml) return
+    trackEvent('cv_save_desktop')
     const win = window.open('', '_blank')
     if (win) {
       win.document.open()
       win.document.write(cvPreviewHtml)
       win.document.close()
-      // Esperar a que el DOM + imágenes estén listos antes de imprimir
-      win.addEventListener('load', () => {
-        setTimeout(() => { try { win.focus(); win.print() } catch {} }, 150)
-      })
-      // Belt-and-suspenders: si load ya disparó o no dispara
-      setTimeout(() => { try { win.focus(); win.print() } catch {} }, 900)
+      // Esperar render completo antes de imprimir
+      win.addEventListener('load', () => setTimeout(() => { try { win.focus(); win.print() } catch {} }, 150))
+      setTimeout(() => { try { win.focus(); win.print() } catch {} }, 700)
       return
     }
-
-    // Popup bloqueado → descarga el HTML con instrucciones
+    // Popup bloqueado: descarga el archivo
     const blob = new Blob([cvPreviewHtml], { type: 'text/html; charset=utf-8' })
-    const url = URL.createObjectURL(blob)
     const a = document.createElement('a')
-    a.href = url
-    a.download = `CV-${cvName}.html`
+    a.href = URL.createObjectURL(blob)
+    a.download = `CV-${_cvFileName()}.html`
+    document.body.appendChild(a); a.click(); document.body.removeChild(a)
+    setCvSuccess('Abrí el archivo descargado en Chrome → Ctrl+P → Guardar como PDF')
+  }
+
+  // ── Mobile: abre blob URL en nueva pestaña (iOS/Android no cierran blob URLs) ─
+  const saveCvMobile = () => {
+    if (!cvPreviewHtml) return
+    const isIOS = /iPhone|iPad|iPod/i.test(navigator.userAgent)
+    trackEvent('cv_save_mobile', { platform: isIOS ? 'ios' : 'android' })
+    const blob = new Blob([cvPreviewHtml], { type: 'text/html; charset=utf-8' })
+    const blobUrl = URL.createObjectURL(blob)
+    // Simular clic en enlace (window.open con blob URL puede ser bloqueado en iOS)
+    const a = document.createElement('a')
+    a.href = blobUrl
+    a.target = '_blank'
+    a.rel = 'noopener noreferrer'
     document.body.appendChild(a)
     a.click()
     document.body.removeChild(a)
-    setTimeout(() => URL.revokeObjectURL(url), 10000)
-    setCvSuccess(
-      isIOS
-        ? 'Abrí el archivo en Safari → ícono Compartir → Imprimir → pellizco para ampliar → Guardar en Archivos'
-        : isMobile
-        ? 'Abrí el archivo en Chrome → menú ⋮ → Imprimir → Guardar como PDF'
-        : 'Abrí el archivo en Chrome/Edge → Ctrl+P → Destino: Guardar como PDF'
-    )
+    setTimeout(() => URL.revokeObjectURL(blobUrl), 120_000)
+    setCvMobileStep(isIOS ? 'ios' : 'android')
   }
 
   // ── Avanzar en la entrevista ──
@@ -5114,19 +5117,58 @@ Respondé con este JSON exacto:
                     </div>
                   </div>
 
-                  <button
-                    onClick={printCv}
-                    className="w-full py-4 rounded-xl text-sm font-semibold text-white transition-all"
-                    style={{ background: 'linear-gradient(135deg,#059669,#10b981)', boxShadow: '0 4px 12px rgba(5,150,105,0.25)' }}
-                  >
-                    📥 Guardar como PDF
-                  </button>
-                  <p className="text-center text-xs text-slate-400">
-                    {/iPhone|iPad|iPod|Android/i.test(navigator.userAgent)
-                      ? <>Se abre tu CV en nueva pestaña → elegí <strong>Imprimir</strong> → Guardar como PDF</>
-                      : <>Se abre el diálogo de impresión → destino: <strong>Guardar como PDF</strong></>}
-                  </p>
-                  {cvSuccess && <p className="text-xs text-center" style={{ color: '#059669' }}>✓ {cvSuccess}</p>}
+                  {/iPhone|iPad|iPod|Android/i.test(navigator.userAgent) ? (
+                    <div className="space-y-2">
+                      <button
+                        onClick={() => { setCvMobileStep(null); saveCvMobile() }}
+                        className="w-full py-4 rounded-xl text-sm font-semibold text-white transition-all"
+                        style={{ background: 'linear-gradient(135deg,#059669,#10b981)', boxShadow: '0 4px 12px rgba(5,150,105,0.25)' }}
+                      >
+                        📤 Abrir CV para guardar como PDF
+                      </button>
+                      {!cvMobileStep && (
+                        <p className="text-center text-xs text-slate-400">
+                          {/iPhone|iPad|iPod/i.test(navigator.userAgent)
+                            ? <>Se abre en Safari → tocá <strong>Compartir</strong> → <strong>Imprimir</strong></>
+                            : <>Se abre en Chrome → tocá <strong>⋮</strong> → <strong>Imprimir</strong> → Guardar como PDF</>}
+                        </p>
+                      )}
+                      {cvMobileStep === 'ios' && (
+                        <div className="rounded-xl p-3 text-xs space-y-1.5" style={{ background: '#f0fdf4', border: '1px solid #bbf7d0', color: '#166534' }}>
+                          <p className="font-semibold">✓ CV abierto en nueva pestaña. Ahora:</p>
+                          <ol className="list-decimal pl-4 space-y-1">
+                            <li>Tocá el ícono <strong>Compartir</strong> (□↑) en la barra de Safari</li>
+                            <li>Elegí <strong>Imprimir</strong></li>
+                            <li>En la vista previa, hacé <strong>pellizco hacia afuera</strong> para expandir el PDF</li>
+                            <li>Tocá el ícono Compartir nuevamente → <strong>Guardar en Archivos</strong></li>
+                          </ol>
+                        </div>
+                      )}
+                      {cvMobileStep === 'android' && (
+                        <div className="rounded-xl p-3 text-xs space-y-1.5" style={{ background: '#f0fdf4', border: '1px solid #bbf7d0', color: '#166534' }}>
+                          <p className="font-semibold">✓ CV abierto en nueva pestaña. Ahora:</p>
+                          <ol className="list-decimal pl-4 space-y-1">
+                            <li>Tocá el menú <strong>⋮</strong> arriba a la derecha</li>
+                            <li>Elegí <strong>Imprimir</strong> (o Compartir → Imprimir)</li>
+                            <li>Cambiá el destino a <strong>Guardar como PDF</strong></li>
+                            <li>Tocá el botón <strong>PDF</strong></li>
+                          </ol>
+                        </div>
+                      )}
+                    </div>
+                  ) : (
+                    <div className="space-y-1.5">
+                      <button
+                        onClick={saveCvDesktop}
+                        className="w-full py-4 rounded-xl text-sm font-semibold text-white transition-all"
+                        style={{ background: 'linear-gradient(135deg,#059669,#10b981)', boxShadow: '0 4px 12px rgba(5,150,105,0.25)' }}
+                      >
+                        📥 Guardar como PDF
+                      </button>
+                      <p className="text-center text-xs text-slate-400">Se abre el diálogo de impresión → destino: <strong>Guardar como PDF</strong></p>
+                      {cvSuccess && <p className="text-xs text-center" style={{ color: '#059669' }}>✓ {cvSuccess}</p>}
+                    </div>
+                  )}
                   <button
                     onClick={() => { setJobCvForAdapter(cvFinalData); setJobPosting(''); setJobResult(null); setJobError(''); setShowJobModal(true); trackEvent('job_adapter_opened') }}
                     className="w-full py-3.5 rounded-xl text-sm font-semibold transition-all"
@@ -6042,14 +6084,23 @@ Respondé con este JSON exacto:
               )}
             </div>
             <div className="flex items-center gap-2">
+              {/iPhone|iPad|iPod|Android/i.test(navigator.userAgent) ? (
+                <button
+                  onClick={() => { setCvMobileStep(null); saveCvMobile() }}
+                  className="text-white text-xs px-3 py-1.5 rounded-lg font-semibold flex items-center gap-1.5"
+                  style={{ background: 'rgba(255,255,255,0.25)', border: '1px solid rgba(255,255,255,0.35)' }}>
+                  📤 Abrir para guardar
+                </button>
+              ) : (
+                <button
+                  onClick={saveCvDesktop}
+                  className="text-white text-xs px-3 py-1.5 rounded-lg font-semibold flex items-center gap-1.5"
+                  style={{ background: 'rgba(255,255,255,0.25)', border: '1px solid rgba(255,255,255,0.35)' }}>
+                  📥 Guardar PDF
+                </button>
+              )}
               <button
-                onClick={printCv}
-                className="text-white text-xs px-3 py-1.5 rounded-lg font-semibold flex items-center gap-1.5"
-                style={{ background: 'rgba(255,255,255,0.25)', border: '1px solid rgba(255,255,255,0.35)' }}>
-                📥 Guardar PDF
-              </button>
-              <button
-                onClick={() => setCvPreviewHtml('')}
+                onClick={() => { setCvPreviewHtml(''); setCvMobileStep(null) }}
                 className="text-white text-xs px-3 py-1.5 rounded-lg"
                 style={{ background: 'rgba(255,255,255,0.15)' }}>
                 ✕
@@ -6057,14 +6108,28 @@ Respondé con este JSON exacto:
             </div>
           </div>
           {/* Instrucción contextual */}
-          <div className="px-4 py-2 shrink-0 text-center text-xs leading-relaxed"
+          <div className="px-4 py-2 shrink-0 text-xs leading-relaxed"
             style={{ background: '#f0f7ff', borderBottom: '1px solid rgba(0,119,181,0.12)', color: '#475569' }}>
-            {/iPhone|iPad|iPod/i.test(navigator.userAgent)
-              ? <>Tocá <strong>Guardar PDF</strong> → se abre tu CV en una nueva pestaña → elegí <strong>Imprimir</strong> → pellizco para ampliar → <em>Guardar en Archivos</em></>
-              : /Android/i.test(navigator.userAgent)
-                ? <>Tocá <strong>Guardar PDF</strong> → se abre tu CV → elegí <strong>Imprimir</strong> → <em>Guardar como PDF</em></>
-                : <>Clic en <strong>Guardar PDF</strong> → se abre el diálogo de impresión → destino: <em>Guardar como PDF</em></>
-            }
+            {cvMobileStep === 'ios' ? (
+              <ol className="list-decimal pl-4 space-y-0.5 font-medium" style={{ color: '#166534' }}>
+                <li>Tocá el ícono <strong>Compartir</strong> (□↑) en la barra de Safari</li>
+                <li>Elegí <strong>Imprimir</strong></li>
+                <li><strong>Pellizco hacia afuera</strong> en la vista previa para expandir el PDF</li>
+                <li>Tocá Compartir nuevamente → <strong>Guardar en Archivos</strong></li>
+              </ol>
+            ) : cvMobileStep === 'android' ? (
+              <ol className="list-decimal pl-4 space-y-0.5 font-medium" style={{ color: '#166534' }}>
+                <li>Tocá el menú <strong>⋮</strong> arriba a la derecha en Chrome</li>
+                <li>Elegí <strong>Imprimir</strong></li>
+                <li>Cambiá el destino a <strong>Guardar como PDF</strong> → tocá <strong>PDF</strong></li>
+              </ol>
+            ) : /iPhone|iPad|iPod/i.test(navigator.userAgent) ? (
+              <p className="text-center">Tocá <strong>Abrir para guardar</strong> → en Safari elegí <strong>Compartir → Imprimir</strong></p>
+            ) : /Android/i.test(navigator.userAgent) ? (
+              <p className="text-center">Tocá <strong>Abrir para guardar</strong> → en Chrome elegí <strong>⋮ → Imprimir → Guardar como PDF</strong></p>
+            ) : (
+              <p className="text-center">Clic en <strong>Guardar PDF</strong> → en el diálogo de impresión, destino: <em>Guardar como PDF</em></p>
+            )}
           </div>
           <iframe
             id="cv-preview-iframe"
