@@ -8,6 +8,26 @@ const ALLOWED_ORIGINS = new Set([
   'http://localhost:4173',
 ])
 
+// ── Mercado Pago webhook signature validation ─────────────────────────────────
+async function validateMpSignature(request, env, dataId) {
+  const secret = env.MP_WEBHOOK_SECRET
+  if (!secret) return true // no configurado → no validar (para compatibilidad)
+  const xSignature = request.headers.get('x-signature')
+  const xRequestId = request.headers.get('x-request-id')
+  if (!xSignature) return false
+  const ts = (xSignature.match(/ts=([^,]+)/) || [])[1]
+  const v1 = (xSignature.match(/v1=([^,]+)/) || [])[1]
+  if (!ts || !v1) return false
+  const message = `id:${dataId};request-id:${xRequestId || ''};ts:${ts};`
+  const encoder = new TextEncoder()
+  const key = await crypto.subtle.importKey(
+    'raw', encoder.encode(secret), { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']
+  )
+  const sig = await crypto.subtle.sign('HMAC', key, encoder.encode(message))
+  const computed = Array.from(new Uint8Array(sig)).map(b => b.toString(16).padStart(2, '0')).join('')
+  return computed === v1
+}
+
 // ── Supabase helper (service role, bypasses RLS) ─────────────────────────────
 async function supabaseServiceFetch(env, table, options = {}) {
   const url = `${env.SUPABASE_URL}/rest/v1/${table}`
@@ -67,6 +87,9 @@ export default {
       if (!subId || body?.type !== 'subscription_preapproval') {
         return new Response('OK', { status: 200 })
       }
+
+      const validSig = await validateMpSignature(request, env, subId)
+      if (!validSig) return new Response('Unauthorized', { status: 401 })
 
       try {
         const sub = await mpFetch(env, `/preapproval/${subId}`)
