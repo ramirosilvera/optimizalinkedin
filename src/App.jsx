@@ -915,6 +915,7 @@ export default function App() {
   const [deletingHistorialId, setDeletingHistorialId] = useState(null)
   const [deleteHistorialLoading, setDeleteHistorialLoading] = useState(false)
   const [subscriptionLoading, setSubscriptionLoading] = useState(false)
+  const [checkingPremium, setCheckingPremium] = useState(false)
   const [showCouponField, setShowCouponField] = useState(false)
   const [couponCode, setCouponCode] = useState('')
   const [couponEmail, setCouponEmail] = useState('')
@@ -1275,7 +1276,7 @@ export default function App() {
         applySession(data.access_token, data.refresh_token, userData)
         setShowPostPayment(false)
         // Esperar un momento para que el webhook de MP procese el pago
-        setTimeout(() => checkSubscriptionStatus(data.user.id, data.access_token), 3000)
+        setTimeout(() => checkSubscriptionStatus(data.user.id, data.access_token, { withRetry: true }), 3000)
         trackEvent('auth_register_post_payment')
       } else {
         setPostPaymentError('No se pudo crear la cuenta. Si ya tenés una, ingresá desde "Ingresar".')
@@ -1286,23 +1287,34 @@ export default function App() {
     setPostPaymentLoading(false)
   }
 
-  const checkSubscriptionStatus = async (userId, token) => {
+  const checkSubscriptionStatus = async (userId, token, { withRetry = false } = {}) => {
+    if (withRetry) setCheckingPremium(true)
+    const maxAttempts = withRetry ? 8 : 1
+    const delayMs = 5000
     try {
-      const res = await fetch(WORKER_URL, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'subscription_status', user_id: userId }),
-      })
-      const data = await res.json()
-      if (data.es_premium) {
-        localStorage.setItem('ol_premium', '1')
-        setUser(prev => prev ? { ...prev, es_premium: true, premium_hasta: data.premium_hasta } : prev)
-        trackEvent('premium_activated')
-      } else {
-        localStorage.setItem('ol_premium', '0')
-        setUser(prev => prev ? { ...prev, es_premium: false, premium_hasta: null } : prev)
+      for (let attempt = 0; attempt < maxAttempts; attempt++) {
+        if (attempt > 0) await new Promise(r => setTimeout(r, delayMs))
+        try {
+          const res = await fetch(WORKER_URL, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ action: 'subscription_status', user_id: userId }),
+          })
+          const data = await res.json()
+          if (data.es_premium) {
+            localStorage.setItem('ol_premium', '1')
+            setUser(prev => prev ? { ...prev, es_premium: true, premium_hasta: data.premium_hasta } : prev)
+            trackEvent('premium_activated')
+            return
+          }
+        } catch { /* continuar */ }
       }
-    } catch { /* silencioso */ }
+      // Todos los intentos fallaron o no es premium
+      localStorage.setItem('ol_premium', '0')
+      setUser(prev => prev ? { ...prev, es_premium: false, premium_hasta: null } : prev)
+    } finally {
+      setCheckingPremium(false)
+    }
   }
 
   // Restaurar sesión desde localStorage al cargar
@@ -1387,7 +1399,7 @@ export default function App() {
     const token = localStorage.getItem('ol_at')
     if (uid && token) {
       // Ya tiene sesión (ej: entró con LinkedIn antes de pagar)
-      setTimeout(() => checkSubscriptionStatus(uid, token), 2500)
+      setTimeout(() => checkSubscriptionStatus(uid, token, { withRetry: true }), 2500)
     } else {
       // No tiene sesión: mostrar flujo de creación de contraseña
       const pending = localStorage.getItem('ol_pending_email') || ''
@@ -3455,6 +3467,12 @@ Respondé con este JSON exacto:
 
       {/* ── Barra de usuario ── */}
       <div className="w-full max-w-xl mb-2 flex justify-end items-center gap-2 flex-wrap">
+        {checkingPremium && (
+          <span className="text-xs font-medium px-3 py-1 rounded-full animate-pulse"
+            style={{ background: 'rgba(0,119,181,0.10)', color: '#0077B5' }}>
+            ⏳ Verificando suscripción...
+          </span>
+        )}
         {user ? (
           <>
             {user.es_premium && (
