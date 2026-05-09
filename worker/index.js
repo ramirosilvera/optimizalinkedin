@@ -215,6 +215,62 @@ export default {
       }
     }
 
+    // ── Sync MP subscription by payer email (admin) ───────────────────────────
+    // Útil para reparar registros donde mp_subscription_id quedó NULL
+    // porque el usuario pagó con una cuenta MP distinta a su email de Supabase.
+    if (body.action === 'sync_mp_subscription') {
+      const { admin_key, payer_email, user_id } = body
+      if (admin_key !== env.ADMIN_KEY) {
+        return new Response(JSON.stringify({ error: 'No autorizado' }), { status: 401, headers: corsHeaders })
+      }
+      if (!payer_email || !user_id) {
+        return new Response(JSON.stringify({ error: 'Faltan payer_email y user_id' }), { status: 400, headers: corsHeaders })
+      }
+
+      // Buscar suscripciones autorizadas del plan para ese pagador
+      const search = await mpFetch(env,
+        `/preapproval/search?status=authorized&preapproval_plan_id=${env.MP_PLAN_ID}&payer_email=${encodeURIComponent(payer_email)}&limit=5`
+      )
+      const sub = search?.results?.[0]
+      if (!sub) {
+        return new Response(JSON.stringify({ error: 'No se encontró suscripción autorizada en MP para ese email' }), { status: 404, headers: corsHeaders })
+      }
+
+      const subId = sub.id
+      const nextPayment = sub.next_payment_date ? new Date(sub.next_payment_date).toISOString() : null
+      const premiumHasta = nextPayment || new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString()
+
+      // Actualizar perfiles con el subscription ID
+      await supabaseServiceFetch(env, `perfiles?id=eq.${user_id}`, {
+        method: 'PATCH',
+        body: JSON.stringify({
+          es_premium: true,
+          premium_hasta: premiumHasta,
+          mp_subscription_id: subId,
+          updated_at: new Date().toISOString(),
+        }),
+      })
+
+      // Upsert en suscripciones
+      await supabaseServiceFetch(env, 'suscripciones', {
+        method: 'POST',
+        body: JSON.stringify({
+          user_id: user_id,
+          mp_subscription_id: subId,
+          status: 'authorized',
+          next_payment_date: nextPayment,
+          updated_at: new Date().toISOString(),
+        }),
+      })
+
+      return new Response(JSON.stringify({
+        ok: true,
+        mp_subscription_id: subId,
+        premium_hasta: premiumHasta,
+        next_payment_date: nextPayment,
+      }), { status: 200, headers: corsHeaders })
+    }
+
     // ── Fetch LinkedIn URL ────────────────────────────────────────────────────
     if (body.action === 'fetch_url') {
       const { url: fetchUrl } = body
