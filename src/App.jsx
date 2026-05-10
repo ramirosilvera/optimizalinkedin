@@ -2604,31 +2604,50 @@ Generá el feedback en este JSON exacto:
 </div>
 <script>
 (function () {
-  // Auto-scale solo en pantalla (no en impresión) para llenar el A4 cuando el contenido es corto.
+  var A4W = Math.round(210 * 3.7795); // ≈794px
+  var A4H = Math.round(297 * 3.7795); // ≈1123px
+
   function autofit() {
     if (window.matchMedia('print').matches) return;
     var wrap = document.getElementById('cv-wrap');
     if (!wrap) return;
+    var vw = window.innerWidth || document.documentElement.clientWidth || A4W;
+
+    if (vw > 0 && vw < A4W) {
+      // Pantalla angosta (móvil): reducir para que el A4 entre en el ancho disponible.
+      // CSS zoom afecta el layout en Chrome/Safari → no hay desbordamiento horizontal.
+      wrap.style.zoom = (vw / A4W).toFixed(4);
+      // Belt-and-suspenders: ocultar cualquier overflow residual del body de 210mm
+      document.documentElement.style.overflowX = 'hidden';
+      document.body.style.overflowX = 'hidden';
+      return;
+    }
+
+    // Pantalla ancha (escritorio): ampliar si el contenido es más corto que A4
     var h = wrap.scrollHeight;
-    var a4 = Math.round(297 * 3.7795); // 297mm → px a 96 dpi ≈ 1123px
-    if (h > 0 && h < a4 * 0.84) {
-      var z = Math.min((a4 * 0.93) / h, 1.35);
-      wrap.style.zoom = z.toFixed(4);
+    if (h > 0 && h < A4H * 0.84) {
+      wrap.style.zoom = Math.min((A4H * 0.93) / h, 1.35).toFixed(4);
     }
   }
+
   if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', autofit);
   } else {
     autofit();
   }
-  // Remover zoom antes de imprimir — beforeprint no dispara en iOS Safari,
-  // así que también lo removemos con matchMedia para cubrir ese caso.
+  // Reescalar al rotar el dispositivo o cambiar tamaño de ventana
+  window.addEventListener('resize', autofit);
+
+  // Resetear zoom antes de imprimir (beforeprint no dispara en iOS Safari →
+  // también usamos matchMedia como fallback). El @media print ya tiene
+  // zoom:1 !important como respaldo adicional.
   function clearZoomForPrint() {
     var wrap = document.getElementById('cv-wrap');
     if (wrap) wrap.style.zoom = '';
+    document.documentElement.style.overflowX = '';
+    document.body.style.overflowX = '';
   }
   window.addEventListener('beforeprint', clearZoomForPrint);
-  // Fallback iOS: matchMedia listener
   var mq = window.matchMedia('print');
   if (mq.addListener) { mq.addListener(function(e){ if(e.matches) clearZoomForPrint(); }); }
   else if (mq.addEventListener) { mq.addEventListener('change', function(e){ if(e.matches) clearZoomForPrint(); }); }
@@ -6218,22 +6237,34 @@ Respondé con este JSON exacto:
           <div className="px-4 py-2 shrink-0 text-xs leading-relaxed"
             style={{ background: '#f0f7ff', borderBottom: '1px solid rgba(0,119,181,0.12)', color: '#475569' }}>
             {cvMobileStep === 'ios' ? (
-              <ol className="list-decimal pl-4 space-y-0.5 font-medium" style={{ color: '#166534' }}>
-                <li>Tocá el ícono <strong>Compartir</strong> (□↑) en la barra de Safari</li>
-                <li>Elegí <strong>Imprimir</strong></li>
-                <li><strong>Pellizco hacia afuera</strong> en la vista previa para expandir el PDF</li>
-                <li>Tocá Compartir nuevamente → <strong>Guardar en Archivos</strong></li>
-              </ol>
+              <div style={{ color: '#166534' }}>
+                <p className="font-semibold mb-1">✓ CV abierto. Guardalo como PDF:</p>
+                <ol className="list-decimal pl-4 space-y-0.5">
+                  <li>Tocá <strong>Compartir</strong> (□↑) en la barra de Safari</li>
+                  <li>Elegí <strong>Imprimir</strong></li>
+                  <li>En la previa, <strong>pellizco hacia afuera</strong> → se convierte en PDF</li>
+                  <li>Tocá <strong>Compartir</strong> nuevamente → <strong>Guardar en Archivos</strong></li>
+                </ol>
+              </div>
             ) : cvMobileStep === 'android' ? (
-              <ol className="list-decimal pl-4 space-y-0.5 font-medium" style={{ color: '#166534' }}>
-                <li>Tocá el menú <strong>⋮</strong> arriba a la derecha en Chrome</li>
-                <li>Elegí <strong>Imprimir</strong></li>
-                <li>Cambiá el destino a <strong>Guardar como PDF</strong> → tocá <strong>PDF</strong></li>
-              </ol>
+              <div style={{ color: '#166534' }}>
+                <p className="font-semibold mb-1">✓ CV abierto. Guardalo como PDF:</p>
+                <ol className="list-decimal pl-4 space-y-0.5">
+                  <li>Tocá el menú <strong>⋮</strong> en Chrome</li>
+                  <li>Elegí <strong>Imprimir</strong></li>
+                  <li>Cambiá destino a <strong>Guardar como PDF</strong> → tocá <strong>PDF</strong></li>
+                </ol>
+              </div>
             ) : /iPhone|iPad|iPod/i.test(navigator.userAgent) ? (
-              <p className="text-center">Tocá <strong>Abrir para guardar</strong> → en Safari elegí <strong>Compartir → Imprimir</strong></p>
+              <p className="text-center">
+                Opción A: <strong>Abrir para guardar</strong> → Compartir → Imprimir&ensp;·&ensp;
+                Opción B: Capturá una <strong>pantallaza</strong> del CV de abajo
+              </p>
             ) : /Android/i.test(navigator.userAgent) ? (
-              <p className="text-center">Tocá <strong>Abrir para guardar</strong> → en Chrome elegí <strong>⋮ → Imprimir → Guardar como PDF</strong></p>
+              <p className="text-center">
+                <strong>Abrir para guardar</strong> → Chrome ⋮ → Imprimir → Guardar como PDF&ensp;·&ensp;
+                O tomá una <strong>captura de pantalla</strong> del CV
+              </p>
             ) : (
               <p className="text-center">Clic en <strong>Guardar PDF</strong> → en el diálogo de impresión, destino: <em>Guardar como PDF</em></p>
             )}
