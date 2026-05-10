@@ -857,7 +857,7 @@ export default function App() {
   const [cvLoading, setCvLoading] = useState(false)
   const [cvError, setCvError] = useState('')
   const [cvSuccess, setCvSuccess] = useState('')
-  const [cvMobileStep, setCvMobileStep] = useState(null) // null | 'ios' | 'android'
+
   const [cvPreviewHtml, setCvPreviewHtml] = useState('')
   const [showCvModal, setShowCvModal] = useState(false)
   const [pendingWithSupport, setPendingWithSupport] = useState(false)
@@ -2964,24 +2964,6 @@ Respondé con este JSON exacto:
     setCvSuccess('Abrí el archivo descargado en Chrome → Ctrl+P → Guardar como PDF')
   }
 
-  // ── Mobile: abre blob URL en nueva pestaña (iOS/Android no cierran blob URLs) ─
-  const saveCvMobile = () => {
-    if (!cvPreviewHtml) return
-    const isIOS = /iPhone|iPad|iPod/i.test(navigator.userAgent)
-    trackEvent('cv_save_mobile', { platform: isIOS ? 'ios' : 'android' })
-    const blob = new Blob([cvPreviewHtml], { type: 'text/html; charset=utf-8' })
-    const blobUrl = URL.createObjectURL(blob)
-    // Simular clic en enlace (window.open con blob URL puede ser bloqueado en iOS)
-    const a = document.createElement('a')
-    a.href = blobUrl
-    a.target = '_blank'
-    a.rel = 'noopener noreferrer'
-    document.body.appendChild(a)
-    a.click()
-    document.body.removeChild(a)
-    setTimeout(() => URL.revokeObjectURL(blobUrl), 120_000)
-    setCvMobileStep(isIOS ? 'ios' : 'android')
-  }
 
   // ── Avanzar en la entrevista ──
   const handleInterviewNext = (answer) => {
@@ -5244,43 +5226,10 @@ Respondé con este JSON exacto:
                   </div>
 
                   {/iPhone|iPad|iPod|Android/i.test(navigator.userAgent) ? (
-                    <div className="space-y-2">
-                      <button
-                        onClick={() => { setCvMobileStep(null); saveCvMobile() }}
-                        className="w-full py-4 rounded-xl text-sm font-semibold text-white transition-all"
-                        style={{ background: 'linear-gradient(135deg,#059669,#10b981)', boxShadow: '0 4px 12px rgba(5,150,105,0.25)' }}
-                      >
-                        📤 Abrir CV para guardar como PDF
-                      </button>
-                      {!cvMobileStep && (
-                        <p className="text-center text-xs text-slate-400">
-                          {/iPhone|iPad|iPod/i.test(navigator.userAgent)
-                            ? <>Se abre en Safari → tocá <strong>Compartir</strong> → <strong>Imprimir</strong></>
-                            : <>Se abre en Chrome → tocá <strong>⋮</strong> → <strong>Imprimir</strong> → Guardar como PDF</>}
-                        </p>
-                      )}
-                      {cvMobileStep === 'ios' && (
-                        <div className="rounded-xl p-3 text-xs space-y-1.5" style={{ background: '#f0fdf4', border: '1px solid #bbf7d0', color: '#166534' }}>
-                          <p className="font-semibold">✓ CV abierto en nueva pestaña. Ahora:</p>
-                          <ol className="list-decimal pl-4 space-y-1">
-                            <li>Tocá el ícono <strong>Compartir</strong> (□↑) en la barra de Safari</li>
-                            <li>Elegí <strong>Imprimir</strong></li>
-                            <li>En la vista previa, hacé <strong>pellizco hacia afuera</strong> para expandir el PDF</li>
-                            <li>Tocá el ícono Compartir nuevamente → <strong>Guardar en Archivos</strong></li>
-                          </ol>
-                        </div>
-                      )}
-                      {cvMobileStep === 'android' && (
-                        <div className="rounded-xl p-3 text-xs space-y-1.5" style={{ background: '#f0fdf4', border: '1px solid #bbf7d0', color: '#166534' }}>
-                          <p className="font-semibold">✓ CV abierto en nueva pestaña. Ahora:</p>
-                          <ol className="list-decimal pl-4 space-y-1">
-                            <li>Tocá el menú <strong>⋮</strong> arriba a la derecha</li>
-                            <li>Elegí <strong>Imprimir</strong> (o Compartir → Imprimir)</li>
-                            <li>Cambiá el destino a <strong>Guardar como PDF</strong></li>
-                            <li>Tocá el botón <strong>PDF</strong></li>
-                          </ol>
-                        </div>
-                      )}
+                    <div className="rounded-xl p-3.5 text-xs text-center space-y-1.5"
+                      style={{ background: 'rgba(0,119,181,0.05)', border: '1px solid rgba(0,119,181,0.14)' }}>
+                      <p className="text-slate-700 font-medium">📸 Capturá una pantalla del CV que aparece abajo</p>
+                      <p className="text-slate-400">Para descargarlo como PDF accedé desde una computadora</p>
                     </div>
                   ) : (
                     <div className="space-y-1.5">
@@ -6210,14 +6159,7 @@ Respondé con este JSON exacto:
               )}
             </div>
             <div className="flex items-center gap-2">
-              {/iPhone|iPad|iPod|Android/i.test(navigator.userAgent) ? (
-                <button
-                  onClick={() => { setCvMobileStep(null); saveCvMobile() }}
-                  className="text-white text-xs px-3 py-1.5 rounded-lg font-semibold flex items-center gap-1.5"
-                  style={{ background: 'rgba(255,255,255,0.25)', border: '1px solid rgba(255,255,255,0.35)' }}>
-                  📤 Abrir para guardar
-                </button>
-              ) : (
+              {!/iPhone|iPad|iPod|Android/i.test(navigator.userAgent) && (
                 <button
                   onClick={saveCvDesktop}
                   className="text-white text-xs px-3 py-1.5 rounded-lg font-semibold flex items-center gap-1.5"
@@ -6226,7 +6168,7 @@ Respondé con este JSON exacto:
                 </button>
               )}
               <button
-                onClick={() => { setCvPreviewHtml(''); setCvMobileStep(null) }}
+                onClick={() => { setCvPreviewHtml('') }}
                 className="text-white text-xs px-3 py-1.5 rounded-lg"
                 style={{ background: 'rgba(255,255,255,0.15)' }}>
                 ✕
@@ -6234,40 +6176,12 @@ Respondé con este JSON exacto:
             </div>
           </div>
           {/* Instrucción contextual */}
-          <div className="px-4 py-2 shrink-0 text-xs leading-relaxed"
-            style={{ background: '#f0f7ff', borderBottom: '1px solid rgba(0,119,181,0.12)', color: '#475569' }}>
-            {cvMobileStep === 'ios' ? (
-              <div style={{ color: '#166534' }}>
-                <p className="font-semibold mb-1">✓ CV abierto. Guardalo como PDF:</p>
-                <ol className="list-decimal pl-4 space-y-0.5">
-                  <li>Tocá <strong>Compartir</strong> (□↑) en la barra de Safari</li>
-                  <li>Elegí <strong>Imprimir</strong></li>
-                  <li>En la previa, <strong>pellizco hacia afuera</strong> → se convierte en PDF</li>
-                  <li>Tocá <strong>Compartir</strong> nuevamente → <strong>Guardar en Archivos</strong></li>
-                </ol>
-              </div>
-            ) : cvMobileStep === 'android' ? (
-              <div style={{ color: '#166534' }}>
-                <p className="font-semibold mb-1">✓ CV abierto. Guardalo como PDF:</p>
-                <ol className="list-decimal pl-4 space-y-0.5">
-                  <li>Tocá el menú <strong>⋮</strong> en Chrome</li>
-                  <li>Elegí <strong>Imprimir</strong></li>
-                  <li>Cambiá destino a <strong>Guardar como PDF</strong> → tocá <strong>PDF</strong></li>
-                </ol>
-              </div>
-            ) : /iPhone|iPad|iPod/i.test(navigator.userAgent) ? (
-              <p className="text-center">
-                Opción A: <strong>Abrir para guardar</strong> → Compartir → Imprimir&ensp;·&ensp;
-                Opción B: Capturá una <strong>pantallaza</strong> del CV de abajo
-              </p>
-            ) : /Android/i.test(navigator.userAgent) ? (
-              <p className="text-center">
-                <strong>Abrir para guardar</strong> → Chrome ⋮ → Imprimir → Guardar como PDF&ensp;·&ensp;
-                O tomá una <strong>captura de pantalla</strong> del CV
-              </p>
-            ) : (
-              <p className="text-center">Clic en <strong>Guardar PDF</strong> → en el diálogo de impresión, destino: <em>Guardar como PDF</em></p>
-            )}
+          <div className="px-4 py-2 shrink-0 text-xs text-center"
+            style={{ background: '#f0f7ff', borderBottom: '1px solid rgba(0,119,181,0.12)', color: '#64748b' }}>
+            {/iPhone|iPad|iPod|Android/i.test(navigator.userAgent)
+              ? <span>📸 Sacá una <strong>captura de pantalla</strong> del CV · Para PDF usá una computadora</span>
+              : <span>Clic en <strong>Guardar PDF</strong> → en el diálogo de impresión elegí <em>Guardar como PDF</em></span>
+            }
           </div>
           <iframe
             id="cv-preview-iframe"
