@@ -7,26 +7,8 @@ const ALLOWED_ORIGINS = new Set([
   'http://localhost:5173',
   'http://localhost:4173',
 ])
-
-// ── Mercado Pago webhook signature validation ─────────────────────────────────
-async function validateMpSignature(request, env, dataId) {
-  const secret = env.MP_WEBHOOK_SECRET
-  if (!secret) return true // no configurado → no validar (para compatibilidad)
-  const xSignature = request.headers.get('x-signature')
-  const xRequestId = request.headers.get('x-request-id')
-  if (!xSignature) return false
-  const ts = (xSignature.match(/ts=([^,]+)/) || [])[1]
-  const v1 = (xSignature.match(/v1=([^,]+)/) || [])[1]
-  if (!ts || !v1) return false
-  const message = `id:${dataId};request-id:${xRequestId || ''};ts:${ts};`
-  const encoder = new TextEncoder()
-  const key = await crypto.subtle.importKey(
-    'raw', encoder.encode(secret), { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']
-  )
-  const sig = await crypto.subtle.sign('HMAC', key, encoder.encode(message))
-  const computed = Array.from(new Uint8Array(sig)).map(b => b.toString(16).padStart(2, '0')).join('')
-  return computed === v1
-}
+const WORKER_NOTIFICATION_URL = 'https://linkedin-optimizer-proxy.raa1990-rs.workers.dev/mp-webhook'
+const BACK_URL = 'https://ramirosilvera.github.io/optimizalinkedin/?premium=ok'
 
 // ── Supabase helper (service role, bypasses RLS) ─────────────────────────────
 async function supabaseServiceFetch(env, table, options = {}) {
@@ -57,6 +39,48 @@ async function mpFetch(env, path, options = {}) {
   return res.json()
 }
 
+// ── Buscar userId en Supabase por email ───────────────────────────────────────
+async function findUserIdByEmail(env, email) {
+  const res = await fetch(
+    `${env.SUPABASE_URL}/auth/v1/admin/users?email=${encodeURIComponent(email)}`,
+    { headers: { apikey: env.SUPABASE_SERVICE_ROLE_KEY, Authorization: `Bearer ${env.SUPABASE_SERVICE_ROLE_KEY}` } }
+  )
+  const data = await res.json()
+  return data?.users?.[0]?.id || null
+}
+
+// ── Persistir estado de suscripción en Supabase ───────────────────────────────
+async function persistSubscription(env, { userId, subId, status, nextPayment }) {
+  const isPremium = status === 'authorized'
+  const premiumHasta = isPremium && nextPayment ? nextPayment : null
+
+  const [subRes, perfilRes] = await Promise.all([
+    supabaseServiceFetch(env, 'suscripciones', {
+      method: 'POST',
+      body: JSON.stringify({
+        user_id: userId,
+        mp_subscription_id: subId,
+        status,
+        next_payment_date: nextPayment,
+        updated_at: new Date().toISOString(),
+      }),
+    }),
+    supabaseServiceFetch(env, 'perfiles', {
+      method: 'POST',
+      body: JSON.stringify({
+        id: userId,
+        es_premium: isPremium,
+        premium_hasta: premiumHasta,
+        mp_subscription_id: subId,
+        updated_at: new Date().toISOString(),
+      }),
+    }),
+  ])
+
+  console.log('[persist] suscripciones:', subRes.status, 'perfiles:', perfilRes.status)
+  return { isPremium, premiumHasta }
+}
+
 export default {
   async fetch(request, env) {
     const url = new URL(request.url)
@@ -77,88 +101,74 @@ export default {
       })
     }
 
-    // ── MP Webhook (POST from Mercado Pago servers, no CORS needed) ─────────
+    // ── MP Webhook ────────────────────────────────────────────────────────────
     if (url.pathname.endsWith('/mp-webhook')) {
       if (request.method !== 'POST') return new Response('Method not allowed', { status: 405 })
+
       let body
       try { body = await request.json() } catch (e) {
         console.error('[mp-webhook] JSON parse error:', e.message)
         return new Response('OK', { status: 200 })
       }
 
-      console.log('[mp-webhook] received type:', body?.type, 'data.id:', body?.data?.id, 'action:', body?.action)
+      const eventType = body?.type
+      const dataId = body?.data?.id
+      console.log('[mp-webhook] type:', eventType, 'data.id:', dataId, 'action:', body?.action)
 
-      const subId = body?.data?.id
-      if (!subId || body?.type !== 'subscription_preapproval') {
-        console.log('[mp-webhook] skipping — type or subId not matching')
+      // ── Evento: cambio de estado en suscripción (alta, pausa, cancelación) ──
+      if (eventType === 'subscription_preapproval' && dataId) {
+        try {
+          const sub = await mpFetch(env, `/preapproval/${dataId}`)
+          const status = sub.status // 'authorized' | 'paused' | 'cancelled'
+          const nextPayment = sub.next_payment_date ? new Date(sub.next_payment_date).toISOString() : null
+          console.log('[mp-webhook] preapproval status:', status, 'external_ref:', sub.external_reference)
+
+          let userId = sub.external_reference
+          if (!userId || userId === 'pending') {
+            userId = await findUserIdByEmail(env, sub.payer?.email)
+            if (!userId) {
+              console.error('[mp-webhook] no user found for sub', dataId)
+              return new Response('OK', { status: 200 })
+            }
+          }
+
+          await persistSubscription(env, { userId, subId: dataId, status, nextPayment })
+        } catch (e) {
+          console.error('[mp-webhook] preapproval error:', e.message)
+        }
         return new Response('OK', { status: 200 })
       }
 
-      const validSig = await validateMpSignature(request, env, subId)
-      if (!validSig) {
-        console.error('[mp-webhook] invalid signature')
-        return new Response('Unauthorized', { status: 401 })
-      }
+      // ── Evento: pago recurrente procesado (renovación mensual) ──────────────
+      if (eventType === 'subscription_authorized_payment' && dataId) {
+        try {
+          const payment = await mpFetch(env, `/authorized_payments/${dataId}`)
+          const subId = payment?.preapproval_id
+          console.log('[mp-webhook] authorized_payment for preapproval:', subId, 'status:', payment?.status)
+          if (!subId) return new Response('OK', { status: 200 })
 
-      try {
-        const sub = await mpFetch(env, `/preapproval/${subId}`)
-        const status = sub.status // 'authorized' | 'paused' | 'cancelled'
-        const isPremium = status === 'authorized'
-        const nextPayment = sub.next_payment_date ? new Date(sub.next_payment_date).toISOString() : null
-        const premiumHasta = isPremium && nextPayment ? nextPayment : null
+          const sub = await mpFetch(env, `/preapproval/${subId}`)
+          const nextPayment = sub.next_payment_date ? new Date(sub.next_payment_date).toISOString() : null
 
-        console.log('[mp-webhook] sub status:', status, 'isPremium:', isPremium, 'external_reference:', sub.external_reference)
-
-        // external_reference debería traer el user_id de Supabase.
-        // Fallback: buscar por email del pagador si llega vacío.
-        let userId = sub.external_reference
-        if (!userId) {
-          const payerEmail = sub.payer?.email
-          console.log('[mp-webhook] no external_reference, trying payer email:', payerEmail)
-          if (!payerEmail) return new Response('OK', { status: 200 })
-          const userRes = await fetch(
-            `${env.SUPABASE_URL}/auth/v1/admin/users?email=${encodeURIComponent(payerEmail)}`,
-            { headers: { apikey: env.SUPABASE_SERVICE_ROLE_KEY, Authorization: `Bearer ${env.SUPABASE_SERVICE_ROLE_KEY}` } }
-          )
-          const userData = await userRes.json()
-          userId = userData?.users?.[0]?.id
-          if (!userId) {
-            console.error('[mp-webhook] no user found for email:', payerEmail)
-            return new Response('OK', { status: 200 })
+          let userId = sub.external_reference
+          if (!userId || userId === 'pending') {
+            userId = await findUserIdByEmail(env, sub.payer?.email)
+            if (!userId) return new Response('OK', { status: 200 })
           }
+
+          // Solo extender premium si el pago fue aprobado
+          if (payment?.status === 'approved') {
+            await persistSubscription(env, { userId, subId, status: 'authorized', nextPayment })
+            console.log('[mp-webhook] renewal extended for userId:', userId, 'until:', nextPayment)
+          }
+        } catch (e) {
+          console.error('[mp-webhook] authorized_payment error:', e.message)
         }
-
-        console.log('[mp-webhook] updating userId:', userId)
-
-        // Upsert suscripciones
-        const subRes = await supabaseServiceFetch(env, 'suscripciones', {
-          method: 'POST',
-          body: JSON.stringify({
-            user_id: userId,
-            mp_subscription_id: subId,
-            status,
-            next_payment_date: nextPayment,
-            updated_at: new Date().toISOString(),
-          }),
-        })
-        console.log('[mp-webhook] suscripciones upsert status:', subRes.status)
-
-        // Upsert perfiles (POST con merge-duplicates crea el registro si no existe)
-        const perfilRes = await supabaseServiceFetch(env, 'perfiles', {
-          method: 'POST',
-          body: JSON.stringify({
-            id: userId,
-            es_premium: isPremium,
-            premium_hasta: premiumHasta,
-            mp_subscription_id: subId,
-            updated_at: new Date().toISOString(),
-          }),
-        })
-        console.log('[mp-webhook] perfiles upsert status:', perfilRes.status)
-      } catch (e) {
-        console.error('[mp-webhook] error:', e.message)
+        return new Response('OK', { status: 200 })
       }
 
+      // Cualquier otro tipo de evento → ignorar silenciosamente
+      console.log('[mp-webhook] unhandled event type:', eventType, '— ignoring')
       return new Response('OK', { status: 200 })
     }
 
@@ -169,8 +179,7 @@ export default {
     const body = await request.json().catch(() => null)
     if (!body) return new Response('Invalid JSON', { status: 400 })
 
-    // ── Debug: simulate MP webhook ────────────────────────────────────────────
-    // Simula el webhook para un subscription_id dado (solo con admin_key)
+    // ── Simulate webhook (debug, admin only) ─────────────────────────────────
     if (body.action === 'simulate_webhook') {
       const { admin_key, sub_id } = body
       if (admin_key !== env.ADMIN_KEY) {
@@ -179,35 +188,23 @@ export default {
       if (!sub_id) {
         return new Response(JSON.stringify({ error: 'Falta sub_id' }), { status: 400, headers: corsHeaders })
       }
-      const sub = await mpFetch(env, `/preapproval/${sub_id}`)
-      const status = sub.status
-      const isPremium = status === 'authorized'
-      const nextPayment = sub.next_payment_date ? new Date(sub.next_payment_date).toISOString() : null
-      const premiumHasta = isPremium && nextPayment ? nextPayment : null
-      let userId = sub.external_reference
-      if (!userId) {
-        const payerEmail = sub.payer?.email
-        if (!payerEmail) return new Response(JSON.stringify({ error: 'No payer email', sub }), { status: 200, headers: corsHeaders })
-        const userRes = await fetch(
-          `${env.SUPABASE_URL}/auth/v1/admin/users?email=${encodeURIComponent(payerEmail)}`,
-          { headers: { apikey: env.SUPABASE_SERVICE_ROLE_KEY, Authorization: `Bearer ${env.SUPABASE_SERVICE_ROLE_KEY}` } }
-        )
-        const userData = await userRes.json()
-        userId = userData?.users?.[0]?.id
-        if (!userId) return new Response(JSON.stringify({ error: 'No user found', payerEmail }), { status: 200, headers: corsHeaders })
+      try {
+        const sub = await mpFetch(env, `/preapproval/${sub_id}`)
+        const status = sub.status
+        const nextPayment = sub.next_payment_date ? new Date(sub.next_payment_date).toISOString() : null
+        let userId = sub.external_reference
+        if (!userId || userId === 'pending') {
+          userId = await findUserIdByEmail(env, sub.payer?.email)
+          if (!userId) return new Response(JSON.stringify({ error: 'No user found', sub }), { status: 200, headers: corsHeaders })
+        }
+        const result = await persistSubscription(env, { userId, subId: sub_id, status, nextPayment })
+        return new Response(JSON.stringify({ ok: true, userId, status, ...result, sub }), { status: 200, headers: corsHeaders })
+      } catch (e) {
+        return new Response(JSON.stringify({ error: e.message }), { status: 500, headers: corsHeaders })
       }
-      await supabaseServiceFetch(env, 'suscripciones', {
-        method: 'POST',
-        body: JSON.stringify({ user_id: userId, mp_subscription_id: sub_id, status, next_payment_date: nextPayment, updated_at: new Date().toISOString() }),
-      })
-      await supabaseServiceFetch(env, `perfiles?id=eq.${userId}`, {
-        method: 'PATCH',
-        body: JSON.stringify({ es_premium: isPremium, premium_hasta: premiumHasta, mp_subscription_id: sub_id, updated_at: new Date().toISOString() }),
-      })
-      return new Response(JSON.stringify({ ok: true, userId, status, isPremium, premiumHasta }), { status: 200, headers: corsHeaders })
     }
 
-    // ── Debug: check MP plan ──────────────────────────────────────────────────
+    // ── Check MP plan (debug) ─────────────────────────────────────────────────
     if (body.action === 'check_mp_plan') {
       const planData = await mpFetch(env, `/preapproval_plan/${env.MP_PLAN_ID || 'NOT_SET'}`)
       return new Response(JSON.stringify({
@@ -217,20 +214,16 @@ export default {
       }), { status: 200, headers: corsHeaders })
     }
 
-    // ── Create MP subscription ────────────────────────────────────────────────
+    // ── Create subscription ───────────────────────────────────────────────────
     if (body.action === 'create_subscription') {
       const { user_id, user_email } = body
       if (!user_id || !user_email) {
         return new Response(JSON.stringify({ error: 'Faltan user_id y user_email' }), { status: 400, headers: corsHeaders })
       }
       if (!env.MP_PLAN_ID) {
-        return new Response(JSON.stringify({ error: 'MP_PLAN_ID no está configurado en el Worker' }), { status: 500, headers: corsHeaders })
+        return new Response(JSON.stringify({ error: 'MP_PLAN_ID no está configurado' }), { status: 500, headers: corsHeaders })
       }
 
-      // Crear el preapproval vía API para que external_reference quede
-      // grabado en el objeto de suscripción de MP. Sin esto, el campo
-      // llega null al webhook y no podemos linkear el pago al usuario.
-      const backUrl = 'https://ramirosilvera.github.io/optimizalinkedin/?premium=ok'
       const preapprovalRes = await mpFetch(env, '/preapproval', {
         method: 'POST',
         body: JSON.stringify({
@@ -238,21 +231,54 @@ export default {
           reason: 'Optimiza LK Premium',
           external_reference: user_id,
           payer_email: user_email,
-          back_url: backUrl,
+          back_url: BACK_URL,
+          // Explícitamente en el preapproval individual, no solo en el plan
+          notification_url: WORKER_NOTIFICATION_URL,
         }),
       })
 
-      if (!preapprovalRes?.init_point) {
-        // Fallback: URL manual (sin external_reference garantizado)
-        const params = new URLSearchParams({ preapproval_plan_id: env.MP_PLAN_ID, external_reference: user_id, payer_email: user_email })
-        const init_point = `https://www.mercadopago.com.ar/subscriptions/checkout?${params}`
-        return new Response(JSON.stringify({ init_point }), { status: 200, headers: corsHeaders })
+      if (preapprovalRes?.init_point) {
+        return new Response(JSON.stringify({ init_point: preapprovalRes.init_point }), { status: 200, headers: corsHeaders })
       }
 
-      return new Response(JSON.stringify({ init_point: preapprovalRes.init_point }), { status: 200, headers: corsHeaders })
+      // Fallback: URL directa al checkout (external_reference viaja en query param)
+      const params = new URLSearchParams({
+        preapproval_plan_id: env.MP_PLAN_ID,
+        external_reference: user_id,
+        payer_email: user_email,
+      })
+      return new Response(JSON.stringify({
+        init_point: `https://www.mercadopago.com.ar/subscriptions/checkout?${params}`,
+      }), { status: 200, headers: corsHeaders })
     }
 
-    // ── Grant premium manually (for gifting accounts) ────────────────────────
+    // ── Cancel subscription ───────────────────────────────────────────────────
+    if (body.action === 'cancel_subscription') {
+      const { user_id } = body
+      if (!user_id) {
+        return new Response(JSON.stringify({ error: 'Falta user_id' }), { status: 400, headers: corsHeaders })
+      }
+      try {
+        const perfilRes = await supabaseServiceFetch(env, `perfiles?id=eq.${user_id}&select=mp_subscription_id`)
+        const rows = await perfilRes.json()
+        const subId = rows?.[0]?.mp_subscription_id
+        if (!subId) {
+          return new Response(JSON.stringify({ error: 'No hay suscripción activa vinculada' }), { status: 404, headers: corsHeaders })
+        }
+        const cancelRes = await mpFetch(env, `/preapproval/${subId}`, {
+          method: 'PUT',
+          body: JSON.stringify({ status: 'cancelled' }),
+        })
+        console.log('[cancel_subscription] MP response status:', cancelRes?.status)
+        // Actualizar Supabase inmediatamente (el webhook también llegará luego)
+        await persistSubscription(env, { userId: user_id, subId, status: 'cancelled', nextPayment: null })
+        return new Response(JSON.stringify({ ok: true }), { status: 200, headers: corsHeaders })
+      } catch (e) {
+        return new Response(JSON.stringify({ error: e.message }), { status: 500, headers: corsHeaders })
+      }
+    }
+
+    // ── Grant premium manually ────────────────────────────────────────────────
     if (body.action === 'grant_premium') {
       const { admin_key, email, months } = body
       if (admin_key !== env.ADMIN_KEY) {
@@ -261,19 +287,14 @@ export default {
       if (!email) {
         return new Response(JSON.stringify({ error: 'Falta email' }), { status: 400, headers: corsHeaders })
       }
-      const premiumHasta = new Date(Date.now() + (months || 1) * 30 * 24 * 60 * 60 * 1000).toISOString()
-      // Find user by email in auth.users via Supabase admin
-      const userRes = await fetch(`${env.SUPABASE_URL}/auth/v1/admin/users?email=${encodeURIComponent(email)}`, {
-        headers: { apikey: env.SUPABASE_SERVICE_ROLE_KEY, Authorization: `Bearer ${env.SUPABASE_SERVICE_ROLE_KEY}` },
-      })
-      const userData = await userRes.json()
-      const userId = userData?.users?.[0]?.id
+      const userId = await findUserIdByEmail(env, email)
       if (!userId) {
         return new Response(JSON.stringify({ error: `No se encontró usuario con email ${email}` }), { status: 404, headers: corsHeaders })
       }
-      await supabaseServiceFetch(env, `perfiles?id=eq.${userId}`, {
-        method: 'PATCH',
-        body: JSON.stringify({ es_premium: true, premium_hasta: premiumHasta, updated_at: new Date().toISOString() }),
+      const premiumHasta = new Date(Date.now() + (months || 1) * 30 * 24 * 60 * 60 * 1000).toISOString()
+      await supabaseServiceFetch(env, 'perfiles', {
+        method: 'POST',
+        body: JSON.stringify({ id: userId, es_premium: true, premium_hasta: premiumHasta, updated_at: new Date().toISOString() }),
       })
       return new Response(JSON.stringify({ ok: true, user_id: userId, premium_hasta: premiumHasta }), { status: 200, headers: corsHeaders })
     }
@@ -288,8 +309,12 @@ export default {
         const res = await supabaseServiceFetch(env, `perfiles?id=eq.${user_id}&select=es_premium,premium_hasta,mp_subscription_id`)
         const rows = await res.json()
         const perfil = rows?.[0]
+        // Si premium_hasta ya venció, considerar no-premium aunque el flag diga true
+        const ahora = new Date()
+        const hastaDate = perfil?.premium_hasta ? new Date(perfil.premium_hasta) : null
+        const esPremiumReal = perfil?.es_premium && hastaDate && hastaDate > ahora
         return new Response(JSON.stringify({
-          es_premium: perfil?.es_premium || false,
+          es_premium: esPremiumReal || false,
           premium_hasta: perfil?.premium_hasta || null,
           mp_subscription_id: perfil?.mp_subscription_id || null,
         }), { status: 200, headers: corsHeaders })
@@ -298,9 +323,7 @@ export default {
       }
     }
 
-    // ── Sync MP subscription by payer email (admin) ───────────────────────────
-    // Útil para reparar registros donde mp_subscription_id quedó NULL
-    // porque el usuario pagó con una cuenta MP distinta a su email de Supabase.
+    // ── Sync MP subscription by email (admin repair) ──────────────────────────
     if (body.action === 'sync_mp_subscription') {
       const { admin_key, payer_email, user_id } = body
       if (admin_key !== env.ADMIN_KEY) {
@@ -309,49 +332,16 @@ export default {
       if (!payer_email || !user_id) {
         return new Response(JSON.stringify({ error: 'Faltan payer_email y user_id' }), { status: 400, headers: corsHeaders })
       }
-
-      // Buscar suscripciones autorizadas del plan para ese pagador
       const search = await mpFetch(env,
         `/preapproval/search?status=authorized&preapproval_plan_id=${env.MP_PLAN_ID}&payer_email=${encodeURIComponent(payer_email)}&limit=5`
       )
       const sub = search?.results?.[0]
       if (!sub) {
-        return new Response(JSON.stringify({ error: 'No se encontró suscripción autorizada en MP para ese email' }), { status: 404, headers: corsHeaders })
+        return new Response(JSON.stringify({ error: 'No se encontró suscripción autorizada en MP' }), { status: 404, headers: corsHeaders })
       }
-
-      const subId = sub.id
       const nextPayment = sub.next_payment_date ? new Date(sub.next_payment_date).toISOString() : null
-      const premiumHasta = nextPayment || new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString()
-
-      // Actualizar perfiles con el subscription ID
-      await supabaseServiceFetch(env, `perfiles?id=eq.${user_id}`, {
-        method: 'PATCH',
-        body: JSON.stringify({
-          es_premium: true,
-          premium_hasta: premiumHasta,
-          mp_subscription_id: subId,
-          updated_at: new Date().toISOString(),
-        }),
-      })
-
-      // Upsert en suscripciones
-      await supabaseServiceFetch(env, 'suscripciones', {
-        method: 'POST',
-        body: JSON.stringify({
-          user_id: user_id,
-          mp_subscription_id: subId,
-          status: 'authorized',
-          next_payment_date: nextPayment,
-          updated_at: new Date().toISOString(),
-        }),
-      })
-
-      return new Response(JSON.stringify({
-        ok: true,
-        mp_subscription_id: subId,
-        premium_hasta: premiumHasta,
-        next_payment_date: nextPayment,
-      }), { status: 200, headers: corsHeaders })
+      const result = await persistSubscription(env, { userId: user_id, subId: sub.id, status: 'authorized', nextPayment })
+      return new Response(JSON.stringify({ ok: true, mp_subscription_id: sub.id, ...result }), { status: 200, headers: corsHeaders })
     }
 
     // ── Fetch LinkedIn URL ────────────────────────────────────────────────────
@@ -415,7 +405,7 @@ export default {
       }
     }
 
-    // ── Gemini proxy (default) ────────────────────────────────────────────────
+    // ── Gemini proxy ──────────────────────────────────────────────────────────
     if (!body.contents) return new Response('Missing required field: contents', { status: 400 })
 
     const { model: modelField, ...geminiBody } = body
@@ -442,18 +432,11 @@ export default {
     } catch (err) {
       clearTimeout(timeoutId)
       const msg = err.name === 'AbortError' ? 'Upstream timeout' : 'Upstream fetch failed'
-      return new Response(JSON.stringify({ error: { message: msg } }), {
-        status: 504,
-        headers: corsHeaders,
-      })
+      return new Response(JSON.stringify({ error: { message: msg } }), { status: 504, headers: corsHeaders })
     }
     clearTimeout(timeoutId)
 
     const data = await res.json().catch(() => ({ error: { message: 'Invalid response from upstream' } }))
-
-    return new Response(JSON.stringify(data), {
-      status: res.status,
-      headers: corsHeaders,
-    })
+    return new Response(JSON.stringify(data), { status: res.status, headers: corsHeaders })
   },
 }
