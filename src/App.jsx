@@ -122,6 +122,7 @@ export default function App() {
   const [cvSuccess, setCvSuccess] = useState('')
 
   const [cvPreviewHtml, setCvPreviewHtml] = useState('')
+  const [showCvPreview, setShowCvPreview] = useState(false)
   const [showCvModal, setShowCvModal] = useState(false)
   const [contactEmail, setContactEmail] = useState('')
   const [contactTelefono, setContactTelefono] = useState('')
@@ -1731,7 +1732,6 @@ Generá el feedback en este JSON exacto:
 
   const updateCv = (newData) => {
     setCvFinalData(newData)
-    setCvPreviewHtml(buildCvHtml(newData, profilePhoto, profilePhotoMime, cvTemplate))
   }
 
   const buildCvPromptBase = (contacto, preAnswers = {}) => {
@@ -1935,6 +1935,7 @@ Respondé con este JSON exacto:
         setCvFinalData(cv)
         setCvStage('done')
         setCvPreviewHtml(buildCvHtml(cv, profilePhoto, profilePhotoMime, cvTemplate))
+        setShowCvPreview(true)
         saveToHistorial('cv', cv, cv.nombre || 'CV generado')
       } else {
         trackEvent('cv_gap_form_shown', { gap_count: mergedQuality.gaps?.length || 0 })
@@ -1989,6 +1990,7 @@ Respondé con este JSON exacto:
       setCvFinalData(cv)
       setCvStage('done')
       setCvPreviewHtml(buildCvHtml(cv, profilePhoto, profilePhotoMime, cvTemplate))
+      setShowCvPreview(true)
       trackEvent('cv_regenerated', { answered_count: Object.keys(gapAnswers).length })
       saveCvGenerado({ contacto: cvContacto, cv }).catch(err => console.error('[cv_generados regen save]', err))
       saveToHistorial('cv', cv, cv.nombre || 'CV generado')
@@ -2007,27 +2009,35 @@ Respondé con este JSON exacto:
     (cvFinalData?.nombre || cvDraft?.nombre || 'CV')
       .replace(/[^a-zA-ZÀ-ÿ0-9 ]/g, '').replace(/\s+/g, '-')
 
-  // ── Desktop: abre ventana nueva → diálogo de impresión automático ──────────
-  const saveCvDesktop = () => {
-    if (!cvPreviewHtml) return
+  // ── Mostrar overlay de preview (acción explícita del usuario) ──────────────
+  const openCvPreview = () => {
+    if (!cvFinalData) return
+    const html = buildCvHtml(cvFinalData, profilePhoto, profilePhotoMime, cvTemplate)
+    setCvPreviewHtml(html)
+    setShowCvPreview(true)
+    trackEvent('cv_preview_open')
+  }
+
+  // ── Guardar PDF: siempre genera HTML fresco, no depende del overlay ─────────
+  const saveCvPdf = () => {
+    if (!cvFinalData) return
     trackEvent('cv_save_desktop')
+    const html = buildCvHtml(cvFinalData, profilePhoto, profilePhotoMime, cvTemplate)
     const win = window.open('', '_blank')
-    if (win) {
-      win.document.open()
-      win.document.write(cvPreviewHtml)
-      win.document.close()
-      // Esperar render completo antes de imprimir
-      win.addEventListener('load', () => setTimeout(() => { try { win.focus(); win.print() } catch {} }, 150))
-      setTimeout(() => { try { win.focus(); win.print() } catch {} }, 700)
+    if (!win) {
+      // Popup bloqueado: descarga el HTML para imprimir manualmente
+      const blob = new Blob([html], { type: 'text/html; charset=utf-8' })
+      const a = document.createElement('a')
+      a.href = URL.createObjectURL(blob)
+      a.download = `CV-${_cvFileName()}.html`
+      document.body.appendChild(a); a.click(); document.body.removeChild(a)
+      setCvSuccess('Abrí el archivo descargado en Chrome → Ctrl+P → Guardar como PDF')
       return
     }
-    // Popup bloqueado: descarga el archivo
-    const blob = new Blob([cvPreviewHtml], { type: 'text/html; charset=utf-8' })
-    const a = document.createElement('a')
-    a.href = URL.createObjectURL(blob)
-    a.download = `CV-${_cvFileName()}.html`
-    document.body.appendChild(a); a.click(); document.body.removeChild(a)
-    setCvSuccess('Abrí el archivo descargado en Chrome → Ctrl+P → Guardar como PDF')
+    win.document.open()
+    win.document.write(html)
+    win.document.close()
+    setTimeout(() => { try { win.focus(); win.print() } catch {} }, 800)
   }
 
 
@@ -4201,7 +4211,7 @@ Respondé con este JSON exacto:
                         Incorporar estos datos al CV →
                       </button>
                       <button
-                        onClick={() => { setCvFinalData(cvDraft); setCvStage('done'); setCvPreviewHtml(buildCvHtml(cvDraft, profilePhoto, profilePhotoMime, cvTemplate)); trackEvent('cv_gap_skipped') }}
+                        onClick={() => { setCvFinalData(cvDraft); setCvStage('done'); setCvPreviewHtml(buildCvHtml(cvDraft, profilePhoto, profilePhotoMime, cvTemplate)); setShowCvPreview(true); trackEvent('cv_gap_skipped') }}
                         className="w-full py-2.5 rounded-xl text-xs text-slate-400 transition-all hover:text-slate-600"
                         style={{ background: 'transparent' }}
                       >
@@ -4231,7 +4241,7 @@ Respondé con este JSON exacto:
                           key={t.id}
                           onClick={() => {
                             setCvTemplate(t.id)
-                            if (cvFinalData) setCvPreviewHtml(buildCvHtml(cvFinalData, profilePhoto, profilePhotoMime, t.id))
+                            if (cvFinalData && showCvPreview) setCvPreviewHtml(buildCvHtml(cvFinalData, profilePhoto, profilePhotoMime, t.id))
                           }}
                           className="flex flex-col items-center gap-1 py-2 px-1 rounded-xl border transition-all text-center"
                           style={{
@@ -4255,7 +4265,7 @@ Respondé con este JSON exacto:
                         ← Menú
                       </button>
                       <button
-                        onClick={() => { setCvStage('idle'); setCvFinalData(null); setCvPreviewHtml(''); setStep(STEPS.MODE_SELECT) }}
+                        onClick={() => { setCvStage('idle'); setCvFinalData(null); setCvPreviewHtml(''); setShowCvPreview(false); setStep(STEPS.MODE_SELECT) }}
                         className="flex-[2] py-3 rounded-xl text-sm font-medium"
                         style={BTN_BACK_STYLE}>
                         ↺ Hacer nuevo análisis
@@ -4325,7 +4335,7 @@ Respondé con este JSON exacto:
                       </label>
                       <input id="cv-done-photo" type="file" accept="image/*" className="hidden" onChange={handleCvPhotoUpload} />
                       {profilePhotoPreview && (
-                        <button onClick={() => { setProfilePhotoPreview(null); setProfilePhoto(null); setProfilePhotoMime('image/jpeg'); if (cvFinalData) setCvPreviewHtml(buildCvHtml(cvFinalData, null, 'image/jpeg', cvTemplate)) }}
+                        <button onClick={() => { setProfilePhotoPreview(null); setProfilePhoto(null); setProfilePhotoMime('image/jpeg'); if (cvFinalData && showCvPreview) setCvPreviewHtml(buildCvHtml(cvFinalData, null, 'image/jpeg', cvTemplate)) }}
                           className="text-xs transition-colors" style={{ color: '#94a3b8' }}>
                           ✕ Quitar
                         </button>
@@ -4549,25 +4559,35 @@ Respondé con este JSON exacto:
                     )}
                   </div>
 
-                  {/iPhone|iPad|iPod|Android/i.test(navigator.userAgent) ? (
-                    <div className="rounded-xl p-3.5 text-xs text-center space-y-1.5"
-                      style={{ background: 'rgba(0,119,181,0.05)', border: '1px solid rgba(0,119,181,0.14)' }}>
-                      <p className="text-slate-700 font-medium">📸 Capturá una pantalla del CV que aparece abajo</p>
-                      <p className="text-slate-400">Para descargarlo como PDF accedé desde una computadora</p>
-                    </div>
-                  ) : (
-                    <div className="space-y-1.5">
+                  <div className="space-y-2">
+                    <div className="flex gap-2">
                       <button
-                        onClick={saveCvDesktop}
-                        className="w-full py-4 rounded-xl text-sm font-semibold text-white transition-all"
-                        style={{ background: 'linear-gradient(135deg,#059669,#10b981)', boxShadow: '0 4px 12px rgba(5,150,105,0.25)' }}
+                        onClick={openCvPreview}
+                        className="flex-1 py-3 rounded-xl text-sm font-semibold transition-all"
+                        style={{ background: 'rgba(0,119,181,0.08)', border: '1px solid rgba(0,119,181,0.25)', color: '#0077B5' }}
                       >
-                        📥 Guardar como PDF
+                        👁 Vista previa
                       </button>
-                      <p className="text-center text-xs text-slate-400">Se abre el diálogo de impresión → destino: <strong>Guardar como PDF</strong></p>
-                      {cvSuccess && <p className="text-xs text-center" style={{ color: '#059669' }}>✓ {cvSuccess}</p>}
+                      {/iPhone|iPad|iPod|Android/i.test(navigator.userAgent) ? (
+                        <div className="flex-1 rounded-xl py-3 text-xs text-center flex items-center justify-center"
+                          style={{ background: 'rgba(0,119,181,0.05)', border: '1px solid rgba(0,119,181,0.14)', color: '#64748b' }}>
+                          PDF en computadora
+                        </div>
+                      ) : (
+                        <button
+                          onClick={saveCvPdf}
+                          className="flex-1 py-3 rounded-xl text-sm font-semibold text-white transition-all"
+                          style={{ background: 'linear-gradient(135deg,#059669,#10b981)' }}
+                        >
+                          📥 Guardar PDF
+                        </button>
+                      )}
                     </div>
-                  )}
+                    {!(/iPhone|iPad|iPod|Android/i.test(navigator.userAgent)) && (
+                      <p className="text-center text-xs text-slate-400">Se abre diálogo de impresión → elegí <strong>Guardar como PDF</strong></p>
+                    )}
+                    {cvSuccess && <p className="text-xs text-center" style={{ color: '#059669' }}>✓ {cvSuccess}</p>}
+                  </div>
                   <button
                     onClick={() => { setJobCvForAdapter(cvFinalData); setJobPosting(''); setJobResult(null); setJobError(''); setShowJobModal(true); trackEvent('job_adapter_opened') }}
                     className="w-full py-3.5 rounded-xl text-sm font-semibold transition-all"
@@ -4576,7 +4596,7 @@ Respondé con este JSON exacto:
                     📝 Adaptar para un aviso de empleo →
                   </button>
                   <button
-                    onClick={() => { setCvStage('idle'); setCvDraft(null); setCvFinalData(null); setCvQuality(null); setCvPreviewHtml('') }}
+                    onClick={() => { setCvStage('idle'); setCvDraft(null); setCvFinalData(null); setCvQuality(null); setCvPreviewHtml(''); setShowCvPreview(false) }}
                     className="w-full py-2 rounded-xl text-xs text-slate-400 hover:text-slate-600 transition-all"
                     style={{ background: 'transparent' }}
                   >
@@ -5942,7 +5962,7 @@ Respondé con este JSON exacto:
       )}
 
       {/* ── Preview CV — overlay unificado (mobile + desktop) ── */}
-      {cvPreviewHtml && cvStage === 'done' && (
+      {showCvPreview && cvPreviewHtml && (
         <div className="cv-print-overlay fixed inset-0 z-50 flex flex-col" style={{ background: '#fff' }}>
           {/* Barra superior */}
           <div className="flex items-center justify-between px-4 py-3 shrink-0"
@@ -5959,14 +5979,14 @@ Respondé con este JSON exacto:
             <div className="flex items-center gap-2">
               {!/iPhone|iPad|iPod|Android/i.test(navigator.userAgent) && (
                 <button
-                  onClick={saveCvDesktop}
+                  onClick={saveCvPdf}
                   className="text-white text-xs px-3 py-1.5 rounded-lg font-semibold flex items-center gap-1.5"
                   style={{ background: 'rgba(255,255,255,0.25)', border: '1px solid rgba(255,255,255,0.35)' }}>
                   📥 Guardar PDF
                 </button>
               )}
               <button
-                onClick={() => { setCvPreviewHtml('') }}
+                onClick={() => setShowCvPreview(false)}
                 className="text-white text-xs px-3 py-1.5 rounded-lg"
                 style={{ background: 'rgba(255,255,255,0.15)' }}>
                 ✕
