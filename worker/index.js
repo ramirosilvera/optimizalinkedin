@@ -1,6 +1,9 @@
+const WORKER_VERSION = '2.0.0'
 const ALLOWED_MODELS = new Set(['gemini-2.5-flash-lite'])
 const DEFAULT_MODEL = 'gemini-2.5-flash-lite'
 const GEMINI_TIMEOUT_MS = 55_000
+const MAX_BODY_BYTES = 2 * 1024 * 1024 // 2 MB
+const GEMINI_MAX_RETRIES = 2           // retries on 5xx (total attempts = 3)
 const ALLOWED_ORIGINS = new Set([
   'https://optimizalinkedin.com',
   'https://ramirosilvera.github.io',
@@ -247,8 +250,10 @@ async function callGeminiApi(env, geminiBody, corsHeaders) {
   const controller = new AbortController()
   const timeoutId = setTimeout(() => controller.abort(), GEMINI_TIMEOUT_MS)
   const geminiKeys = (env.GEMINI_API_KEYS || env.GEMINI_API_KEY || '').split(',').map(k => k.trim()).filter(Boolean)
-  let res
+
+  let res = null
   try {
+    // Phase 1: rotate through keys on 429
     for (const key of geminiKeys) {
       res = await fetch(
         `https://generativelanguage.googleapis.com/v1beta/models/${DEFAULT_MODEL}:generateContent?key=${key}`,
@@ -256,13 +261,24 @@ async function callGeminiApi(env, geminiBody, corsHeaders) {
       )
       if (res.status !== 429) break
     }
+
+    // Phase 2: retry on 5xx with exponential backoff
+    for (let attempt = 0; attempt < GEMINI_MAX_RETRIES && res.status >= 500; attempt++) {
+      await new Promise(r => setTimeout(r, (attempt + 1) * 1500))
+      const key = geminiKeys[attempt % geminiKeys.length]
+      res = await fetch(
+        `https://generativelanguage.googleapis.com/v1beta/models/${DEFAULT_MODEL}:generateContent?key=${key}`,
+        { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(geminiBody), signal: controller.signal }
+      )
+    }
   } catch (err) {
     clearTimeout(timeoutId)
-    const msg = err.name === 'AbortError' ? 'Upstream timeout' : 'Upstream fetch failed'
+    const msg = err.name === 'AbortError' ? 'El servicio de IA tardó demasiado. Intentá de nuevo.' : 'Error de conexión con el servicio de IA.'
     return new Response(JSON.stringify({ error: { message: msg } }), { status: 504, headers: corsHeaders })
   }
+
   clearTimeout(timeoutId)
-  const data = await res.json().catch(() => ({ error: { message: 'Invalid response from upstream' } }))
+  const data = await res.json().catch(() => ({ error: { message: 'Respuesta inválida del servicio de IA.' } }))
   return new Response(JSON.stringify(data), { status: res.status, headers: corsHeaders })
 }
 
@@ -374,6 +390,45 @@ export default {
       })
     }
 
+    // ── GET /health ───────────────────────────────────────────────────────────
+    if (request.method === 'GET' && url.pathname.endsWith('/health')) {
+      return new Response(JSON.stringify({
+        status: 'ok',
+        version: WORKER_VERSION,
+        timestamp: new Date().toISOString(),
+        env: {
+          gemini_keys: (env.GEMINI_API_KEYS || env.GEMINI_API_KEY || '').split(',').filter(Boolean).length,
+          rate_limit_kv: !!env.RATE_LIMIT_KV,
+          supabase: !!env.SUPABASE_URL,
+          mp: !!env.MP_ACCESS_TOKEN,
+          app_token: !!env.APP_TOKEN,
+        },
+      }), { status: 200, headers: corsHeaders })
+    }
+
+    // ── GET /subscription-status?user_id=... ─────────────────────────────────
+    if (request.method === 'GET' && url.pathname.endsWith('/subscription-status')) {
+      const userId = url.searchParams.get('user_id')
+      if (!userId) {
+        return new Response(JSON.stringify({ error: { message: 'Falta user_id' } }), { status: 400, headers: corsHeaders })
+      }
+      try {
+        const res = await supabaseServiceFetch(env, `perfiles?id=eq.${userId}&select=es_premium,premium_hasta,mp_subscription_id`)
+        const rows = await res.json()
+        const perfil = rows?.[0]
+        const ahora = new Date()
+        const hastaDate = perfil?.premium_hasta ? new Date(perfil.premium_hasta) : null
+        const esPremiumReal = perfil?.es_premium && hastaDate && hastaDate > ahora
+        return new Response(JSON.stringify({
+          es_premium: esPremiumReal || false,
+          premium_hasta: perfil?.premium_hasta || null,
+          mp_subscription_id: perfil?.mp_subscription_id || null,
+        }), { status: 200, headers: corsHeaders })
+      } catch {
+        return new Response(JSON.stringify({ es_premium: false }), { status: 200, headers: corsHeaders })
+      }
+    }
+
     // ── MP Webhook ────────────────────────────────────────────────────────────
     if (url.pathname.endsWith('/mp-webhook')) {
       if (request.method !== 'POST') return new Response('Method not allowed', { status: 405 })
@@ -446,11 +501,17 @@ export default {
     }
 
     if (request.method !== 'POST') {
-      return new Response('Method not allowed', { status: 405 })
+      return new Response(JSON.stringify({ error: { message: 'Método no permitido' } }), { status: 405, headers: corsHeaders })
+    }
+
+    // Guard: reject oversized payloads before parsing
+    const contentLength = parseInt(request.headers.get('content-length') || '0', 10)
+    if (contentLength > MAX_BODY_BYTES) {
+      return new Response(JSON.stringify({ error: { message: 'Payload demasiado grande (máx 2 MB)' } }), { status: 413, headers: corsHeaders })
     }
 
     const body = await request.json().catch(() => null)
-    if (!body) return new Response('Invalid JSON', { status: 400 })
+    if (!body) return new Response(JSON.stringify({ error: { message: 'JSON inválido' } }), { status: 400, headers: corsHeaders })
 
     // ── Simulate webhook (debug, admin only) ─────────────────────────────────
     if (body.action === 'simulate_webhook') {
@@ -708,7 +769,7 @@ export default {
     }
 
     // ── Gemini raw proxy (PDF extraction only) ────────────────────────────────
-    if (!body.contents) return new Response('Missing required field: contents', { status: 400 })
+    if (!body.contents) return new Response(JSON.stringify({ error: { message: 'Falta el campo requerido: contents' } }), { status: 400, headers: corsHeaders })
 
     if (env.APP_TOKEN) {
       const appToken = request.headers.get('X-App-Token')
