@@ -3,8 +3,7 @@ name: Deploy to GitHub Pages
 on:
   push:
     branches:
-      - claude/linkedin-profile-optimizer-5uHPM
-      - claude/premium-cv-generator-wlVb3
+      - production
 
 permissions:
   contents: read
