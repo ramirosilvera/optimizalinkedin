@@ -9,7 +9,6 @@ const APP_TOKEN   = import.meta.env.VITE_APP_TOKEN || ''
 // ── EmailJS (envío de emails transaccionales) ────────────────────────────────
 const EMAILJS_SERVICE_ID        = import.meta.env.VITE_EMAILJS_SERVICE_ID        || ''
 const EMAILJS_PUBLIC_KEY        = import.meta.env.VITE_EMAILJS_PUBLIC_KEY        || ''
-const EMAILJS_TEMPLATE_WAITLIST = import.meta.env.VITE_EMAILJS_TEMPLATE_WAITLIST || ''
 const EMAILJS_TEMPLATE_WELCOME  = import.meta.env.VITE_EMAILJS_TEMPLATE_WELCOME  || ''
 const EMAILJS_TEMPLATE_CANCEL   = import.meta.env.VITE_EMAILJS_TEMPLATE_CANCEL   || ''
 
@@ -1611,7 +1610,6 @@ export default function App() {
         headers: { 'Content-Type': 'application/json', apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}` },
         body: JSON.stringify({ email, evento: rateLimitEvento }),
       })
-      sendEmail(EMAILJS_TEMPLATE_WAITLIST, { to_email: email, evento: rateLimitEvento })
       trackEvent('waitlist_signup', { evento: rateLimitEvento })
     } catch { /* silencioso */ }
     setWaitlistLoading(false)
