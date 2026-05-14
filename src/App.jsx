@@ -133,6 +133,7 @@ export default function App() {
   const [cvOptimizePhase, setCvOptimizePhase] = useState('idle') // 'idle'|'loading_q'|'questions'|'optimizing'
   const [cvOptimizeQuestions, setCvOptimizeQuestions] = useState([])
   const [cvOptimizeAnswers, setCvOptimizeAnswers] = useState({})
+  const [linkedinProfileId, setLinkedinProfileId] = useState(null)
   const [contactEmail, setContactEmail] = useState('')
   const [contactTelefono, setContactTelefono] = useState('')
   const [contactLinkedin, setContactLinkedin] = useState('')
@@ -468,6 +469,142 @@ export default function App() {
     trackEvent('auth_logout')
   }
 
+  // ── LinkedIn Profile persistence ──────────────────────────────────────────
+
+  const getOrCreateSessionKey = () => {
+    let key = localStorage.getItem('ol_session_key')
+    if (!key) {
+      key = crypto.randomUUID()
+      localStorage.setItem('ol_session_key', key)
+    }
+    return key
+  }
+
+  const saveLinkedinProfile = async (structured) => {
+    const sessionKey = getOrCreateSessionKey()
+
+    // Always persist to localStorage for instant restore on refresh
+    const snapshot = {
+      ...structured,
+      session_key: sessionKey,
+      savedAt: Date.now(),
+    }
+    localStorage.setItem('ol_profile_v1', JSON.stringify(snapshot))
+
+    // For logged-in users: also persist to Supabase
+    const token = localStorage.getItem('ol_at')
+    const uid   = localStorage.getItem('ol_uid')
+    if (!SUPABASE_URL || !SUPABASE_KEY || !token || !uid) return
+
+    try {
+      const row = {
+        session_key:  sessionKey,
+        user_id:      uid,
+        nombre:       structured.nombre       || null,
+        headline:     structured.headline     || null,
+        location:     structured.location     || null,
+        email:        structured.email        || null,
+        linkedin_url: structured.linkedin_url || null,
+        about:        structured.about        || null,
+        experiencias: structured.experiencias || [],
+        educacion:    structured.educacion    || [],
+        habilidades:  structured.habilidades  || [],
+        idiomas:      structured.idiomas      || [],
+        certificaciones: structured.certificaciones || [],
+        profile_text: structured.profile_text || null,
+        fuente:       structured.fuente       || 'manual',
+        synced_at:    new Date().toISOString(),
+      }
+      const res = await fetch(
+        `${SUPABASE_URL}/rest/v1/linkedin_profiles?session_key=eq.${sessionKey}`,
+        {
+          method: 'POST',
+          headers: {
+            apikey: SUPABASE_KEY,
+            Authorization: `Bearer ${token}`,
+            'Content-Type': 'application/json',
+            Prefer: 'resolution=merge-duplicates,return=representation',
+          },
+          body: JSON.stringify(row),
+        }
+      )
+      if (res.ok) {
+        const saved = await res.json().catch(() => [])
+        const id = (Array.isArray(saved) ? saved[0] : saved)?.id
+        if (id) setLinkedinProfileId(id)
+      }
+    } catch { /* silencioso — localStorage ya tiene el dato */ }
+  }
+
+  const loadLinkedinProfile = async () => {
+    // 1. Try localStorage first (fast, works for anon)
+    try {
+      const raw = localStorage.getItem('ol_profile_v1')
+      if (raw) {
+        const saved = JSON.parse(raw)
+        // Restore form state from saved profile (if still fresh — 30 days)
+        const ageMs = Date.now() - (saved.savedAt || 0)
+        if (ageMs < 30 * 24 * 60 * 60 * 1000) {
+          if (saved.headline)         setFormTitular(saved.headline)
+          if (saved.about)            setFormResumen(saved.about)
+          if (saved.habilidades?.length > 0)
+            setFormHabilidades(Array.isArray(saved.habilidades) ? saved.habilidades.join(', ') : saved.habilidades)
+          if (saved.experiencias?.length > 0)
+            setFormExperiencias(saved.experiencias.map(e => ({
+              cargo: e.cargo || e.title || '',
+              empresa: e.empresa || e.companyName || '',
+              periodo: e.periodo || (e.startYear ? `${e.startYear}–${e.endYear || 'presente'}` : ''),
+              descripcion: e.descripcion || e.description || '',
+            })))
+          if (saved.educacion?.length > 0)
+            setFormEducacion(saved.educacion.map(e => ({
+              institucion: e.institucion || e.schoolName || '',
+              titulo: e.titulo || e.degreeName || '',
+              periodo: e.periodo || (e.startYear ? `${e.startYear}–${e.endYear || ''}` : ''),
+            })))
+          if (saved.profile_text) {
+            setProfileText(saved.profile_text)
+            setFormConfirmed(true)
+          }
+        }
+      }
+    } catch { /* silencioso */ }
+
+    // 2. For logged-in users: also try Supabase (may have richer/newer data)
+    const token = localStorage.getItem('ol_at')
+    const uid   = localStorage.getItem('ol_uid')
+    if (!SUPABASE_URL || !SUPABASE_KEY || !token || !uid) return
+    try {
+      const res = await fetch(
+        `${SUPABASE_URL}/rest/v1/linkedin_profiles?user_id=eq.${uid}&order=synced_at.desc&limit=1`,
+        { headers: { apikey: SUPABASE_KEY, Authorization: `Bearer ${token}` } }
+      )
+      if (!res.ok) return
+      const rows = await res.json().catch(() => [])
+      const p = rows?.[0]
+      if (!p) return
+      setLinkedinProfileId(p.id)
+      // Supabase has richer/newer data — restore form state
+      if (p.headline)         setFormTitular(p.headline)
+      if (p.about)            setFormResumen(p.about)
+      if (p.habilidades?.length > 0)
+        setFormHabilidades(Array.isArray(p.habilidades) ? p.habilidades.join(', ') : p.habilidades)
+      if (p.experiencias?.length > 0)
+        setFormExperiencias(p.experiencias.map(e => ({
+          cargo: e.cargo || '', empresa: e.empresa || '',
+          periodo: e.periodo || '', descripcion: e.descripcion || '',
+        })))
+      if (p.educacion?.length > 0)
+        setFormEducacion(p.educacion.map(e => ({
+          institucion: e.institucion || '', titulo: e.titulo || '', periodo: e.periodo || '',
+        })))
+      if (p.profile_text) {
+        setProfileText(p.profile_text)
+        setFormConfirmed(true)
+      }
+    } catch { /* silencioso */ }
+  }
+
   const saveToHistorial = async (tipo, datos, titulo = '') => {
     const token = localStorage.getItem('ol_at')
     const uid = localStorage.getItem('ol_uid')
@@ -793,6 +930,12 @@ export default function App() {
 
   // Restaurar sesión desde localStorage al cargar
   useEffect(() => {
+    // Restore profile from localStorage for anonymous users (fast, no network)
+    loadLinkedinProfile()
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  useEffect(() => {
     const at = localStorage.getItem('ol_at')
     const rt = localStorage.getItem('ol_rt')
     const uid = localStorage.getItem('ol_uid')
@@ -814,6 +957,8 @@ export default function App() {
           premium_hasta: perfil?.premium_hasta || null,
         }
         applySession(data.access_token, data.refresh_token, userData)
+        // After session restored: load profile from Supabase (may be richer than localStorage)
+        loadLinkedinProfile()
       })
       .catch(() => clearSession())
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -1150,9 +1295,27 @@ export default function App() {
     if (formHabilidades.trim()) parts.push(`HABILIDADES: ${formHabilidades.trim()}`)
     if (name) parts.push(`NOMBRE: ${name}`)
     if (email) parts.push(`EMAIL: ${email}`)
-    setProfileText(parts.join('\n\n'))
+    const pt = parts.join('\n\n')
+    setProfileText(pt)
     setFormConfirmed(true)
     trackEvent('cv_subido', { metodo: 'linkedin_oauth' })
+    saveLinkedinProfile({
+      nombre: name || '',
+      email: email || '',
+      headline: formTitular.trim(),
+      about: formResumen.trim(),
+      habilidades: formHabilidades.split(',').map(h => h.trim()).filter(Boolean),
+      experiencias: (positions || []).map(p => ({
+        cargo: p.title || '', empresa: p.companyName || '',
+        periodo: p.startYear ? `${p.startYear}–${p.endYear || 'presente'}` : '',
+        descripcion: p.description || '',
+      })),
+      educacion: formEducacion.filter(e => e.institucion.trim() || e.titulo.trim()).map(e => ({
+        institucion: e.institucion.trim(), titulo: e.titulo.trim(), periodo: e.periodo.trim(),
+      })),
+      profile_text: pt,
+      fuente: 'oauth',
+    })
   }
 
   // ── Switch input mode (pdf / form / linkedin) ──
@@ -1185,9 +1348,24 @@ export default function App() {
     if (expLines) parts.push(`EXPERIENCIA PROFESIONAL:\n${expLines}`)
     if (eduLines) parts.push(`EDUCACIÓN:\n${eduLines}`)
     if (formHabilidades.trim()) parts.push(`HABILIDADES: ${formHabilidades.trim()}`)
-    setProfileText(parts.join('\n\n'))
+    const pt = parts.join('\n\n')
+    setProfileText(pt)
     setFormConfirmed(true)
     trackEvent('cv_subido', { metodo: 'formulario' })
+    saveLinkedinProfile({
+      nombre: '',
+      headline: formTitular.trim(),
+      about: formResumen.trim(),
+      habilidades: formHabilidades.split(',').map(h => h.trim()).filter(Boolean),
+      experiencias: formExperiencias.filter(e => e.cargo.trim() || e.empresa.trim()).map(e => ({
+        cargo: e.cargo.trim(), empresa: e.empresa.trim(), periodo: e.periodo.trim(), descripcion: e.descripcion.trim(),
+      })),
+      educacion: formEducacion.filter(e => e.institucion.trim() || e.titulo.trim()).map(e => ({
+        institucion: e.institucion.trim(), titulo: e.titulo.trim(), periodo: e.periodo.trim(),
+      })),
+      profile_text: pt,
+      fuente: 'form',
+    })
   }
 
   // ── Attempt to fetch LinkedIn profile by URL ──
@@ -1299,6 +1477,7 @@ export default function App() {
       if (text.length < 100) throw new Error('No se pudo extraer contenido del PDF. Verificá que sea el PDF de tu perfil de LinkedIn y que no esté protegido con contraseña.')
       setProfileText(text)
       trackEvent('cv_subido', { metodo: 'pdf' })
+      saveLinkedinProfile({ profile_text: text, fuente: 'pdf' })
     } catch (err) {
       if (err.isRateLimit) { setPdfLoading(false); return }
       setPdfError(err.message || 'Error al procesar el PDF.')
@@ -4137,8 +4316,46 @@ Respondé con este JSON exacto:
 
         {/* ── RESULTS ── */}
         {step === STEPS.RESULTS && (result || (cvStage === 'done' && cvFinalData)) && (
-          <div className="step-transition space-y-6">
+          <div className="step-transition space-y-5">
             <Logo />
+
+            {/* ══ BLOQUE 1 — Score Hero ══ */}
+            {result && (
+              <div className="rounded-2xl overflow-hidden"
+                style={{ background: 'linear-gradient(135deg,#0d2137 0%,#0a3d62 60%,#0077B5 100%)', boxShadow: '0 8px 32px rgba(0,119,181,0.30)' }}>
+                <div className="px-6 pt-6 pb-5 flex flex-col items-center gap-4 text-center">
+                  {/* Score ring — grande y central */}
+                  <div className="relative">
+                    <ScoreRing score={result.puntaje_general ?? 0} size={100} />
+                    {result.puntaje_general === null && (
+                      <div className="absolute inset-0 flex items-center justify-center w-24 h-24 rounded-full text-3xl"
+                        style={{ background: 'rgba(255,255,255,0.08)' }}>💡</div>
+                    )}
+                  </div>
+                  {/* Nivel SEO badge */}
+                  {result.nivel_seo && (
+                    <span className="text-xs font-bold px-3 py-1 rounded-full"
+                      style={{
+                        background: result.nivel_seo === 'Alto' ? 'rgba(74,222,128,0.20)' : result.nivel_seo === 'Medio' ? 'rgba(255,255,255,0.12)' : 'rgba(251,191,36,0.20)',
+                        color: result.nivel_seo === 'Alto' ? '#4ade80' : result.nivel_seo === 'Medio' ? '#e2e8f0' : '#fbbf24',
+                        border: `1px solid ${result.nivel_seo === 'Alto' ? 'rgba(74,222,128,0.35)' : result.nivel_seo === 'Medio' ? 'rgba(255,255,255,0.20)' : 'rgba(251,191,36,0.35)'}`,
+                      }}>
+                      SEO {result.nivel_seo}
+                    </span>
+                  )}
+                  {/* Diagnóstico breve */}
+                  <p className="text-sm leading-relaxed max-w-xs" style={{ color: 'rgba(226,232,240,0.90)' }}>
+                    {result.resumen_diagnostico || 'Análisis completado.'}
+                  </p>
+                  {result.puntaje_general === null && (
+                    <p className="text-[11px] leading-relaxed max-w-xs"
+                      style={{ color: 'rgba(226,232,240,0.55)', border: '1px solid rgba(99,102,241,0.30)', borderRadius: '10px', padding: '8px 12px', background: 'rgba(99,102,241,0.08)' }}>
+                      💡 Diagnóstico base con tus respuestas · Subí tu PDF de LinkedIn para el puntaje real
+                    </p>
+                  )}
+                </div>
+              </div>
+            )}
 
             {/* Consentimiento para guardar análisis */}
             {showAnalisisConsent && !analisisSaved && (
@@ -4179,48 +4396,88 @@ Respondé con este JSON exacto:
               </p>
             )}
 
-            {/* Acción prioritaria — destacada arriba */}
-            {result.accion_prioritaria && (
-              <div className="rounded-2xl p-5"
-                style={{ backgroundColor: 'rgba(245,158,11,0.08)', border: '1px solid rgba(245,158,11,0.35)' }}>
-                <p className="text-xs font-semibold uppercase tracking-wide mb-2" style={{ color: '#f59e0b' }}>
-                  ⚡ Acción prioritaria — hacé esto hoy
-                </p>
-                <p className="text-slate-800 text-sm leading-relaxed">{result.accion_prioritaria}</p>
+            {/* ══ BLOQUE 2 — Diagnóstico estratégico ══ */}
+            {result && (result.fortalezas?.length > 0 || result.areas_de_mejora?.length > 0) && (
+              <div className="rounded-2xl overflow-hidden"
+                style={{ border: '1px solid rgba(0,119,181,0.14)', background: 'white' }}>
+                <div className="px-5 pt-4 pb-1 border-b" style={{ borderColor: 'rgba(0,119,181,0.08)' }}>
+                  <p className="text-xs font-bold uppercase tracking-wide" style={{ color: '#0077B5' }}>Diagnóstico estratégico</p>
+                </div>
+                <div className="grid sm:grid-cols-2 gap-0 divide-y sm:divide-y-0 sm:divide-x divide-slate-100">
+                  <div className="px-5 py-4 space-y-2">
+                    <p className="text-[10px] font-bold uppercase tracking-wide mb-2" style={{ color: '#16a34a' }}>✅ Fortalezas</p>
+                    {(result.fortalezas || []).map((f, i) => (
+                      <div key={i} className="flex items-start gap-2">
+                        <span className="mt-1 w-1.5 h-1.5 rounded-full shrink-0" style={{ background: '#16a34a' }} />
+                        <p className="text-slate-700 text-sm leading-snug">{f}</p>
+                      </div>
+                    ))}
+                  </div>
+                  <div className="px-5 py-4 space-y-2">
+                    <p className="text-[10px] font-bold uppercase tracking-wide mb-2" style={{ color: '#d97706' }}>⚠️ Áreas de mejora</p>
+                    {(result.areas_de_mejora || []).map((a, i) => (
+                      <div key={i} className="flex items-start gap-2">
+                        <span className="mt-1 w-1.5 h-1.5 rounded-full shrink-0" style={{ background: '#d97706' }} />
+                        <p className="text-slate-700 text-sm leading-snug">{a}</p>
+                      </div>
+                    ))}
+                  </div>
+                </div>
               </div>
             )}
 
-            <ResultCard title="Diagnóstico general">
-              {result.puntaje_general === null && (
-                <div className="rounded-xl p-3 mb-4 flex items-start gap-2 text-xs"
-                  style={{ background: 'rgba(99,102,241,0.07)', border: '1px solid rgba(99,102,241,0.2)', color: '#6366f1' }}>
-                  <span className="shrink-0 text-base">💡</span>
-                  <span>Diagnóstico base generado con tus respuestas. Subí tu PDF de LinkedIn para obtener un análisis completo con puntaje real.</span>
+            {/* ══ BLOQUE 3 — Acciones inmediatas ══ */}
+            {result && (
+              <div className="space-y-2">
+                <p className="text-xs font-bold uppercase tracking-wide px-1" style={{ color: '#475569' }}>Próximos pasos</p>
+                <div className="grid grid-cols-2 gap-2.5">
+                  {/* CV */}
+                  <button
+                    onClick={() => { if (cvStage === 'idle') callGenerateCV({}); document.getElementById('cv-section')?.scrollIntoView({ behavior: 'smooth', block: 'start' }) }}
+                    className="rounded-2xl p-4 text-left transition-all hover:shadow-md active:scale-[0.98]"
+                    style={{ background: 'linear-gradient(135deg,rgba(5,150,105,0.08),rgba(16,185,129,0.05))', border: '1px solid rgba(5,150,105,0.25)' }}
+                  >
+                    <p className="text-xl mb-1">📄</p>
+                    <p className="text-sm font-bold text-slate-800 leading-tight">Generá tu CV</p>
+                    <p className="text-[11px] text-slate-500 mt-0.5 leading-snug">ATS-compatible · 1 página</p>
+                  </button>
+                  {/* Titular/Resumen */}
+                  <button
+                    onClick={() => document.getElementById('mejorar-perfil')?.scrollIntoView({ behavior: 'smooth', block: 'start' })}
+                    className="rounded-2xl p-4 text-left transition-all hover:shadow-md active:scale-[0.98]"
+                    style={{ background: 'linear-gradient(135deg,rgba(0,119,181,0.08),rgba(14,165,233,0.05))', border: '1px solid rgba(0,119,181,0.22)' }}
+                  >
+                    <p className="text-xl mb-1">✏️</p>
+                    <p className="text-sm font-bold text-slate-800 leading-tight">Optimizá tu perfil</p>
+                    <p className="text-[11px] text-slate-500 mt-0.5 leading-snug">Titular · Resumen · SEO</p>
+                  </button>
+                  {/* Networking */}
+                  <button
+                    onClick={() => { setShowGrowthSection(true); document.getElementById('crecimiento')?.scrollIntoView({ behavior: 'smooth', block: 'start' }) }}
+                    className="rounded-2xl p-4 text-left transition-all hover:shadow-md active:scale-[0.98]"
+                    style={{ background: 'linear-gradient(135deg,rgba(99,102,241,0.08),rgba(139,92,246,0.05))', border: '1px solid rgba(99,102,241,0.22)' }}
+                  >
+                    <p className="text-xl mb-1">🚀</p>
+                    <p className="text-sm font-bold text-slate-800 leading-tight">Networking plan</p>
+                    <p className="text-[11px] text-slate-500 mt-0.5 leading-snug">Banner + 90 días de acciones</p>
+                  </button>
+                  {/* Entrevista */}
+                  <button
+                    onClick={() => { resetInterview(); setStep(STEPS.INTERVIEW_INTRO); trackEvent('modo_entrevista_desde_resultados') }}
+                    className="rounded-2xl p-4 text-left transition-all hover:shadow-md active:scale-[0.98]"
+                    style={{ background: 'linear-gradient(135deg,rgba(245,158,11,0.08),rgba(249,115,22,0.05))', border: '1px solid rgba(245,158,11,0.25)' }}
+                  >
+                    <p className="text-xl mb-1">🎙️</p>
+                    <p className="text-sm font-bold text-slate-800 leading-tight">Simulá entrevista</p>
+                    <p className="text-[11px] text-slate-500 mt-0.5 leading-snug">5 preguntas con feedback IA</p>
+                  </button>
                 </div>
-              )}
-              <div className="flex flex-col sm:flex-row items-center sm:items-start gap-6">
-                <div className="flex flex-col items-center gap-3">
-                  {result.puntaje_general !== null
-                    ? <ScoreRing score={result.puntaje_general ?? 0} />
-                    : <div className="w-20 h-20 rounded-full flex items-center justify-center text-3xl"
-                        style={{ background: 'rgba(99,102,241,0.08)', border: '2px solid rgba(99,102,241,0.2)' }}>💡</div>
-                  }
-                  {result.nivel_seo && (
-                    <span className="text-xs font-semibold px-3 py-1 rounded-full"
-                      style={{
-                        backgroundColor: result.nivel_seo === 'Alto' ? 'rgba(34,197,94,0.12)' : result.nivel_seo === 'Medio' ? 'rgba(0,119,181,0.12)' : 'rgba(245,158,11,0.12)',
-                        color: result.nivel_seo === 'Alto' ? '#16a34a' : result.nivel_seo === 'Medio' ? '#0077B5' : '#d97706',
-                        border: `1px solid ${result.nivel_seo === 'Alto' ? 'rgba(34,197,94,0.3)' : result.nivel_seo === 'Medio' ? 'rgba(0,119,181,0.3)' : 'rgba(245,158,11,0.3)'}`,
-                      }}>
-                      SEO: {result.nivel_seo}
-                    </span>
-                  )}
-                </div>
-                <p className="text-slate-600 text-sm leading-relaxed sm:pt-4">{result.resumen_diagnostico || 'Sin información disponible.'}</p>
               </div>
-            </ResultCard>
+            )}
 
-            {/* ── CV de 1 página ── */}
+            {/* ══ BLOQUE 4 — CV inteligente ══ */}
+            <div id="cv-section" className="space-y-3">
+              {/* section anchor — botón manual y pipeline below */}
             <div className="space-y-3">
               {/* Botón manual — solo si el pipeline está idle Y no hay auto-generación en curso */}
               {cvStage === 'idle' && !cvLoading && (
@@ -4996,137 +5253,146 @@ Respondé con este JSON exacto:
               {cvError && cvStage === 'idle' && !rateLimitEvento && <p className="text-xs text-red-500 text-center">{cvError}</p>}
             </div>
 
-            <ResultCard title="Fortalezas y áreas de mejora">
-              <div className="grid sm:grid-cols-2 gap-6">
-                <div className="space-y-2">
-                  <p className="text-xs font-semibold uppercase tracking-wide mb-3" style={{ color: '#4ade80' }}>✅ Fortalezas</p>
-                  {(result.fortalezas || []).map((f, i) => (
-                    <div key={i} className="flex items-start gap-2">
-                      <span className="mt-0.5 shrink-0" style={{ color: '#16a34a' }}>•</span>
-                      <p className="text-slate-600 text-sm">{f}</p>
-                    </div>
-                  ))}
+            {/* ══ BLOQUE 5 — Mejorá tu perfil ══ */}
+            {result && (
+              <div id="mejorar-perfil" className="rounded-2xl overflow-hidden"
+                style={{ border: '1px solid rgba(0,119,181,0.18)', background: 'white' }}>
+                <div className="px-5 py-4 border-b flex items-center gap-2"
+                  style={{ borderColor: 'rgba(0,119,181,0.10)', background: 'rgba(0,119,181,0.03)' }}>
+                  <p className="text-sm font-bold text-slate-800">✏️ Mejorá tu perfil LinkedIn</p>
                 </div>
-                <div className="space-y-2">
-                  <p className="text-xs font-semibold uppercase tracking-wide mb-3" style={{ color: '#d97706' }}>⚠️ Áreas de mejora</p>
-                  {(result.areas_de_mejora || []).map((a, i) => (
-                    <div key={i} className="flex items-start gap-2">
-                      <span className="mt-0.5 shrink-0" style={{ color: '#d97706' }}>•</span>
-                      <p className="text-slate-600 text-sm">{a}</p>
+                <div className="px-5 py-4 space-y-5">
+
+                  {/* Acción prioritaria */}
+                  {result.accion_prioritaria && (
+                    <div className="rounded-xl p-4"
+                      style={{ background: 'rgba(245,158,11,0.07)', border: '1px solid rgba(245,158,11,0.30)' }}>
+                      <p className="text-[10px] font-bold uppercase tracking-wide mb-1.5" style={{ color: '#d97706' }}>⚡ Hacé esto hoy</p>
+                      <p className="text-slate-800 text-sm leading-relaxed">{result.accion_prioritaria}</p>
                     </div>
-                  ))}
-                </div>
-              </div>
-            </ResultCard>
+                  )}
 
-            {/* Palabras clave SEO */}
-            {result.palabras_clave_sugeridas?.length > 0 && (
-              <ResultCard title="Palabras clave para SEO de LinkedIn">
-                <div className="flex flex-wrap gap-2">
-                  {result.palabras_clave_sugeridas.map((kw, i) => (
-                    <span key={i} className="text-xs px-3 py-1.5 rounded-full font-medium"
-                      style={{ backgroundColor: 'rgba(0,119,181,0.08)', border: '1px solid rgba(0,119,181,0.25)', color: '#0077B5' }}>
-                      {kw}
-                    </span>
-                  ))}
-                </div>
-                <p className="text-slate-500 text-xs mt-3">Incluí estas palabras en tu titular, resumen y experiencias para aparecer en más búsquedas.</p>
-              </ResultCard>
-            )}
-
-            {result.analisis_foto && (
-              <ResultCard title="📸 Foto de perfil">
-                <p className="text-slate-600 text-sm leading-relaxed">{result.analisis_foto}</p>
-              </ResultCard>
-            )}
-
-            <ResultCard title="Titular">
-              <BeforeAfter label="Titular" before={result.titular_actual} after={result.titular_propuesto} />
-            </ResultCard>
-
-            <ResultCard title="Resumen / About">
-              <BeforeAfter label="Resumen" before={result.resumen_actual} after={result.resumen_propuesto} />
-            </ResultCard>
-
-            <ResultCard title="Recomendaciones">
-              <div className="space-y-4">
-                {(result.recomendaciones || []).map((rec, i) => (
-                  <div key={i} className="rounded-xl p-4 flex gap-4 items-start"
-                    style={{ background: '#f8fafc', border: '1px solid rgba(0,119,181,0.12)' }}>
-                    <span className="w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold shrink-0 mt-0.5"
-                      style={{ background: LI_GRADIENT, color: '#fff' }}>
-                      {i + 1}
-                    </span>
-                    <div>
-                      <p className="text-slate-900 font-semibold text-sm mb-1">{rec.titulo}</p>
-                      <p className="text-slate-600 text-sm leading-relaxed">{rec.descripcion}</p>
-                    </div>
+                  {/* Titular antes/después */}
+                  <div>
+                    <p className="text-xs font-bold uppercase tracking-wide mb-2 text-slate-500">Titular propuesto</p>
+                    <BeforeAfter label="Titular" before={result.titular_actual} after={result.titular_propuesto} />
                   </div>
-                ))}
+
+                  {/* Resumen antes/después */}
+                  <div>
+                    <p className="text-xs font-bold uppercase tracking-wide mb-2 text-slate-500">Resumen / About</p>
+                    <BeforeAfter label="Resumen" before={result.resumen_actual} after={result.resumen_propuesto} />
+                  </div>
+
+                  {/* SEO keywords */}
+                  {result.palabras_clave_sugeridas?.length > 0 && (
+                    <div>
+                      <p className="text-xs font-bold uppercase tracking-wide mb-2 text-slate-500">Palabras clave SEO</p>
+                      <div className="flex flex-wrap gap-2">
+                        {result.palabras_clave_sugeridas.map((kw, i) => (
+                          <span key={i} className="text-xs px-3 py-1 rounded-full font-medium"
+                            style={{ background: 'rgba(0,119,181,0.07)', border: '1px solid rgba(0,119,181,0.22)', color: '#0077B5' }}>
+                            {kw}
+                          </span>
+                        ))}
+                      </div>
+                      <p className="text-slate-400 text-[11px] mt-2">Incluílas en tu titular, resumen y experiencias.</p>
+                    </div>
+                  )}
+
+                  {/* Foto de perfil */}
+                  {result.analisis_foto && (
+                    <div>
+                      <p className="text-xs font-bold uppercase tracking-wide mb-1.5 text-slate-500">📸 Foto de perfil</p>
+                      <p className="text-slate-600 text-sm leading-relaxed">{result.analisis_foto}</p>
+                    </div>
+                  )}
+
+                  {/* Recomendaciones */}
+                  {(result.recomendaciones || []).length > 0 && (
+                    <div>
+                      <p className="text-xs font-bold uppercase tracking-wide mb-3 text-slate-500">Recomendaciones</p>
+                      <div className="space-y-3">
+                        {(result.recomendaciones || []).map((rec, i) => (
+                          <div key={i} className="rounded-xl p-3.5 flex gap-3 items-start"
+                            style={{ background: '#f8fafc', border: '1px solid rgba(0,119,181,0.10)' }}>
+                            <span className="w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold shrink-0 mt-0.5"
+                              style={{ background: LI_GRADIENT, color: '#fff' }}>{i + 1}</span>
+                            <div>
+                              <p className="text-slate-900 font-semibold text-sm mb-0.5">{rec.titulo}</p>
+                              <p className="text-slate-600 text-sm leading-relaxed">{rec.descripcion}</p>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Estrategia de contenido */}
+                  {result.estrategia_contenido && (
+                    <div className="rounded-xl p-4"
+                      style={{ background: 'rgba(0,119,181,0.05)', border: '1px solid rgba(0,119,181,0.18)' }}>
+                      <p className="text-[10px] font-bold uppercase tracking-wide mb-1.5" style={{ color: '#0077B5' }}>📣 Estrategia de contenido</p>
+                      <p className="text-slate-700 text-sm leading-relaxed">{result.estrategia_contenido}</p>
+                    </div>
+                  )}
+                </div>
               </div>
-            </ResultCard>
+            )}
 
-            <div className="rounded-2xl p-6"
-              style={{ backgroundColor: 'rgba(0,119,181,0.08)', border: '1px solid rgba(0,119,181,0.3)' }}>
-              <p className="text-xs font-semibold uppercase tracking-wide mb-3" style={{ color: '#0077B5' }}>📣 Estrategia de contenido</p>
-              <p className="text-slate-700 text-sm leading-relaxed">{result.estrategia_contenido || 'Sin información disponible.'}</p>
-            </div>
-
-            {/* ── LinkedIn Growth: banner + networking ── */}
-            <div className="rounded-2xl overflow-hidden" style={{ border: '1px solid rgba(0,119,181,0.20)' }}>
+            {/* ══ BLOQUE 6 — Crecer en LinkedIn ══ */}
+            <div id="crecimiento" className="rounded-2xl overflow-hidden"
+              style={{ border: '1px solid rgba(99,102,241,0.20)', background: 'white' }}>
               <button
                 className="w-full flex items-center justify-between px-5 py-4 text-left transition-all"
-                style={{ background: showGrowthSection ? 'rgba(0,119,181,0.08)' : 'rgba(0,119,181,0.04)' }}
+                style={{ background: showGrowthSection ? 'rgba(99,102,241,0.06)' : 'rgba(99,102,241,0.03)' }}
                 onClick={() => setShowGrowthSection(v => !v)}
               >
                 <div>
-                  <p className="text-sm font-bold text-slate-800">🚀 Ideas de banner + plan de networking</p>
-                  <p className="text-xs text-slate-500 mt-0.5">Diseños para tu portada y acciones concretas para crecer en LinkedIn</p>
+                  <p className="text-sm font-bold text-slate-800">🚀 Crecer en LinkedIn</p>
+                  <p className="text-xs text-slate-500 mt-0.5">Ideas de banner + plan de networking 90 días</p>
                 </div>
                 <span className="text-slate-400 text-sm ml-3">{showGrowthSection ? '▲' : '▼'}</span>
               </button>
 
               {showGrowthSection && (
-                <div className="px-5 pb-5 pt-3 space-y-4" style={{ background: 'white' }}>
-                  {/* Input seguidores + CTA */}
+                <div className="px-5 pb-5 pt-3 space-y-4">
                   {!linkedinGrowth && (
                     <div className="space-y-3">
                       <div className="flex gap-2">
                         <input
                           className="flex-1 px-3 py-2 rounded-xl text-sm border focus:outline-none"
-                          style={{ borderColor: 'rgba(0,119,181,0.25)' }}
+                          style={{ borderColor: 'rgba(99,102,241,0.25)' }}
                           placeholder="¿Cuántos seguidores tenés? (opcional)"
                           value={seguidores}
                           onChange={e => setSeguidores(e.target.value)}
-                          type="number"
-                          min="0"
+                          type="number" min="0"
                         />
                         <button
                           onClick={callLinkedinGrowth}
                           disabled={growthLoading}
                           className="px-4 py-2 rounded-xl text-sm font-semibold text-white transition-all"
-                          style={{ background: growthLoading ? '#94a3b8' : 'linear-gradient(135deg,#0077B5,#0ea5e9)', minWidth: '90px' }}
+                          style={{ background: growthLoading ? '#94a3b8' : 'linear-gradient(135deg,#6366f1,#8b5cf6)', minWidth: '90px' }}
                         >
                           {growthLoading ? <span className="flex items-center gap-1.5"><Spinner size={3} />Generando…</span> : 'Generar →'}
                         </button>
                       </div>
                       {growthError && <p className="text-xs text-red-500">{growthError}</p>}
-                      <p className="text-xs text-slate-400">La IA analiza tu perfil y genera 3 ideas de banner personalizadas + un plan de acción semanal.</p>
+                      <p className="text-xs text-slate-400">La IA genera 3 ideas de banner personalizadas + un plan de acción semanal para los próximos 90 días.</p>
                     </div>
                   )}
 
                   {linkedinGrowth && (
                     <div className="space-y-5">
-                      {/* Banner ideas */}
                       {(linkedinGrowth.banner_ideas || []).length > 0 && (
                         <div className="space-y-3">
-                          <p className="text-xs font-semibold uppercase tracking-wide" style={{ color: '#0077B5' }}>🖼 Ideas de banner</p>
+                          <p className="text-xs font-semibold uppercase tracking-wide" style={{ color: '#6366f1' }}>🖼 Ideas de banner</p>
                           {(linkedinGrowth.banner_ideas || []).map((idea, i) => (
                             <div key={i} className="rounded-xl p-4 space-y-2.5" style={{ border: '1px solid rgba(0,0,0,0.08)', background: '#fafafa' }}>
                               <div className="flex items-center justify-between gap-2">
                                 <p className="text-sm font-bold text-slate-800">{idea.titulo}</p>
                                 <span className="text-[10px] px-2 py-0.5 rounded-full font-semibold shrink-0"
-                                  style={{ background: 'rgba(0,119,181,0.10)', color: '#0077B5' }}>{idea.estilo}</span>
+                                  style={{ background: 'rgba(99,102,241,0.10)', color: '#6366f1' }}>{idea.estilo}</span>
                               </div>
                               {(idea.paleta || []).length > 0 && (
                                 <div className="flex gap-1.5 items-center">
@@ -5146,10 +5412,9 @@ Respondé con este JSON exacto:
                         </div>
                       )}
 
-                      {/* Networking plan */}
                       {linkedinGrowth.plan_networking && (
                         <div className="space-y-3">
-                          <p className="text-xs font-semibold uppercase tracking-wide" style={{ color: '#0077B5' }}>📅 Plan de networking (90 días)</p>
+                          <p className="text-xs font-semibold uppercase tracking-wide" style={{ color: '#6366f1' }}>📅 Plan de networking (90 días)</p>
                           {linkedinGrowth.plan_networking.objetivo_resumido && (
                             <p className="text-sm text-slate-700 leading-relaxed italic">"{linkedinGrowth.plan_networking.objetivo_resumido}"</p>
                           )}
@@ -5157,9 +5422,9 @@ Respondé con este JSON exacto:
                             <div className="space-y-2">
                               <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">Acciones concretas</p>
                               {linkedinGrowth.plan_networking.acciones_semanales.map((a, i) => (
-                                <div key={i} className="rounded-xl p-3 space-y-1" style={{ background: 'rgba(0,119,181,0.05)', border: '1px solid rgba(0,119,181,0.12)' }}>
+                                <div key={i} className="rounded-xl p-3 space-y-1" style={{ background: 'rgba(99,102,241,0.04)', border: '1px solid rgba(99,102,241,0.12)' }}>
                                   <div className="flex items-center gap-2">
-                                    <span className="text-[10px] px-2 py-0.5 rounded-full font-semibold" style={{ background: 'rgba(0,119,181,0.12)', color: '#0077B5' }}>{a.frecuencia}</span>
+                                    <span className="text-[10px] px-2 py-0.5 rounded-full font-semibold" style={{ background: 'rgba(99,102,241,0.12)', color: '#6366f1' }}>{a.frecuencia}</span>
                                     <p className="text-xs font-semibold text-slate-700">{a.accion}</p>
                                   </div>
                                   {a.ejemplo && <p className="text-[11px] text-slate-500 pl-1 leading-snug">↳ {a.ejemplo}</p>}
@@ -5200,12 +5465,30 @@ Respondé con este JSON exacto:
               )}
             </div>
 
-            {/* Card consulta personalizada */}
+            {/* ══ BLOQUE 7 — Social + Premium ══ */}
+            {/* Premium upsell */}
+            {!user?.es_premium && (
+              <div className="rounded-2xl p-4 space-y-2.5"
+                style={{ background: 'linear-gradient(135deg,rgba(0,119,181,0.06),rgba(14,165,233,0.04))', border: '1px solid rgba(0,119,181,0.18)' }}>
+                <p className="text-slate-800 text-sm font-semibold">💾 Guardá tu historial con Premium</p>
+                <p className="text-slate-500 text-xs leading-snug">
+                  Todos tus análisis, CVs y simulaciones guardados. Incluye <strong>7 días gratis</strong>, luego $3.000/mes.
+                </p>
+                <button onClick={() => setShowPremiumModal(true)}
+                  disabled={subscriptionLoading}
+                  className="px-4 py-2 rounded-xl text-white text-xs font-semibold"
+                  style={{ background: LI_GRADIENT, opacity: subscriptionLoading ? 0.7 : 1 }}>
+                  {subscriptionLoading ? '...' : 'Probar 7 días gratis'}
+                </button>
+              </div>
+            )}
+
+            {/* Consulta personalizada */}
             <div className="rounded-2xl p-5"
-              style={{ background: 'rgba(0,119,181,0.06)', border: '1px solid rgba(0,119,181,0.20)' }}>
-              <p className="text-xs font-semibold uppercase tracking-wide mb-2" style={{ color: '#0077B5' }}>🎯 ¿Querés implementar estos cambios?</p>
-              <p className="text-slate-700 text-sm leading-relaxed mb-3">
-                Ramiro puede guiarte paso a paso: revisar tu perfil en vivo, reescribir tu titular y resumen, y armar tu estrategia de búsqueda. Consulta con costo — se cotiza en el momento.
+              style={{ background: 'rgba(0,119,181,0.04)', border: '1px solid rgba(0,119,181,0.15)' }}>
+              <p className="text-xs font-semibold uppercase tracking-wide mb-1.5" style={{ color: '#0077B5' }}>🎯 ¿Querés implementar estos cambios?</p>
+              <p className="text-slate-600 text-sm leading-relaxed mb-3">
+                Ramiro puede guiarte paso a paso: revisar tu perfil en vivo, reescribir tu titular y resumen, y armar tu estrategia de búsqueda.
               </p>
               <button
                 onClick={() => setShowLeadModal(true)}
@@ -5216,96 +5499,37 @@ Respondé con este JSON exacto:
               </button>
             </div>
 
-            {/* ── Bloque de conversión ── */}
+            {/* Follow CTAs */}
             <div className="rounded-2xl overflow-hidden"
-              style={{ border: '1px solid rgba(0,119,181,0.18)', boxShadow: '0 4px 20px rgba(0,0,0,0.07)' }}>
-
-              {/* Header */}
-              <div className="px-5 pt-5 pb-4 text-center"
-                style={{ background: 'linear-gradient(135deg,rgba(0,119,181,0.06),rgba(14,165,233,0.08))' }}>
-                <p className="text-slate-900 font-bold text-base leading-snug">
-                  Si este análisis te sirvió, seguinos
-                </p>
-                <p className="text-slate-500 text-xs mt-1.5 leading-relaxed max-w-sm mx-auto">
-                  Dos perfiles, dos tipos de contenido. Ambos gratuitos, como esto.
-                </p>
+              style={{ border: '1px solid rgba(0,119,181,0.14)' }}>
+              <div className="px-5 pt-4 pb-3 text-center border-b"
+                style={{ background: 'rgba(0,119,181,0.03)', borderColor: 'rgba(0,119,181,0.08)' }}>
+                <p className="text-slate-700 font-semibold text-sm">Si este análisis te sirvió, seguinos</p>
+                <p className="text-slate-400 text-xs mt-0.5">Contenido gratuito, como esto.</p>
               </div>
-
-              {/* Dos follows — stacked mobile / side-by-side sm+ */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 divide-y sm:divide-y-0 sm:divide-x divide-slate-100">
-
-                {/* Perfil personal */}
-                <div className="p-5 flex flex-col gap-3 items-center text-center">
-                  <div className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0"
-                    style={{ background: LI_GRADIENT }}>
-                    <LinkedInIcon className="w-5 h-5 text-white" />
-                  </div>
-                  <div>
-                    <p className="text-slate-900 text-sm font-semibold">Perfil de Ramiro</p>
-                    <p className="text-slate-500 text-xs mt-1 leading-relaxed">
-                      Contenido práctico, mejoras concretas y casos reales de optimización de perfil.
-                    </p>
-                  </div>
+              <div className="grid grid-cols-2 divide-x divide-slate-100">
+                <div className="p-4 flex flex-col gap-3 items-center text-center">
+                  <p className="text-slate-800 text-xs font-semibold">Perfil de Ramiro</p>
                   <a href={RAMIRO_LINKEDIN_URL} target="_blank" rel="noopener noreferrer"
                     onClick={() => trackEvent('click_externo', { destino: 'linkedin_ramiro', ubicacion: 'results' })}
-                    className="btn-glow w-full inline-flex items-center justify-center gap-2 py-2.5 rounded-xl text-white text-sm font-semibold mt-auto"
+                    className="w-full inline-flex items-center justify-center gap-1.5 py-2 rounded-xl text-white text-xs font-semibold"
                     style={{ background: LI_GRADIENT }}>
-                    <LinkedInIcon className="w-4 h-4" /> Seguir a Ramiro
+                    <LinkedInIcon className="w-3.5 h-3.5" /> Seguir
                   </a>
                 </div>
-
-                {/* Página de empresa */}
-                <div className="p-5 flex flex-col gap-3 items-center text-center">
-                  <div className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0"
-                    style={{ background: LI_GRADIENT }}>
-                    <LinkedInIcon className="w-5 h-5 text-white" />
-                  </div>
-                  <div>
-                    <p className="text-slate-900 text-sm font-semibold">Página OptimizaLK</p>
-                    <p className="text-slate-500 text-xs mt-1 leading-relaxed">
-                      Recursos estructurados, guías y contenido más profundo sobre búsqueda de empleo.
-                    </p>
-                  </div>
+                <div className="p-4 flex flex-col gap-3 items-center text-center">
+                  <p className="text-slate-800 text-xs font-semibold">Página OptimizaLK</p>
                   <a href={COMPANY_LINKEDIN_URL} target="_blank" rel="noopener noreferrer"
                     onClick={() => trackEvent('click_externo', { destino: 'linkedin_pagina', ubicacion: 'results' })}
-                    className="btn-glow w-full inline-flex items-center justify-center gap-2 py-2.5 rounded-xl text-white text-sm font-semibold mt-auto"
+                    className="w-full inline-flex items-center justify-center gap-1.5 py-2 rounded-xl text-white text-xs font-semibold"
                     style={{ background: LI_GRADIENT }}>
-                    <LinkedInIcon className="w-4 h-4" /> Seguir la página
+                    <LinkedInIcon className="w-3.5 h-3.5" /> Seguir
                   </a>
                 </div>
-
               </div>
-
-
             </div>
 
-            {/* Premium banner */}
-            {!user?.es_premium && (
-              <div className="rounded-2xl p-4 space-y-2.5"
-                style={{ background: 'rgba(0,119,181,0.04)', border: '1px solid rgba(0,119,181,0.15)' }}>
-                <div>
-                  <p className="text-slate-700 text-sm font-semibold">💾 ¿Querés guardar este resultado?</p>
-                  <p className="text-slate-500 text-xs mt-0.5 leading-snug">
-                    Podés seguir usando la app sin guardar nada. Si querés acceder a tu historial después, Premium incluye <strong>7 días gratis</strong> — luego $3.000/mes.
-                  </p>
-                </div>
-                <button onClick={() => setShowPremiumModal(true)}
-                  disabled={subscriptionLoading}
-                  className="px-4 py-2 rounded-xl text-white text-xs font-semibold"
-                  style={{ background: LI_GRADIENT, opacity: subscriptionLoading ? 0.7 : 1 }}>
-                  {subscriptionLoading ? '...' : 'Probar 7 días gratis'}
-                </button>
-              </div>
-            )}
-
-            <button
-              onClick={() => { trackEvent('click_simulador', { location: 'post_analisis' }); resetInterview(); setStep(STEPS.INTERVIEW_INTRO) }}
-              className="btn-glow w-full font-semibold py-4 rounded-2xl text-white text-sm"
-              style={{ background: 'linear-gradient(135deg,#6366f1,#8b5cf6)' }}
-            >
-              🎙️ Simulá una entrevista inicial →
-            </button>
-
+            {/* Nav */}
             <div className="flex gap-2">
               <button
                 onClick={() => setStep(STEPS.MODE_SELECT)}
@@ -5323,6 +5547,7 @@ Respondé con este JSON exacto:
               </button>
             </div>
           </div>
+        </div>
         )}
 
         {/* ── INTERVIEW INTRO ── */}
