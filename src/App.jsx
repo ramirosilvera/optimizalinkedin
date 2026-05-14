@@ -760,7 +760,7 @@ export default function App() {
     setJobLoading(true)
     setJobError('')
     setJobResult(null)
-    const cvText = JSON.stringify(jobCvForAdapter)
+    const cvText = JSON.stringify(jobCvForAdapter, (k, v) => (v === null || v === '' || (Array.isArray(v) && v.length === 0)) ? undefined : v)
     const userPrompt = `CV del candidato (JSON):\n${cvText}\n\nAviso de empleo:\n${jobPosting.trim()}`
     const controller = new AbortController()
     const timeoutId = setTimeout(() => controller.abort(), 58000)
@@ -1565,30 +1565,11 @@ ${contextText}`
       : `Perfil del usuario:
 ${contextText}
 
-Perfil de LinkedIn:
-${profileText.slice(0, 7000)}
+Perfil LinkedIn:
+${profileText.slice(0, 4500)}
 
-Generá un análisis en este formato JSON exacto:
-{
-  "puntaje_general": número del 1 al 10,
-  "nivel_seo": "Alto" o "Medio" o "Bajo",
-  "resumen_diagnostico": "2-3 oraciones directas sobre el estado actual del perfil aplicando los frameworks de headhunter",
-  "accion_prioritaria": "la UNA acción más impactante que puede hacer HOY para mejorar su perfil, explicada en 1-2 oraciones concretas",
-  "fortalezas": ["fortaleza 1", "fortaleza 2", "fortaleza 3"],
-  "areas_de_mejora": ["area 1", "area 2", "area 3"],
-  "palabras_clave_sugeridas": ["keyword 1", "keyword 2", "keyword 3", "keyword 4", "keyword 5", "keyword 6", "keyword 7", "keyword 8"],
-  "titular_actual": "el titular actual",
-  "titular_propuesto": "un titular mejorado, específico, con keywords y propuesta de valor clara",
-  "resumen_actual": "el resumen actual o No tiene resumen",
-  "resumen_propuesto": "un resumen reescrito de máximo 5 oraciones con propuesta de valor, logros y CTA",
-  "recomendaciones": [
-    {"titulo": "nombre de la recomendación", "descripcion": "explicación concreta de qué cambiar y cómo, con ejemplos si aplica"},
-    {"titulo": "...", "descripcion": "..."},
-    {"titulo": "...", "descripcion": "..."}
-  ],
-  "estrategia_contenido": "sugerencia de 2-3 oraciones sobre qué tipo de contenido publicar para lograr el objetivo declarado",
-  "analisis_foto": "evaluación concreta de la foto de perfil: profesionalismo, encuadre tipo headshot, fondo, iluminación, expresión. Si no se incluyó foto, indicá brevemente la importancia de tenerla."
-}`
+JSON:
+{"puntaje_general":1-10,"nivel_seo":"Alto"|"Medio"|"Bajo","resumen_diagnostico":"2-3 oraciones sobre estado actual","accion_prioritaria":"1 acción concreta para hoy","fortalezas":["str","str","str"],"areas_de_mejora":["str","str","str"],"palabras_clave_sugeridas":["kw1","kw2","kw3","kw4","kw5","kw6","kw7","kw8"],"titular_actual":"str","titular_propuesto":"titular con keywords y propuesta de valor","resumen_actual":"str","resumen_propuesto":"máx 5 oraciones con propuesta de valor, logros y CTA","recomendaciones":[{"titulo":"str","descripcion":"str"},{"titulo":"str","descripcion":"str"},{"titulo":"str","descripcion":"str"}],"estrategia_contenido":"2-3 oraciones de sugerencia de contenido","analisis_foto":"evaluación de foto o importancia si no se incluyó"}`
 
     const controller = new AbortController()
     analysisAbortRef.current = controller
@@ -1629,14 +1610,6 @@ Generá un análisis en este formato JSON exacto:
       }
       setStep(STEPS.RESULTS)
       saveToHistorial('analisis', { ...parsed, fortalezas: parsed.fortalezas||[], areas_de_mejora: parsed.areas_de_mejora||[], palabras_clave_sugeridas: parsed.palabras_clave_sugeridas||[] }, parsed.nombre_titular || 'Análisis LinkedIn')
-      // Auto-generate CV silently after analysis if none exists.
-      // Capture parsed + profileText + qaHistory directly to avoid stale closure.
-      if (!cvFinalData && (profileText?.trim() || qaHistory.length > 0)) {
-        const freshAnalysis = parsed
-        const freshProfile = profileText
-        const freshQa = qaHistory
-        setTimeout(() => callGenerateCV({}, {}, freshAnalysis, freshProfile, freshQa), 300)
-      }
     } catch (err) {
       if (err.isRateLimit) { setStep(STEPS.PROFILE_INPUT) }
       else if (err.name === 'AbortError') {
@@ -1954,7 +1927,7 @@ Generá el feedback en este JSON exacto:
       p += `\nContexto del candidato (respuestas del cuestionario — usá para enriquecer titular y resumen):\n${qaLines}\n`
     }
 
-    p += `\nTexto completo del perfil LinkedIn (extraé experiencias, educación y sus fechas individuales):\n${pText.slice(0, 8000)}\n\n`
+    p += `\nPerfil LinkedIn:\n${pText.slice(0, 5500)}\n\n`
 
     // Incluir respuestas pre-generación del candidato
     const enrichedLines = cvPreQuestions
@@ -1965,23 +1938,9 @@ Generá el feedback en este JSON exacto:
       p += `INFORMACIÓN ADICIONAL REAL PROVISTA POR EL CANDIDATO — integrala en los bullets y resumen correspondientes, NUNCA inventes nada extra más allá de lo que el candidato escribió:\n${enrichedLines}\n\n`
     }
 
-    p += `Usá el email, teléfono y URL de LinkedIn proporcionados arriba. No los inventes si no se dieron (poné null).
-IMPORTANTE sobre fechas: el campo "periodo" de cada experiencia y educación DEBE tomarse del texto del perfil para ESA entrada específica. Si hay dos formaciones distintas (grado y posgrado), cada una tiene su propio "periodo". NUNCA copies el mismo periodo para entradas distintas.
-Respondé con este JSON exacto:
-{
-  "nombre": "string",
-  "titular": "string",
-  "email": "string o null",
-  "telefono": "string o null",
-  "linkedin": "string o null",
-  "ubicacion": "string o null",
-  "resumen": "string (2 oraciones máx)",
-  "experiencias": [{ "cargo": "string", "empresa": "string", "periodo": "string — período exacto de esa experiencia", "logros": ["string"] }],
-  "educacion": [{ "titulo": "string", "institucion": "string", "periodo": "string — período exacto de ese título, diferente para cada uno" }],
-  "habilidades": ["string"],
-  "idiomas": ["string"],
-  "experiencias_anteriores": [{ "cargo": "string", "empresa": "string" }]
-}`
+    p += `Período de cada experiencia/educación: copialo EXACTAMENTE del perfil para ESA entrada (nunca reutilices la fecha de otra).
+JSON:
+{"nombre":"str","titular":"str","email":"str|null","telefono":"str|null","linkedin":"str|null","ubicacion":"str|null","resumen":"2 oraciones","experiencias":[{"cargo":"str","empresa":"str","periodo":"período exacto del perfil","logros":["str"]}],"educacion":[{"titulo":"str","institucion":"str","periodo":"período exacto, distinto por título"}],"habilidades":["str"],"idiomas":["str"],"experiencias_anteriores":[{"cargo":"str","empresa":"str"}]}`
     return p
   }
 
