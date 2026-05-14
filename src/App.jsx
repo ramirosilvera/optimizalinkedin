@@ -1450,9 +1450,13 @@ Generá un análisis en este formato JSON exacto:
       }
       setStep(STEPS.RESULTS)
       saveToHistorial('analisis', { ...parsed, fortalezas: parsed.fortalezas||[], areas_de_mejora: parsed.areas_de_mejora||[], palabras_clave_sugeridas: parsed.palabras_clave_sugeridas||[] }, parsed.nombre_titular || 'Análisis LinkedIn')
-      // Auto-generate CV silently after analysis if none exists
+      // Auto-generate CV silently after analysis if none exists.
+      // Capture parsed + profileText + qaHistory directly to avoid stale closure.
       if (!cvFinalData && (profileText?.trim() || qaHistory.length > 0)) {
-        setTimeout(() => callGenerateCV({}), 300)
+        const freshAnalysis = parsed
+        const freshProfile = profileText
+        const freshQa = qaHistory
+        setTimeout(() => callGenerateCV({}, {}, freshAnalysis, freshProfile, freshQa), 300)
       }
     } catch (err) {
       if (err.isRateLimit) { setStep(STEPS.PROFILE_INPUT) }
@@ -1748,17 +1752,30 @@ Generá el feedback en este JSON exacto:
     setCvFinalData(newData)
   }
 
-  const buildCvPromptBase = (contacto, preAnswers = {}) => {
-    const nombre = result?.nombre_completo || ''
-    const titular = result?.titular_propuesto || result?.titular_actual || ''
-    const resumen = result?.resumen_propuesto || ''
-    const keywords = (result?.palabras_clave_sugeridas || []).join(', ')
+  const buildCvPromptBase = (contacto, preAnswers = {}, analysisResult = null, overrideProfileText = null, overrideQaHistory = null) => {
+    const r = analysisResult || result
+    const pText = overrideProfileText ?? profileText
+    const qa = overrideQaHistory ?? qaHistory
+    const nombre = r?.nombre_completo || ''
+    const titular = r?.titular_propuesto || r?.titular_actual || ''
+    const resumen = r?.resumen_propuesto || ''
+    const keywords = (r?.palabras_clave_sugeridas || []).join(', ')
     let p = `Generá el CV en JSON usando esta información del profesional.\n\n`
     p += `Nombre: ${nombre}\nTitular propuesto: ${titular}\nResumen propuesto: ${resumen}\nKeywords sugeridas: ${keywords}\n\n`
     if (contacto.email)       p += `Email de contacto: ${contacto.email}\n`
     if (contacto.telefono)    p += `Teléfono: ${contacto.telefono}\n`
     if (contacto.linkedinUrl) p += `URL LinkedIn: ${contacto.linkedinUrl}\n`
-    p += `\nTexto completo del perfil LinkedIn (extraé experiencias, educación y sus fechas individuales):\n${profileText.slice(0, 8000)}\n\n`
+
+    // Include QA interview context (profession, situation, goals)
+    const qaLines = qa
+      .filter(h => h.answer?.trim())
+      .map(h => `- ${h.question}: ${h.answer}`)
+      .join('\n')
+    if (qaLines) {
+      p += `\nContexto del candidato (respuestas del cuestionario — usá para enriquecer titular y resumen):\n${qaLines}\n`
+    }
+
+    p += `\nTexto completo del perfil LinkedIn (extraé experiencias, educación y sus fechas individuales):\n${pText.slice(0, 8000)}\n\n`
 
     // Incluir respuestas pre-generación del candidato
     const enrichedLines = cvPreQuestions
@@ -1864,7 +1881,7 @@ Respondé con este JSON exacto:
     }
   }
 
-  const callGenerateCV = async (contacto = {}, preAnswers = {}) => {
+  const callGenerateCV = async (contacto = {}, preAnswers = {}, analysisResult = null, overrideProfileText = null, overrideQaHistory = null) => {
     if (cvLoading) return
     setCvLoading(true)
     setCvError('')
@@ -1878,7 +1895,7 @@ Respondé con este JSON exacto:
     setCvContacto(resolvedContacto)
     setCvStage('drafting')
 
-    const userPrompt = buildCvPromptBase(resolvedContacto, preAnswers)
+    const userPrompt = buildCvPromptBase(resolvedContacto, preAnswers, analysisResult, overrideProfileText, overrideQaHistory)
     const controller = new AbortController()
     const timeoutId = setTimeout(() => controller.abort(), 58000)
     try {
