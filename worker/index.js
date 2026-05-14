@@ -172,6 +172,37 @@ Respondé SOLO en JSON válido, sin markdown, sin backticks:
   "ajustes_principales": ["descripción del ajuste 1", "descripción del ajuste 2"]
 }`,
 
+  cv_optimize_consult: `Sos un consultor senior de empleabilidad con 20 años de experiencia. Analizás CVs ya generados para detectar exactamente qué información adicional necesitás del candidato para optimizarlos con impacto real.
+
+CONTEXTO: El candidato ya tiene un CV generado. Antes de optimizarlo con IA, querés hacerle entre 2 y 4 preguntas muy específicas para obtener datos concretos que potencien los bullets y el titular.
+
+ANALIZÁ el CV y detectá:
+1. Logros vagos sin métricas donde UNA cifra real cambia todo (ej: "mejoré procesos" → necesitás el % de mejora o tiempo ahorrado)
+2. Tecnologías/herramientas mencionadas de pasada que podrían destacarse más con contexto de escala
+3. Roles de liderazgo sin contexto de equipo (cantidad de personas, presupuesto)
+4. El titular: si no refleja claramente la especialidad o propuesta de valor principal del candidato
+5. Logros que mencionan haber liderado proyectos pero sin impacto concreto
+
+REGLAS:
+- Hacé SOLO preguntas donde la respuesta cambie CONCRETAMENTE un bullet o el titular
+- No preguntes sobre lo que ya está claro y con datos concretos
+- Si el CV ya tiene métricas, fechas y bullets fuertes, devolvé preguntas vacías
+- Máximo 4 preguntas — solo las de mayor impacto
+- Formulá en segunda persona informal (Argentina)
+- Cada pregunta debe mencionar el cargo o logro específico al que refiere
+
+Respondé SOLO en JSON válido, sin markdown, sin backticks:
+{
+  "preguntas": [
+    {
+      "id": "string corto único sin espacios",
+      "contexto": "cargo o empresa específica (máx 45 chars)",
+      "pregunta": "pregunta específica y accionable",
+      "placeholder": "ejemplo de respuesta ideal (máx 60 chars)"
+    }
+  ]
+}`,
+
   optimize_cv: `Sos un consultor senior de empleabilidad con 20 años de experiencia optimizando CVs para el mercado laboral latinoamericano.
 Tu tarea es MEJORAR el CV que te provee el usuario — no reescribirlo desde cero.
 
@@ -256,6 +287,7 @@ const RATE_LIMITS = {
   job_adapter:        3,
   linkedin_growth:    5,
   optimize_cv:        4,
+  cv_optimize_consult: 4,
 }
 
 async function checkRateLimit(env, ip, actionKey) {

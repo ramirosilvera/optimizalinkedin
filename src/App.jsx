@@ -130,6 +130,9 @@ export default function App() {
   const [cvBeforeOptimize, setCvBeforeOptimize] = useState(null)
   const [cvOptimizeApplied, setCvOptimizeApplied] = useState(false)
   const [showCvModal, setShowCvModal] = useState(false)
+  const [cvOptimizePhase, setCvOptimizePhase] = useState('idle') // 'idle'|'loading_q'|'questions'|'optimizing'
+  const [cvOptimizeQuestions, setCvOptimizeQuestions] = useState([])
+  const [cvOptimizeAnswers, setCvOptimizeAnswers] = useState({})
   const [contactEmail, setContactEmail] = useState('')
   const [contactTelefono, setContactTelefono] = useState('')
   const [contactLinkedin, setContactLinkedin] = useState('')
@@ -1447,6 +1450,10 @@ Generá un análisis en este formato JSON exacto:
       }
       setStep(STEPS.RESULTS)
       saveToHistorial('analisis', { ...parsed, fortalezas: parsed.fortalezas||[], areas_de_mejora: parsed.areas_de_mejora||[], palabras_clave_sugeridas: parsed.palabras_clave_sugeridas||[] }, parsed.nombre_titular || 'Análisis LinkedIn')
+      // Auto-generate CV silently after analysis if none exists
+      if (!cvFinalData && (profileText?.trim() || qaHistory.length > 0)) {
+        setTimeout(() => callGenerateCV({}), 300)
+      }
     } catch (err) {
       if (err.isRateLimit) { setStep(STEPS.PROFILE_INPUT) }
       else if (err.name === 'AbortError') {
@@ -2066,38 +2073,92 @@ Respondé con este JSON exacto:
   }
 
   // ── Optimizar CV con IA ────────────────────────────────────────────────────
-  const callOptimizeCv = async () => {
+  const serializeCvForAI = (cv) => {
+    const lines = []
+    if (cv.nombre)   lines.push(`NOMBRE: ${cv.nombre}`)
+    if (cv.titular)  lines.push(`TITULAR: ${cv.titular}`)
+    if (cv.resumen)  lines.push(`RESUMEN:\n${cv.resumen}`)
+    const contacto = [cv.email, cv.telefono, cv.linkedin, cv.ubicacion].filter(Boolean).join(' | ')
+    if (contacto) lines.push(`CONTACTO: ${contacto}`)
+    if (cv.experiencias?.length) {
+      lines.push('\nEXPERIENCIAS:')
+      cv.experiencias.forEach(exp => {
+        lines.push(`  ${exp.cargo} en ${exp.empresa} (${exp.periodo || 'sin fecha'})`)
+        ;(exp.logros || []).forEach(l => lines.push(`    - ${l}`))
+      })
+    }
+    if (cv.educacion?.length) {
+      lines.push('\nEDUCACIÓN:')
+      cv.educacion.forEach(ed => lines.push(`  ${ed.titulo} — ${ed.institucion} (${ed.periodo || 'sin fecha'})`))
+    }
+    if (cv.habilidades?.length)             lines.push(`\nHABILIDADES: ${cv.habilidades.join(', ')}`)
+    if (cv.idiomas?.length)                 lines.push(`IDIOMAS: ${cv.idiomas.join(', ')}`)
+    if (cv.experiencias_anteriores?.length) {
+      lines.push('\nEXPERIENCIAS ANTERIORES:')
+      cv.experiencias_anteriores.forEach(ex => lines.push(`  ${ex.cargo} en ${ex.empresa}`))
+    }
+    return lines.join('\n')
+  }
+
+  const startCvConsultation = async () => {
+    if (!cvFinalData || cvOptimizePhase !== 'idle') return
+    setCvOptimizePhase('loading_q')
+    setCvOptimizeQuestions([])
+    setCvOptimizeAnswers({})
+    setCvOptimizeError('')
+    setCvOptimizeSuggestion(null)
+    setShowCvOptimizePanel(false)
+    setCvOptimizeApplied(false)
+    try {
+      const cvText = serializeCvForAI(cvFinalData)
+      const controller = new AbortController()
+      const timeoutId = setTimeout(() => controller.abort(), 25000)
+      const res = await fetch(WORKER_URL, {
+        method: 'POST',
+        headers: WORKER_HEADERS,
+        signal: controller.signal,
+        body: JSON.stringify({
+          action: 'ai_cv_optimize_consult',
+          contents: [{ parts: [{ text: `CV a analizar:\n\n${cvText}` }] }],
+          generationConfig: { responseMimeType: 'application/json', maxOutputTokens: 800 },
+        }),
+      })
+      clearTimeout(timeoutId)
+      if (!res.ok) { setCvOptimizePhase('idle'); callOptimizeCv({}); return }
+      const data = await res.json()
+      let parsed
+      try { parsed = parseAIJson(extractAIText(data), AI_DEFAULTS.cv_pre_questions) } catch { parsed = AI_DEFAULTS.cv_pre_questions }
+      const preguntas = parsed?.preguntas?.filter(q => q.id && q.pregunta) || []
+      if (preguntas.length === 0) {
+        setCvOptimizePhase('idle')
+        callOptimizeCv({})
+      } else {
+        setCvOptimizeQuestions(preguntas)
+        setCvOptimizePhase('questions')
+        trackEvent('cv_optimize_consult_shown', { count: preguntas.length })
+      }
+    } catch {
+      setCvOptimizePhase('idle')
+      callOptimizeCv({})
+    }
+  }
+
+  const callOptimizeCv = async (consultAnswers = {}) => {
     if (!cvFinalData || cvOptimizing) return
     setCvOptimizing(true)
+    setCvOptimizePhase('optimizing')
     setCvOptimizeError('')
     setCvOptimizeSuggestion(null)
     setCvOptimizeApplied(false)
     setShowCvOptimizePanel(false)
     try {
-      const lines = []
-      if (cvFinalData.nombre)   lines.push(`NOMBRE: ${cvFinalData.nombre}`)
-      if (cvFinalData.titular)  lines.push(`TITULAR: ${cvFinalData.titular}`)
-      if (cvFinalData.resumen)  lines.push(`RESUMEN:\n${cvFinalData.resumen}`)
-      const contacto = [cvFinalData.email, cvFinalData.telefono, cvFinalData.linkedin, cvFinalData.ubicacion].filter(Boolean).join(' | ')
-      if (contacto) lines.push(`CONTACTO: ${contacto}`)
-      if (cvFinalData.experiencias?.length) {
-        lines.push('\nEXPERIENCIAS:')
-        cvFinalData.experiencias.forEach(exp => {
-          lines.push(`  ${exp.cargo} en ${exp.empresa} (${exp.periodo || 'sin fecha'})`)
-          ;(exp.logros || []).forEach(l => lines.push(`    - ${l}`))
-        })
-      }
-      if (cvFinalData.educacion?.length) {
-        lines.push('\nEDUCACIÓN:')
-        cvFinalData.educacion.forEach(ed => lines.push(`  ${ed.titulo} — ${ed.institucion} (${ed.periodo || 'sin fecha'})`))
-      }
-      if (cvFinalData.habilidades?.length)             lines.push(`\nHABILIDADES: ${cvFinalData.habilidades.join(', ')}`)
-      if (cvFinalData.idiomas?.length)                 lines.push(`IDIOMAS: ${cvFinalData.idiomas.join(', ')}`)
-      if (cvFinalData.experiencias_anteriores?.length) {
-        lines.push('\nEXPERIENCIAS ANTERIORES:')
-        cvFinalData.experiencias_anteriores.forEach(ex => lines.push(`  ${ex.cargo} en ${ex.empresa}`))
-      }
-      const cvText = lines.join('\n')
+      const cvText = serializeCvForAI(cvFinalData)
+
+      const answersEntries = Object.entries(consultAnswers).filter(([, v]) => v?.trim())
+      const answersText = answersEntries.length > 0
+        ? '\n\nINFORMACIÓN ADICIONAL DEL CANDIDATO (usá estos datos concretos para enriquecer el CV):\n' +
+          answersEntries.map(([k, v]) => `- ${k}: ${v}`).join('\n')
+        : ''
 
       const controller = new AbortController()
       const timeoutId = setTimeout(() => controller.abort(), 45000)
@@ -2107,7 +2168,7 @@ Respondé con este JSON exacto:
         signal: controller.signal,
         body: JSON.stringify({
           action: 'ai_optimize_cv',
-          contents: [{ parts: [{ text: `CV a optimizar:\n\n${cvText}` }] }],
+          contents: [{ parts: [{ text: `CV a optimizar:\n\n${cvText}${answersText}` }] }],
           generationConfig: { responseMimeType: 'application/json', maxOutputTokens: 2500 },
         }),
       })
@@ -2117,17 +2178,14 @@ Respondé con este JSON exacto:
         throw new Error(parseGeminiError(res.status, e))
       }
       const data = await res.json()
-      // Parsear sin defaults — no queremos que campos vacíos del fallback pisen datos reales
       const raw = parseAIJson(extractAIText(data), null, 'La IA devolvió una respuesta inválida. Tu CV fue preservado sin cambios.')
 
-      // Validar que la respuesta tenga contenido real antes de aceptarla
       const hasContent = raw?.titular?.trim() || raw?.resumen?.trim() || raw?.experiencias?.length > 0
       if (!hasContent) {
         setCvOptimizeError('No encontramos mejoras automáticas claras. Tu CV está bien estructurado o editá manualmente los puntos que querés mejorar.')
         return
       }
 
-      // Calcular diferencias reales para decidir si hay algo que mostrar
       const merged = safeMergeOptimized(cvFinalData, raw)
       const titularChanged = merged.titular !== cvFinalData.titular
       const resumenChanged = merged.resumen !== cvFinalData.resumen
@@ -2144,11 +2202,12 @@ Respondé con este JSON exacto:
 
       setCvOptimizeSuggestion(merged)
       setShowCvOptimizePanel(true)
-      trackEvent('cv_optimized', { titular_changed: titularChanged, resumen_changed: resumenChanged, bullets_improved: bulletsChanged })
+      trackEvent('cv_optimized', { titular_changed: titularChanged, resumen_changed: resumenChanged, bullets_improved: bulletsChanged, with_answers: answersEntries.length > 0 })
     } catch (err) {
       setCvOptimizeError(err.name === 'AbortError' ? 'El análisis tardó demasiado. Intentá de nuevo.' : err.message || 'Error al optimizar el CV. Tu contenido fue preservado.')
     } finally {
       setCvOptimizing(false)
+      setCvOptimizePhase('idle')
     }
   }
 
@@ -4146,11 +4205,11 @@ Respondé con este JSON exacto:
 
             {/* ── CV de 1 página ── */}
             <div className="space-y-3">
-              {/* Botón principal — solo visible cuando no hay pipeline activo */}
-              {cvStage === 'idle' && (
+              {/* Botón manual — solo si el pipeline está idle Y no hay auto-generación en curso */}
+              {cvStage === 'idle' && !cvLoading && (
                 <div className="space-y-1.5">
                   <button
-                    onClick={() => setShowCvModal(true)}
+                    onClick={() => callGenerateCV({})}
                     disabled={cvLoading}
                     className="w-full font-semibold py-4 rounded-xl transition-all duration-200 text-white text-sm"
                     style={{ background: 'linear-gradient(135deg,#059669,#10b981)' }}
@@ -4699,22 +4758,108 @@ Respondé con este JSON exacto:
                     )}
                     {cvSuccess && <p className="text-xs text-center" style={{ color: '#059669' }}>✓ {cvSuccess}</p>}
                   </div>
-                  {/* ── Optimizar CV con IA ── */}
-                  <button
-                    onClick={callOptimizeCv}
-                    disabled={cvOptimizing}
-                    className="w-full py-3.5 rounded-xl text-sm font-semibold transition-all flex items-center justify-center gap-2"
-                    style={{
-                      background: cvOptimizing ? 'rgba(245,158,11,0.07)' : 'rgba(245,158,11,0.10)',
-                      border: '1px solid rgba(245,158,11,0.35)',
-                      color: cvOptimizing ? '#b45309' : '#d97706',
-                      opacity: cvOptimizing ? 0.8 : 1,
-                    }}
-                  >
-                    {cvOptimizing ? (
-                      <><span className="w-3.5 h-3.5 rounded-full border-2 border-amber-400 border-t-transparent animate-spin shrink-0" />Analizando CV...</>
-                    ) : '✨ Optimizar con IA'}
-                  </button>
+                  {/* ── Optimizar CV con IA — 2 fases ── */}
+                  {cvOptimizePhase === 'idle' && !showCvOptimizePanel && (
+                    <button
+                      onClick={startCvConsultation}
+                      disabled={cvOptimizing}
+                      className="w-full py-3.5 rounded-xl text-sm font-semibold transition-all flex items-center justify-center gap-2"
+                      style={{
+                        background: 'rgba(245,158,11,0.10)',
+                        border: '1px solid rgba(245,158,11,0.35)',
+                        color: '#d97706',
+                      }}
+                    >
+                      ✨ Optimizar con IA
+                    </button>
+                  )}
+
+                  {/* Fase 1: cargando preguntas */}
+                  {cvOptimizePhase === 'loading_q' && (
+                    <div className="rounded-xl px-4 py-4 text-center space-y-2"
+                      style={{ background: 'rgba(245,158,11,0.07)', border: '1px solid rgba(245,158,11,0.25)' }}>
+                      <div className="flex justify-center">
+                        <span className="w-5 h-5 rounded-full border-2 border-amber-400 border-t-transparent animate-spin" />
+                      </div>
+                      <p className="text-xs font-medium" style={{ color: '#b45309' }}>Consultora de empleabilidad analizando tu CV...</p>
+                    </div>
+                  )}
+
+                  {/* Fase 2: preguntas de consultoría */}
+                  {cvOptimizePhase === 'questions' && cvOptimizeQuestions.length > 0 && (
+                    <div className="rounded-2xl overflow-hidden"
+                      style={{ border: '1.5px solid rgba(245,158,11,0.30)', background: 'rgba(254,252,232,0.6)' }}>
+                      <div className="px-4 py-3 flex items-start gap-3"
+                        style={{ background: 'rgba(245,158,11,0.12)', borderBottom: '1px solid rgba(245,158,11,0.18)' }}>
+                        <span className="text-lg shrink-0 mt-0.5">✦</span>
+                        <div>
+                          <p className="text-sm font-bold" style={{ color: '#92400e' }}>
+                            Consultora de empleabilidad
+                          </p>
+                          <p className="text-xs mt-0.5 leading-relaxed" style={{ color: '#b45309' }}>
+                            Respondé {cvOptimizeQuestions.length} pregunta{cvOptimizeQuestions.length > 1 ? 's' : ''} para que la IA incorpore datos reales en tu CV
+                          </p>
+                        </div>
+                      </div>
+                      <div className="px-4 py-4 space-y-4 bg-white">
+                        {cvOptimizeQuestions.map((q, i) => (
+                          <div key={q.id} className="space-y-2">
+                            <div className="flex items-start gap-2.5">
+                              <span className="w-5 h-5 rounded-full flex items-center justify-center text-[11px] font-bold text-white shrink-0 mt-0.5"
+                                style={{ background: 'linear-gradient(135deg,#d97706,#f59e0b)' }}>{i + 1}</span>
+                              <div className="flex-1 min-w-0">
+                                {q.contexto && (
+                                  <p className="text-[10px] font-semibold uppercase tracking-wide mb-0.5 text-slate-500">{q.contexto}</p>
+                                )}
+                                <p className="text-sm font-medium text-slate-800 leading-snug">{q.pregunta}</p>
+                              </div>
+                            </div>
+                            <input
+                              type="text"
+                              value={cvOptimizeAnswers[q.id] || ''}
+                              onChange={e => setCvOptimizeAnswers(prev => ({ ...prev, [q.id]: e.target.value }))}
+                              placeholder={q.placeholder || 'Tu respuesta...'}
+                              className="w-full rounded-xl px-4 py-2.5 text-sm text-slate-800 outline-none transition-all"
+                              style={{ background: '#f8fafc', border: `1px solid ${cvOptimizeAnswers[q.id]?.trim() ? 'rgba(245,158,11,0.50)' : 'rgba(245,158,11,0.20)'}` }}
+                            />
+                          </div>
+                        ))}
+                        <div className="flex gap-2 pt-1">
+                          <button
+                            onClick={() => { setCvOptimizePhase('idle'); setCvOptimizeQuestions([]); setCvOptimizeAnswers({}) }}
+                            className="flex-1 py-2.5 rounded-xl text-xs font-medium"
+                            style={BTN_BACK_STYLE}>
+                            Cancelar
+                          </button>
+                          <button
+                            onClick={() => callOptimizeCv(cvOptimizeAnswers)}
+                            disabled={cvOptimizing}
+                            className="flex-[2] py-2.5 rounded-xl text-xs font-semibold text-white transition-all"
+                            style={{ background: 'linear-gradient(135deg,#d97706,#f59e0b)' }}>
+                            Optimizar con mis respuestas →
+                          </button>
+                        </div>
+                        <button
+                          onClick={() => callOptimizeCv({})}
+                          className="w-full text-xs text-slate-400 hover:text-slate-600 transition-colors py-1"
+                        >
+                          Optimizar sin responder
+                        </button>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Fase 3: optimizando */}
+                  {cvOptimizePhase === 'optimizing' && (
+                    <div className="rounded-xl px-4 py-4 text-center space-y-2"
+                      style={{ background: 'rgba(245,158,11,0.07)', border: '1px solid rgba(245,158,11,0.25)' }}>
+                      <div className="flex justify-center">
+                        <span className="w-5 h-5 rounded-full border-2 border-amber-400 border-t-transparent animate-spin" />
+                      </div>
+                      <p className="text-xs font-medium" style={{ color: '#b45309' }}>Optimizando tu CV con los datos provistos...</p>
+                    </div>
+                  )}
+
                   {cvOptimizeError && (
                     <p className="text-xs text-red-500 text-center">{cvOptimizeError}</p>
                   )}
