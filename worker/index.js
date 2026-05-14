@@ -54,30 +54,47 @@ async function persistSubscription(env, { userId, subId, status, nextPayment }) 
   const isPremium = status === 'authorized'
   const premiumHasta = isPremium && nextPayment ? nextPayment : null
 
-  const [subRes, perfilRes] = await Promise.all([
-    supabaseServiceFetch(env, 'suscripciones', {
-      method: 'POST',
-      body: JSON.stringify({
-        user_id: userId,
-        mp_subscription_id: subId,
-        status,
-        next_payment_date: nextPayment,
-        updated_at: new Date().toISOString(),
-      }),
+  // Suscripciones: siempre actualizar el estado del contrato con MP
+  const subRes = await supabaseServiceFetch(env, 'suscripciones', {
+    method: 'POST',
+    body: JSON.stringify({
+      user_id: userId,
+      mp_subscription_id: subId,
+      status,
+      next_payment_date: nextPayment,
+      updated_at: new Date().toISOString(),
     }),
-    supabaseServiceFetch(env, 'perfiles', {
+  })
+
+  // Perfiles: actualizar solo en authorized (activar) o paused (pago fallido → revocar).
+  // En cancelled NO tocamos perfiles: el acceso sigue hasta que premium_hasta expire
+  // naturalmente — el endpoint subscription_status ya verifica la fecha.
+  let perfilRes = null
+  if (status === 'authorized') {
+    perfilRes = await supabaseServiceFetch(env, 'perfiles', {
       method: 'POST',
       body: JSON.stringify({
         id: userId,
-        es_premium: isPremium,
+        es_premium: true,
         premium_hasta: premiumHasta,
         mp_subscription_id: subId,
         updated_at: new Date().toISOString(),
       }),
-    }),
-  ])
+    })
+  } else if (status === 'paused') {
+    // Pago fallido: revocar acceso de inmediato
+    perfilRes = await supabaseServiceFetch(env, 'perfiles', {
+      method: 'POST',
+      body: JSON.stringify({
+        id: userId,
+        es_premium: false,
+        premium_hasta: null,
+        updated_at: new Date().toISOString(),
+      }),
+    })
+  }
 
-  console.log('[persist] suscripciones:', subRes.status, 'perfiles:', perfilRes.status)
+  console.log('[persist] suscripciones:', subRes.status, 'perfiles:', perfilRes?.status ?? 'no-update (cancelled)')
   return { isPremium, premiumHasta }
 }
 
@@ -259,9 +276,10 @@ export default {
         return new Response(JSON.stringify({ error: 'Falta user_id' }), { status: 400, headers: corsHeaders })
       }
       try {
-        const perfilRes = await supabaseServiceFetch(env, `perfiles?id=eq.${user_id}&select=mp_subscription_id`)
+        const perfilRes = await supabaseServiceFetch(env, `perfiles?id=eq.${user_id}&select=mp_subscription_id,premium_hasta`)
         const rows = await perfilRes.json()
         const subId = rows?.[0]?.mp_subscription_id
+        const premiumHasta = rows?.[0]?.premium_hasta || null
         if (!subId) {
           return new Response(JSON.stringify({ error: 'No hay suscripción activa vinculada' }), { status: 404, headers: corsHeaders })
         }
@@ -269,10 +287,10 @@ export default {
           method: 'PUT',
           body: JSON.stringify({ status: 'cancelled' }),
         })
-        console.log('[cancel_subscription] MP response status:', cancelRes?.status)
-        // Actualizar Supabase inmediatamente (el webhook también llegará luego)
-        await persistSubscription(env, { userId: user_id, subId, status: 'cancelled', nextPayment: null })
-        return new Response(JSON.stringify({ ok: true }), { status: 200, headers: corsHeaders })
+        console.log('[cancel_subscription] MP response:', cancelRes?.status)
+        // Registrar cancelación en suscripciones; perfiles NO se toca (acceso hasta premium_hasta)
+        await persistSubscription(env, { userId: user_id, subId, status: 'cancelled', nextPayment: premiumHasta })
+        return new Response(JSON.stringify({ ok: true, premium_hasta: premiumHasta }), { status: 200, headers: corsHeaders })
       } catch (e) {
         return new Response(JSON.stringify({ error: e.message }), { status: 500, headers: corsHeaders })
       }
@@ -407,6 +425,14 @@ export default {
 
     // ── Gemini proxy ──────────────────────────────────────────────────────────
     if (!body.contents) return new Response('Missing required field: contents', { status: 400 })
+
+    // Validar token de app para evitar uso no autorizado de las API keys
+    if (env.APP_TOKEN) {
+      const appToken = request.headers.get('X-App-Token')
+      if (appToken !== env.APP_TOKEN) {
+        return new Response(JSON.stringify({ error: { message: 'Unauthorized' } }), { status: 401, headers: corsHeaders })
+      }
+    }
 
     const { model: modelField, ...geminiBody } = body
     const model = ALLOWED_MODELS.has(modelField) ? modelField : DEFAULT_MODEL

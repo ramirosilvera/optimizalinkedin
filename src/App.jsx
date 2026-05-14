@@ -4,6 +4,30 @@ import './index.css'
 const WORKER_URL = import.meta.env.VITE_WORKER_URL
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL || ''
 const SUPABASE_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY || ''
+const APP_TOKEN   = import.meta.env.VITE_APP_TOKEN || ''
+
+// ── EmailJS (envío de emails transaccionales) ────────────────────────────────
+const EMAILJS_SERVICE_ID        = import.meta.env.VITE_EMAILJS_SERVICE_ID        || ''
+const EMAILJS_PUBLIC_KEY        = import.meta.env.VITE_EMAILJS_PUBLIC_KEY        || ''
+const EMAILJS_TEMPLATE_WAITLIST = import.meta.env.VITE_EMAILJS_TEMPLATE_WAITLIST || ''
+const EMAILJS_TEMPLATE_WELCOME  = import.meta.env.VITE_EMAILJS_TEMPLATE_WELCOME  || ''
+const EMAILJS_TEMPLATE_CANCEL   = import.meta.env.VITE_EMAILJS_TEMPLATE_CANCEL   || ''
+
+// ── Headers para todas las llamadas al Worker ────────────────────────────────
+const WORKER_HEADERS = Object.freeze({
+  'Content-Type': 'application/json',
+  ...(APP_TOKEN ? { 'X-App-Token': APP_TOKEN } : {}),
+})
+
+// ── Envío de email vía EmailJS REST API (non-blocking, silent fail) ──────────
+const sendEmail = (templateId, params) => {
+  if (!EMAILJS_SERVICE_ID || !EMAILJS_PUBLIC_KEY || !templateId) return
+  fetch('https://api.emailjs.com/api/v1.0/email/send', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ service_id: EMAILJS_SERVICE_ID, template_id: templateId, user_id: EMAILJS_PUBLIC_KEY, template_params: params }),
+  }).catch(() => {})
+}
 
 function parseGeminiError(status, body) {
   if (status === 400) return 'API key inválida o solicitud incorrecta. Revisá la key ingresada.'
@@ -71,7 +95,7 @@ const BTN_GHOST_STYLE = { color: '#0077B5', background: 'rgba(0,119,181,0.08)', 
 
 const RAMIRO_LINKEDIN_URL  = 'https://www.linkedin.com/in/ramiro-silvera-b0819459'
 const COMPANY_LINKEDIN_URL = 'https://www.linkedin.com/company/optimiza-lk/'
-const MP_URL               = 'https://www.mercadopago.com.ar/subscriptions/checkout?preapproval_plan_id=0922af414b854dabb5942e3291b2b5cb'
+const MP_URL               = 'https://www.mercadopago.com.ar/subscriptions/checkout?preapproval_plan_id=8aad681a5695404b962fcae2918079fe'
 const MAX_PDF_SIZE = 15 * 1024 * 1024
 
 const STATIC_QUESTIONS = [
@@ -1117,13 +1141,23 @@ export default function App() {
     try {
       const res = await fetch(WORKER_URL, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: WORKER_HEADERS,
         body: JSON.stringify({ action: 'create_subscription', user_id: userId, user_email: emailToUse }),
       })
       const data = await res.json()
       if (data.init_point) {
         trackEvent('premium_checkout_opened')
-        window.location.href = data.init_point
+        const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent)
+        if (isMobile) {
+          // Intentar abrir la app nativa de MP; si falla o no está instalada, redirigir a la web
+          const mpDeepLink = data.init_point.replace('https://www.mercadopago.com.ar', 'mercadopago://')
+          const fallbackTimer = setTimeout(() => { window.location.href = data.init_point }, 1500)
+          window.location.href = mpDeepLink
+          // Si la app abrió, el timer se cancela porque la página pierde foco
+          window.addEventListener('blur', () => clearTimeout(fallbackTimer), { once: true })
+        } else {
+          window.location.href = data.init_point
+        }
       } else {
         alert(`Error al iniciar el pago: ${data.error || 'respuesta inesperada de Mercado Pago'}`)
       }
@@ -1205,7 +1239,7 @@ export default function App() {
     try {
       const res = await fetch(WORKER_URL, {
         method: 'POST',
-        headers: { 'content-type': 'application/json' },
+        headers: WORKER_HEADERS,
         signal: controller.signal,
         body: JSON.stringify({
           system_instruction: { parts: [{ text: JOB_ADAPTER_SYSTEM_PROMPT }] },
@@ -1240,14 +1274,22 @@ export default function App() {
     try {
       const res = await fetch(WORKER_URL, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: WORKER_HEADERS,
         body: JSON.stringify({ action: 'grant_premium', admin_key: couponCode.trim(), email: emailToUse, months: 12 }),
       })
       const data = await res.json()
       if (data.ok) {
         setCouponSuccess(true)
         localStorage.setItem('ol_premium', '1')
-        setUser(prev => prev ? { ...prev, es_premium: true } : prev)
+        setUser(prev => {
+          if (!prev) return prev
+          sendEmail(EMAILJS_TEMPLATE_WELCOME, {
+            to_email: prev.email || emailToUse,
+            nombre: prev.nombre || prev.email || emailToUse,
+            premium_hasta: '',
+          })
+          return { ...prev, es_premium: true }
+        })
         trackEvent('premium_coupon_applied')
         setTimeout(() => {
           setShowPremiumModal(false)
@@ -1302,13 +1344,25 @@ export default function App() {
         try {
           const res = await fetch(WORKER_URL, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: WORKER_HEADERS,
             body: JSON.stringify({ action: 'subscription_status', user_id: userId }),
           })
           const data = await res.json()
           if (data.es_premium) {
             localStorage.setItem('ol_premium', '1')
-            setUser(prev => prev ? { ...prev, es_premium: true, premium_hasta: data.premium_hasta } : prev)
+            setUser(prev => {
+              if (!prev) return prev
+              if (!prev.es_premium) {
+                sendEmail(EMAILJS_TEMPLATE_WELCOME, {
+                  to_email: prev.email,
+                  nombre: prev.nombre || prev.email,
+                  premium_hasta: data.premium_hasta
+                    ? new Date(data.premium_hasta).toLocaleDateString('es-AR', { day: 'numeric', month: 'long', year: 'numeric' })
+                    : '',
+                })
+              }
+              return { ...prev, es_premium: true, premium_hasta: data.premium_hasta }
+            })
             trackEvent('premium_activated')
             return
           }
@@ -1328,13 +1382,20 @@ export default function App() {
     try {
       const res = await fetch(WORKER_URL, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: WORKER_HEADERS,
         body: JSON.stringify({ action: 'cancel_subscription', user_id: user.id }),
       })
       const data = await res.json()
       if (data.ok) {
-        localStorage.setItem('ol_premium', '0')
-        setUser(prev => prev ? { ...prev, es_premium: false, premium_hasta: null } : prev)
+        // El acceso sigue vigente hasta premium_hasta — solo marcamos la cancelación
+        // localStorage.setItem('ol_premium', '0') ← NO: el usuario conserva acceso hasta el vencimiento
+        sendEmail(EMAILJS_TEMPLATE_CANCEL, {
+          to_email: user.email,
+          nombre: user.nombre || user.email,
+          premium_hasta: data.premium_hasta
+            ? new Date(data.premium_hasta).toLocaleDateString('es-AR', { day: 'numeric', month: 'long', year: 'numeric' })
+            : '',
+        })
         setCancelDone(true)
       }
     } catch { /* silent */ } finally {
@@ -1450,7 +1511,7 @@ export default function App() {
     setLinkedinAuthError('')
     fetch(WORKER_URL, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: WORKER_HEADERS,
       body: JSON.stringify({ action: 'linkedin_auth', code, redirect_uri: redirectUri }),
     })
       .then(r => r.json())
@@ -1550,6 +1611,7 @@ export default function App() {
         headers: { 'Content-Type': 'application/json', apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}` },
         body: JSON.stringify({ email, evento: rateLimitEvento }),
       })
+      sendEmail(EMAILJS_TEMPLATE_WAITLIST, { to_email: email, evento: rateLimitEvento })
       trackEvent('waitlist_signup', { evento: rateLimitEvento })
     } catch { /* silencioso */ }
     setWaitlistLoading(false)
@@ -1753,7 +1815,7 @@ export default function App() {
     try {
       const res = await fetch(WORKER_URL, {
         method: 'POST',
-        headers: { 'content-type': 'application/json' },
+        headers: WORKER_HEADERS,
         body: JSON.stringify({ action: 'fetch_url', url }),
       })
       const data = await res.json().catch(() => ({ blocked: true }))
@@ -1829,7 +1891,7 @@ export default function App() {
       if (!WORKER_URL) throw new Error('Worker URL no configurada. Verificá el secret VITE_WORKER_URL en GitHub.')
       const res = await fetch(WORKER_URL, {
         method: 'POST',
-        headers: { 'content-type': 'application/json' },
+        headers: WORKER_HEADERS,
         body: JSON.stringify({
           contents: [{
             parts: [
@@ -1926,7 +1988,7 @@ Generá un análisis en este formato JSON exacto:
       if (!WORKER_URL) throw new Error('Worker URL no configurada. Verificá el secret VITE_WORKER_URL en GitHub.')
       const res = await fetch(WORKER_URL, {
         method: 'POST',
-        headers: { 'content-type': 'application/json' },
+        headers: WORKER_HEADERS,
         signal: controller.signal,
         body: JSON.stringify({
           system_instruction: { parts: [{ text: ANALYSIS_SYSTEM_PROMPT }] },
@@ -2066,7 +2128,7 @@ Generá el feedback en este JSON exacto:
       if (!WORKER_URL) throw new Error('Worker URL no configurada.')
       const res = await fetch(WORKER_URL, {
         method: 'POST',
-        headers: { 'content-type': 'application/json' },
+        headers: WORKER_HEADERS,
         body: JSON.stringify({
           system_instruction: { parts: [{ text: INTERVIEW_SYSTEM_PROMPT }] },
           contents: [{ parts: [{ text: prompt }] }],
@@ -2116,7 +2178,7 @@ Generá el feedback en este JSON exacto:
       if (!WORKER_URL) throw new Error('Worker URL no configurada.')
       const res = await fetch(WORKER_URL, {
         method: 'POST',
-        headers: { 'content-type': 'application/json' },
+        headers: WORKER_HEADERS,
         signal: controller.signal,
         body: JSON.stringify({
           system_instruction: { parts: [{ text: STAR_SYSTEM_PROMPT }] },
@@ -2715,7 +2777,7 @@ Respondé con este JSON exacto:
       const timeoutId = setTimeout(() => controller.abort(), 30000)
       const res = await fetch(WORKER_URL, {
         method: 'POST',
-        headers: { 'content-type': 'application/json' },
+        headers: WORKER_HEADERS,
         signal: controller.signal,
         body: JSON.stringify({
           system_instruction: { parts: [{ text: CV_QUALITY_SYSTEM_PROMPT }] },
@@ -2751,7 +2813,7 @@ Respondé con este JSON exacto:
       const timeoutId = setTimeout(() => controller.abort(), 25000)
       const res = await fetch(WORKER_URL, {
         method: 'POST',
-        headers: { 'content-type': 'application/json' },
+        headers: WORKER_HEADERS,
         signal: controller.signal,
         body: JSON.stringify({
           system_instruction: { parts: [{ text: CV_PRE_QUESTIONS_PROMPT }] },
@@ -2799,7 +2861,7 @@ Respondé con este JSON exacto:
       if (!WORKER_URL) throw new Error('Worker URL no configurada.')
       const res = await fetch(WORKER_URL, {
         method: 'POST',
-        headers: { 'content-type': 'application/json' },
+        headers: WORKER_HEADERS,
         signal: controller.signal,
         body: JSON.stringify({
           system_instruction: { parts: [{ text: CV_SYSTEM_PROMPT }] },
@@ -2902,7 +2964,7 @@ Respondé con este JSON exacto:
       if (!WORKER_URL) throw new Error('Worker URL no configurada.')
       const res = await fetch(WORKER_URL, {
         method: 'POST',
-        headers: { 'content-type': 'application/json' },
+        headers: WORKER_HEADERS,
         signal: controller.signal,
         body: JSON.stringify({
           system_instruction: { parts: [{ text: CV_SYSTEM_PROMPT }] },
@@ -3231,18 +3293,23 @@ Respondé con este JSON exacto:
               {cancelDone ? (
                 <div className="text-center space-y-3 py-2">
                   <p className="text-2xl">✓</p>
-                  <p className="font-semibold text-slate-800">Suscripción cancelada</p>
-                  <p className="text-sm text-slate-500">Tu cuenta volvió al plan gratuito. Podés volver a activar Premium cuando quieras.</p>
+                  <p className="font-semibold text-slate-800">Cancelación procesada</p>
+                  <p className="text-sm text-slate-500">
+                    No se realizarán cobros futuros. Tu acceso Premium continúa activo
+                    {user?.premium_hasta
+                      ? ` hasta el ${new Date(user.premium_hasta).toLocaleDateString('es-AR', { day: 'numeric', month: 'long' })}.`
+                      : ' hasta el vencimiento del período actual.'}
+                  </p>
                   <button onClick={() => { setShowManageModal(false); setCancelDone(false) }}
                     className="w-full py-3 rounded-xl text-sm font-semibold text-white"
                     style={{ background: LI_GRADIENT }}>
-                    Cerrar
+                    Entendido
                   </button>
                 </div>
               ) : cancelConfirm ? (
                 <div className="space-y-3">
                   <p className="text-sm text-slate-700 text-center font-medium">¿Confirmar cancelación?</p>
-                  <p className="text-xs text-slate-500 text-center">Tu acceso premium se desactivará de inmediato. No se realizarán cargos futuros.</p>
+                  <p className="text-xs text-slate-500 text-center">No se realizarán cargos futuros. Tu acceso Premium continúa hasta que venza el período actual.</p>
                   <button onClick={cancelSubscription} disabled={cancelLoading}
                     className="w-full py-3 rounded-xl text-sm font-semibold text-white"
                     style={{ background: '#ef4444', opacity: cancelLoading ? 0.7 : 1 }}>
@@ -5040,7 +5107,7 @@ Respondé con este JSON exacto:
                         className="btn-glow w-full font-semibold py-3.5 rounded-2xl text-white text-sm"
                         style={{ background: LI_GRADIENT }}
                       >
-                        Generar mi CV →
+                        Crear mi CV →
                       </button>
                       <button
                         onClick={() => {
@@ -5049,7 +5116,7 @@ Respondé con este JSON exacto:
                         }}
                         className="w-full py-2.5 rounded-2xl text-xs text-slate-400 hover:text-slate-600 transition-colors"
                       >
-                        Omitir y generar sin agregar información
+                        Generar con los datos actuales
                       </button>
                     </div>
                   </div>
@@ -5120,14 +5187,14 @@ Respondé con este JSON exacto:
                           opacity: cvLoading ? 0.7 : 1,
                         }}
                       >
-                        Mejorar mi CV →
+                        Incorporar estos datos al CV →
                       </button>
                       <button
                         onClick={() => { setCvFinalData(cvDraft); setCvStage('done'); setCvPreviewHtml(buildCvHtml(cvDraft, profilePhoto, profilePhotoMime)); trackEvent('cv_gap_skipped') }}
                         className="w-full py-2.5 rounded-xl text-xs text-slate-400 transition-all hover:text-slate-600"
                         style={{ background: 'transparent' }}
                       >
-                        Omitir y ver el CV sin mejoras
+                        Ver el borrador actual
                       </button>
                     </div>
                   </div>
@@ -6372,7 +6439,7 @@ Respondé con este JSON exacto:
                   cursor: contactEmail.trim() ? 'pointer' : 'not-allowed',
                 }}
               >
-                Generar mi CV →
+                Crear mi CV →
               </button>
               <div className="flex items-start gap-2.5">
                 <span className="text-base shrink-0 mt-0.5">☕</span>
