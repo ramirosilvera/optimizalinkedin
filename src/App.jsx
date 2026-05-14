@@ -127,6 +127,8 @@ export default function App() {
   const [cvOptimizeError, setCvOptimizeError] = useState('')
   const [cvOptimizeSuggestion, setCvOptimizeSuggestion] = useState(null)
   const [showCvOptimizePanel, setShowCvOptimizePanel] = useState(false)
+  const [cvBeforeOptimize, setCvBeforeOptimize] = useState(null)
+  const [cvOptimizeApplied, setCvOptimizeApplied] = useState(false)
   const [showCvModal, setShowCvModal] = useState(false)
   const [contactEmail, setContactEmail] = useState('')
   const [contactTelefono, setContactTelefono] = useState('')
@@ -563,14 +565,15 @@ export default function App() {
         setStep(STEPS.RESULTS)
         break
       case 'cv': {
-        // Also restore the most recent analysis so the full RESULTS page loads
         const latestAnalisis = historial.find(i => i.tipo === 'analisis')
         if (latestAnalisis) setResult(latestAnalisis.datos)
         else setResult(null)
         setCvFinalData(item.datos)
         setCvDraft(item.datos)
-        setCvPreviewHtml(buildCvHtml(item.datos, null, 'image/jpeg', 'clasico'))
+        const html = buildCvHtml(item.datos, null, 'image/jpeg', 'clasico')
+        setCvPreviewHtml(html)
         setCvStage('done')
+        setShowCvPreview(true)
         setStep(STEPS.RESULTS)
         break
       }
@@ -2045,12 +2048,30 @@ Respondé con este JSON exacto:
   }
 
 
+  // ── Merge seguro: solo aplica campos con contenido real, nunca sobreescribe con vacíos ──
+  const safeMergeOptimized = (original, optimized) => {
+    const result = { ...original }
+    if (optimized.nombre?.trim())   result.nombre = optimized.nombre
+    if (optimized.titular?.trim())  result.titular = optimized.titular
+    if (optimized.resumen?.trim())  result.resumen = optimized.resumen
+    for (const f of ['email', 'telefono', 'linkedin', 'ubicacion']) {
+      if (optimized[f]?.trim()) result[f] = optimized[f]
+    }
+    if (optimized.experiencias?.length > 0)            result.experiencias = optimized.experiencias
+    if (optimized.educacion?.length > 0)               result.educacion = optimized.educacion
+    if (optimized.habilidades?.length > 0)             result.habilidades = optimized.habilidades
+    if (optimized.idiomas?.length > 0)                 result.idiomas = optimized.idiomas
+    if (optimized.experiencias_anteriores?.length > 0) result.experiencias_anteriores = optimized.experiencias_anteriores
+    return result
+  }
+
   // ── Optimizar CV con IA ────────────────────────────────────────────────────
   const callOptimizeCv = async () => {
     if (!cvFinalData || cvOptimizing) return
     setCvOptimizing(true)
     setCvOptimizeError('')
     setCvOptimizeSuggestion(null)
+    setCvOptimizeApplied(false)
     setShowCvOptimizePanel(false)
     try {
       const lines = []
@@ -2070,8 +2091,8 @@ Respondé con este JSON exacto:
         lines.push('\nEDUCACIÓN:')
         cvFinalData.educacion.forEach(ed => lines.push(`  ${ed.titulo} — ${ed.institucion} (${ed.periodo || 'sin fecha'})`))
       }
-      if (cvFinalData.habilidades?.length)           lines.push(`\nHABILIDADES: ${cvFinalData.habilidades.join(', ')}`)
-      if (cvFinalData.idiomas?.length)               lines.push(`IDIOMAS: ${cvFinalData.idiomas.join(', ')}`)
+      if (cvFinalData.habilidades?.length)             lines.push(`\nHABILIDADES: ${cvFinalData.habilidades.join(', ')}`)
+      if (cvFinalData.idiomas?.length)                 lines.push(`IDIOMAS: ${cvFinalData.idiomas.join(', ')}`)
       if (cvFinalData.experiencias_anteriores?.length) {
         lines.push('\nEXPERIENCIAS ANTERIORES:')
         cvFinalData.experiencias_anteriores.forEach(ex => lines.push(`  ${ex.cargo} en ${ex.empresa}`))
@@ -2096,12 +2117,36 @@ Respondé con este JSON exacto:
         throw new Error(parseGeminiError(res.status, e))
       }
       const data = await res.json()
-      const optimized = parseAIJson(extractAIText(data), AI_DEFAULTS.generate_cv, 'No se pudo optimizar el CV. Intentá de nuevo.')
-      setCvOptimizeSuggestion(optimized)
+      // Parsear sin defaults — no queremos que campos vacíos del fallback pisen datos reales
+      const raw = parseAIJson(extractAIText(data), null, 'La IA devolvió una respuesta inválida. Tu CV fue preservado sin cambios.')
+
+      // Validar que la respuesta tenga contenido real antes de aceptarla
+      const hasContent = raw?.titular?.trim() || raw?.resumen?.trim() || raw?.experiencias?.length > 0
+      if (!hasContent) {
+        setCvOptimizeError('No encontramos mejoras automáticas claras. Tu CV está bien estructurado o editá manualmente los puntos que querés mejorar.')
+        return
+      }
+
+      // Calcular diferencias reales para decidir si hay algo que mostrar
+      const merged = safeMergeOptimized(cvFinalData, raw)
+      const titularChanged = merged.titular !== cvFinalData.titular
+      const resumenChanged = merged.resumen !== cvFinalData.resumen
+      const bulletsChanged = (merged.experiencias || []).filter((exp, i) => {
+        const orig = (cvFinalData.experiencias || [])[i]
+        return orig && JSON.stringify(exp.logros) !== JSON.stringify(orig.logros)
+      }).length
+      const habilidadesChanged = JSON.stringify(merged.habilidades) !== JSON.stringify(cvFinalData.habilidades)
+
+      if (!titularChanged && !resumenChanged && bulletsChanged === 0 && !habilidadesChanged) {
+        setCvOptimizeError('Tu CV ya está bien optimizado. No encontramos mejoras automáticas significativas.')
+        return
+      }
+
+      setCvOptimizeSuggestion(merged)
       setShowCvOptimizePanel(true)
-      trackEvent('cv_optimized')
+      trackEvent('cv_optimized', { titular_changed: titularChanged, resumen_changed: resumenChanged, bullets_improved: bulletsChanged })
     } catch (err) {
-      setCvOptimizeError(err.name === 'AbortError' ? 'El análisis tardó demasiado. Intentá de nuevo.' : err.message || 'Error al optimizar el CV.')
+      setCvOptimizeError(err.name === 'AbortError' ? 'El análisis tardó demasiado. Intentá de nuevo.' : err.message || 'Error al optimizar el CV. Tu contenido fue preservado.')
     } finally {
       setCvOptimizing(false)
     }
@@ -4682,51 +4727,49 @@ Respondé con este JSON exacto:
                         style={{ background: 'rgba(245,158,11,0.10)', borderBottom: '1px solid rgba(245,158,11,0.18)' }}>
                         <div>
                           <p className="text-sm font-semibold" style={{ color: '#92400e' }}>✨ Mejoras sugeridas por la IA</p>
-                          <p className="text-xs mt-0.5" style={{ color: '#b45309' }}>
-                            Solo se mejora redacción — no se inventa información
-                          </p>
+                          <p className="text-xs mt-0.5" style={{ color: '#b45309' }}>Solo redacción — no se inventa información</p>
                         </div>
                         <button onClick={() => setShowCvOptimizePanel(false)}
                           className="text-amber-400 hover:text-amber-600 text-lg leading-none transition-colors">✕</button>
                       </div>
                       <div className="p-4 space-y-3">
-                        {/* Titular */}
-                        {cvOptimizeSuggestion.titular && cvOptimizeSuggestion.titular !== cvFinalData?.titular && (
+                        {/* Titular antes/después */}
+                        {cvOptimizeSuggestion.titular !== cvFinalData?.titular && (
                           <div className="space-y-1">
                             <p className="text-[10px] font-semibold uppercase tracking-wide" style={{ color: '#d97706' }}>Titular</p>
-                            <div className="rounded-lg p-2.5 text-xs text-slate-500 leading-snug line-through"
-                              style={{ background: '#fef9f0', border: '1px solid rgba(245,158,11,0.15)' }}>
+                            <div className="rounded-lg p-2.5 text-xs text-slate-400 leading-snug line-through"
+                              style={{ background: '#fef9f0', border: '1px solid rgba(245,158,11,0.12)' }}>
                               {cvFinalData?.titular}
                             </div>
                             <div className="rounded-lg p-2.5 text-xs text-slate-800 leading-snug font-medium"
-                              style={{ background: 'rgba(245,158,11,0.08)', border: '1px solid rgba(245,158,11,0.30)' }}>
-                              {cvOptimizeSuggestion.titular}
+                              style={{ background: 'rgba(245,158,11,0.10)', border: '1px solid rgba(245,158,11,0.35)' }}>
+                              ✓ {cvOptimizeSuggestion.titular}
                             </div>
                           </div>
                         )}
-                        {/* Resumen */}
-                        {cvOptimizeSuggestion.resumen && cvOptimizeSuggestion.resumen !== cvFinalData?.resumen && (
+                        {/* Resumen antes/después */}
+                        {cvOptimizeSuggestion.resumen !== cvFinalData?.resumen && (
                           <div className="space-y-1">
                             <p className="text-[10px] font-semibold uppercase tracking-wide" style={{ color: '#d97706' }}>Resumen</p>
-                            <div className="rounded-lg p-2.5 text-xs text-slate-500 leading-relaxed line-through"
-                              style={{ background: '#fef9f0', border: '1px solid rgba(245,158,11,0.15)' }}>
+                            <div className="rounded-lg p-2.5 text-xs text-slate-400 leading-relaxed line-through"
+                              style={{ background: '#fef9f0', border: '1px solid rgba(245,158,11,0.12)' }}>
                               {cvFinalData?.resumen}
                             </div>
                             <div className="rounded-lg p-2.5 text-xs text-slate-800 leading-relaxed"
-                              style={{ background: 'rgba(245,158,11,0.08)', border: '1px solid rgba(245,158,11,0.30)' }}>
-                              {cvOptimizeSuggestion.resumen}
+                              style={{ background: 'rgba(245,158,11,0.10)', border: '1px solid rgba(245,158,11,0.35)' }}>
+                              ✓ {cvOptimizeSuggestion.resumen}
                             </div>
                           </div>
                         )}
                         {/* Bullets mejorados */}
                         {(() => {
-                          const improved = (cvOptimizeSuggestion.experiencias || []).filter((exp, i) => {
+                          const n = (cvOptimizeSuggestion.experiencias || []).filter((exp, i) => {
                             const orig = (cvFinalData?.experiencias || [])[i]
                             return orig && JSON.stringify(exp.logros) !== JSON.stringify(orig.logros)
-                          })
-                          return improved.length > 0 ? (
-                            <p className="text-xs text-center py-1 rounded-lg" style={{ background: 'rgba(245,158,11,0.08)', color: '#b45309' }}>
-                              + {improved.length} experiencia{improved.length > 1 ? 's' : ''} con bullets mejorados
+                          }).length
+                          return n > 0 ? (
+                            <p className="text-xs text-center py-1.5 rounded-lg font-medium" style={{ background: 'rgba(245,158,11,0.10)', color: '#92400e' }}>
+                              ✓ {n} experiencia{n > 1 ? 's' : ''} con bullets mejorados
                             </p>
                           ) : null
                         })()}
@@ -4740,9 +4783,11 @@ Respondé con este JSON exacto:
                           </button>
                           <button
                             onClick={() => {
-                              updateCv({ ...cvFinalData, ...cvOptimizeSuggestion })
+                              setCvBeforeOptimize({ ...cvFinalData })
+                              updateCv(cvOptimizeSuggestion)
                               setShowCvOptimizePanel(false)
                               setCvOptimizeSuggestion(null)
+                              setCvOptimizeApplied(true)
                               trackEvent('cv_optimize_applied')
                             }}
                             className="flex-[2] py-2.5 rounded-xl text-xs font-semibold text-white"
@@ -4751,6 +4796,20 @@ Respondé con este JSON exacto:
                           </button>
                         </div>
                       </div>
+                    </div>
+                  )}
+
+                  {/* ── Confirmación post-apply + Deshacer ── */}
+                  {cvOptimizeApplied && cvBeforeOptimize && !showCvOptimizePanel && (
+                    <div className="rounded-xl px-4 py-3 flex items-center justify-between gap-3"
+                      style={{ background: 'rgba(34,197,94,0.07)', border: '1px solid rgba(34,197,94,0.25)' }}>
+                      <p className="text-xs font-medium" style={{ color: '#16a34a' }}>✓ Mejoras aplicadas al CV</p>
+                      <button
+                        onClick={() => { updateCv(cvBeforeOptimize); setCvBeforeOptimize(null); setCvOptimizeApplied(false) }}
+                        className="text-xs px-3 py-1.5 rounded-lg shrink-0 font-medium transition-all"
+                        style={{ background: 'rgba(239,68,68,0.08)', color: '#dc2626', border: '1px solid rgba(239,68,68,0.25)' }}>
+                        ↩ Deshacer
+                      </button>
                     </div>
                   )}
 
