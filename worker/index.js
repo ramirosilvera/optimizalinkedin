@@ -208,7 +208,55 @@ async function callGeminiApi(env, geminiBody, corsHeaders) {
   return new Response(JSON.stringify(data), { status: res.status, headers: corsHeaders })
 }
 
-// ── Supabase helper (service role, bypasses RLS) ─────────────────────────────
+// ── Supabase count helper (no trae filas, solo el total) ─────────────────────
+async function getSupabaseCount(env, table, filter) {
+  const url = `${env.SUPABASE_URL}/rest/v1/${table}?select=id${filter ? '&' + filter : ''}`
+  const res = await fetch(url, {
+    headers: {
+      apikey: env.SUPABASE_SERVICE_ROLE_KEY,
+      Authorization: `Bearer ${env.SUPABASE_SERVICE_ROLE_KEY}`,
+      Prefer: 'count=exact',
+      Range: '0-0',
+    },
+  })
+  const range = res.headers.get('Content-Range') || ''
+  const match = range.match(/\/(\d+)$/)
+  return match ? parseInt(match[1]) : 0
+}
+
+// ── Verificar rol admin desde JWT ─────────────────────────────────────────────
+async function verifyAdmin(env, request) {
+  const token = (request.headers.get('Authorization') || '').replace('Bearer ', '').trim()
+  if (!token) return null
+  try {
+    const userRes = await fetch(`${env.SUPABASE_URL}/auth/v1/user`, {
+      headers: { apikey: env.SUPABASE_SERVICE_ROLE_KEY, Authorization: `Bearer ${token}` },
+    })
+    if (!userRes.ok) return null
+    const userData = await userRes.json()
+    const userId = userData?.id
+    if (!userId) return null
+    const roleRes = await fetch(
+      `${env.SUPABASE_URL}/rest/v1/admin_roles?user_id=eq.${userId}&select=role`,
+      { headers: { apikey: env.SUPABASE_SERVICE_ROLE_KEY, Authorization: `Bearer ${env.SUPABASE_SERVICE_ROLE_KEY}` } },
+    )
+    const roles = await roleRes.json()
+    const role = roles?.[0]?.role
+    if (!role) return null
+    return { userId, role }
+  } catch { return null }
+}
+
+// ── Admin audit log ───────────────────────────────────────────────────────────
+async function logAdminAction(env, adminId, action, targetType, targetId, details = {}) {
+  await supabaseServiceFetch(env, 'admin_logs', {
+    method: 'POST',
+    body: JSON.stringify({ admin_id: adminId, action, target_type: targetType, target_id: targetId ? String(targetId) : null, details }),
+    headers: { Prefer: 'return=minimal' },
+  }).catch(() => {})
+}
+
+
 async function supabaseServiceFetch(env, table, options = {}) {
   const url = `${env.SUPABASE_URL}/rest/v1/${table}`
   const res = await fetch(url, {
@@ -438,6 +486,219 @@ export default {
 
     const body = await request.json().catch(() => null)
     if (!body) return new Response(JSON.stringify({ error: { message: 'JSON inválido' } }), { status: 400, headers: corsHeaders })
+
+    // ── Apply promo code (user action, requires JWT) ──────────────────────────
+    if (body.action === 'apply_promo_code') {
+      const { code } = body
+      if (!code) return new Response(JSON.stringify({ error: 'Falta el código' }), { status: 400, headers: corsHeaders })
+      const token = (request.headers.get('Authorization') || '').replace('Bearer ', '').trim()
+      if (!token) return new Response(JSON.stringify({ error: 'Debés iniciar sesión para usar un código' }), { status: 401, headers: corsHeaders })
+      try {
+        const userRes = await fetch(`${env.SUPABASE_URL}/auth/v1/user`, {
+          headers: { apikey: env.SUPABASE_SERVICE_ROLE_KEY, Authorization: `Bearer ${token}` },
+        })
+        if (!userRes.ok) return new Response(JSON.stringify({ error: 'Sesión inválida' }), { status: 401, headers: corsHeaders })
+        const userData = await userRes.json()
+        const userId = userData?.id
+        if (!userId) return new Response(JSON.stringify({ error: 'Sesión inválida' }), { status: 401, headers: corsHeaders })
+        const promoRes = await fetch(
+          `${env.SUPABASE_URL}/rest/v1/promo_codes?code=eq.${encodeURIComponent(code.toUpperCase().trim())}&select=*`,
+          { headers: { apikey: env.SUPABASE_SERVICE_ROLE_KEY, Authorization: `Bearer ${env.SUPABASE_SERVICE_ROLE_KEY}` } },
+        )
+        const promos = await promoRes.json()
+        const promo = promos?.[0]
+        if (!promo) return new Response(JSON.stringify({ error: 'Código no válido' }), { status: 404, headers: corsHeaders })
+        if (!promo.is_active) return new Response(JSON.stringify({ error: 'Código inactivo' }), { status: 400, headers: corsHeaders })
+        if (promo.expires_at && new Date(promo.expires_at) < new Date()) return new Response(JSON.stringify({ error: 'Código expirado' }), { status: 400, headers: corsHeaders })
+        if (promo.max_uses && promo.uses_count >= promo.max_uses) return new Response(JSON.stringify({ error: 'Código agotado' }), { status: 400, headers: corsHeaders })
+        const premiumHasta = new Date(Date.now() + promo.duration_days * 24 * 60 * 60 * 1000).toISOString()
+        await supabaseServiceFetch(env, 'perfiles', {
+          method: 'POST',
+          body: JSON.stringify({ id: userId, es_premium: true, premium_hasta: premiumHasta, updated_at: new Date().toISOString() }),
+          headers: { Prefer: 'resolution=merge-duplicates' },
+        })
+        await supabaseServiceFetch(env, `promo_codes?id=eq.${promo.id}`, {
+          method: 'PATCH',
+          body: JSON.stringify({ uses_count: promo.uses_count + 1 }),
+          headers: { Prefer: 'return=minimal' },
+        })
+        console.log('[promo] code applied:', code, 'user:', userId, 'until:', premiumHasta)
+        return new Response(JSON.stringify({ ok: true, premium_hasta: premiumHasta, duration_days: promo.duration_days }), { status: 200, headers: corsHeaders })
+      } catch (e) {
+        return new Response(JSON.stringify({ error: e.message }), { status: 500, headers: corsHeaders })
+      }
+    }
+
+    // ── Admin actions (requieren JWT con rol admin) ────────────────────────────
+    if (typeof body.action === 'string' && body.action.startsWith('admin_')) {
+      const admin = await verifyAdmin(env, request)
+      if (!admin) return new Response(JSON.stringify({ error: 'No autorizado' }), { status: 403, headers: corsHeaders })
+      const isReadOnly = admin.role === 'read_only'
+      const canWrite = !isReadOnly
+
+      if (body.action === 'admin_stats') {
+        try {
+          const [totalUsers, premiumUsers, activeSubs, totalAnalysis, totalCvs, totalLeads, newUsers7d] = await Promise.all([
+            getSupabaseCount(env, 'perfiles'),
+            getSupabaseCount(env, 'perfiles', 'es_premium=eq.true'),
+            getSupabaseCount(env, 'suscripciones', 'status=eq.authorized'),
+            getSupabaseCount(env, 'analisis'),
+            getSupabaseCount(env, 'cv_generados'),
+            getSupabaseCount(env, 'leads'),
+            getSupabaseCount(env, 'perfiles', `created_at=gt.${new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString()}`),
+          ])
+          return new Response(JSON.stringify({
+            total_users: totalUsers, premium_users: premiumUsers,
+            active_subs: activeSubs, total_analyses: totalAnalysis,
+            total_cvs: totalCvs, total_leads: totalLeads,
+            new_users_7d: newUsers7d, admin_role: admin.role,
+          }), { status: 200, headers: corsHeaders })
+        } catch (e) {
+          return new Response(JSON.stringify({ error: e.message }), { status: 500, headers: corsHeaders })
+        }
+      }
+
+      if (body.action === 'admin_users') {
+        const { search = '', offset = 0, limit = 20, filter_premium } = body
+        let qs = `perfiles?select=id,nombre,email,es_premium,premium_hasta,mp_subscription_id,created_at&order=created_at.desc&offset=${offset}&limit=${limit}`
+        if (search) qs += `&or=(email.ilike.*${encodeURIComponent(search)}*,nombre.ilike.*${encodeURIComponent(search)}*)`
+        if (filter_premium === true) qs += '&es_premium=eq.true'
+        if (filter_premium === false) qs += '&es_premium=eq.false'
+        try {
+          const res = await fetch(`${env.SUPABASE_URL}/rest/v1/${qs}`, {
+            headers: {
+              apikey: env.SUPABASE_SERVICE_ROLE_KEY,
+              Authorization: `Bearer ${env.SUPABASE_SERVICE_ROLE_KEY}`,
+              Prefer: 'count=exact',
+              Range: `${offset}-${offset + limit - 1}`,
+            },
+          })
+          const users = await res.json()
+          const match = (res.headers.get('Content-Range') || '').match(/\/(\d+)$/)
+          return new Response(JSON.stringify({ users, total: match ? parseInt(match[1]) : users.length }), { status: 200, headers: corsHeaders })
+        } catch (e) {
+          return new Response(JSON.stringify({ error: e.message }), { status: 500, headers: corsHeaders })
+        }
+      }
+
+      if (body.action === 'admin_user_detail') {
+        const { user_id } = body
+        if (!user_id) return new Response(JSON.stringify({ error: 'Falta user_id' }), { status: 400, headers: corsHeaders })
+        try {
+          const [perfilRes, subRes, histRes, linkedinRes] = await Promise.all([
+            supabaseServiceFetch(env, `perfiles?id=eq.${user_id}&select=*`),
+            supabaseServiceFetch(env, `suscripciones?user_id=eq.${user_id}&select=*&order=updated_at.desc&limit=5`),
+            supabaseServiceFetch(env, `historial?user_id=eq.${user_id}&select=id,tipo,titulo,created_at&order=created_at.desc&limit=10`),
+            supabaseServiceFetch(env, `linkedin_profiles?user_id=eq.${user_id}&select=nombre,headline,email,fuente,synced_at&order=synced_at.desc&limit=1`),
+          ])
+          return new Response(JSON.stringify({
+            perfil: (await perfilRes.json())?.[0],
+            suscripciones: await subRes.json(),
+            historial: await histRes.json(),
+            linkedin: (await linkedinRes.json())?.[0],
+          }), { status: 200, headers: corsHeaders })
+        } catch (e) {
+          return new Response(JSON.stringify({ error: e.message }), { status: 500, headers: corsHeaders })
+        }
+      }
+
+      if (body.action === 'admin_grant_premium') {
+        if (!canWrite) return new Response(JSON.stringify({ error: 'Sin permisos de escritura' }), { status: 403, headers: corsHeaders })
+        const { user_id, days = 30 } = body
+        if (!user_id) return new Response(JSON.stringify({ error: 'Falta user_id' }), { status: 400, headers: corsHeaders })
+        const premiumHasta = new Date(Date.now() + days * 24 * 60 * 60 * 1000).toISOString()
+        await supabaseServiceFetch(env, 'perfiles', {
+          method: 'POST',
+          body: JSON.stringify({ id: user_id, es_premium: true, premium_hasta: premiumHasta, updated_at: new Date().toISOString() }),
+          headers: { Prefer: 'resolution=merge-duplicates' },
+        })
+        await logAdminAction(env, admin.userId, 'grant_premium', 'user', user_id, { days, premium_hasta: premiumHasta })
+        return new Response(JSON.stringify({ ok: true, premium_hasta: premiumHasta }), { status: 200, headers: corsHeaders })
+      }
+
+      if (body.action === 'admin_revoke_premium') {
+        if (!canWrite) return new Response(JSON.stringify({ error: 'Sin permisos de escritura' }), { status: 403, headers: corsHeaders })
+        const { user_id } = body
+        if (!user_id) return new Response(JSON.stringify({ error: 'Falta user_id' }), { status: 400, headers: corsHeaders })
+        await supabaseServiceFetch(env, 'perfiles', {
+          method: 'POST',
+          body: JSON.stringify({ id: user_id, es_premium: false, premium_hasta: null, updated_at: new Date().toISOString() }),
+          headers: { Prefer: 'resolution=merge-duplicates' },
+        })
+        await logAdminAction(env, admin.userId, 'revoke_premium', 'user', user_id)
+        return new Response(JSON.stringify({ ok: true }), { status: 200, headers: corsHeaders })
+      }
+
+      if (body.action === 'admin_create_promo') {
+        if (!canWrite) return new Response(JSON.stringify({ error: 'Sin permisos de escritura' }), { status: 403, headers: corsHeaders })
+        const { code, description, duration_days = 30, max_uses, expires_at } = body
+        if (!code) return new Response(JSON.stringify({ error: 'Falta code' }), { status: 400, headers: corsHeaders })
+        try {
+          const res = await supabaseServiceFetch(env, 'promo_codes', {
+            method: 'POST',
+            body: JSON.stringify({
+              code: code.toUpperCase().trim(), description,
+              duration_days, max_uses: max_uses || null,
+              expires_at: expires_at || null, created_by: admin.userId,
+            }),
+            headers: { Prefer: 'return=representation' },
+          })
+          const created = await res.json()
+          if (res.status === 409) return new Response(JSON.stringify({ error: 'El código ya existe' }), { status: 409, headers: corsHeaders })
+          await logAdminAction(env, admin.userId, 'create_promo', 'promo_code', code, { duration_days, max_uses })
+          return new Response(JSON.stringify({ ok: true, promo: created?.[0] }), { status: 200, headers: corsHeaders })
+        } catch (e) {
+          return new Response(JSON.stringify({ error: e.message }), { status: 500, headers: corsHeaders })
+        }
+      }
+
+      if (body.action === 'admin_list_promos') {
+        try {
+          const res = await supabaseServiceFetch(env, 'promo_codes?select=*&order=created_at.desc')
+          return new Response(JSON.stringify({ promos: await res.json() }), { status: 200, headers: corsHeaders })
+        } catch (e) {
+          return new Response(JSON.stringify({ error: e.message }), { status: 500, headers: corsHeaders })
+        }
+      }
+
+      if (body.action === 'admin_toggle_promo') {
+        if (!canWrite) return new Response(JSON.stringify({ error: 'Sin permisos de escritura' }), { status: 403, headers: corsHeaders })
+        const { code_id, is_active } = body
+        if (!code_id) return new Response(JSON.stringify({ error: 'Falta code_id' }), { status: 400, headers: corsHeaders })
+        await supabaseServiceFetch(env, `promo_codes?id=eq.${code_id}`, {
+          method: 'PATCH',
+          body: JSON.stringify({ is_active }),
+          headers: { Prefer: 'return=minimal' },
+        })
+        await logAdminAction(env, admin.userId, is_active ? 'activate_promo' : 'deactivate_promo', 'promo_code', code_id)
+        return new Response(JSON.stringify({ ok: true }), { status: 200, headers: corsHeaders })
+      }
+
+      if (body.action === 'admin_list_logs') {
+        const { limit = 50 } = body
+        try {
+          const res = await supabaseServiceFetch(env, `admin_logs?select=*&order=created_at.desc&limit=${limit}`)
+          return new Response(JSON.stringify({ logs: await res.json() }), { status: 200, headers: corsHeaders })
+        } catch (e) {
+          return new Response(JSON.stringify({ error: e.message }), { status: 500, headers: corsHeaders })
+        }
+      }
+
+      if (body.action === 'admin_sync_mp') {
+        if (!canWrite) return new Response(JSON.stringify({ error: 'Sin permisos de escritura' }), { status: 403, headers: corsHeaders })
+        const { user_id, payer_email } = body
+        if (!user_id || !payer_email) return new Response(JSON.stringify({ error: 'Faltan user_id y payer_email' }), { status: 400, headers: corsHeaders })
+        const search = await mpFetch(env, `/preapproval/search?status=authorized&preapproval_plan_id=${env.MP_PLAN_ID}&payer_email=${encodeURIComponent(payer_email)}&limit=5`)
+        const sub = search?.results?.[0]
+        if (!sub) return new Response(JSON.stringify({ error: 'No se encontró suscripción autorizada en MP' }), { status: 404, headers: corsHeaders })
+        const nextPayment = sub.next_payment_date ? new Date(sub.next_payment_date).toISOString() : null
+        const result = await persistSubscription(env, { userId: user_id, subId: sub.id, status: 'authorized', nextPayment })
+        await logAdminAction(env, admin.userId, 'sync_mp', 'user', user_id, { mp_sub_id: sub.id })
+        return new Response(JSON.stringify({ ok: true, mp_subscription_id: sub.id, ...result }), { status: 200, headers: corsHeaders })
+      }
+
+      return new Response(JSON.stringify({ error: 'Acción admin desconocida' }), { status: 400, headers: corsHeaders })
+    }
 
     // ── Simulate webhook (debug, admin only) ─────────────────────────────────
     if (body.action === 'simulate_webhook') {

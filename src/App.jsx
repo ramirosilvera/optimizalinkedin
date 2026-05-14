@@ -21,6 +21,7 @@ import {
   TagInput, ScoreRing, ResultCard, BeforeAfter,
 } from './components/ui'
 import CommentsSection from './components/CommentsSection'
+import AdminPanel from './admin/AdminPanel'
 
 // ── Main App ───────────────────────────────────────────────────
 
@@ -178,6 +179,8 @@ export default function App() {
   const [user, setUser] = useState(null)
   const [authToken, setAuthToken] = useState(null)
   const [showAuthModal, setShowAuthModal] = useState(false)
+  const [isAdmin, setIsAdmin] = useState(false)
+  const [showAdminPanel, setShowAdminPanel] = useState(false)
   const [authEmail, setAuthEmail] = useState('')
   const [authPassword, setAuthPassword] = useState('')
   const [authLoading, setAuthLoading] = useState(false)
@@ -404,6 +407,22 @@ export default function App() {
     setAuthToken(null)
     setUser(null)
     setHistorial([])
+    setIsAdmin(false)
+    setShowAdminPanel(false)
+  }
+
+  const checkAdminStatus = async (token) => {
+    try {
+      const res = await fetch(WORKER_URL, {
+        method: 'POST',
+        headers: { ...WORKER_HEADERS, Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ action: 'admin_stats' }),
+      })
+      const data = await res.json()
+      setIsAdmin(data.ok === true)
+    } catch {
+      setIsAdmin(false)
+    }
   }
 
   const authLogin = async (email, password) => {
@@ -423,6 +442,7 @@ export default function App() {
         premium_hasta: perfil?.premium_hasta || null,
       }
       applySession(data.access_token, data.refresh_token, userData)
+      checkAdminStatus(data.access_token)
       setAuthEmail('')
       setAuthPassword('')
       setAuthSuccess('login')
@@ -797,10 +817,14 @@ export default function App() {
     setCouponLoading(true)
     setCouponError('')
     try {
+      const token = localStorage.getItem('ol_at')
+      const headers = token
+        ? { ...WORKER_HEADERS, Authorization: `Bearer ${token}` }
+        : WORKER_HEADERS
       const res = await fetch(WORKER_URL, {
         method: 'POST',
-        headers: WORKER_HEADERS,
-        body: JSON.stringify({ action: 'grant_premium', admin_key: couponCode.trim(), email: emailToUse, months: 12 }),
+        headers,
+        body: JSON.stringify({ action: 'apply_promo_code', code: couponCode.trim(), email: emailToUse }),
       })
       const data = await res.json()
       if (data.ok) {
@@ -811,9 +835,9 @@ export default function App() {
           sendEmail(EMAILJS_TEMPLATE_WELCOME, {
             to_email: prev.email || emailToUse,
             nombre: prev.nombre || prev.email || emailToUse,
-            premium_hasta: '',
+            premium_hasta: data.premium_hasta || '',
           })
-          return { ...prev, es_premium: true }
+          return { ...prev, es_premium: true, premium_hasta: data.premium_hasta || null }
         })
         trackEvent('premium_coupon_applied')
         setTimeout(() => {
@@ -824,7 +848,7 @@ export default function App() {
           setShowCouponField(false)
         }, 2000)
       } else {
-        setCouponError(data.error || 'Código incorrecto o email no encontrado')
+        setCouponError(data.error || 'Código incorrecto o ya no está disponible')
       }
     } catch {
       setCouponError('Error de conexión. Intentá de nuevo.')
@@ -957,6 +981,7 @@ export default function App() {
           premium_hasta: perfil?.premium_hasta || null,
         }
         applySession(data.access_token, data.refresh_token, userData)
+        checkAdminStatus(data.access_token)
         // After session restored: load profile from Supabase (may be richer than localStorage)
         loadLinkedinProfile()
       })
@@ -1002,6 +1027,7 @@ export default function App() {
           applySession(accessToken, refreshToken || '', userObj)
           setAuthSuccess('linkedin_needs_premium')
         }
+        checkAdminStatus(accessToken)
         setShowAuthModal(true)
         trackEvent('auth_linkedin_supabase', { type })
       })
@@ -2395,6 +2421,11 @@ JSON:
   return (
     <main className="min-h-dvh flex flex-col items-center px-4 py-8 sm:py-14">
 
+      {/* ── Admin Panel ── */}
+      {showAdminPanel && authToken && (
+        <AdminPanel authToken={authToken} onClose={() => setShowAdminPanel(false)} />
+      )}
+
       {/* ── Auth Modal ── */}
       {showAuthModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4"
@@ -3005,6 +3036,14 @@ JSON:
                 className="text-xs font-medium px-3 py-1.5 rounded-full"
                 style={BTN_GHOST_STYLE}>
                 📍 Postulaciones
+              </button>
+            )}
+            {isAdmin && (
+              <button onClick={() => setShowAdminPanel(true)}
+                className="text-xs font-bold px-3 py-1.5 rounded-full transition-all"
+                style={{ background: 'linear-gradient(135deg,#1e1b4b,#4338ca)', color: 'white' }}
+                title="Panel de administración">
+                ⚙ Admin
               </button>
             )}
             <button onClick={authLogout} className="text-xs text-slate-400 hover:text-slate-600 transition-colors px-1">
