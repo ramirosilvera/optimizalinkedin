@@ -218,6 +218,30 @@ Respondé SOLO en JSON válido, sin markdown, sin backticks:
 }`,
 }
 
+// ── Rate limits per action (requests / hour / IP) ────────────────────────────
+const RATE_LIMITS = {
+  analyze_linkedin:   3,
+  generate_cv:        3,
+  cv_quality:         6,
+  cv_pre_questions:   3,
+  interview_feedback: 5,
+  star_feedback:      10,
+  job_adapter:        3,
+  linkedin_growth:    5,
+}
+
+async function checkRateLimit(env, ip, actionKey) {
+  if (!env.RATE_LIMIT_KV) return { ok: true }
+  const limit = RATE_LIMITS[actionKey]
+  if (!limit) return { ok: true }
+  const key = `rl:${ip}:${actionKey}`
+  const current = await env.RATE_LIMIT_KV.get(key)
+  const count = parseInt(current || '0', 10)
+  if (count >= limit) return { ok: false, count, limit }
+  await env.RATE_LIMIT_KV.put(key, String(count + 1), { expirationTtl: 3600 })
+  return { ok: true, count: count + 1, limit }
+}
+
 // ── Gemini API helper ─────────────────────────────────────────────────────────
 async function callGeminiApi(env, geminiBody, corsHeaders) {
   const controller = new AbortController()
@@ -670,6 +694,11 @@ export default {
       }
       if (!body.contents) {
         return new Response(JSON.stringify({ error: 'Missing contents' }), { status: 400, headers: corsHeaders })
+      }
+      const ip = request.headers.get('CF-Connecting-IP') || 'unknown'
+      const rl = await checkRateLimit(env, ip, promptKey)
+      if (!rl.ok) {
+        return new Response(JSON.stringify({ error: { message: `Límite de uso alcanzado (${rl.limit} por hora). Volvé a intentarlo en 60 minutos.` } }), { status: 429, headers: corsHeaders })
       }
       return callGeminiApi(env, {
         system_instruction: { parts: [{ text: systemPrompt }] },
