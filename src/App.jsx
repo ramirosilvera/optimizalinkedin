@@ -7,7 +7,7 @@ import {
   sendEmail, parseGeminiError, makeRateLimitError, trackEvent,
   STEPS, LI_GRADIENT, CARD_STYLE, INPUT_STYLE, INPUT_ALT_STYLE,
   BTN_BACK_STYLE, BTN_GHOST_STYLE, RAMIRO_LINKEDIN_URL,
-  COMPANY_LINKEDIN_URL, MP_URL, MAX_PDF_SIZE,
+  COMPANY_LINKEDIN_URL, MAX_PDF_SIZE,
 } from './constants'
 import {
   STATIC_QUESTIONS, INTERVIEW_QUESTIONS, STAR_QUESTIONS,
@@ -123,7 +123,6 @@ export default function App() {
 
   const [cvPreviewHtml, setCvPreviewHtml] = useState('')
   const [showCvModal, setShowCvModal] = useState(false)
-  const [pendingWithSupport, setPendingWithSupport] = useState(false)
   const [contactEmail, setContactEmail] = useState('')
   const [contactTelefono, setContactTelefono] = useState('')
   const [contactLinkedin, setContactLinkedin] = useState('')
@@ -1456,7 +1455,7 @@ Generá un análisis en este formato JSON exacto:
   }
 
   // ── Guardar lead y abrir LinkedIn de Ramiro ──
-  const saveAndConnectRamiro = async (nombre, apellido, colaborar = false) => {
+  const saveAndConnectRamiro = async (nombre, apellido) => {
     if (leadSaving || leadSent) return
     setLeadSaving(true)
     setShowLeadModal(false)
@@ -1485,8 +1484,7 @@ Generá un análisis en este formato JSON exacto:
     } finally {
       setLeadSaving(false)
       setLeadSent(true)
-      trackEvent('lead_saved', { colaborar })
-      if (colaborar) window.open(MP_URL, '_blank', 'noopener,noreferrer')
+      trackEvent('lead_saved', {})
       window.open(RAMIRO_LINKEDIN_URL, '_blank', 'noopener,noreferrer')
     }
   }
@@ -1675,7 +1673,6 @@ Generá el feedback en este JSON exacto:
         telefono: contacto.telefono || null,
         linkedin_url: contacto.linkedinUrl || null,
         cv_data: cv,
-        apoyo_mercadopago: !!pendingWithSupport,
         consentimiento: true,
       }),
     }).catch(err => console.error('[cv_generados save]', err))
@@ -4872,19 +4869,6 @@ Respondé con este JSON exacto:
 
               </div>
 
-              {/* MP — fila secundaria */}
-              <div className="px-5 py-3 flex items-center justify-between gap-3"
-                style={{ borderTop: '1px solid rgba(0,119,181,0.08)', background: 'rgba(0,119,181,0.02)' }}>
-                <p className="text-slate-500 text-xs leading-snug">
-                  ☕ $5.000 únicos — el precio de un café para mantener esto gratis para todos.
-                </p>
-                <a href={MP_URL} target="_blank" rel="noopener noreferrer"
-                  onClick={() => trackEvent('click_externo', { destino: 'mercadopago', ubicacion: 'results' })}
-                  className="shrink-0 inline-flex items-center gap-1.5 px-4 py-2 rounded-xl text-white text-xs font-semibold transition-all duration-200"
-                  style={{ background: 'linear-gradient(135deg,#00b496,#00d4aa)' }}>
-                  ☕ Apoyar · $5.000
-                </a>
-              </div>
 
             </div>
 
@@ -4985,17 +4969,6 @@ Respondé con este JSON exacto:
                 {result ? '← Volver a mis resultados' : '← Volver al menú'}
               </button>
             </div>
-            <p className="text-slate-400 text-xs text-center">
-              Simulación gratuita ·{' '}
-              <a
-                href={MP_URL}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="underline hover:text-slate-600 transition-colors"
-              >
-                ☕ Apoyar · $5.000
-              </a>
-            </p>
           </div>
         )}
 
@@ -5187,28 +5160,20 @@ Respondé con este JSON exacto:
                   </div>
                 )}
 
-                {/* Contribución $5.000 — después del informe completo */}
-                <div className="rounded-2xl overflow-hidden"
-                  style={{ border: '1.5px solid rgba(0,180,150,0.30)', boxShadow: '0 4px 16px rgba(0,180,150,0.10)' }}>
-                  <div className="px-5 pt-4 pb-3 text-center"
-                    style={{ background: 'linear-gradient(135deg,rgba(0,180,150,0.10),rgba(0,212,170,0.06))' }}>
-                    <p className="text-slate-800 font-bold text-base">☕ ¿Te fue útil el informe?</p>
-                    <p className="text-slate-500 text-xs mt-1 leading-relaxed">
-                      La app es 100% gratuita. Una colaboración de $5.000 ayuda a mantenerla disponible para todos.
+                {!user?.es_premium && (
+                  <div className="rounded-2xl p-4 space-y-2.5"
+                    style={{ background: 'rgba(0,119,181,0.04)', border: '1px solid rgba(0,119,181,0.15)' }}>
+                    <p className="text-slate-700 text-sm font-semibold">⭐ Mejorá tus resultados con Premium</p>
+                    <p className="text-slate-500 text-xs leading-snug">
+                      Guardá este informe, accedé a tu historial de simulaciones y practicá sin límites. 7 días gratis, luego $3.000/mes.
                     </p>
+                    <button onClick={() => setShowPremiumModal(true)}
+                      className="px-4 py-2 rounded-xl text-white text-xs font-semibold"
+                      style={{ background: LI_GRADIENT }}>
+                      Desbloqueá Premium
+                    </button>
                   </div>
-                  <div className="px-5 py-4 bg-white space-y-3">
-                    <a href={MP_URL} target="_blank" rel="noopener noreferrer"
-                      onClick={() => trackEvent('click_externo', { destino: 'mercadopago', ubicacion: 'interview_feedback' })}
-                      className="btn-glow w-full flex items-center justify-center gap-2 py-3.5 rounded-xl text-white text-sm font-semibold"
-                      style={{ background: 'linear-gradient(135deg,#00b496,#00d4aa)' }}>
-                      ☕ Colaborar con $5.000
-                    </a>
-                    <p className="text-slate-400 text-xs text-center">
-                      Mercado Pago · Pago único · No es suscripción
-                    </p>
-                  </div>
-                </div>
+                )}
 
                 {/* Seguir en LinkedIn — Ramiro + página */}
                 <div className="rounded-2xl overflow-hidden"
@@ -5571,19 +5536,20 @@ Respondé con este JSON exacto:
                       </div>
                     </div>
 
-                    {/* Contribución $5.000 */}
-                    <div className="flex items-center justify-between gap-3 px-5 py-3 rounded-2xl"
-                      style={{ borderTop: '1px solid rgba(0,180,150,0.15)', background: 'rgba(0,180,150,0.03)', border: '1px solid rgba(0,180,150,0.15)' }}>
-                      <p className="text-slate-500 text-xs leading-snug">
-                        ☕ $5.000 únicos — el precio de un café para mantener esto gratis para todos.
-                      </p>
-                      <a href={MP_URL} target="_blank" rel="noopener noreferrer"
-                        onClick={() => trackEvent('click_externo', { destino: 'mercadopago', ubicacion: 'star_feedback' })}
-                        className="shrink-0 inline-flex items-center gap-1.5 px-4 py-2 rounded-xl text-white text-xs font-semibold transition-all duration-200"
-                        style={{ background: 'linear-gradient(135deg,#00b496,#00d4aa)' }}>
-                        ☕ Apoyar · $5.000
-                      </a>
-                    </div>
+                    {!user?.es_premium && (
+                      <div className="rounded-2xl p-4 space-y-2.5"
+                        style={{ background: 'rgba(0,119,181,0.04)', border: '1px solid rgba(0,119,181,0.15)' }}>
+                        <p className="text-slate-700 text-sm font-semibold">⭐ Guardá tus prácticas STAR con Premium</p>
+                        <p className="text-slate-500 text-xs leading-snug">
+                          Accedé a tu historial completo de prácticas y seguí tu progreso. 7 días gratis, luego $3.000/mes.
+                        </p>
+                        <button onClick={() => setShowPremiumModal(true)}
+                          className="px-4 py-2 rounded-xl text-white text-xs font-semibold"
+                          style={{ background: LI_GRADIENT }}>
+                          Desbloqueá Premium
+                        </button>
+                      </div>
+                    )}
                   </>
                 )}
 
@@ -6061,27 +6027,6 @@ Respondé con este JSON exacto:
               >
                 Empezar gratis →
               </button>
-              <div className="flex items-start gap-2.5">
-                <span className="text-base shrink-0 mt-0.5">☕</span>
-                <p className="text-xs leading-relaxed" style={{ color: '#475569' }}>
-                  Si te aportó valor, podés apoyar con $5.000 (único, optativo).
-                </p>
-              </div>
-              <button
-                onClick={() => {
-                  trackEvent('star_training_start', { via: 'paid' })
-                  window.open(MP_URL, '_blank', 'noopener,noreferrer')
-                  setShowStarModal(false)
-                  setStarPhase('theory')
-                  setStarFeedback(null)
-                  setStarAnswer('')
-                  setStep(STEPS.STAR_TRAINING)
-                }}
-                className="w-full py-2.5 rounded-xl text-xs font-medium"
-                style={{ border: '1px solid rgba(0,180,150,0.35)', color: '#34d399', background: 'rgba(0,180,150,0.06)' }}
-              >
-                ☕ Apoyar $5.000 y empezar →
-              </button>
               <button
                 onClick={() => setShowStarModal(false)}
                 className="w-full py-2 text-xs transition-colors"
@@ -6191,7 +6136,6 @@ Respondé con este JSON exacto:
                 onClick={() => {
                   if (!contactEmail.trim()) return
                   const contacto = { email: contactEmail.trim(), telefono: contactTelefono.trim(), linkedinUrl: contactLinkedin.trim() }
-                  setPendingWithSupport(false)
                   setShowCvModal(false)
                   callGenerateCvPreQuestions(contacto)
                 }}
@@ -6205,32 +6149,6 @@ Respondé con este JSON exacto:
                 }}
               >
                 Crear mi CV →
-              </button>
-              <div className="flex items-start gap-2.5">
-                <span className="text-base shrink-0 mt-0.5">☕</span>
-                <p className="text-xs leading-relaxed" style={{ color: '#475569' }}>
-                  Si te aportó valor, podés apoyar con $5.000 (único, optativo).
-                </p>
-              </div>
-              <button
-                onClick={() => {
-                  if (!contactEmail.trim()) return
-                  const contacto = { email: contactEmail.trim(), telefono: contactTelefono.trim(), linkedinUrl: contactLinkedin.trim() }
-                  setPendingWithSupport(true)
-                  window.open(MP_URL, '_blank', 'noopener,noreferrer')
-                  setShowCvModal(false)
-                  callGenerateCV(contacto)
-                }}
-                disabled={!contactEmail.trim()}
-                className="w-full py-2.5 rounded-xl text-xs font-medium transition-colors"
-                style={{
-                  border: `1px solid ${contactEmail.trim() ? 'rgba(0,180,150,0.35)' : '#334155'}`,
-                  color: contactEmail.trim() ? '#34d399' : '#475569',
-                  background: contactEmail.trim() ? 'rgba(0,180,150,0.06)' : 'transparent',
-                  cursor: contactEmail.trim() ? 'pointer' : 'not-allowed',
-                }}
-              >
-                ☕ Apoyar $5.000 y generar →
               </button>
               <button
                 onClick={() => setShowCvModal(false)}
@@ -6300,33 +6218,15 @@ Respondé con este JSON exacto:
               </p>
             </div>
 
-            {/* Sección colaboración */}
-            <div className="px-6 pb-2 pt-1 space-y-3"
-              style={{ borderTop: '1px solid rgba(0,180,150,0.18)', background: 'rgba(0,180,150,0.04)' }}>
-              <div className="flex items-start gap-3 pt-4">
-                <span className="text-2xl shrink-0">🙌</span>
-                <div>
-                  <p className="text-sm font-semibold text-slate-800">¿Te aportó valor? Invitame un cafecito ☕</p>
-                  <p className="text-slate-500 text-xs mt-1 leading-relaxed">
-                    $5.000 de única vez — no es suscripción, es totalmente optativo. Me ayuda a sostener la herramienta gratuita.
-                  </p>
-                </div>
-              </div>
+            <div className="px-6 pb-6 pt-1 space-y-3"
+              style={{ borderTop: '1px solid rgba(0,119,181,0.10)' }}>
               <button
-                onClick={() => saveAndConnectRamiro(leadNombre, leadApellido, true)}
+                onClick={() => saveAndConnectRamiro(leadNombre, leadApellido)}
                 disabled={!leadNombre.trim() || !leadApellido.trim()}
-                className={`w-full py-3 rounded-xl text-white text-sm font-semibold transition-all ${leadNombre.trim() && leadApellido.trim() ? '' : 'opacity-40 cursor-not-allowed'}`}
-                style={{ background: leadNombre.trim() && leadApellido.trim() ? 'linear-gradient(135deg,#00b496,#00d4aa)' : 'rgba(0,180,150,0.3)', boxShadow: leadNombre.trim() && leadApellido.trim() ? '0 0 18px rgba(0,180,150,0.3)' : 'none' }}
+                className={`w-full py-3 rounded-xl text-white text-sm font-semibold btn-glow transition-all ${leadNombre.trim() && leadApellido.trim() ? '' : 'opacity-40 cursor-not-allowed'}`}
+                style={{ background: leadNombre.trim() && leadApellido.trim() ? LI_GRADIENT : 'rgba(0,119,181,0.3)' }}
               >
-                ☕ Apoyar ($5.000) y conectar con Ramiro
-              </button>
-              <button
-                onClick={() => saveAndConnectRamiro(leadNombre, leadApellido, false)}
-                disabled={!leadNombre.trim() || !leadApellido.trim()}
-                className={`w-full py-3 rounded-xl text-sm font-semibold transition-all ${leadNombre.trim() && leadApellido.trim() ? '' : 'opacity-40 cursor-not-allowed'}`}
-                style={{ border: '1px solid rgba(0,119,181,0.2)', color: '#0077B5', background: 'white' }}
-              >
-                <LinkedInIcon className="w-4 h-4 inline mr-1.5" /> Solo conectar con Ramiro →
+                <LinkedInIcon className="w-4 h-4 inline mr-1.5" /> Conectar con Ramiro →
               </button>
               <button
                 onClick={() => setShowLeadModal(false)}
@@ -6334,7 +6234,7 @@ Respondé con este JSON exacto:
               >
                 Cancelar
               </button>
-              <p className="text-center text-slate-400 text-xs pb-5">
+              <p className="text-center text-slate-400 text-xs">
                 🔒 Tu nombre y análisis se almacenan de forma segura y solo Ramiro puede acceder a ellos.
               </p>
             </div>
