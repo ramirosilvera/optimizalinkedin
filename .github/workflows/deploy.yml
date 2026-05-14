@@ -31,9 +31,14 @@ jobs:
       - run: npm run build
         env:
           VITE_WORKER_URL: ${{ secrets.VITE_WORKER_URL }}
+          VITE_APP_TOKEN: ${{ secrets.VITE_APP_TOKEN }}
           VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
           VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
           VITE_LINKEDIN_CLIENT_ID: ${{ secrets.VITE_LINKEDIN_CLIENT_ID }}
+          VITE_EMAILJS_SERVICE_ID: ${{ secrets.VITE_EMAILJS_SERVICE_ID }}
+          VITE_EMAILJS_PUBLIC_KEY: ${{ secrets.VITE_EMAILJS_PUBLIC_KEY }}
+          VITE_EMAILJS_TEMPLATE_WELCOME: ${{ secrets.VITE_EMAILJS_TEMPLATE_WELCOME }}
+          VITE_EMAILJS_TEMPLATE_CANCEL: ${{ secrets.VITE_EMAILJS_TEMPLATE_CANCEL }}
 
       - uses: actions/upload-pages-artifact@v3
         with:
