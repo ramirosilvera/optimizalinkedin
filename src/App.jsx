@@ -1032,6 +1032,11 @@ export default function App() {
   const [cvStage, setCvStage] = useState('idle') // 'idle'|'pre_loading'|'pre_questions'|'drafting'|'scoring'|'gap_form'|'regenerating'|'done'
   const [cvTemplate, setCvTemplate] = useState('clasico')
   const [cvEditing, setCvEditing] = useState(false)
+  const [linkedinGrowth, setLinkedinGrowth] = useState(null)
+  const [growthLoading, setGrowthLoading] = useState(false)
+  const [growthError, setGrowthError] = useState('')
+  const [seguidores, setSeguidores] = useState('')
+  const [showGrowthSection, setShowGrowthSection] = useState(false)
   const [cvFinalData, setCvFinalData] = useState(null)
   const [cvContacto, setCvContacto] = useState(null)
   const [cvPreQuestions, setCvPreQuestions] = useState([])  // Questions generated pre-CV from profile analysis
@@ -2066,6 +2071,52 @@ export default function App() {
     e.preventDefault()
     setIsDragging(false)
     processPdfFile(e.dataTransfer.files[0])
+  }
+
+  // ── LinkedIn Growth: banner ideas + networking plan ──
+  const callLinkedinGrowth = async () => {
+    if (growthLoading || !result) return
+    setGrowthLoading(true)
+    setGrowthError('')
+    setLinkedinGrowth(null)
+    const situacion = qaHistory.find(h => h.questionId === 'situacion')?.answer || qaHistory[1]?.answer || ''
+    const userPrompt = [
+      `Perfil analizado: ${result.nombre_titular || ''}`,
+      `Titular actual: ${result.titular_actual || ''}`,
+      `Titular propuesto: ${result.titular_propuesto || ''}`,
+      `Objetivo profesional: ${situacion}`,
+      `Puntaje actual del perfil: ${result.puntaje_general ?? 'N/D'}/10`,
+      `Resumen diagnóstico: ${result.resumen_diagnostico || ''}`,
+      seguidores.trim() ? `Seguidores actuales en LinkedIn: ${seguidores.trim()}` : null,
+      `Palabras clave del perfil: ${(result.palabras_clave_sugeridas || []).join(', ')}`,
+    ].filter(Boolean).join('\n')
+    const controller = new AbortController()
+    const timeoutId = setTimeout(() => controller.abort(), 40000)
+    try {
+      const res = await fetch(WORKER_URL, {
+        method: 'POST',
+        headers: WORKER_HEADERS,
+        signal: controller.signal,
+        body: JSON.stringify({
+          action: 'ai_linkedin_growth',
+          contents: [{ parts: [{ text: userPrompt }] }],
+          generationConfig: { responseMimeType: 'application/json', maxOutputTokens: 2000 },
+        }),
+      })
+      clearTimeout(timeoutId)
+      if (!res.ok) throw new Error('Error al generar. Intentá de nuevo.')
+      const data = await res.json()
+      const raw = data?.candidates?.[0]?.content?.parts?.[0]?.text || ''
+      let parsed
+      try { parsed = JSON.parse(raw) }
+      catch { const m = raw.match(/\{[\s\S]*\}/); if (m) parsed = JSON.parse(m[0]); else throw new Error('No se pudo procesar la respuesta.') }
+      setLinkedinGrowth(parsed)
+      trackEvent('linkedin_growth_generated')
+    } catch (err) {
+      clearTimeout(timeoutId)
+      setGrowthError(err.name === 'AbortError' ? 'El pedido tardó demasiado. Intentá de nuevo.' : err.message || 'Error al generar.')
+    }
+    setGrowthLoading(false)
   }
 
   // ── Call Gemini for analysis ──
@@ -5757,6 +5808,134 @@ Respondé con este JSON exacto:
               style={{ backgroundColor: 'rgba(0,119,181,0.08)', border: '1px solid rgba(0,119,181,0.3)' }}>
               <p className="text-xs font-semibold uppercase tracking-wide mb-3" style={{ color: '#0077B5' }}>📣 Estrategia de contenido</p>
               <p className="text-slate-700 text-sm leading-relaxed">{result.estrategia_contenido || 'Sin información disponible.'}</p>
+            </div>
+
+            {/* ── LinkedIn Growth: banner + networking ── */}
+            <div className="rounded-2xl overflow-hidden" style={{ border: '1px solid rgba(0,119,181,0.20)' }}>
+              <button
+                className="w-full flex items-center justify-between px-5 py-4 text-left transition-all"
+                style={{ background: showGrowthSection ? 'rgba(0,119,181,0.08)' : 'rgba(0,119,181,0.04)' }}
+                onClick={() => setShowGrowthSection(v => !v)}
+              >
+                <div>
+                  <p className="text-sm font-bold text-slate-800">🚀 Ideas de banner + plan de networking</p>
+                  <p className="text-xs text-slate-500 mt-0.5">Diseños para tu portada y acciones concretas para crecer en LinkedIn</p>
+                </div>
+                <span className="text-slate-400 text-sm ml-3">{showGrowthSection ? '▲' : '▼'}</span>
+              </button>
+
+              {showGrowthSection && (
+                <div className="px-5 pb-5 pt-3 space-y-4" style={{ background: 'white' }}>
+                  {/* Input seguidores + CTA */}
+                  {!linkedinGrowth && (
+                    <div className="space-y-3">
+                      <div className="flex gap-2">
+                        <input
+                          className="flex-1 px-3 py-2 rounded-xl text-sm border focus:outline-none"
+                          style={{ borderColor: 'rgba(0,119,181,0.25)' }}
+                          placeholder="¿Cuántos seguidores tenés? (opcional)"
+                          value={seguidores}
+                          onChange={e => setSeguidores(e.target.value)}
+                          type="number"
+                          min="0"
+                        />
+                        <button
+                          onClick={callLinkedinGrowth}
+                          disabled={growthLoading}
+                          className="px-4 py-2 rounded-xl text-sm font-semibold text-white transition-all"
+                          style={{ background: growthLoading ? '#94a3b8' : 'linear-gradient(135deg,#0077B5,#0ea5e9)', minWidth: '90px' }}
+                        >
+                          {growthLoading ? <span className="flex items-center gap-1.5"><Spinner size={3} />Generando…</span> : 'Generar →'}
+                        </button>
+                      </div>
+                      {growthError && <p className="text-xs text-red-500">{growthError}</p>}
+                      <p className="text-xs text-slate-400">La IA analiza tu perfil y genera 3 ideas de banner personalizadas + un plan de acción semanal.</p>
+                    </div>
+                  )}
+
+                  {linkedinGrowth && (
+                    <div className="space-y-5">
+                      {/* Banner ideas */}
+                      {(linkedinGrowth.banner_ideas || []).length > 0 && (
+                        <div className="space-y-3">
+                          <p className="text-xs font-semibold uppercase tracking-wide" style={{ color: '#0077B5' }}>🖼 Ideas de banner</p>
+                          {(linkedinGrowth.banner_ideas || []).map((idea, i) => (
+                            <div key={i} className="rounded-xl p-4 space-y-2.5" style={{ border: '1px solid rgba(0,0,0,0.08)', background: '#fafafa' }}>
+                              <div className="flex items-center justify-between gap-2">
+                                <p className="text-sm font-bold text-slate-800">{idea.titulo}</p>
+                                <span className="text-[10px] px-2 py-0.5 rounded-full font-semibold shrink-0"
+                                  style={{ background: 'rgba(0,119,181,0.10)', color: '#0077B5' }}>{idea.estilo}</span>
+                              </div>
+                              {(idea.paleta || []).length > 0 && (
+                                <div className="flex gap-1.5 items-center">
+                                  {idea.paleta.map((color, ci) => (
+                                    <div key={ci} className="w-6 h-6 rounded-full border-2 border-white shadow-sm" style={{ background: color }} title={color} />
+                                  ))}
+                                  <span className="text-[10px] text-slate-400 ml-1">{idea.paleta.join(' · ')}</span>
+                                </div>
+                              )}
+                              <div className="rounded-lg p-3 space-y-1" style={{ background: (idea.paleta || [])[0] || '#0d2137', minHeight: '52px' }}>
+                                <p className="font-bold leading-tight" style={{ color: (idea.paleta || [])[2] || 'white', fontSize: '13px' }}>{idea.copy_principal}</p>
+                                {idea.copy_secundario && <p style={{ color: (idea.paleta || [])[2] ? (idea.paleta[2] + 'cc') : 'rgba(255,255,255,0.7)', fontSize: '10px' }}>{idea.copy_secundario}</p>}
+                              </div>
+                              <p className="text-xs text-slate-500 leading-snug">{idea.concepto}</p>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+
+                      {/* Networking plan */}
+                      {linkedinGrowth.plan_networking && (
+                        <div className="space-y-3">
+                          <p className="text-xs font-semibold uppercase tracking-wide" style={{ color: '#0077B5' }}>📅 Plan de networking (90 días)</p>
+                          {linkedinGrowth.plan_networking.objetivo_resumido && (
+                            <p className="text-sm text-slate-700 leading-relaxed italic">"{linkedinGrowth.plan_networking.objetivo_resumido}"</p>
+                          )}
+                          {(linkedinGrowth.plan_networking.acciones_semanales || []).length > 0 && (
+                            <div className="space-y-2">
+                              <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">Acciones concretas</p>
+                              {linkedinGrowth.plan_networking.acciones_semanales.map((a, i) => (
+                                <div key={i} className="rounded-xl p-3 space-y-1" style={{ background: 'rgba(0,119,181,0.05)', border: '1px solid rgba(0,119,181,0.12)' }}>
+                                  <div className="flex items-center gap-2">
+                                    <span className="text-[10px] px-2 py-0.5 rounded-full font-semibold" style={{ background: 'rgba(0,119,181,0.12)', color: '#0077B5' }}>{a.frecuencia}</span>
+                                    <p className="text-xs font-semibold text-slate-700">{a.accion}</p>
+                                  </div>
+                                  {a.ejemplo && <p className="text-[11px] text-slate-500 pl-1 leading-snug">↳ {a.ejemplo}</p>}
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                          {(linkedinGrowth.plan_networking.contenido_sugerido || []).length > 0 && (
+                            <div className="space-y-2">
+                              <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">Contenido a publicar</p>
+                              {linkedinGrowth.plan_networking.contenido_sugerido.map((c, i) => (
+                                <div key={i} className="flex items-start gap-2.5 py-1.5">
+                                  <span className="text-[10px] px-1.5 py-0.5 rounded font-semibold shrink-0" style={{ background: 'rgba(99,102,241,0.10)', color: '#6366f1' }}>{c.formato}</span>
+                                  <div className="flex-1 min-w-0">
+                                    <p className="text-xs text-slate-700">{c.tema}</p>
+                                    <p className="text-[10px] text-slate-400">{c.frecuencia}</p>
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                          {linkedinGrowth.plan_networking.metrica_90dias && (
+                            <div className="rounded-xl p-3" style={{ background: 'rgba(34,197,94,0.08)', border: '1px solid rgba(34,197,94,0.25)' }}>
+                              <p className="text-[10px] font-semibold uppercase tracking-wide text-emerald-600 mb-1">🎯 Meta a 90 días</p>
+                              <p className="text-sm text-slate-700">{linkedinGrowth.plan_networking.metrica_90dias}</p>
+                            </div>
+                          )}
+                        </div>
+                      )}
+
+                      <button
+                        onClick={() => { setLinkedinGrowth(null); setGrowthError('') }}
+                        className="text-xs text-slate-400 underline underline-offset-2"
+                      >Regenerar</button>
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
 
             {/* Card consulta personalizada */}

@@ -168,6 +168,54 @@ Respondé SOLO en JSON válido, sin markdown, sin backticks:
   "palabras_clave_incorporadas": ["keyword1", "keyword2"],
   "ajustes_principales": ["descripción del ajuste 1", "descripción del ajuste 2"]
 }`,
+
+  linkedin_growth: `Sos un experto en personal branding y crecimiento en LinkedIn para el mercado hispanoparlante.
+Tu tarea es generar dos cosas basadas en el perfil y análisis del usuario:
+
+PARTE 1 — Tres ideas de banner de LinkedIn:
+El banner (imagen de portada) es el primer impacto visual. Generá 3 conceptos diferentes y específicos.
+Para cada idea describí exactamente qué debe verse visualmente, qué texto mostrar y la paleta de colores exacta.
+Las ideas deben adaptarse al objetivo profesional del usuario (empleado, freelancer, emprendedor, etc.).
+Sé concreto: "fondo en degradé de #1e3a5f a #0ea5e9, texto centrado en blanco..." — no generalidades.
+
+PARTE 2 — Plan de networking personalizado (90 días):
+Basándote en el perfil actual (puntaje, objetivo, sector) generá un plan accionable semanal.
+- Acciones diarias/semanales concretas (no genéricas: "comentá 3 posts de líderes de RRHH en tu sector" no "sé activo")
+- Tipos de contenido a publicar con temas específicos para su industria y rol
+- Métrica cuantificada a 90 días (seguidores, conexiones, o alcance según el punto de partida)
+- Si el usuario indicó cuántos seguidores tiene, usá ese número como punto de partida
+
+Respondé SOLO en JSON válido, sin markdown, sin backticks:
+{
+  "banner_ideas": [
+    {
+      "titulo": "nombre descriptivo de la idea (ej: Experto Tech Minimalista)",
+      "concepto": "descripción visual detallada: qué mostrar de fondo, elementos gráficos, disposición",
+      "copy_principal": "texto grande que va en el banner (máx 8 palabras)",
+      "copy_secundario": "subtexto o tagline (máx 12 palabras)",
+      "paleta": ["#hexcolor1", "#hexcolor2", "#hexcolor3"],
+      "estilo": "Minimalista | Profesional | Creativo | Tecnológico | Corporativo"
+    }
+  ],
+  "plan_networking": {
+    "objetivo_resumido": "resumen del objetivo del usuario en 1 oración",
+    "acciones_semanales": [
+      {
+        "frecuencia": "Diario | 3× semana | Semanal | Quincenal",
+        "accion": "acción concreta y específica (no genérica)",
+        "ejemplo": "ejemplo puntual de cómo hacer esa acción"
+      }
+    ],
+    "contenido_sugerido": [
+      {
+        "formato": "Post de texto | Carrusel | Artículo | Video corto | Encuesta | Repost comentado",
+        "tema": "tema específico para su industria y rol",
+        "frecuencia": "Semanal | Quincenal | Mensual"
+      }
+    ],
+    "metrica_90dias": "objetivo cuantificado para 90 días basado en la situación actual"
+  }
+}`,
 }
 
 // ── Gemini API helper ─────────────────────────────────────────────────────────
