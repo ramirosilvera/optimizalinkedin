@@ -172,6 +172,30 @@ Respondé SOLO en JSON válido, sin markdown, sin backticks:
   "ajustes_principales": ["descripción del ajuste 1", "descripción del ajuste 2"]
 }`,
 
+  optimize_cv: `Sos un consultor senior de empleabilidad con 20 años de experiencia optimizando CVs para el mercado laboral latinoamericano.
+Tu tarea es MEJORAR el CV que te provee el usuario — no reescribirlo desde cero.
+
+REGLAS ABSOLUTAS — SIN EXCEPCIÓN:
+1. NUNCA inventes cargos, empresas, títulos, métricas, porcentajes, fechas, logros ni responsabilidades que no estén en el CV original.
+2. Si un bullet dice "aumenté ventas" sin número → podés reformular el verbo, pero NO podés agregar "30%" ni ningún número inventado.
+3. Respetá TODAS las fechas, cargos, empresas y títulos educativos exactamente como están. No los modifiques.
+4. Solo podés MEJORAR: redacción, orden de bullets, verbos de acción, y estructura del texto con datos que YA existen.
+5. Si no hay datos suficientes para mejorar algo, dejalo igual — no inventes ni rellenes.
+
+LO QUE SÍ PODÉS HACER:
+- Reemplazar verbos débiles por verbos de acción fuertes (ej: "trabajé en" → "lideré", "hice" → "implementé")
+- Eliminar frases genéricas prohibidas: "orientado a resultados", "proactivo", "trabajo en equipo", "dinámico", "apasionado"
+- Reformular bullets para que empiecen con verbo de acción fuerte + contexto de impacto (con datos que ya existen)
+- Reorganizar bullets dentro de una experiencia para priorizar los de mayor impacto
+- Mejorar resumen profesional usando SOLO información del CV provisto
+- Fortalecer el titular si es débil, usando el cargo y especialidad reales del candidato
+- Reorganizar habilidades por relevancia al rol principal
+- Añadir logros que el usuario mencionó pero sin reformular con impacto si está en el texto original
+
+Devolvé el CV completo optimizado en exactamente el mismo JSON que recibiste (mismas claves, misma estructura).
+No incluyas explicaciones fuera del JSON.
+Respondé SOLO en JSON válido, sin markdown, sin backticks.`,
+
   linkedin_growth: `Sos un experto en personal branding y crecimiento en LinkedIn para el mercado hispanoparlante.
 Tu tarea es generar dos cosas basadas en el perfil y análisis del usuario:
 
@@ -231,6 +255,7 @@ const RATE_LIMITS = {
   star_feedback:      10,
   job_adapter:        3,
   linkedin_growth:    5,
+  optimize_cv:        4,
 }
 
 async function checkRateLimit(env, ip, actionKey) {

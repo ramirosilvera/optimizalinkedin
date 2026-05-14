@@ -123,6 +123,10 @@ export default function App() {
 
   const [cvPreviewHtml, setCvPreviewHtml] = useState('')
   const [showCvPreview, setShowCvPreview] = useState(false)
+  const [cvOptimizing, setCvOptimizing] = useState(false)
+  const [cvOptimizeError, setCvOptimizeError] = useState('')
+  const [cvOptimizeSuggestion, setCvOptimizeSuggestion] = useState(null)
+  const [showCvOptimizePanel, setShowCvOptimizePanel] = useState(false)
   const [showCvModal, setShowCvModal] = useState(false)
   const [contactEmail, setContactEmail] = useState('')
   const [contactTelefono, setContactTelefono] = useState('')
@@ -2040,6 +2044,68 @@ Respondé con este JSON exacto:
     setTimeout(() => { try { win.focus(); win.print() } catch {} }, 800)
   }
 
+
+  // ── Optimizar CV con IA ────────────────────────────────────────────────────
+  const callOptimizeCv = async () => {
+    if (!cvFinalData || cvOptimizing) return
+    setCvOptimizing(true)
+    setCvOptimizeError('')
+    setCvOptimizeSuggestion(null)
+    setShowCvOptimizePanel(false)
+    try {
+      const lines = []
+      if (cvFinalData.nombre)   lines.push(`NOMBRE: ${cvFinalData.nombre}`)
+      if (cvFinalData.titular)  lines.push(`TITULAR: ${cvFinalData.titular}`)
+      if (cvFinalData.resumen)  lines.push(`RESUMEN:\n${cvFinalData.resumen}`)
+      const contacto = [cvFinalData.email, cvFinalData.telefono, cvFinalData.linkedin, cvFinalData.ubicacion].filter(Boolean).join(' | ')
+      if (contacto) lines.push(`CONTACTO: ${contacto}`)
+      if (cvFinalData.experiencias?.length) {
+        lines.push('\nEXPERIENCIAS:')
+        cvFinalData.experiencias.forEach(exp => {
+          lines.push(`  ${exp.cargo} en ${exp.empresa} (${exp.periodo || 'sin fecha'})`)
+          ;(exp.logros || []).forEach(l => lines.push(`    - ${l}`))
+        })
+      }
+      if (cvFinalData.educacion?.length) {
+        lines.push('\nEDUCACIÓN:')
+        cvFinalData.educacion.forEach(ed => lines.push(`  ${ed.titulo} — ${ed.institucion} (${ed.periodo || 'sin fecha'})`))
+      }
+      if (cvFinalData.habilidades?.length)           lines.push(`\nHABILIDADES: ${cvFinalData.habilidades.join(', ')}`)
+      if (cvFinalData.idiomas?.length)               lines.push(`IDIOMAS: ${cvFinalData.idiomas.join(', ')}`)
+      if (cvFinalData.experiencias_anteriores?.length) {
+        lines.push('\nEXPERIENCIAS ANTERIORES:')
+        cvFinalData.experiencias_anteriores.forEach(ex => lines.push(`  ${ex.cargo} en ${ex.empresa}`))
+      }
+      const cvText = lines.join('\n')
+
+      const controller = new AbortController()
+      const timeoutId = setTimeout(() => controller.abort(), 45000)
+      const res = await fetch(WORKER_URL, {
+        method: 'POST',
+        headers: WORKER_HEADERS,
+        signal: controller.signal,
+        body: JSON.stringify({
+          action: 'ai_optimize_cv',
+          contents: [{ parts: [{ text: `CV a optimizar:\n\n${cvText}` }] }],
+          generationConfig: { responseMimeType: 'application/json', maxOutputTokens: 2500 },
+        }),
+      })
+      clearTimeout(timeoutId)
+      if (!res.ok) {
+        const e = await res.json().catch(() => ({}))
+        throw new Error(parseGeminiError(res.status, e))
+      }
+      const data = await res.json()
+      const optimized = parseAIJson(extractAIText(data), AI_DEFAULTS.generate_cv, 'No se pudo optimizar el CV. Intentá de nuevo.')
+      setCvOptimizeSuggestion(optimized)
+      setShowCvOptimizePanel(true)
+      trackEvent('cv_optimized')
+    } catch (err) {
+      setCvOptimizeError(err.name === 'AbortError' ? 'El análisis tardó demasiado. Intentá de nuevo.' : err.message || 'Error al optimizar el CV.')
+    } finally {
+      setCvOptimizing(false)
+    }
+  }
 
   // ── Avanzar en la entrevista ──
   const handleInterviewNext = (answer) => {
@@ -4588,6 +4654,106 @@ Respondé con este JSON exacto:
                     )}
                     {cvSuccess && <p className="text-xs text-center" style={{ color: '#059669' }}>✓ {cvSuccess}</p>}
                   </div>
+                  {/* ── Optimizar CV con IA ── */}
+                  <button
+                    onClick={callOptimizeCv}
+                    disabled={cvOptimizing}
+                    className="w-full py-3.5 rounded-xl text-sm font-semibold transition-all flex items-center justify-center gap-2"
+                    style={{
+                      background: cvOptimizing ? 'rgba(245,158,11,0.07)' : 'rgba(245,158,11,0.10)',
+                      border: '1px solid rgba(245,158,11,0.35)',
+                      color: cvOptimizing ? '#b45309' : '#d97706',
+                      opacity: cvOptimizing ? 0.8 : 1,
+                    }}
+                  >
+                    {cvOptimizing ? (
+                      <><span className="w-3.5 h-3.5 rounded-full border-2 border-amber-400 border-t-transparent animate-spin shrink-0" />Analizando CV...</>
+                    ) : '✨ Optimizar con IA'}
+                  </button>
+                  {cvOptimizeError && (
+                    <p className="text-xs text-red-500 text-center">{cvOptimizeError}</p>
+                  )}
+
+                  {/* ── Panel de comparación ── */}
+                  {showCvOptimizePanel && cvOptimizeSuggestion && (
+                    <div className="rounded-2xl overflow-hidden"
+                      style={{ border: '1.5px solid rgba(245,158,11,0.30)', background: 'rgba(254,252,232,0.5)' }}>
+                      <div className="px-4 py-3 flex items-center justify-between"
+                        style={{ background: 'rgba(245,158,11,0.10)', borderBottom: '1px solid rgba(245,158,11,0.18)' }}>
+                        <div>
+                          <p className="text-sm font-semibold" style={{ color: '#92400e' }}>✨ Mejoras sugeridas por la IA</p>
+                          <p className="text-xs mt-0.5" style={{ color: '#b45309' }}>
+                            Solo se mejora redacción — no se inventa información
+                          </p>
+                        </div>
+                        <button onClick={() => setShowCvOptimizePanel(false)}
+                          className="text-amber-400 hover:text-amber-600 text-lg leading-none transition-colors">✕</button>
+                      </div>
+                      <div className="p-4 space-y-3">
+                        {/* Titular */}
+                        {cvOptimizeSuggestion.titular && cvOptimizeSuggestion.titular !== cvFinalData?.titular && (
+                          <div className="space-y-1">
+                            <p className="text-[10px] font-semibold uppercase tracking-wide" style={{ color: '#d97706' }}>Titular</p>
+                            <div className="rounded-lg p-2.5 text-xs text-slate-500 leading-snug line-through"
+                              style={{ background: '#fef9f0', border: '1px solid rgba(245,158,11,0.15)' }}>
+                              {cvFinalData?.titular}
+                            </div>
+                            <div className="rounded-lg p-2.5 text-xs text-slate-800 leading-snug font-medium"
+                              style={{ background: 'rgba(245,158,11,0.08)', border: '1px solid rgba(245,158,11,0.30)' }}>
+                              {cvOptimizeSuggestion.titular}
+                            </div>
+                          </div>
+                        )}
+                        {/* Resumen */}
+                        {cvOptimizeSuggestion.resumen && cvOptimizeSuggestion.resumen !== cvFinalData?.resumen && (
+                          <div className="space-y-1">
+                            <p className="text-[10px] font-semibold uppercase tracking-wide" style={{ color: '#d97706' }}>Resumen</p>
+                            <div className="rounded-lg p-2.5 text-xs text-slate-500 leading-relaxed line-through"
+                              style={{ background: '#fef9f0', border: '1px solid rgba(245,158,11,0.15)' }}>
+                              {cvFinalData?.resumen}
+                            </div>
+                            <div className="rounded-lg p-2.5 text-xs text-slate-800 leading-relaxed"
+                              style={{ background: 'rgba(245,158,11,0.08)', border: '1px solid rgba(245,158,11,0.30)' }}>
+                              {cvOptimizeSuggestion.resumen}
+                            </div>
+                          </div>
+                        )}
+                        {/* Bullets mejorados */}
+                        {(() => {
+                          const improved = (cvOptimizeSuggestion.experiencias || []).filter((exp, i) => {
+                            const orig = (cvFinalData?.experiencias || [])[i]
+                            return orig && JSON.stringify(exp.logros) !== JSON.stringify(orig.logros)
+                          })
+                          return improved.length > 0 ? (
+                            <p className="text-xs text-center py-1 rounded-lg" style={{ background: 'rgba(245,158,11,0.08)', color: '#b45309' }}>
+                              + {improved.length} experiencia{improved.length > 1 ? 's' : ''} con bullets mejorados
+                            </p>
+                          ) : null
+                        })()}
+                        {/* Acciones */}
+                        <div className="flex gap-2 pt-1">
+                          <button
+                            onClick={() => { setShowCvOptimizePanel(false); setCvOptimizeSuggestion(null) }}
+                            className="flex-1 py-2.5 rounded-xl text-xs font-medium"
+                            style={BTN_BACK_STYLE}>
+                            Descartar
+                          </button>
+                          <button
+                            onClick={() => {
+                              updateCv({ ...cvFinalData, ...cvOptimizeSuggestion })
+                              setShowCvOptimizePanel(false)
+                              setCvOptimizeSuggestion(null)
+                              trackEvent('cv_optimize_applied')
+                            }}
+                            className="flex-[2] py-2.5 rounded-xl text-xs font-semibold text-white"
+                            style={{ background: 'linear-gradient(135deg,#d97706,#f59e0b)' }}>
+                            ✓ Aplicar mejoras
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
                   <button
                     onClick={() => { setJobCvForAdapter(cvFinalData); setJobPosting(''); setJobResult(null); setJobError(''); setShowJobModal(true); trackEvent('job_adapter_opened') }}
                     className="w-full py-3.5 rounded-xl text-sm font-semibold transition-all"
