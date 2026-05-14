@@ -97,6 +97,77 @@ const COMPANY_LINKEDIN_URL = 'https://www.linkedin.com/company/optimiza-lk/'
 const MP_URL               = 'https://www.mercadopago.com.ar/subscriptions/checkout?preapproval_plan_id=8aad681a5695404b962fcae2918079fe'
 const MAX_PDF_SIZE = 15 * 1024 * 1024
 
+// ── AI response validation helpers ──────────────────────────────────────────
+
+// Default shapes for each AI action — prevents crashes when a field is missing
+const AI_DEFAULTS = {
+  analyze_linkedin: {
+    puntaje_general: null, nivel_seo: null, resumen_diagnostico: '',
+    titular_actual: '', resumen_actual: '', titular_propuesto: '', resumen_propuesto: '',
+    palabras_clave_sugeridas: [], fortalezas: [], areas_de_mejora: [],
+    recomendaciones: [], analisis_foto: '',
+  },
+  generate_cv: {
+    nombreCompleto: '', titular: '', resumen: '', experiencias: [],
+    educacion: [], habilidades: [], experiencias_anteriores: [],
+  },
+  cv_quality: {
+    score: 0, nivel: 'Básico', aprobado: false, nota_consultor: '',
+    riesgo_ats: 'Medio', fortalezas: [], gaps: [],
+  },
+  cv_pre_questions: { preguntas: [] },
+  interview_feedback: {
+    puntaje_entrevista: 0, feedback_general: '', puntos_fuertes: [],
+    areas_de_mejora: [], recomendaciones: [],
+  },
+  star_feedback: {
+    puntaje: 0,
+    situacion: { presente: false, comentario: '' },
+    tarea:     { presente: false, comentario: '' },
+    accion:    { presente: false, comentario: '' },
+    resultado: { presente: false, comentario: '' },
+    sugerencia_clave: '',
+  },
+  job_adapter: {
+    cv_adaptado: null, carta_de_presentacion: '',
+    palabras_clave_incorporadas: [], ajustes_principales: [],
+  },
+  linkedin_growth: {
+    banner_ideas: [],
+    plan_networking: { objetivo_resumido: '', acciones_semanales: [], contenido_sugerido: [], metrica_90dias: '' },
+  },
+}
+
+// Extracts the text string from a Gemini response object
+const extractAIText = (data) => data?.candidates?.[0]?.content?.parts?.[0]?.text || ''
+
+// Parses AI JSON output with fence stripping and defaults merge.
+// Returns the parsed object merged with defaults (safe for field access).
+// Throws a user-facing Error if the text cannot be parsed at all.
+const parseAIJson = (raw, defaults, errorMsg = 'No se pudo procesar la respuesta. Intentá de nuevo.') => {
+  // Strip markdown code fences: ```json ... ``` or ``` ... ```
+  const stripped = raw.replace(/^```(?:json)?\s*/i, '').replace(/\s*```\s*$/, '').trim()
+  let parsed
+  try {
+    parsed = JSON.parse(stripped)
+  } catch {
+    // Last resort: extract the first JSON object/array from the string
+    const m = stripped.match(/(\{[\s\S]*\}|\[[\s\S]*\])/)
+    if (m) {
+      try { parsed = JSON.parse(m[0]) } catch { throw new Error(errorMsg) }
+    } else {
+      throw new Error(errorMsg)
+    }
+  }
+  if (!defaults) return parsed
+  // Shallow merge: only fill in missing top-level keys with defaults
+  const result = { ...defaults }
+  for (const key of Object.keys(parsed)) {
+    if (parsed[key] !== null && parsed[key] !== undefined) result[key] = parsed[key]
+  }
+  return result
+}
+
 const STATIC_QUESTIONS = [
   {
     id: 'profesion',
@@ -1530,10 +1601,7 @@ export default function App() {
         throw new Error(parseGeminiError(res.status, e))
       }
       const data = await res.json()
-      const raw = data?.candidates?.[0]?.content?.parts?.[0]?.text || ''
-      let parsed
-      try { parsed = JSON.parse(raw) }
-      catch { const m = raw.match(/\{[\s\S]*\}/); if (m) parsed = JSON.parse(m[0]); else throw new Error('No se pudo procesar la respuesta. Intentá de nuevo.') }
+      const parsed = parseAIJson(extractAIText(data), AI_DEFAULTS.job_adapter, 'No se pudo procesar la respuesta. Intentá de nuevo.')
       setJobResult(parsed)
       trackEvent('job_adapter_generated')
     } catch (err) {
@@ -2241,10 +2309,7 @@ export default function App() {
       clearTimeout(timeoutId)
       if (!res.ok) throw new Error('Error al generar. Intentá de nuevo.')
       const data = await res.json()
-      const raw = data?.candidates?.[0]?.content?.parts?.[0]?.text || ''
-      let parsed
-      try { parsed = JSON.parse(raw) }
-      catch { const m = raw.match(/\{[\s\S]*\}/); if (m) parsed = JSON.parse(m[0]); else throw new Error('No se pudo procesar la respuesta.') }
+      const parsed = parseAIJson(extractAIText(data), AI_DEFAULTS.linkedin_growth, 'No se pudo procesar la respuesta.')
       setLinkedinGrowth(parsed)
       trackEvent('linkedin_growth_generated')
     } catch (err) {
@@ -2334,18 +2399,8 @@ Generá un análisis en este formato JSON exacto:
       if (candidate?.finishReason === 'MAX_TOKENS') {
         throw new Error('La respuesta fue demasiado larga. Intentá de nuevo — suele resolverse en el segundo intento.')
       }
-      const raw = candidate?.content?.parts?.[0]?.text || ''
-      let parsed
-      try { parsed = JSON.parse(raw) }
-      catch { const m = raw.match(/\{[\s\S]*\}/); if (m) parsed = JSON.parse(m[0]); else throw new Error('Error al procesar la respuesta. Intentá de nuevo.') }
-      setResult({
-        ...parsed,
-        fortalezas: parsed.fortalezas || [],
-        areas_de_mejora: parsed.areas_de_mejora || [],
-        palabras_clave_sugeridas: parsed.palabras_clave_sugeridas || [],
-        recomendaciones: parsed.recomendaciones || [],
-        analisis_foto: parsed.analisis_foto || '',
-      })
+      const parsed = parseAIJson(extractAIText(data), AI_DEFAULTS.analyze_linkedin, 'Error al procesar la respuesta. Intentá de nuevo.')
+      setResult(parsed)
       trackEvent('analisis_recibido', { puntaje: parsed.puntaje_general, nivel_seo: parsed.nivel_seo })
       if (localStorage.getItem('ol_premium') === '1') {
         setShowAnalisisConsent(true)
@@ -2467,10 +2522,7 @@ Generá el feedback en este JSON exacto:
       const data = await res.json()
       const candidate = data.candidates?.[0]
       if (candidate?.finishReason === 'MAX_TOKENS') throw new Error('Respuesta demasiado larga. Intentá de nuevo.')
-      const raw = candidate?.content?.parts?.[0]?.text || ''
-      let parsed
-      try { parsed = JSON.parse(raw) }
-      catch { const m = raw.match(/\{[\s\S]*\}/); if (m) parsed = JSON.parse(m[0]); else throw new Error('Error al procesar el feedback. Intentá de nuevo.') }
+      const parsed = parseAIJson(extractAIText(data), AI_DEFAULTS.interview_feedback, 'Error al procesar el feedback. Intentá de nuevo.')
       setInterviewFeedback(parsed)
       trackEvent('entrevista_completada', { puntaje: parsed.puntaje_entrevista })
       saveEntrevista(parsed, answers).catch(err => console.error('[entrevistas save]', err))
@@ -2515,10 +2567,7 @@ Generá el feedback en este JSON exacto:
         throw new Error(parseGeminiError(res.status, e))
       }
       const data = await res.json()
-      const raw = data?.candidates?.[0]?.content?.parts?.[0]?.text || ''
-      let parsed
-      try { parsed = JSON.parse(raw) }
-      catch { const m = raw.match(/\{[\s\S]*\}/); if (m) parsed = JSON.parse(m[0]); else throw new Error('La IA devolvió una respuesta inesperada. Intentá de nuevo.') }
+      const parsed = parseAIJson(extractAIText(data), AI_DEFAULTS.star_feedback, 'La IA devolvió una respuesta inesperada. Intentá de nuevo.')
       setStarFeedback(parsed)
       trackEvent('star_feedback_received', { puntaje: parsed.puntaje, question_idx: starQuestionIdx })
       saveStarPractica(pregunta, starAnswer, parsed).catch(err => console.error('[star_practicas save]', err))
@@ -3079,11 +3128,7 @@ Respondé con este JSON exacto:
       clearTimeout(timeoutId)
       if (!res.ok) return null
       const data = await res.json()
-      const raw = data?.candidates?.[0]?.content?.parts?.[0]?.text || ''
-      let quality
-      try { quality = JSON.parse(raw) }
-      catch { const m = raw.match(/\{[\s\S]*\}/); if (m) quality = JSON.parse(m[0]); else return null }
-      return quality
+      return parseAIJson(extractAIText(data), AI_DEFAULTS.cv_quality)
     } catch {
       return null
     }
@@ -3115,9 +3160,8 @@ Respondé con este JSON exacto:
       clearTimeout(timeoutId)
       if (!res.ok) { callGenerateCV(contacto, {}); return }
       const data = await res.json()
-      const raw = data?.candidates?.[0]?.content?.parts?.[0]?.text || ''
       let parsed
-      try { parsed = JSON.parse(raw) } catch { parsed = null }
+      try { parsed = parseAIJson(extractAIText(data), AI_DEFAULTS.cv_pre_questions) } catch { parsed = AI_DEFAULTS.cv_pre_questions }
       const preguntas = parsed?.preguntas?.filter(q => q.id && q.pregunta) || []
       if (preguntas.length === 0) {
         callGenerateCV(contacto, {})
@@ -3166,10 +3210,7 @@ Respondé con este JSON exacto:
         throw new Error(parseGeminiError(res.status, e))
       }
       const data = await res.json()
-      const rawCv = data?.candidates?.[0]?.content?.parts?.[0]?.text || ''
-      let cv
-      try { cv = JSON.parse(rawCv) }
-      catch { const m = rawCv.match(/\{[\s\S]*\}/); if (m) cv = JSON.parse(m[0]); else throw new Error('No se pudo interpretar el CV generado. Intentá de nuevo.') }
+      const cv = parseAIJson(extractAIText(data), AI_DEFAULTS.generate_cv, 'No se pudo interpretar el CV generado. Intentá de nuevo.')
       setCvDraft(cv)
       saveCvGenerado({ contacto, cv }).catch(err => console.error('[cv_generados save]', err))
       trackEvent('cv_draft_generated')
@@ -3269,10 +3310,7 @@ Respondé con este JSON exacto:
         throw new Error(parseGeminiError(res.status, e))
       }
       const data = await res.json()
-      const rawCv = data?.candidates?.[0]?.content?.parts?.[0]?.text || ''
-      let cv
-      try { cv = JSON.parse(rawCv) }
-      catch { const m = rawCv.match(/\{[\s\S]*\}/); if (m) cv = JSON.parse(m[0]); else throw new Error('No se pudo regenerar el CV. Intentá de nuevo.') }
+      const cv = parseAIJson(extractAIText(data), AI_DEFAULTS.generate_cv, 'No se pudo regenerar el CV. Intentá de nuevo.')
       setCvFinalData(cv)
       setCvStage('done')
       setCvPreviewHtml(buildCvHtml(cv, profilePhoto, profilePhotoMime, cvTemplate))
