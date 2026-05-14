@@ -312,6 +312,278 @@ function escapeHtml(s) {
     .replace(/'/g, '&#39;')
 }
 
+// ── CV autofit script (shared across all templates) ─────────────────────────
+const CV_AUTOFIT_SCRIPT = `<script>
+(function () {
+  var A4W = Math.round(210 * 3.7795);
+  var A4H = Math.round(297 * 3.7795);
+  function autofit() {
+    if (window.matchMedia('print').matches) return;
+    var wrap = document.getElementById('cv-wrap');
+    if (!wrap) return;
+    var vw = window.innerWidth || document.documentElement.clientWidth || A4W;
+    if (vw > 0 && vw < A4W) {
+      wrap.style.zoom = (vw / A4W).toFixed(4);
+      document.documentElement.style.overflowX = 'hidden';
+      document.body.style.overflowX = 'hidden';
+      return;
+    }
+    var h = wrap.scrollHeight;
+    if (h > 0 && h < A4H * 0.84) {
+      wrap.style.zoom = Math.min((A4H * 0.93) / h, 1.35).toFixed(4);
+    }
+  }
+  if (document.readyState === 'loading') { document.addEventListener('DOMContentLoaded', autofit); } else { autofit(); }
+  window.addEventListener('resize', autofit);
+  function clearZoomForPrint() {
+    var wrap = document.getElementById('cv-wrap');
+    if (wrap) wrap.style.zoom = '';
+    document.documentElement.style.overflowX = '';
+    document.body.style.overflowX = '';
+  }
+  window.addEventListener('beforeprint', clearZoomForPrint);
+  var mq = window.matchMedia('print');
+  if (mq.addListener) { mq.addListener(function(e){ if(e.matches) clearZoomForPrint(); }); }
+  else if (mq.addEventListener) { mq.addEventListener('change', function(e){ if(e.matches) clearZoomForPrint(); }); }
+})();
+<\/script>`
+
+// ── CV template: Minimal ─────────────────────────────────────────────────────
+function buildCvHtmlMinimal(cv, photoBase64 = null, photoMime = 'image/jpeg') {
+  const e = escapeHtml
+  const nameParts = (cv.nombre || '').trim().split(/\s+/)
+  const apellido = nameParts.length > 1 ? nameParts[nameParts.length - 1] : nameParts[0] || ''
+  const primerNombre = nameParts.length > 1 ? nameParts.slice(0, -1).join(' ') : ''
+  const hoy = new Date()
+  const fechaStr = `${String(hoy.getDate()).padStart(2, '0')}-${String(hoy.getMonth() + 1).padStart(2, '0')}-${hoy.getFullYear()}`
+  const pdfTitle = `${apellido}${primerNombre ? ' ' + primerNombre : ''} - ${fechaStr} - CV Optimiza LK`
+
+  const photoHtml = photoBase64
+    ? `<img class="cv-photo-min" src="data:${photoMime};base64,${photoBase64}" alt="Foto de perfil" />`
+    : ''
+
+  const contactItems = [
+    cv.email    && `<span>✉ ${e(cv.email)}</span>`,
+    cv.telefono && `<span>✆ ${e(cv.telefono)}</span>`,
+    cv.linkedin && `<span>in ${e(cv.linkedin)}</span>`,
+    cv.ubicacion&& `<span>⌖ ${e(cv.ubicacion)}</span>`,
+  ].filter(Boolean).join('')
+
+  const expHtml = (cv.experiencias || []).map(ex => `
+    <div class="exp-item">
+      <div class="exp-row">
+        <span class="exp-role">${e(ex.cargo)}</span>
+        <span class="exp-period">${e(ex.periodo || '')}</span>
+      </div>
+      <div class="exp-company">${e(ex.empresa)}</div>
+      <ul class="exp-bullets">${(ex.logros || []).map(l => `<li>${e(l)}</li>`).join('')}</ul>
+    </div>`).join('')
+
+  const prevJobsHtml = (cv.experiencias_anteriores || []).length > 0
+    ? `<div class="prev-jobs">${(cv.experiencias_anteriores || []).map(p =>
+        `<span class="prev-job">${e(p.cargo)} · ${e(p.empresa)}</span>`
+      ).join('')}</div>`
+    : ''
+
+  const skillsText = (cv.habilidades || []).join(' · ')
+
+  const eduHtml = (cv.educacion || []).map(ed => `
+    <div class="edu-item">
+      <div class="edu-row">
+        <span class="edu-title">${e(ed.titulo)}</span>
+        <span class="edu-period">${e(ed.periodo || '')}</span>
+      </div>
+      <div class="edu-inst">${e(ed.institucion)}</div>
+    </div>`).join('')
+
+  const idiomasText = (cv.idiomas || []).join(' · ')
+
+  return `<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=210mm, initial-scale=1">
+<title>${e(pdfTitle)}</title>
+<style>
+  @page { size: A4; margin: 0; }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: 'Helvetica Neue', Arial, sans-serif; font-size: 9.5pt; color: #111827; line-height: 1.5; width: 210mm; min-height: 297mm; background: white; padding: 18mm 16mm 16mm; }
+  .cv-wrap { width: 100%; min-height: 100%; }
+  .cv-header { display: flex; align-items: flex-start; justify-content: space-between; padding-bottom: 10px; border-bottom: 2px solid #111827; margin-bottom: 10px; gap: 12px; }
+  .header-left { flex: 1; }
+  .cv-name { font-size: 22pt; font-weight: 800; letter-spacing: -0.5px; line-height: 1.1; }
+  .cv-title { font-size: 9pt; color: #6B7280; margin-top: 4px; line-height: 1.4; }
+  .cv-photo-min { width: 60px; height: 60px; border-radius: 50%; object-fit: cover; border: 2px solid #e5e7eb; flex-shrink: 0; }
+  .contact-bar { display: flex; flex-wrap: wrap; gap: 4px 16px; font-size: 7.5pt; color: #6B7280; margin-bottom: 14px; }
+  .section { margin-bottom: 13px; }
+  .section-title { font-size: 6pt; font-weight: 700; letter-spacing: 1.6px; text-transform: uppercase; color: #374151; padding-bottom: 4px; margin-bottom: 8px; border-bottom: 1px solid #E5E7EB; }
+  .resumen-text { font-size: 9pt; color: #374151; line-height: 1.6; }
+  .exp-item { margin-bottom: 11px; }
+  .exp-item:last-child { margin-bottom: 0; }
+  .exp-row { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
+  .exp-role { font-size: 9.5pt; font-weight: 700; color: #111827; flex: 1; }
+  .exp-period { font-size: 7.5pt; color: #9CA3AF; white-space: nowrap; flex-shrink: 0; }
+  .exp-company { font-size: 8pt; color: #6B7280; font-style: italic; margin: 1.5px 0 4px; }
+  .exp-bullets { margin: 0 0 0 12px; padding: 0; }
+  .exp-bullets li { font-size: 8.5pt; color: #374151; margin-bottom: 2px; line-height: 1.45; }
+  .prev-jobs { margin-top: 8px; display: flex; flex-wrap: wrap; gap: 2px 10px; }
+  .prev-job { font-size: 7.5pt; color: #9CA3AF; }
+  .edu-item { margin-bottom: 7px; }
+  .edu-row { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
+  .edu-title { font-size: 8.5pt; font-weight: 600; color: #111827; flex: 1; }
+  .edu-period { font-size: 7.5pt; color: #9CA3AF; white-space: nowrap; flex-shrink: 0; }
+  .edu-inst { font-size: 8pt; color: #6B7280; margin-top: 1px; }
+  .skills-text { font-size: 8.5pt; color: #374151; line-height: 1.7; }
+  @media print {
+    @page { size: A4 portrait; margin: 0; }
+    * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
+    html, body { margin: 0 !important; padding: 18mm 16mm !important; width: 210mm !important; }
+    .cv-wrap { zoom: 1 !important; transform: none !important; }
+  }
+</style>
+</head>
+<body>
+<div class="cv-wrap" id="cv-wrap">
+  <div class="cv-header">
+    <div class="header-left">
+      <div class="cv-name">${e(cv.nombre)}</div>
+      <div class="cv-title">${e(cv.titular)}</div>
+    </div>
+    ${photoHtml}
+  </div>
+  ${contactItems ? `<div class="contact-bar">${contactItems}</div>` : ''}
+  ${cv.resumen ? `<div class="section"><div class="section-title">Perfil</div><p class="resumen-text">${e(cv.resumen)}</p></div>` : ''}
+  ${expHtml ? `<div class="section"><div class="section-title">Experiencia</div>${expHtml}${prevJobsHtml}</div>` : ''}
+  ${skillsText ? `<div class="section"><div class="section-title">Habilidades</div><p class="skills-text">${e(skillsText)}</p></div>` : ''}
+  ${eduHtml ? `<div class="section"><div class="section-title">Educación</div>${eduHtml}</div>` : ''}
+  ${idiomasText ? `<div class="section"><div class="section-title">Idiomas</div><p class="skills-text">${e(idiomasText)}</p></div>` : ''}
+</div>
+${CV_AUTOFIT_SCRIPT}
+</body></html>`
+}
+
+// ── CV template: Ejecutivo ───────────────────────────────────────────────────
+function buildCvHtmlEjecutivo(cv, photoBase64 = null, photoMime = 'image/jpeg') {
+  const e = escapeHtml
+  const nameParts = (cv.nombre || '').trim().split(/\s+/)
+  const apellido = nameParts.length > 1 ? nameParts[nameParts.length - 1] : nameParts[0] || ''
+  const primerNombre = nameParts.length > 1 ? nameParts.slice(0, -1).join(' ') : ''
+  const hoy = new Date()
+  const fechaStr = `${String(hoy.getDate()).padStart(2, '0')}-${String(hoy.getMonth() + 1).padStart(2, '0')}-${hoy.getFullYear()}`
+  const pdfTitle = `${apellido}${primerNombre ? ' ' + primerNombre : ''} - ${fechaStr} - CV Optimiza LK`
+
+  const contactItems = [
+    cv.email    && `<div class="cl-item">✉ ${e(cv.email)}</div>`,
+    cv.telefono && `<div class="cl-item">✆ ${e(cv.telefono)}</div>`,
+    cv.linkedin && `<div class="cl-item">in ${e(cv.linkedin)}</div>`,
+    cv.ubicacion&& `<div class="cl-item">⌖ ${e(cv.ubicacion)}</div>`,
+  ].filter(Boolean).join('')
+
+  const skillsHtml = (cv.habilidades || []).map(s => `<div class="cl-skill">${e(s)}</div>`).join('')
+
+  const eduHtml = (cv.educacion || []).map(ed => `
+    <div class="cl-edu">
+      <div class="cl-edu-title">${e(ed.titulo)}</div>
+      <div class="cl-edu-inst">${e(ed.institucion)}</div>
+      ${ed.periodo ? `<div class="cl-edu-period">${e(ed.periodo)}</div>` : ''}
+    </div>`).join('')
+
+  const idiomasHtml = (cv.idiomas || []).map(i => `<div class="cl-idioma">${e(i)}</div>`).join('')
+
+  const expHtml = (cv.experiencias || []).map(ex => `
+    <div class="exp-item">
+      <div class="exp-header">
+        <span class="exp-role">${e(ex.cargo)}</span>
+        <span class="exp-period">${e(ex.periodo || '')}</span>
+      </div>
+      <div class="exp-company">${e(ex.empresa)}</div>
+      <ul class="exp-bullets">${(ex.logros || []).map(l => `<li>${e(l)}</li>`).join('')}</ul>
+    </div>`).join('')
+
+  const prevJobsHtml = (cv.experiencias_anteriores || []).length > 0
+    ? `<div class="prev-wrap">${(cv.experiencias_anteriores || []).map(p =>
+        `<div class="prev-item"><span class="prev-role">${e(p.cargo)}</span> · <span class="prev-co">${e(p.empresa)}</span></div>`
+      ).join('')}</div>`
+    : ''
+
+  return `<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=210mm, initial-scale=1">
+<title>${e(pdfTitle)}</title>
+<style>
+  @page { size: A4; margin: 0; }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: 'Helvetica Neue', Arial, sans-serif; font-size: 9.5pt; color: #1e293b; line-height: 1.48; width: 210mm; min-height: 297mm; background: white; }
+  .cv-wrap { display: flex; flex-direction: column; width: 210mm; min-height: 297mm; }
+  .cv-header { background: #1e293b; color: white; padding: 20px 26px; display: flex; align-items: center; gap: 16px; }
+  .header-text { flex: 1; }
+  .cv-name { font-size: 20pt; font-weight: 800; color: white; letter-spacing: -0.3px; line-height: 1.1; }
+  .cv-title { font-size: 9pt; color: rgba(255,255,255,0.60); margin-top: 4px; line-height: 1.4; }
+  .cv-photo-exec { width: 64px; height: 64px; border-radius: 50%; object-fit: cover; border: 2px solid rgba(255,255,255,0.25); flex-shrink: 0; }
+  .cv-body { display: flex; flex: 1; }
+  .col-left { width: 58mm; background: #f8fafc; border-right: 1px solid #e2e8f0; padding: 16px 14px; flex-shrink: 0; }
+  .col-right { flex: 1; padding: 16px 20px; background: white; min-width: 0; }
+  .cl-section { margin-bottom: 14px; }
+  .cl-section-title { font-size: 6pt; font-weight: 700; letter-spacing: 1.3px; text-transform: uppercase; color: #b45309; padding-bottom: 4px; margin-bottom: 7px; border-bottom: 1px solid #fde68a; }
+  .cl-item { font-size: 7.5pt; color: #475569; margin-bottom: 4px; word-break: break-all; line-height: 1.35; }
+  .cl-skill { font-size: 8pt; color: #334155; padding: 2.5px 0; border-bottom: 0.5px solid #e2e8f0; line-height: 1.35; }
+  .cl-skill:last-child { border-bottom: none; }
+  .cl-edu { margin-bottom: 8px; }
+  .cl-edu-title { font-size: 8pt; font-weight: 600; color: #1e293b; line-height: 1.3; }
+  .cl-edu-inst { font-size: 7.5pt; color: #64748b; font-style: italic; margin-top: 1px; }
+  .cl-edu-period { font-size: 7pt; color: #94a3b8; margin-top: 1.5px; }
+  .cl-idioma { font-size: 8pt; color: #475569; margin-bottom: 3px; }
+  .cr-section { margin-bottom: 14px; }
+  .cr-section-title { font-size: 6.5pt; font-weight: 700; text-transform: uppercase; letter-spacing: 0.9px; color: #1e293b; padding-bottom: 4px; margin-bottom: 10px; border-bottom: 1.5px solid #cbd5e1; }
+  .resumen-text { font-size: 9pt; color: #374151; line-height: 1.62; }
+  .exp-item { margin-bottom: 12px; }
+  .exp-item:last-child { margin-bottom: 0; }
+  .exp-header { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
+  .exp-role { font-size: 10pt; font-weight: 700; color: #0f172a; flex: 1; line-height: 1.25; }
+  .exp-period { font-size: 7.5pt; color: #94a3b8; white-space: nowrap; flex-shrink: 0; }
+  .exp-company { font-size: 8.5pt; color: #b45309; font-weight: 600; margin: 2px 0 4px; }
+  .exp-bullets { margin: 0 0 0 13px; padding: 0; }
+  .exp-bullets li { font-size: 8.5pt; color: #374151; margin-bottom: 2.5px; line-height: 1.48; }
+  .prev-wrap { margin-top: 9px; padding-top: 7px; border-top: 0.5px solid #e2e8f0; }
+  .prev-item { font-size: 8pt; color: #64748b; margin-bottom: 3px; }
+  .prev-role { font-weight: 600; color: #475569; }
+  .prev-co { font-style: italic; }
+  @media print {
+    @page { size: A4 portrait; margin: 0; }
+    * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
+    html, body { margin: 0 !important; padding: 0 !important; width: 210mm !important; }
+    .cv-wrap { zoom: 1 !important; transform: none !important; break-inside: avoid; }
+  }
+</style>
+</head>
+<body>
+<div class="cv-wrap" id="cv-wrap">
+  <div class="cv-header">
+    ${photoBase64 ? `<img class="cv-photo-exec" src="data:${photoMime};base64,${photoBase64}" alt="Foto de perfil" />` : ''}
+    <div class="header-text">
+      <div class="cv-name">${e(cv.nombre)}</div>
+      <div class="cv-title">${e(cv.titular)}</div>
+    </div>
+  </div>
+  <div class="cv-body">
+    <div class="col-left">
+      ${contactItems ? `<div class="cl-section"><div class="cl-section-title">Contacto</div>${contactItems}</div>` : ''}
+      ${skillsHtml ? `<div class="cl-section"><div class="cl-section-title">Habilidades</div>${skillsHtml}</div>` : ''}
+      ${eduHtml ? `<div class="cl-section"><div class="cl-section-title">Educación</div>${eduHtml}</div>` : ''}
+      ${idiomasHtml ? `<div class="cl-section"><div class="cl-section-title">Idiomas</div>${idiomasHtml}</div>` : ''}
+    </div>
+    <div class="col-right">
+      ${cv.resumen ? `<div class="cr-section"><div class="cr-section-title">Resumen Profesional</div><p class="resumen-text">${e(cv.resumen)}</p></div>` : ''}
+      ${expHtml ? `<div class="cr-section"><div class="cr-section-title">Experiencia</div>${expHtml}${prevJobsHtml}</div>` : ''}
+    </div>
+  </div>
+</div>
+${CV_AUTOFIT_SCRIPT}
+</body></html>`
+}
+
 // ── UI components ──────────────────────────────────────────────
 
 const LinkedInIcon = ({ className }) => (
@@ -738,6 +1010,7 @@ export default function App() {
   const [cvQuality, setCvQuality] = useState(null)
   const [cvGapAnswers, setCvGapAnswers] = useState({})
   const [cvStage, setCvStage] = useState('idle') // 'idle'|'pre_loading'|'pre_questions'|'drafting'|'scoring'|'gap_form'|'regenerating'|'done'
+  const [cvTemplate, setCvTemplate] = useState('clasico')
   const [cvFinalData, setCvFinalData] = useState(null)
   const [cvContacto, setCvContacto] = useState(null)
   const [cvPreQuestions, setCvPreQuestions] = useState([])  // Questions generated pre-CV from profile analysis
@@ -1028,7 +1301,7 @@ export default function App() {
         else setResult(null)
         setCvFinalData(item.datos)
         setCvDraft(item.datos)
-        setCvPreviewHtml(buildCvHtml(item.datos))
+        setCvPreviewHtml(buildCvHtml(item.datos, null, 'image/jpeg', 'clasico'))
         setCvStage('done')
         setStep(STEPS.RESULTS)
         break
@@ -1702,7 +1975,7 @@ export default function App() {
       const base64 = reader.result.split(',')[1]
       setProfilePhoto(base64)
       if (cvFinalData && cvStage === 'done') {
-        setCvPreviewHtml(buildCvHtml(cvFinalData, base64, file.type))
+        setCvPreviewHtml(buildCvHtml(cvFinalData, base64, file.type, cvTemplate))
       }
     }
     reader.readAsDataURL(file)
@@ -2171,8 +2444,17 @@ Generá el feedback en este JSON exacto:
     }
   }
 
-  const buildCvHtml = (cv, photoBase64 = null, photoMime = 'image/jpeg') => {
+  const buildCvHtml = (cv, photoBase64 = null, photoMime = 'image/jpeg', template = 'clasico') => {
     const e = escapeHtml
+    if (template === 'minimal')   return buildCvHtmlMinimal(cv, photoBase64, photoMime)
+    if (template === 'ejecutivo') return buildCvHtmlEjecutivo(cv, photoBase64, photoMime)
+
+    // Template-specific color scheme
+    const sidebarBg    = template === 'tech' ? '#134e4a' : template === 'creativo' ? 'linear-gradient(160deg,#7c3aed,#4338ca)' : '#0d2137'
+    const accentColor  = template === 'tech' ? '#34d399' : template === 'creativo' ? '#c4b5fd' : '#38bdf8'
+    const mainAccent   = template === 'tech' ? '#0f766e' : template === 'creativo' ? '#7c3aed' : '#0077B5'
+    const borderAccent = template === 'tech' ? '#99f6e4' : template === 'creativo' ? '#ddd6fe' : '#BFDBFE'
+    const companyColor = template === 'tech' ? '#0f766e' : template === 'creativo' ? '#7c3aed' : '#0077B5'
 
     // ── PDF filename: "Apellido Nombre - DD-MM-YYYY - CV Optimiza LK" ──
     const nameParts = (cv.nombre || '').trim().split(/\s+/)
@@ -2260,7 +2542,7 @@ Generá el feedback en este JSON exacto:
   /* ── SIDEBAR ── */
   .sidebar {
     width: 65mm;
-    background: #0d2137;
+    background: ${sidebarBg};
     color: white;
     padding: 26px 17px 24px;
     display: flex;
@@ -2312,7 +2594,7 @@ Generá el feedback en este JSON exacto:
     font-weight: 700;
     text-transform: uppercase;
     letter-spacing: 1.3px;
-    color: #38bdf8;
+    color: ${accentColor};
     padding-bottom: 5px;
     margin-bottom: 8px;
     border-bottom: 0.5px solid rgba(255,255,255,0.12);
@@ -2347,6 +2629,10 @@ Generá el feedback en este JSON exacto:
     line-height: 1.32;
   }
 
+  /* ── Tech: skill tags ── */
+  ${template === 'tech' ? `.sb-skill { display: inline-block; background: rgba(52,211,153,0.15); border: 1px solid rgba(52,211,153,0.25); border-radius: 3px; padding: 2px 6px; font-size: 7pt; color: rgba(255,255,255,0.88); margin: 2px 1px; }
+  .sb-skill:last-child { border-bottom: none; }` : ''}
+
   /* ── MAIN COLUMN ── */
   .main {
     flex: 1;
@@ -2362,10 +2648,10 @@ Generá el feedback en este JSON exacto:
     font-weight: 700;
     text-transform: uppercase;
     letter-spacing: 0.9px;
-    color: #0077B5;
+    color: ${mainAccent};
     padding-bottom: 4px;
     margin-bottom: 11px;
-    border-bottom: 1.5px solid #BFDBFE;
+    border-bottom: 1.5px solid ${borderAccent};
   }
 
   .resumen-text {
@@ -2402,7 +2688,7 @@ Generá el feedback en este JSON exacto:
 
   .exp-company {
     font-size: 8.5pt;
-    color: #0077B5;
+    color: ${companyColor};
     font-weight: 600;
     margin: 2.5px 0 5px;
   }
@@ -2507,57 +2793,7 @@ Generá el feedback en este JSON exacto:
   </div>
 
 </div>
-<script>
-(function () {
-  var A4W = Math.round(210 * 3.7795); // ≈794px
-  var A4H = Math.round(297 * 3.7795); // ≈1123px
-
-  function autofit() {
-    if (window.matchMedia('print').matches) return;
-    var wrap = document.getElementById('cv-wrap');
-    if (!wrap) return;
-    var vw = window.innerWidth || document.documentElement.clientWidth || A4W;
-
-    if (vw > 0 && vw < A4W) {
-      // Pantalla angosta (móvil): reducir para que el A4 entre en el ancho disponible.
-      // CSS zoom afecta el layout en Chrome/Safari → no hay desbordamiento horizontal.
-      wrap.style.zoom = (vw / A4W).toFixed(4);
-      // Belt-and-suspenders: ocultar cualquier overflow residual del body de 210mm
-      document.documentElement.style.overflowX = 'hidden';
-      document.body.style.overflowX = 'hidden';
-      return;
-    }
-
-    // Pantalla ancha (escritorio): ampliar si el contenido es más corto que A4
-    var h = wrap.scrollHeight;
-    if (h > 0 && h < A4H * 0.84) {
-      wrap.style.zoom = Math.min((A4H * 0.93) / h, 1.35).toFixed(4);
-    }
-  }
-
-  if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', autofit);
-  } else {
-    autofit();
-  }
-  // Reescalar al rotar el dispositivo o cambiar tamaño de ventana
-  window.addEventListener('resize', autofit);
-
-  // Resetear zoom antes de imprimir (beforeprint no dispara en iOS Safari →
-  // también usamos matchMedia como fallback). El @media print ya tiene
-  // zoom:1 !important como respaldo adicional.
-  function clearZoomForPrint() {
-    var wrap = document.getElementById('cv-wrap');
-    if (wrap) wrap.style.zoom = '';
-    document.documentElement.style.overflowX = '';
-    document.body.style.overflowX = '';
-  }
-  window.addEventListener('beforeprint', clearZoomForPrint);
-  var mq = window.matchMedia('print');
-  if (mq.addListener) { mq.addListener(function(e){ if(e.matches) clearZoomForPrint(); }); }
-  else if (mq.addEventListener) { mq.addEventListener('change', function(e){ if(e.matches) clearZoomForPrint(); }); }
-})();
-</script>
+${CV_AUTOFIT_SCRIPT}
 </body></html>`
   }
 
@@ -2770,7 +3006,7 @@ Respondé con este JSON exacto:
       if (!mergedQuality || mergedQuality.aprobado || !hasHighImpactGaps) {
         setCvFinalData(cv)
         setCvStage('done')
-        setCvPreviewHtml(buildCvHtml(cv, profilePhoto, profilePhotoMime))
+        setCvPreviewHtml(buildCvHtml(cv, profilePhoto, profilePhotoMime, cvTemplate))
         saveToHistorial('cv', cv, cv.nombre || 'CV generado')
       } else {
         trackEvent('cv_gap_form_shown', { gap_count: mergedQuality.gaps?.length || 0 })
@@ -2827,7 +3063,7 @@ Respondé con este JSON exacto:
       catch { const m = rawCv.match(/\{[\s\S]*\}/); if (m) cv = JSON.parse(m[0]); else throw new Error('No se pudo regenerar el CV. Intentá de nuevo.') }
       setCvFinalData(cv)
       setCvStage('done')
-      setCvPreviewHtml(buildCvHtml(cv, profilePhoto, profilePhotoMime))
+      setCvPreviewHtml(buildCvHtml(cv, profilePhoto, profilePhotoMime, cvTemplate))
       trackEvent('cv_regenerated', { answered_count: Object.keys(gapAnswers).length })
       saveCvGenerado({ contacto: cvContacto, cv }).catch(err => console.error('[cv_generados regen save]', err))
       saveToHistorial('cv', cv, cv.nombre || 'CV generado')
@@ -3426,7 +3662,7 @@ Respondé con este JSON exacto:
                       </div>
                       <button
                         onClick={() => {
-                          const html = buildCvHtml(jobResult.cv_adaptado, profilePhoto, profilePhotoMime)
+                          const html = buildCvHtml(jobResult.cv_adaptado, profilePhoto, profilePhotoMime, cvTemplate)
                           const win = window.open('', '_blank')
                           if (win) { win.document.write(html); win.document.close(); win.focus(); setTimeout(() => { try { win.print() } catch {} }, 300) }
                           trackEvent('job_adapter_cv_download')
@@ -5033,7 +5269,7 @@ Respondé con este JSON exacto:
                         Incorporar estos datos al CV →
                       </button>
                       <button
-                        onClick={() => { setCvFinalData(cvDraft); setCvStage('done'); setCvPreviewHtml(buildCvHtml(cvDraft, profilePhoto, profilePhotoMime)); trackEvent('cv_gap_skipped') }}
+                        onClick={() => { setCvFinalData(cvDraft); setCvStage('done'); setCvPreviewHtml(buildCvHtml(cvDraft, profilePhoto, profilePhotoMime, cvTemplate)); trackEvent('cv_gap_skipped') }}
                         className="w-full py-2.5 rounded-xl text-xs text-slate-400 transition-all hover:text-slate-600"
                         style={{ background: 'transparent' }}
                       >
@@ -5047,6 +5283,36 @@ Respondé con este JSON exacto:
               {/* CV listo — score + revisión consultor + botón imprimir */}
               {cvStage === 'done' && cvFinalData && (
                 <div className="space-y-3">
+                  {/* Template picker */}
+                  <div className="rounded-2xl p-3 space-y-2"
+                    style={{ background: 'rgba(0,119,181,0.04)', border: '1px solid rgba(0,119,181,0.14)' }}>
+                    <p className="text-xs font-semibold text-slate-700">Diseño del CV</p>
+                    <div className="grid grid-cols-5 gap-1.5">
+                      {[
+                        { id: 'clasico',   label: 'Clásico',   color: '#0d2137' },
+                        { id: 'minimal',   label: 'Minimal',   color: '#374151' },
+                        { id: 'ejecutivo', label: 'Ejecutivo', color: '#1e293b' },
+                        { id: 'tech',      label: 'Tech',      color: '#134e4a' },
+                        { id: 'creativo',  label: 'Creativo',  color: '#7c3aed' },
+                      ].map(t => (
+                        <button
+                          key={t.id}
+                          onClick={() => {
+                            setCvTemplate(t.id)
+                            if (cvFinalData) setCvPreviewHtml(buildCvHtml(cvFinalData, profilePhoto, profilePhotoMime, t.id))
+                          }}
+                          className="flex flex-col items-center gap-1 py-2 px-1 rounded-xl border transition-all text-center"
+                          style={{
+                            background: cvTemplate === t.id ? 'rgba(0,119,181,0.12)' : '#f8fafc',
+                            borderColor: cvTemplate === t.id ? 'rgba(0,119,181,0.5)' : 'rgba(0,0,0,0.08)',
+                          }}
+                        >
+                          <div className="w-full h-5 rounded-sm" style={{ background: t.color }} />
+                          <span className="text-[9px] text-slate-600 font-medium leading-tight">{t.label}</span>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
                   {/* Cuando el CV se restauró desde historial sin análisis asociado */}
                   {!result && (
                     <div className="flex gap-2">
@@ -5127,7 +5393,7 @@ Respondé con este JSON exacto:
                       </label>
                       <input id="cv-done-photo" type="file" accept="image/*" className="hidden" onChange={handleCvPhotoUpload} />
                       {profilePhotoPreview && (
-                        <button onClick={() => { setProfilePhotoPreview(null); setProfilePhoto(null); setProfilePhotoMime('image/jpeg'); if (cvFinalData) setCvPreviewHtml(buildCvHtml(cvFinalData, null, 'image/jpeg')) }}
+                        <button onClick={() => { setProfilePhotoPreview(null); setProfilePhoto(null); setProfilePhotoMime('image/jpeg'); if (cvFinalData) setCvPreviewHtml(buildCvHtml(cvFinalData, null, 'image/jpeg', cvTemplate)) }}
                           className="text-xs transition-colors" style={{ color: '#94a3b8' }}>
                           ✕ Quitar
                         </button>
