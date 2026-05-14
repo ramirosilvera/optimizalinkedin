@@ -654,6 +654,26 @@ function CopyButton({ text }) {
   )
 }
 
+function TagInput({ placeholder, onAdd }) {
+  const [val, setVal] = React.useState('')
+  return (
+    <input
+      className="w-full px-3 py-1.5 rounded-lg text-xs border focus:outline-none focus:ring-1"
+      style={{ borderColor: 'rgba(0,0,0,0.12)', focusRingColor: '#fbbf24' }}
+      placeholder={placeholder}
+      value={val}
+      onChange={e => setVal(e.target.value)}
+      onKeyDown={e => {
+        if (e.key === 'Enter' && val.trim()) {
+          e.preventDefault()
+          onAdd(val.trim())
+          setVal('')
+        }
+      }}
+    />
+  )
+}
+
 function ScoreRing({ score }) {
   const s = Math.min(Math.max(Number(score) || 0, 0), 10)
   const r = 52, circ = 2 * Math.PI * r
@@ -1011,6 +1031,7 @@ export default function App() {
   const [cvGapAnswers, setCvGapAnswers] = useState({})
   const [cvStage, setCvStage] = useState('idle') // 'idle'|'pre_loading'|'pre_questions'|'drafting'|'scoring'|'gap_form'|'regenerating'|'done'
   const [cvTemplate, setCvTemplate] = useState('clasico')
+  const [cvEditing, setCvEditing] = useState(false)
   const [cvFinalData, setCvFinalData] = useState(null)
   const [cvContacto, setCvContacto] = useState(null)
   const [cvPreQuestions, setCvPreQuestions] = useState([])  // Questions generated pre-CV from profile analysis
@@ -2442,6 +2463,11 @@ Generá el feedback en este JSON exacto:
     } catch (err) {
       console.error('[entrevistas save]', err)
     }
+  }
+
+  const updateCv = (newData) => {
+    setCvFinalData(newData)
+    setCvPreviewHtml(buildCvHtml(newData, profilePhoto, profilePhotoMime, cvTemplate))
   }
 
   const buildCvHtml = (cv, photoBase64 = null, photoMime = 'image/jpeg', template = 'clasico') => {
@@ -5399,6 +5425,222 @@ Respondé con este JSON exacto:
                         </button>
                       )}
                     </div>
+                  </div>
+
+                  {/* ── CV Editor ── */}
+                  <div>
+                    <button
+                      onClick={() => setCvEditing(prev => !prev)}
+                      className="w-full py-3 rounded-xl text-sm font-semibold transition-all"
+                      style={{
+                        background: cvEditing ? 'rgba(245,158,11,0.10)' : 'rgba(0,119,181,0.07)',
+                        border: `1px solid ${cvEditing ? 'rgba(245,158,11,0.35)' : 'rgba(0,119,181,0.20)'}`,
+                        color: cvEditing ? '#d97706' : '#0077B5',
+                      }}
+                    >
+                      {cvEditing ? '✓ Cerrar editor' : '✏️ Editar CV'}
+                    </button>
+
+                    {cvEditing && cvFinalData && (
+                      <div className="mt-3 rounded-2xl p-4 space-y-5"
+                        style={{ background: 'rgba(254,252,232,0.6)', border: '1px solid rgba(245,158,11,0.25)' }}>
+
+                        {/* Datos personales */}
+                        <div className="space-y-2">
+                          <p className="text-xs font-semibold uppercase tracking-wide" style={{ color: '#d97706' }}>Datos personales</p>
+                          <input className="w-full px-3 py-2 rounded-lg text-sm border bg-white focus:outline-none"
+                            style={{ borderColor: 'rgba(0,0,0,0.12)' }}
+                            placeholder="Nombre completo"
+                            value={cvFinalData.nombre || ''}
+                            onChange={e => updateCv({ ...cvFinalData, nombre: e.target.value })}
+                          />
+                          <textarea className="w-full px-3 py-2 rounded-lg text-sm border bg-white resize-none focus:outline-none"
+                            style={{ borderColor: 'rgba(0,0,0,0.12)' }}
+                            placeholder="Titular / Rol profesional"
+                            rows={2}
+                            value={cvFinalData.titular || ''}
+                            onChange={e => updateCv({ ...cvFinalData, titular: e.target.value })}
+                          />
+                          <textarea className="w-full px-3 py-2 rounded-lg text-sm border bg-white resize-none focus:outline-none"
+                            style={{ borderColor: 'rgba(0,0,0,0.12)' }}
+                            placeholder="Resumen profesional (2 oraciones máx.)"
+                            rows={3}
+                            value={cvFinalData.resumen || ''}
+                            onChange={e => updateCv({ ...cvFinalData, resumen: e.target.value })}
+                          />
+                          <div className="grid grid-cols-2 gap-2">
+                            {[
+                              { field: 'email',    ph: 'Email' },
+                              { field: 'telefono', ph: 'Teléfono' },
+                              { field: 'linkedin', ph: 'URL LinkedIn' },
+                              { field: 'ubicacion',ph: 'Ciudad / País' },
+                            ].map(({ field, ph }) => (
+                              <input key={field}
+                                className="px-2 py-1.5 rounded-lg text-xs border bg-white focus:outline-none"
+                                style={{ borderColor: 'rgba(0,0,0,0.12)' }}
+                                placeholder={ph}
+                                value={cvFinalData[field] || ''}
+                                onChange={e => updateCv({ ...cvFinalData, [field]: e.target.value || null })}
+                              />
+                            ))}
+                          </div>
+                        </div>
+
+                        {/* Experiencias */}
+                        <div className="space-y-3">
+                          <div className="flex items-center justify-between">
+                            <p className="text-xs font-semibold uppercase tracking-wide" style={{ color: '#d97706' }}>Experiencia</p>
+                            <button
+                              onClick={() => updateCv({ ...cvFinalData, experiencias: [...(cvFinalData.experiencias || []), { cargo: '', empresa: '', periodo: '', logros: [''] }] })}
+                              className="text-xs px-2 py-1 rounded-lg font-semibold"
+                              style={{ background: 'rgba(245,158,11,0.12)', color: '#d97706', border: '1px solid rgba(245,158,11,0.3)' }}
+                            >+ Agregar</button>
+                          </div>
+                          {(cvFinalData.experiencias || []).map((exp, i) => (
+                            <div key={i} className="rounded-xl p-3 space-y-2 relative bg-white"
+                              style={{ border: '1px solid rgba(0,0,0,0.08)' }}>
+                              <button
+                                onClick={() => updateCv({ ...cvFinalData, experiencias: cvFinalData.experiencias.filter((_, idx) => idx !== i) })}
+                                className="absolute top-2 right-2 w-5 h-5 rounded-full flex items-center justify-center text-[10px]"
+                                style={{ background: 'rgba(239,68,68,0.10)', color: '#ef4444' }}
+                              >✕</button>
+                              <div className="grid grid-cols-2 gap-2 pr-6">
+                                <input className="px-2 py-1.5 rounded-lg text-xs border focus:outline-none"
+                                  style={{ borderColor: 'rgba(0,0,0,0.12)' }}
+                                  placeholder="Cargo"
+                                  value={exp.cargo || ''}
+                                  onChange={e => { const xs = cvFinalData.experiencias.map((x, xi) => xi === i ? { ...x, cargo: e.target.value } : x); updateCv({ ...cvFinalData, experiencias: xs }) }}
+                                />
+                                <input className="px-2 py-1.5 rounded-lg text-xs border focus:outline-none"
+                                  style={{ borderColor: 'rgba(0,0,0,0.12)' }}
+                                  placeholder="Empresa"
+                                  value={exp.empresa || ''}
+                                  onChange={e => { const xs = cvFinalData.experiencias.map((x, xi) => xi === i ? { ...x, empresa: e.target.value } : x); updateCv({ ...cvFinalData, experiencias: xs }) }}
+                                />
+                              </div>
+                              <input className="w-full px-2 py-1.5 rounded-lg text-xs border focus:outline-none"
+                                style={{ borderColor: 'rgba(0,0,0,0.12)' }}
+                                placeholder="Período (ej: mar 2020 – dic 2023)"
+                                value={exp.periodo || ''}
+                                onChange={e => { const xs = cvFinalData.experiencias.map((x, xi) => xi === i ? { ...x, periodo: e.target.value } : x); updateCv({ ...cvFinalData, experiencias: xs }) }}
+                              />
+                              <div className="space-y-1.5">
+                                <p className="text-[10px] text-slate-400 font-medium">Logros</p>
+                                {(exp.logros || []).map((logro, j) => (
+                                  <div key={j} className="flex gap-1.5 items-start">
+                                    <textarea
+                                      className="flex-1 px-2 py-1.5 rounded-lg text-xs border resize-none focus:outline-none"
+                                      style={{ borderColor: 'rgba(0,0,0,0.12)' }}
+                                      rows={2}
+                                      placeholder="Describí un logro concreto..."
+                                      value={logro}
+                                      onChange={e => {
+                                        const xs = cvFinalData.experiencias.map((x, xi) => {
+                                          if (xi !== i) return x
+                                          return { ...x, logros: x.logros.map((l, li) => li === j ? e.target.value : l) }
+                                        })
+                                        updateCv({ ...cvFinalData, experiencias: xs })
+                                      }}
+                                    />
+                                    {(exp.logros || []).length > 1 && (
+                                      <button
+                                        onClick={() => {
+                                          const xs = cvFinalData.experiencias.map((x, xi) => xi !== i ? x : { ...x, logros: x.logros.filter((_, li) => li !== j) })
+                                          updateCv({ ...cvFinalData, experiencias: xs })
+                                        }}
+                                        className="mt-1 w-5 h-5 rounded-full flex items-center justify-center text-[10px] shrink-0"
+                                        style={{ background: 'rgba(239,68,68,0.08)', color: '#ef4444' }}
+                                      >✕</button>
+                                    )}
+                                  </div>
+                                ))}
+                                <button
+                                  onClick={() => {
+                                    const xs = cvFinalData.experiencias.map((x, xi) => xi === i ? { ...x, logros: [...(x.logros || []), ''] } : x)
+                                    updateCv({ ...cvFinalData, experiencias: xs })
+                                  }}
+                                  className="text-[10px] px-2 py-1 rounded font-semibold"
+                                  style={{ background: 'rgba(0,119,181,0.08)', color: '#0077B5' }}
+                                >+ logro</button>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+
+                        {/* Educación */}
+                        <div className="space-y-3">
+                          <div className="flex items-center justify-between">
+                            <p className="text-xs font-semibold uppercase tracking-wide" style={{ color: '#d97706' }}>Educación</p>
+                            <button
+                              onClick={() => updateCv({ ...cvFinalData, educacion: [...(cvFinalData.educacion || []), { titulo: '', institucion: '', periodo: '' }] })}
+                              className="text-xs px-2 py-1 rounded-lg font-semibold"
+                              style={{ background: 'rgba(245,158,11,0.12)', color: '#d97706', border: '1px solid rgba(245,158,11,0.3)' }}
+                            >+ Agregar</button>
+                          </div>
+                          {(cvFinalData.educacion || []).map((ed, i) => (
+                            <div key={i} className="rounded-xl p-3 space-y-2 relative bg-white"
+                              style={{ border: '1px solid rgba(0,0,0,0.08)' }}>
+                              <button
+                                onClick={() => updateCv({ ...cvFinalData, educacion: cvFinalData.educacion.filter((_, idx) => idx !== i) })}
+                                className="absolute top-2 right-2 w-5 h-5 rounded-full flex items-center justify-center text-[10px]"
+                                style={{ background: 'rgba(239,68,68,0.10)', color: '#ef4444' }}
+                              >✕</button>
+                              <input className="w-full px-2 py-1.5 rounded-lg text-xs border focus:outline-none pr-6"
+                                style={{ borderColor: 'rgba(0,0,0,0.12)' }}
+                                placeholder="Título / Carrera"
+                                value={ed.titulo || ''}
+                                onChange={e => { const xs = cvFinalData.educacion.map((x, xi) => xi === i ? { ...x, titulo: e.target.value } : x); updateCv({ ...cvFinalData, educacion: xs }) }}
+                              />
+                              <input className="w-full px-2 py-1.5 rounded-lg text-xs border focus:outline-none"
+                                style={{ borderColor: 'rgba(0,0,0,0.12)' }}
+                                placeholder="Institución"
+                                value={ed.institucion || ''}
+                                onChange={e => { const xs = cvFinalData.educacion.map((x, xi) => xi === i ? { ...x, institucion: e.target.value } : x); updateCv({ ...cvFinalData, educacion: xs }) }}
+                              />
+                              <input className="w-full px-2 py-1.5 rounded-lg text-xs border focus:outline-none"
+                                style={{ borderColor: 'rgba(0,0,0,0.12)' }}
+                                placeholder="Período (ej: 2014 – 2019)"
+                                value={ed.periodo || ''}
+                                onChange={e => { const xs = cvFinalData.educacion.map((x, xi) => xi === i ? { ...x, periodo: e.target.value } : x); updateCv({ ...cvFinalData, educacion: xs }) }}
+                              />
+                            </div>
+                          ))}
+                        </div>
+
+                        {/* Habilidades */}
+                        <div className="space-y-2">
+                          <p className="text-xs font-semibold uppercase tracking-wide" style={{ color: '#d97706' }}>Habilidades</p>
+                          <div className="flex flex-wrap gap-1.5 mb-1.5">
+                            {(cvFinalData.habilidades || []).map((h, i) => (
+                              <span key={i} className="flex items-center gap-1 text-xs px-2 py-1 rounded-full"
+                                style={{ background: 'rgba(0,119,181,0.10)', color: '#0077B5', border: '1px solid rgba(0,119,181,0.25)' }}>
+                                {h}
+                                <button onClick={() => updateCv({ ...cvFinalData, habilidades: cvFinalData.habilidades.filter((_, idx) => idx !== i) })}
+                                  style={{ color: '#94a3b8', fontSize: '9px', marginLeft: '2px', lineHeight: 1 }}>✕</button>
+                              </span>
+                            ))}
+                          </div>
+                          <TagInput placeholder="Nueva habilidad → Enter" onAdd={tag => updateCv({ ...cvFinalData, habilidades: [...(cvFinalData.habilidades || []), tag] })} />
+                        </div>
+
+                        {/* Idiomas */}
+                        <div className="space-y-2">
+                          <p className="text-xs font-semibold uppercase tracking-wide" style={{ color: '#d97706' }}>Idiomas</p>
+                          <div className="flex flex-wrap gap-1.5 mb-1.5">
+                            {(cvFinalData.idiomas || []).map((id, i) => (
+                              <span key={i} className="flex items-center gap-1 text-xs px-2 py-1 rounded-full"
+                                style={{ background: 'rgba(99,102,241,0.08)', color: '#6366f1', border: '1px solid rgba(99,102,241,0.25)' }}>
+                                {id}
+                                <button onClick={() => updateCv({ ...cvFinalData, idiomas: cvFinalData.idiomas.filter((_, idx) => idx !== i) })}
+                                  style={{ color: '#94a3b8', fontSize: '9px', marginLeft: '2px', lineHeight: 1 }}>✕</button>
+                              </span>
+                            ))}
+                          </div>
+                          <TagInput placeholder="Nuevo idioma → Enter" onAdd={tag => updateCv({ ...cvFinalData, idiomas: [...(cvFinalData.idiomas || []), tag] })} />
+                        </div>
+
+                      </div>
+                    )}
                   </div>
 
                   {/iPhone|iPad|iPod|Android/i.test(navigator.userAgent) ? (
