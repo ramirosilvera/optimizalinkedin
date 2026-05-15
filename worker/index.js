@@ -548,37 +548,33 @@ export default {
             getSupabaseCount(env, 'leads'),
             getSupabaseCount(env, 'perfiles', `created_at=gt.${new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString()}`),
           ])
-          return new Response(JSON.stringify({
+          return new Response(JSON.stringify({ ok: true, stats: {
             total_users: totalUsers, premium_users: premiumUsers,
             active_subs: activeSubs, total_analyses: totalAnalysis,
             total_cvs: totalCvs, total_leads: totalLeads,
-            new_users_7d: newUsers7d, admin_role: admin.role,
-          }), { status: 200, headers: corsHeaders })
+            new_users_7d: newUsers7d,
+          }, admin_role: admin.role }), { status: 200, headers: corsHeaders })
         } catch (e) {
           return new Response(JSON.stringify({ error: e.message }), { status: 500, headers: corsHeaders })
         }
       }
 
       if (body.action === 'admin_users') {
-        const { search = '', offset = 0, limit = 20, filter_premium } = body
-        let qs = `perfiles?select=id,nombre,email,es_premium,premium_hasta,mp_subscription_id,created_at&order=created_at.desc&offset=${offset}&limit=${limit}`
+        const { search = '', offset = 0, limit = 20, premium_only } = body
+        let qs = `perfiles?select=id,nombre,email,es_premium,premium_hasta,created_at&order=created_at.desc&offset=${offset}&limit=${limit}`
         if (search) qs += `&or=(email.ilike.*${encodeURIComponent(search)}*,nombre.ilike.*${encodeURIComponent(search)}*)`
-        if (filter_premium === true) qs += '&es_premium=eq.true'
-        if (filter_premium === false) qs += '&es_premium=eq.false'
+        if (premium_only) qs += '&es_premium=eq.true'
         try {
           const res = await fetch(`${env.SUPABASE_URL}/rest/v1/${qs}`, {
             headers: {
               apikey: env.SUPABASE_SERVICE_ROLE_KEY,
               Authorization: `Bearer ${env.SUPABASE_SERVICE_ROLE_KEY}`,
-              Prefer: 'count=exact',
-              Range: `${offset}-${offset + limit - 1}`,
             },
           })
           const users = await res.json()
-          const match = (res.headers.get('Content-Range') || '').match(/\/(\d+)$/)
-          return new Response(JSON.stringify({ users, total: match ? parseInt(match[1]) : users.length }), { status: 200, headers: corsHeaders })
+          return new Response(JSON.stringify({ ok: true, users: Array.isArray(users) ? users : [], total: Array.isArray(users) ? users.length : 0 }), { status: 200, headers: corsHeaders })
         } catch (e) {
-          return new Response(JSON.stringify({ error: e.message }), { status: 500, headers: corsHeaders })
+          return new Response(JSON.stringify({ ok: false, error: e.message }), { status: 500, headers: corsHeaders })
         }
       }
 
@@ -592,14 +588,19 @@ export default {
             supabaseServiceFetch(env, `historial?user_id=eq.${user_id}&select=id,tipo,titulo,created_at&order=created_at.desc&limit=10`),
             supabaseServiceFetch(env, `linkedin_profiles?user_id=eq.${user_id}&select=nombre,headline,email,fuente,synced_at&order=synced_at.desc&limit=1`),
           ])
+          const [p, s, h, l] = await Promise.all([perfilRes.json(), subRes.json(), histRes.json(), linkedinRes.json()])
           return new Response(JSON.stringify({
-            perfil: (await perfilRes.json())?.[0],
-            suscripciones: await subRes.json(),
-            historial: await histRes.json(),
-            linkedin: (await linkedinRes.json())?.[0],
+            ok: true,
+            perfil: p?.[0],
+            suscripciones: s,
+            historial: h,
+            linkedin: l?.[0],
+            analisis_count: Array.isArray(h) ? h.filter(x => x.tipo === 'analisis').length : 0,
+            cv_count: Array.isArray(h) ? h.filter(x => x.tipo === 'cv').length : 0,
+            entrevista_count: Array.isArray(h) ? h.filter(x => x.tipo === 'entrevista').length : 0,
           }), { status: 200, headers: corsHeaders })
         } catch (e) {
-          return new Response(JSON.stringify({ error: e.message }), { status: 500, headers: corsHeaders })
+          return new Response(JSON.stringify({ ok: false, error: e.message }), { status: 500, headers: corsHeaders })
         }
       }
 
@@ -656,9 +657,10 @@ export default {
       if (body.action === 'admin_list_promos') {
         try {
           const res = await supabaseServiceFetch(env, 'promo_codes?select=*&order=created_at.desc')
-          return new Response(JSON.stringify({ promos: await res.json() }), { status: 200, headers: corsHeaders })
+          const promos = await res.json()
+          return new Response(JSON.stringify({ ok: true, promos: Array.isArray(promos) ? promos : [] }), { status: 200, headers: corsHeaders })
         } catch (e) {
-          return new Response(JSON.stringify({ error: e.message }), { status: 500, headers: corsHeaders })
+          return new Response(JSON.stringify({ ok: false, error: e.message }), { status: 500, headers: corsHeaders })
         }
       }
 
@@ -676,12 +678,13 @@ export default {
       }
 
       if (body.action === 'admin_list_logs') {
-        const { limit = 50 } = body
+        const { offset: logsOffset = 0, limit = 50 } = body
         try {
-          const res = await supabaseServiceFetch(env, `admin_logs?select=*&order=created_at.desc&limit=${limit}`)
-          return new Response(JSON.stringify({ logs: await res.json() }), { status: 200, headers: corsHeaders })
+          const res = await supabaseServiceFetch(env, `admin_logs?select=*&order=created_at.desc&offset=${logsOffset}&limit=${limit}`)
+          const logs = await res.json()
+          return new Response(JSON.stringify({ ok: true, logs: Array.isArray(logs) ? logs : [] }), { status: 200, headers: corsHeaders })
         } catch (e) {
-          return new Response(JSON.stringify({ error: e.message }), { status: 500, headers: corsHeaders })
+          return new Response(JSON.stringify({ ok: false, error: e.message }), { status: 500, headers: corsHeaders })
         }
       }
 

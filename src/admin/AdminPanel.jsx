@@ -1,51 +1,99 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { WORKER_URL, WORKER_HEADERS, LI_GRADIENT } from '../constants.js'
 
+// ── Styles ──────────────────────────────────────────────────────────────────
+const C = {
+  card:    { background: 'white', border: '1px solid #e2e8f0', borderRadius: 14, boxShadow: '0 1px 6px rgba(0,0,0,0.05)' },
+  pri:     { background: LI_GRADIENT, color: 'white', border: 'none', borderRadius: 9, padding: '8px 16px', fontWeight: 600, fontSize: 13, cursor: 'pointer', whiteSpace: 'nowrap' },
+  sec:     { background: '#f1f5f9', color: '#475569', border: '1px solid #e2e8f0', borderRadius: 9, padding: '8px 16px', fontWeight: 600, fontSize: 13, cursor: 'pointer', whiteSpace: 'nowrap' },
+  danger:  { background: '#fef2f2', color: '#dc2626', border: '1px solid #fecaca', borderRadius: 9, padding: '8px 16px', fontWeight: 600, fontSize: 13, cursor: 'pointer', whiteSpace: 'nowrap' },
+  input:   { border: '1px solid #e2e8f0', borderRadius: 9, padding: '8px 12px', fontSize: 13, width: '100%', outline: 'none', background: 'white', boxSizing: 'border-box' },
+}
 const TABS = [
-  { id: 'dashboard', label: 'Dashboard', icon: '📊' },
-  { id: 'users',     label: 'Usuarios',  icon: '👥' },
-  { id: 'premium',   label: 'Premium',   icon: '⭐' },
-  { id: 'codes',     label: 'Códigos',   icon: '🎫' },
-  { id: 'logs',      label: 'Logs',      icon: '📋' },
+  { id: 'dashboard', label: 'Dashboard',  icon: '📊' },
+  { id: 'users',     label: 'Usuarios',   icon: '👥' },
+  { id: 'premium',   label: 'Premium',    icon: '⭐' },
+  { id: 'codes',     label: 'Códigos',    icon: '🎫' },
+  { id: 'logs',      label: 'Logs',       icon: '📋' },
 ]
 
-const CARD = { background: 'white', border: '1px solid rgba(0,119,181,0.12)', borderRadius: 16, boxShadow: '0 2px 12px rgba(0,0,0,0.06)', padding: '20px 24px' }
-const BTN_PRI = { background: LI_GRADIENT, color: 'white', border: 'none', borderRadius: 10, padding: '8px 16px', fontWeight: 600, fontSize: 13, cursor: 'pointer' }
-const BTN_SEC = { background: '#f0f4f8', color: '#3d5a73', border: '1px solid rgba(0,119,181,0.15)', borderRadius: 10, padding: '8px 16px', fontWeight: 600, fontSize: 13, cursor: 'pointer' }
-const BTN_DANGER = { background: '#fef2f2', color: '#dc2626', border: '1px solid rgba(220,38,38,0.2)', borderRadius: 10, padding: '8px 16px', fontWeight: 600, fontSize: 13, cursor: 'pointer' }
-const INPUT = { border: '1px solid rgba(0,119,181,0.2)', borderRadius: 10, padding: '8px 12px', fontSize: 13, width: '100%', outline: 'none', background: 'white' }
-
-function Spinner() {
-  return <span style={{ display: 'inline-block', width: 16, height: 16, border: '2px solid rgba(0,119,181,0.3)', borderTopColor: '#0077B5', borderRadius: '50%', animation: 'spin 0.7s linear infinite' }} />
+// ── Helpers ──────────────────────────────────────────────────────────────────
+function Spin() {
+  return (
+    <span style={{ display:'inline-block', width:16, height:16,
+      border:'2px solid rgba(0,119,181,0.25)', borderTopColor:'#0077B5',
+      borderRadius:'50%', animation:'admspin 0.7s linear infinite', flexShrink: 0 }} />
+  )
 }
 
-function StatCard({ label, value, sub, color }) {
+function ErrMsg({ msg, onRetry }) {
   return (
-    <div style={{ ...CARD, textAlign: 'center' }}>
-      <div style={{ fontSize: 28, fontWeight: 800, color: color || '#0077B5' }}>{value ?? '—'}</div>
-      <div style={{ fontSize: 12, fontWeight: 600, color: '#64748b', marginTop: 2 }}>{label}</div>
-      {sub && <div style={{ fontSize: 11, color: '#94a3b8', marginTop: 4 }}>{sub}</div>}
+    <div style={{ padding:'20px 24px', borderRadius:12, background:'#fef2f2',
+      border:'1px solid #fecaca', color:'#dc2626', fontSize:13 }}>
+      <div style={{ fontWeight:700, marginBottom:6 }}>Error al cargar</div>
+      <div style={{ color:'#991b1b', marginBottom: onRetry ? 12 : 0 }}>{msg}</div>
+      {onRetry && <button onClick={onRetry} style={C.sec}>Reintentar</button>}
     </div>
   )
 }
 
-function UserRow({ u, onSelect, isSelected }) {
-  const date = u.created_at ? new Date(u.created_at).toLocaleDateString('es-AR') : '—'
+function Empty({ text }) {
   return (
-    <tr
-      onClick={() => onSelect(u)}
-      style={{ cursor: 'pointer', background: isSelected ? 'rgba(0,119,181,0.06)' : 'white', transition: 'background 0.15s' }}>
-      <td style={{ padding: '10px 12px', fontSize: 13, borderBottom: '1px solid #f1f5f9' }}>
-        {u.nombre || '—'}
-        <span style={{ marginLeft: 6, fontSize: 11, color: '#94a3b8' }}>{u.email}</span>
-      </td>
-      <td style={{ padding: '10px 12px', fontSize: 12, borderBottom: '1px solid #f1f5f9', whiteSpace: 'nowrap' }}>
-        {u.es_premium
-          ? <span style={{ background: LI_GRADIENT, color: 'white', borderRadius: 99, padding: '2px 10px', fontWeight: 700, fontSize: 11 }}>Premium</span>
-          : <span style={{ background: '#f1f5f9', color: '#64748b', borderRadius: 99, padding: '2px 10px', fontWeight: 600, fontSize: 11 }}>Free</span>}
-      </td>
-      <td style={{ padding: '10px 12px', fontSize: 12, color: '#64748b', borderBottom: '1px solid #f1f5f9' }}>{date}</td>
-    </tr>
+    <div style={{ textAlign:'center', padding:'40px 20px', color:'#94a3b8', fontSize:13 }}>
+      {text}
+    </div>
+  )
+}
+
+function Th({ children }) {
+  return <th style={{ padding:'8px 12px', textAlign:'left', fontSize:11, fontWeight:700, color:'#64748b', background:'#f8fafc', whiteSpace:'nowrap' }}>{children}</th>
+}
+function Td({ children, style }) {
+  return <td style={{ padding:'10px 12px', fontSize:13, borderTop:'1px solid #f1f5f9', verticalAlign:'middle', ...style }}>{children}</td>
+}
+
+function Badge({ premium, hasta }) {
+  if (premium) {
+    const label = hasta ? `Premium · ${new Date(hasta).toLocaleDateString('es-AR',{day:'numeric',month:'short'})}` : 'Premium'
+    return <span style={{ background:LI_GRADIENT, color:'white', borderRadius:99, padding:'2px 10px', fontWeight:700, fontSize:11 }}>{label}</span>
+  }
+  return <span style={{ background:'#f1f5f9', color:'#64748b', borderRadius:99, padding:'2px 10px', fontWeight:600, fontSize:11 }}>Free</span>
+}
+
+// ── useAdminFetch: fetch con timeout + error uniforme ─────────────────────
+function useAdminFetch(authToken) {
+  return useCallback(async (action, body = {}) => {
+    const controller = new AbortController()
+    const tid = setTimeout(() => controller.abort(), 15000) // 15s timeout
+    try {
+      const res = await fetch(WORKER_URL, {
+        method: 'POST',
+        headers: { ...WORKER_HEADERS, Authorization: `Bearer ${authToken}` },
+        body: JSON.stringify({ action, ...body }),
+        signal: controller.signal,
+      })
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}))
+        return { ok: false, error: err.error || `HTTP ${res.status}` }
+      }
+      return res.json()
+    } catch (e) {
+      if (e.name === 'AbortError') return { ok: false, error: 'Tiempo de espera agotado (15s)' }
+      return { ok: false, error: e.message || 'Error de red' }
+    } finally {
+      clearTimeout(tid)
+    }
+  }, [authToken])
+}
+
+// ── Dashboard ────────────────────────────────────────────────────────────────
+function StatCard({ label, value, color, sub }) {
+  return (
+    <div style={{ ...C.card, padding:'18px 16px', textAlign:'center' }}>
+      <div style={{ fontSize:26, fontWeight:800, color: color || '#0077B5', lineHeight:1 }}>{value ?? '—'}</div>
+      <div style={{ fontSize:11, fontWeight:600, color:'#64748b', marginTop:4 }}>{label}</div>
+      {sub && <div style={{ fontSize:10, color:'#94a3b8', marginTop:2 }}>{sub}</div>}
+    </div>
   )
 }
 
@@ -54,133 +102,171 @@ function Dashboard({ adminFetch }) {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
 
-  useEffect(() => {
-    setLoading(true)
-    adminFetch('admin_stats')
-      .then(d => { if (d.ok) setStats(d.stats); else setError(d.error || 'Error') })
-      .catch(() => setError('Error de red'))
-      .finally(() => setLoading(false))
+  const load = useCallback(async () => {
+    setLoading(true); setError('')
+    const d = await adminFetch('admin_stats')
+    if (d.ok) setStats(d.stats)
+    else setError(d.error || 'Error al obtener estadísticas')
+    setLoading(false)
   }, [adminFetch])
 
-  if (loading) return <div style={{ textAlign: 'center', padding: 60 }}><Spinner /></div>
-  if (error) return <div style={{ color: '#dc2626', padding: 24 }}>{error}</div>
+  useEffect(() => { load() }, [load])
+
+  if (loading) return <div style={{ textAlign:'center', padding:60 }}><Spin /></div>
+  if (error) return <ErrMsg msg={error} onRetry={load} />
   if (!stats) return null
 
-  const until = stats.premium_users > 0 && stats.active_subs >= 0
-    ? `${stats.active_subs} activas`
-    : undefined
-
   return (
-    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))', gap: 16 }}>
-      <StatCard label="Usuarios totales"   value={stats.total_users}    color="#0077B5" />
-      <StatCard label="Usuarios premium"   value={stats.premium_users}  color="#6366f1" sub={until} />
-      <StatCard label="Suscripciones MP"   value={stats.active_subs}    color="#0d9488" sub="autorizadas" />
-      <StatCard label="Análisis totales"   value={stats.total_analyses} color="#0ea5e9" />
-      <StatCard label="CVs generados"      value={stats.total_cvs}      color="#8b5cf6" />
-      <StatCard label="Leads capturados"   value={stats.total_leads}    color="#f59e0b" />
-      <StatCard label="Nuevos (7 días)"    value={stats.new_users_7d}   color="#10b981" />
+    <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fill,minmax(140px,1fr))', gap:14 }}>
+      <StatCard label="Usuarios"      value={stats.total_users}    color="#0077B5" />
+      <StatCard label="Premium"       value={stats.premium_users}  color="#6366f1" sub={`${stats.active_subs} subs MP`} />
+      <StatCard label="Análisis"      value={stats.total_analyses} color="#0ea5e9" />
+      <StatCard label="CVs"           value={stats.total_cvs}      color="#8b5cf6" />
+      <StatCard label="Leads"         value={stats.total_leads}    color="#f59e0b" />
+      <StatCard label="Nuevos 7 días" value={stats.new_users_7d}   color="#10b981" />
     </div>
   )
 }
 
+// ── User Detail ───────────────────────────────────────────────────────────────
 function UserDetail({ user, adminFetch, onBack, onUpdated }) {
   const [detail, setDetail] = useState(null)
+  const [detailErr, setDetailErr] = useState('')
   const [loading, setLoading] = useState(true)
-  const [grantDays, setGrantDays] = useState(30)
-  const [actionLoading, setActionLoading] = useState(false)
-  const [msg, setMsg] = useState('')
+  const [days, setDays] = useState(30)
+  const [busy, setBusy] = useState(false)
+  const [msg, setMsg] = useState({ text:'', ok:true })
 
-  useEffect(() => {
-    adminFetch('admin_user_detail', { user_id: user.id })
-      .then(d => { if (d.ok) setDetail(d) })
-      .finally(() => setLoading(false))
+  const loadDetail = useCallback(async () => {
+    setLoading(true); setDetailErr('')
+    const d = await adminFetch('admin_user_detail', { user_id: user.id })
+    if (d.ok) setDetail(d)
+    else setDetailErr(d.error || 'Error al cargar detalle')
+    setLoading(false)
   }, [user.id, adminFetch])
 
+  useEffect(() => { loadDetail() }, [loadDetail])
+
   const grantPremium = async () => {
-    setActionLoading(true)
-    setMsg('')
-    const d = await adminFetch('admin_grant_premium', { user_id: user.id, days: grantDays })
-    setMsg(d.ok ? `Premium otorgado hasta ${new Date(d.premium_hasta).toLocaleDateString('es-AR')}` : d.error || 'Error')
-    if (d.ok) onUpdated()
-    setActionLoading(false)
+    setBusy(true); setMsg({ text:'', ok:true })
+    const d = await adminFetch('admin_grant_premium', { user_id: user.id, days })
+    if (d.ok) {
+      setMsg({ text:`Premium hasta ${new Date(d.premium_hasta).toLocaleDateString('es-AR')}`, ok:true })
+      onUpdated()
+    } else {
+      setMsg({ text: d.error || 'Error', ok:false })
+    }
+    setBusy(false)
   }
 
   const revokePremium = async () => {
     if (!confirm(`¿Revocar premium de ${user.nombre || user.email}?`)) return
-    setActionLoading(true)
-    setMsg('')
+    setBusy(true); setMsg({ text:'', ok:true })
     const d = await adminFetch('admin_revoke_premium', { user_id: user.id })
-    setMsg(d.ok ? 'Premium revocado' : d.error || 'Error')
-    if (d.ok) onUpdated()
-    setActionLoading(false)
+    if (d.ok) {
+      setMsg({ text:'Premium revocado', ok:true })
+      onUpdated()
+    } else {
+      setMsg({ text: d.error || 'Error', ok:false })
+    }
+    setBusy(false)
   }
 
   return (
-    <div style={{ ...CARD, maxWidth: 480 }}>
-      <button onClick={onBack} style={{ ...BTN_SEC, marginBottom: 16, fontSize: 12 }}>← Volver</button>
-      <div style={{ fontWeight: 700, fontSize: 15, marginBottom: 4 }}>{user.nombre || user.email}</div>
-      <div style={{ fontSize: 12, color: '#64748b', marginBottom: 16 }}>{user.email} · ID: {user.id.slice(0, 8)}...</div>
+    <div style={{ ...C.card, padding:'20px 22px', maxWidth:520 }}>
+      <button onClick={onBack} style={{ ...C.sec, fontSize:12, marginBottom:18 }}>← Volver</button>
 
-      {loading ? <Spinner /> : detail && (
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 10, marginBottom: 20 }}>
-          <StatCard label="Análisis"   value={detail.analisis_count}   color="#0077B5" />
-          <StatCard label="CVs"        value={detail.cv_count}          color="#6366f1" />
-          <StatCard label="Entrevistas" value={detail.entrevista_count} color="#0d9488" />
-        </div>
+      <div style={{ fontWeight:700, fontSize:16, marginBottom:2 }}>{user.nombre || user.email}</div>
+      <div style={{ fontSize:12, color:'#64748b', marginBottom:16 }}>
+        {user.email} &nbsp;·&nbsp; <Badge premium={user.es_premium} hasta={user.premium_hasta} />
+      </div>
+
+      {loading ? (
+        <div style={{ textAlign:'center', padding:20 }}><Spin /></div>
+      ) : detailErr ? (
+        <ErrMsg msg={detailErr} onRetry={loadDetail} />
+      ) : detail && (
+        <>
+          <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr 1fr', gap:10, marginBottom:18 }}>
+            <StatCard label="Análisis"    value={detail.analisis_count}   color="#0077B5" />
+            <StatCard label="CVs"         value={detail.cv_count}          color="#6366f1" />
+            <StatCard label="Entrevistas" value={detail.entrevista_count}  color="#0d9488" />
+          </div>
+          {detail.historial?.length > 0 && (
+            <div style={{ marginBottom:18 }}>
+              <div style={{ fontSize:12, fontWeight:700, color:'#64748b', marginBottom:8 }}>Últimas actividades</div>
+              <div style={{ display:'flex', flexDirection:'column', gap:4 }}>
+                {detail.historial.slice(0,5).map(h => (
+                  <div key={h.id} style={{ fontSize:12, color:'#475569', display:'flex', justifyContent:'space-between' }}>
+                    <span>{h.tipo} — {h.titulo || '—'}</span>
+                    <span style={{ color:'#94a3b8' }}>{new Date(h.created_at).toLocaleDateString('es-AR')}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </>
       )}
 
-      <div style={{ marginBottom: 12, padding: '10px 14px', borderRadius: 10, background: user.es_premium ? 'rgba(99,102,241,0.08)' : '#f8fafc', border: `1px solid ${user.es_premium ? 'rgba(99,102,241,0.2)' : '#e2e8f0'}` }}>
-        <span style={{ fontWeight: 700, fontSize: 13 }}>Estado: </span>
-        <span style={{ fontSize: 13, color: user.es_premium ? '#6366f1' : '#64748b', fontWeight: 600 }}>
-          {user.es_premium ? `Premium${user.premium_hasta ? ` hasta ${new Date(user.premium_hasta).toLocaleDateString('es-AR')}` : ''}` : 'Free'}
-        </span>
-      </div>
-
-      <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center' }}>
-        <select value={grantDays} onChange={e => setGrantDays(Number(e.target.value))}
-          style={{ ...INPUT, width: 110 }}>
-          {[7, 14, 30, 60, 90, 180, 365].map(d => <option key={d} value={d}>{d} días</option>)}
-        </select>
-        <button onClick={grantPremium} disabled={actionLoading} style={BTN_PRI}>
-          {actionLoading ? <Spinner /> : 'Otorgar Premium'}
-        </button>
-        {user.es_premium && (
-          <button onClick={revokePremium} disabled={actionLoading} style={BTN_DANGER}>
-            Revocar
+      <div style={{ borderTop:'1px solid #f1f5f9', paddingTop:16 }}>
+        <div style={{ fontSize:12, fontWeight:700, color:'#64748b', marginBottom:10 }}>Gestión de acceso</div>
+        <div style={{ display:'flex', gap:8, flexWrap:'wrap', alignItems:'center' }}>
+          <select value={days} onChange={e => setDays(Number(e.target.value))} style={{ ...C.input, width:100 }}>
+            {[7,14,30,60,90,180,365].map(n => <option key={n} value={n}>{n} días</option>)}
+          </select>
+          <button onClick={grantPremium} disabled={busy} style={{ ...C.pri, opacity: busy ? 0.6 : 1 }}>
+            {busy ? <Spin /> : '✓ Otorgar premium'}
           </button>
+          {user.es_premium && (
+            <button onClick={revokePremium} disabled={busy} style={{ ...C.danger, opacity: busy ? 0.6 : 1 }}>
+              Revocar
+            </button>
+          )}
+        </div>
+        {msg.text && (
+          <div style={{ marginTop:10, fontSize:12, fontWeight:600, color: msg.ok ? '#059669' : '#dc2626' }}>
+            {msg.text}
+          </div>
         )}
       </div>
-      {msg && <div style={{ marginTop: 12, fontSize: 12, color: msg.includes('Error') || msg.includes('error') ? '#dc2626' : '#059669' }}>{msg}</div>}
     </div>
   )
 }
 
+// ── Users Tab ─────────────────────────────────────────────────────────────────
 function UsersTab({ adminFetch, premiumOnly }) {
   const [users, setUsers] = useState([])
   const [search, setSearch] = useState('')
   const [offset, setOffset] = useState(0)
   const [hasMore, setHasMore] = useState(false)
   const [loading, setLoading] = useState(false)
+  const [error, setError] = useState('')
   const [selected, setSelected] = useState(null)
   const LIMIT = 20
+  const searchRef = useRef(search)
+  searchRef.current = search
 
   const load = useCallback(async (q, off, replace) => {
-    setLoading(true)
+    setLoading(true); setError('')
     const body = { search: q, offset: off, limit: LIMIT }
     if (premiumOnly) body.premium_only = true
     const d = await adminFetch('admin_users', body)
     if (d.ok) {
-      if (replace) setUsers(d.users)
-      else setUsers(prev => [...prev, ...d.users])
-      setHasMore(d.users.length === LIMIT)
+      const list = d.users || []
+      if (replace) setUsers(list)
+      else setUsers(prev => [...prev, ...list])
+      setHasMore(list.length === LIMIT)
+      setOffset(off)
+    } else {
+      setError(d.error || 'Error al cargar usuarios')
     }
     setLoading(false)
   }, [adminFetch, premiumOnly])
 
   useEffect(() => { load('', 0, true) }, [load])
 
-  const handleSearch = () => { setOffset(0); load(search, 0, true) }
-  const loadMore = () => { const next = offset + LIMIT; setOffset(next); load(search, next, false) }
+  const handleSearch = () => { load(search, 0, true) }
+  const loadMore = () => { load(searchRef.current, offset + LIMIT, false) }
 
   if (selected) {
     return (
@@ -194,57 +280,73 @@ function UsersTab({ adminFetch, premiumOnly }) {
   }
 
   return (
-    <div style={CARD}>
-      <div style={{ display: 'flex', gap: 8, marginBottom: 16 }}>
+    <div style={C.card}>
+      <div style={{ padding:'16px 18px', borderBottom:'1px solid #f1f5f9', display:'flex', gap:8 }}>
         <input
           placeholder={premiumOnly ? 'Buscar en premium...' : 'Buscar por nombre o email...'}
           value={search}
           onChange={e => setSearch(e.target.value)}
           onKeyDown={e => e.key === 'Enter' && handleSearch()}
-          style={{ ...INPUT }}
+          style={{ ...C.input }}
         />
-        <button onClick={handleSearch} style={BTN_PRI}>Buscar</button>
+        <button onClick={handleSearch} style={C.pri}>Buscar</button>
       </div>
 
-      <div style={{ overflowX: 'auto' }}>
-        <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-          <thead>
-            <tr style={{ background: '#f8fafc' }}>
-              <th style={{ padding: '8px 12px', textAlign: 'left', fontSize: 12, fontWeight: 700, color: '#64748b' }}>Usuario</th>
-              <th style={{ padding: '8px 12px', textAlign: 'left', fontSize: 12, fontWeight: 700, color: '#64748b' }}>Plan</th>
-              <th style={{ padding: '8px 12px', textAlign: 'left', fontSize: 12, fontWeight: 700, color: '#64748b' }}>Registro</th>
-            </tr>
-          </thead>
-          <tbody>
-            {users.map(u => (
-              <UserRow key={u.id} u={u} onSelect={setSelected} isSelected={selected?.id === u.id} />
-            ))}
-            {!loading && users.length === 0 && (
-              <tr><td colSpan={3} style={{ textAlign: 'center', padding: 32, color: '#94a3b8', fontSize: 13 }}>Sin resultados</td></tr>
-            )}
-          </tbody>
-        </table>
-      </div>
+      {error ? (
+        <div style={{ padding:16 }}><ErrMsg msg={error} onRetry={() => load(search, 0, true)} /></div>
+      ) : (
+        <div style={{ overflowX:'auto' }}>
+          <table style={{ width:'100%', borderCollapse:'collapse', minWidth:380 }}>
+            <thead><tr><Th>Usuario</Th><Th>Plan</Th><Th>Registro</Th></tr></thead>
+            <tbody>
+              {users.map(u => (
+                <tr key={u.id} onClick={() => setSelected(u)}
+                  style={{ cursor:'pointer', transition:'background 0.1s' }}
+                  onMouseEnter={e => e.currentTarget.style.background='#f8fafc'}
+                  onMouseLeave={e => e.currentTarget.style.background='white'}>
+                  <Td>
+                    <div style={{ fontWeight:600 }}>{u.nombre || '—'}</div>
+                    <div style={{ fontSize:11, color:'#94a3b8', marginTop:1 }}>{u.email}</div>
+                  </Td>
+                  <Td><Badge premium={u.es_premium} hasta={u.premium_hasta} /></Td>
+                  <Td style={{ color:'#64748b', fontSize:12 }}>
+                    {u.created_at ? new Date(u.created_at).toLocaleDateString('es-AR') : '—'}
+                  </Td>
+                </tr>
+              ))}
+              {!loading && users.length === 0 && (
+                <tr><td colSpan={3}><Empty text="Sin resultados" /></td></tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      )}
 
-      {loading && <div style={{ textAlign: 'center', padding: 20 }}><Spinner /></div>}
+      {loading && <div style={{ textAlign:'center', padding:20 }}><Spin /></div>}
+
       {hasMore && !loading && (
-        <button onClick={loadMore} style={{ ...BTN_SEC, marginTop: 12, width: '100%' }}>Cargar más</button>
+        <div style={{ padding:'12px 16px', borderTop:'1px solid #f1f5f9' }}>
+          <button onClick={loadMore} style={{ ...C.sec, width:'100%' }}>Cargar más</button>
+        </div>
       )}
     </div>
   )
 }
 
+// ── Codes Tab ─────────────────────────────────────────────────────────────────
 function CodesTab({ adminFetch }) {
   const [promos, setPromos] = useState([])
   const [loading, setLoading] = useState(false)
-  const [form, setForm] = useState({ code: '', description: '', duration_days: 30, max_uses: '' })
+  const [error, setError] = useState('')
+  const [form, setForm] = useState({ code:'', description:'', duration_days:30, max_uses:'' })
   const [creating, setCreating] = useState(false)
-  const [msg, setMsg] = useState('')
+  const [msg, setMsg] = useState({ text:'', ok:true })
 
   const load = useCallback(async () => {
-    setLoading(true)
+    setLoading(true); setError('')
     const d = await adminFetch('admin_list_promos')
-    if (d.ok) setPromos(d.promos)
+    if (d.ok) setPromos(d.promos || [])
+    else setError(d.error || 'Error al cargar códigos')
     setLoading(false)
   }, [adminFetch])
 
@@ -252,13 +354,21 @@ function CodesTab({ adminFetch }) {
 
   const create = async () => {
     if (!form.code.trim()) return
-    setCreating(true)
-    setMsg('')
-    const body = { code: form.code.trim().toUpperCase(), description: form.description, duration_days: Number(form.duration_days) }
-    if (form.max_uses) body.max_uses = Number(form.max_uses)
-    const d = await adminFetch('admin_create_promo', body)
-    setMsg(d.ok ? 'Código creado' : d.error || 'Error')
-    if (d.ok) { setForm({ code: '', description: '', duration_days: 30, max_uses: '' }); load() }
+    setCreating(true); setMsg({ text:'', ok:true })
+    const payload = {
+      code: form.code.trim().toUpperCase(),
+      description: form.description,
+      duration_days: Number(form.duration_days),
+    }
+    if (form.max_uses) payload.max_uses = Number(form.max_uses)
+    const d = await adminFetch('admin_create_promo', payload)
+    if (d.ok) {
+      setMsg({ text:'Código creado correctamente', ok:true })
+      setForm({ code:'', description:'', duration_days:30, max_uses:'' })
+      load()
+    } else {
+      setMsg({ text: d.error || 'Error al crear', ok:false })
+    }
     setCreating(false)
   }
 
@@ -268,70 +378,72 @@ function CodesTab({ adminFetch }) {
   }
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
+    <div style={{ display:'flex', flexDirection:'column', gap:16 }}>
       {/* Create form */}
-      <div style={CARD}>
-        <div style={{ fontWeight: 700, fontSize: 14, marginBottom: 14 }}>Nuevo código promo</div>
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 12 }}>
+      <div style={{ ...C.card, padding:'18px 20px' }}>
+        <div style={{ fontWeight:700, fontSize:14, marginBottom:14 }}>Nuevo código promo</div>
+        <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fill,minmax(180px,1fr))', gap:10, marginBottom:14 }}>
           <div>
-            <label style={{ fontSize: 11, fontWeight: 600, color: '#64748b', display: 'block', marginBottom: 4 }}>Código *</label>
-            <input placeholder="BIENVENIDA30" value={form.code} onChange={e => setForm(f => ({ ...f, code: e.target.value }))} style={INPUT} />
+            <label style={{ fontSize:11, fontWeight:700, color:'#64748b', display:'block', marginBottom:4 }}>Código *</label>
+            <input placeholder="BIENVENIDA30" value={form.code}
+              onChange={e => setForm(f => ({...f, code:e.target.value}))} style={C.input} />
           </div>
           <div>
-            <label style={{ fontSize: 11, fontWeight: 600, color: '#64748b', display: 'block', marginBottom: 4 }}>Días de acceso</label>
-            <input type="number" min={1} value={form.duration_days} onChange={e => setForm(f => ({ ...f, duration_days: e.target.value }))} style={INPUT} />
+            <label style={{ fontSize:11, fontWeight:700, color:'#64748b', display:'block', marginBottom:4 }}>Días de acceso</label>
+            <input type="number" min={1} value={form.duration_days}
+              onChange={e => setForm(f => ({...f, duration_days:e.target.value}))} style={C.input} />
           </div>
           <div>
-            <label style={{ fontSize: 11, fontWeight: 600, color: '#64748b', display: 'block', marginBottom: 4 }}>Descripción</label>
-            <input placeholder="Descripción opcional" value={form.description} onChange={e => setForm(f => ({ ...f, description: e.target.value }))} style={INPUT} />
+            <label style={{ fontSize:11, fontWeight:700, color:'#64748b', display:'block', marginBottom:4 }}>Descripción</label>
+            <input placeholder="Descripción opcional" value={form.description}
+              onChange={e => setForm(f => ({...f, description:e.target.value}))} style={C.input} />
           </div>
           <div>
-            <label style={{ fontSize: 11, fontWeight: 600, color: '#64748b', display: 'block', marginBottom: 4 }}>Máx. usos (vacío = ilimitado)</label>
-            <input type="number" min={1} placeholder="ej: 100" value={form.max_uses} onChange={e => setForm(f => ({ ...f, max_uses: e.target.value }))} style={INPUT} />
+            <label style={{ fontSize:11, fontWeight:700, color:'#64748b', display:'block', marginBottom:4 }}>Máx. usos (vacío = ∞)</label>
+            <input type="number" min={1} placeholder="100" value={form.max_uses}
+              onChange={e => setForm(f => ({...f, max_uses:e.target.value}))} style={C.input} />
           </div>
         </div>
-        <button onClick={create} disabled={creating || !form.code.trim()} style={{ ...BTN_PRI, opacity: creating || !form.code.trim() ? 0.6 : 1 }}>
-          {creating ? <Spinner /> : 'Crear código'}
+        <button onClick={create} disabled={creating || !form.code.trim()}
+          style={{ ...C.pri, opacity: creating || !form.code.trim() ? 0.6 : 1 }}>
+          {creating ? <Spin /> : 'Crear código'}
         </button>
-        {msg && <div style={{ marginTop: 10, fontSize: 12, color: msg.includes('Error') || msg.includes('error') ? '#dc2626' : '#059669' }}>{msg}</div>}
+        {msg.text && (
+          <div style={{ marginTop:10, fontSize:12, fontWeight:600, color: msg.ok ? '#059669' : '#dc2626' }}>{msg.text}</div>
+        )}
       </div>
 
       {/* List */}
-      <div style={CARD}>
-        <div style={{ fontWeight: 700, fontSize: 14, marginBottom: 14 }}>Códigos existentes</div>
-        {loading ? <div style={{ textAlign: 'center', padding: 24 }}><Spinner /></div> : (
-          <div style={{ overflowX: 'auto' }}>
-            <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-              <thead>
-                <tr style={{ background: '#f8fafc' }}>
-                  {['Código', 'Descripción', 'Días', 'Usos', 'Vence', 'Estado'].map(h => (
-                    <th key={h} style={{ padding: '8px 12px', textAlign: 'left', fontSize: 12, fontWeight: 700, color: '#64748b' }}>{h}</th>
-                  ))}
-                </tr>
-              </thead>
+      <div style={C.card}>
+        <div style={{ padding:'14px 18px', borderBottom:'1px solid #f1f5f9', fontWeight:700, fontSize:14 }}>
+          Códigos existentes
+        </div>
+        {loading ? (
+          <div style={{ textAlign:'center', padding:32 }}><Spin /></div>
+        ) : error ? (
+          <div style={{ padding:16 }}><ErrMsg msg={error} onRetry={load} /></div>
+        ) : (
+          <div style={{ overflowX:'auto' }}>
+            <table style={{ width:'100%', borderCollapse:'collapse', minWidth:480 }}>
+              <thead><tr><Th>Código</Th><Th>Descripción</Th><Th>Días</Th><Th>Usos</Th><Th>Vence</Th><Th>Estado</Th></tr></thead>
               <tbody>
                 {promos.map(p => (
-                  <tr key={p.id} style={{ background: 'white' }}>
-                    <td style={{ padding: '10px 12px', fontSize: 13, fontWeight: 700, borderBottom: '1px solid #f1f5f9' }}>{p.code}</td>
-                    <td style={{ padding: '10px 12px', fontSize: 12, color: '#64748b', borderBottom: '1px solid #f1f5f9' }}>{p.description || '—'}</td>
-                    <td style={{ padding: '10px 12px', fontSize: 13, borderBottom: '1px solid #f1f5f9' }}>{p.duration_days}d</td>
-                    <td style={{ padding: '10px 12px', fontSize: 12, borderBottom: '1px solid #f1f5f9' }}>
-                      {p.uses_count}{p.max_uses ? `/${p.max_uses}` : ''}
-                    </td>
-                    <td style={{ padding: '10px 12px', fontSize: 12, color: '#64748b', borderBottom: '1px solid #f1f5f9' }}>
-                      {p.expires_at ? new Date(p.expires_at).toLocaleDateString('es-AR') : '—'}
-                    </td>
-                    <td style={{ padding: '10px 12px', borderBottom: '1px solid #f1f5f9' }}>
-                      <button
-                        onClick={() => toggle(p.id, p.is_active)}
-                        style={p.is_active ? BTN_PRI : BTN_SEC}>
-                        {p.is_active ? 'Activo' : 'Inactivo'}
+                  <tr key={p.id}>
+                    <Td style={{ fontWeight:700 }}>{p.code}</Td>
+                    <Td style={{ color:'#64748b' }}>{p.description || '—'}</Td>
+                    <Td>{p.duration_days}d</Td>
+                    <Td>{p.uses_count}{p.max_uses ? `/${p.max_uses}` : ''}</Td>
+                    <Td style={{ color:'#64748b' }}>{p.expires_at ? new Date(p.expires_at).toLocaleDateString('es-AR') : '—'}</Td>
+                    <Td>
+                      <button onClick={() => toggle(p.id, p.is_active)}
+                        style={p.is_active ? C.pri : C.sec}>
+                        {p.is_active ? '✓ Activo' : 'Inactivo'}
                       </button>
-                    </td>
+                    </Td>
                   </tr>
                 ))}
                 {promos.length === 0 && (
-                  <tr><td colSpan={6} style={{ textAlign: 'center', padding: 32, color: '#94a3b8', fontSize: 13 }}>Sin códigos creados</td></tr>
+                  <tr><td colSpan={6}><Empty text="Sin códigos creados" /></td></tr>
                 )}
               </tbody>
             </table>
@@ -342,127 +454,173 @@ function CodesTab({ adminFetch }) {
   )
 }
 
+// ── Logs Tab ──────────────────────────────────────────────────────────────────
 function LogsTab({ adminFetch }) {
   const [logs, setLogs] = useState([])
   const [loading, setLoading] = useState(true)
+  const [error, setError] = useState('')
   const [offset, setOffset] = useState(0)
   const [hasMore, setHasMore] = useState(false)
-  const LIMIT = 30
+  const LIMIT = 40
 
   const load = useCallback(async (off, replace) => {
-    setLoading(true)
+    setLoading(true); setError('')
     const d = await adminFetch('admin_list_logs', { offset: off, limit: LIMIT })
     if (d.ok) {
-      if (replace) setLogs(d.logs)
-      else setLogs(prev => [...prev, ...d.logs])
-      setHasMore(d.logs.length === LIMIT)
+      const list = d.logs || []
+      if (replace) setLogs(list)
+      else setLogs(prev => [...prev, ...list])
+      setHasMore(list.length === LIMIT)
+      setOffset(off)
+    } else {
+      setError(d.error || 'Error al cargar logs')
     }
     setLoading(false)
   }, [adminFetch])
 
   useEffect(() => { load(0, true) }, [load])
 
-  const loadMore = () => { const next = offset + LIMIT; setOffset(next); load(next, false) }
-
-  const actionColor = (action) => {
-    if (action.includes('grant') || action.includes('create') || action.includes('activate')) return '#059669'
-    if (action.includes('revoke') || action.includes('deactivate')) return '#dc2626'
+  const color = a => {
+    if (a.includes('grant') || a.includes('create') || a.includes('activ')) return '#059669'
+    if (a.includes('revoke') || a.includes('deactiv') || a.includes('cancel')) return '#dc2626'
     return '#0077B5'
   }
 
+  if (loading && logs.length === 0) return <div style={{ textAlign:'center', padding:60 }}><Spin /></div>
+  if (error) return <ErrMsg msg={error} onRetry={() => load(0, true)} />
+
   return (
-    <div style={CARD}>
-      <div style={{ fontWeight: 700, fontSize: 14, marginBottom: 14 }}>Registro de acciones</div>
-      {loading && logs.length === 0 ? <div style={{ textAlign: 'center', padding: 24 }}><Spinner /></div> : (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-          {logs.map(l => (
-            <div key={l.id} style={{ padding: '10px 14px', background: '#f8fafc', borderRadius: 10, borderLeft: `3px solid ${actionColor(l.action)}` }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 8 }}>
-                <div>
-                  <span style={{ fontSize: 12, fontWeight: 700, color: actionColor(l.action) }}>{l.action}</span>
-                  {l.target_type && <span style={{ fontSize: 11, color: '#64748b', marginLeft: 8 }}>{l.target_type}: {(l.target_id || '').slice(0, 12)}...</span>}
-                </div>
-                <span style={{ fontSize: 11, color: '#94a3b8', whiteSpace: 'nowrap' }}>
-                  {new Date(l.created_at).toLocaleString('es-AR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}
-                </span>
+    <div style={C.card}>
+      <div style={{ padding:'14px 18px', borderBottom:'1px solid #f1f5f9', fontWeight:700, fontSize:14 }}>
+        Registro de acciones
+      </div>
+      <div style={{ padding:'12px 16px', display:'flex', flexDirection:'column', gap:8 }}>
+        {logs.length === 0 && <Empty text="Sin acciones registradas aún" />}
+        {logs.map(l => (
+          <div key={l.id} style={{
+            padding:'10px 14px', background:'#f8fafc', borderRadius:10,
+            borderLeft:`3px solid ${color(l.action)}`,
+          }}>
+            <div style={{ display:'flex', justifyContent:'space-between', alignItems:'flex-start', gap:8, flexWrap:'wrap' }}>
+              <div>
+                <span style={{ fontSize:12, fontWeight:700, color:color(l.action) }}>{l.action}</span>
+                {l.target_type && (
+                  <span style={{ fontSize:11, color:'#64748b', marginLeft:8 }}>
+                    {l.target_type}: {String(l.target_id || '').slice(0,12)}{l.target_id?.length > 12 ? '…' : ''}
+                  </span>
+                )}
               </div>
-              {l.details && Object.keys(l.details).length > 0 && (
-                <div style={{ fontSize: 11, color: '#64748b', marginTop: 4 }}>
-                  {JSON.stringify(l.details)}
-                </div>
-              )}
+              <span style={{ fontSize:11, color:'#94a3b8', whiteSpace:'nowrap' }}>
+                {new Date(l.created_at).toLocaleString('es-AR',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'})}
+              </span>
             </div>
-          ))}
-          {logs.length === 0 && <div style={{ textAlign: 'center', padding: 32, color: '#94a3b8', fontSize: 13 }}>Sin acciones registradas</div>}
+            {l.details && Object.keys(l.details).length > 0 && (
+              <div style={{ fontSize:11, color:'#64748b', marginTop:4, wordBreak:'break-all' }}>
+                {JSON.stringify(l.details)}
+              </div>
+            )}
+          </div>
+        ))}
+      </div>
+      {hasMore && !loading && (
+        <div style={{ padding:'0 16px 16px' }}>
+          <button onClick={() => load(offset + LIMIT, false)} style={{ ...C.sec, width:'100%' }}>Cargar más</button>
         </div>
       )}
-      {hasMore && !loading && (
-        <button onClick={loadMore} style={{ ...BTN_SEC, marginTop: 12, width: '100%' }}>Cargar más</button>
-      )}
+      {loading && logs.length > 0 && <div style={{ textAlign:'center', padding:12 }}><Spin /></div>}
     </div>
   )
 }
 
+// ── Main Panel ────────────────────────────────────────────────────────────────
 export default function AdminPanel({ authToken, onClose }) {
   const [tab, setTab] = useState('dashboard')
+  const [sidebarOpen, setSidebarOpen] = useState(false)
+  const adminFetch = useAdminFetch(authToken)
 
-  const adminFetch = useCallback(async (action, body = {}) => {
-    const res = await fetch(WORKER_URL, {
-      method: 'POST',
-      headers: { ...WORKER_HEADERS, Authorization: `Bearer ${authToken}` },
-      body: JSON.stringify({ action, ...body }),
-    })
-    return res.json()
-  }, [authToken])
+  const currentTab = TABS.find(t => t.id === tab)
 
   return (
     <>
-      <style>{`@keyframes spin { to { transform: rotate(360deg) } }`}</style>
-      <div style={{ position: 'fixed', inset: 0, zIndex: 200, display: 'flex', background: '#f0f4f8', overflow: 'hidden' }}>
+      <style>{`
+        @keyframes admspin { to { transform: rotate(360deg) } }
+        .adm-nav-btn:hover { background: rgba(0,119,181,0.06) !important; }
+        @media (max-width: 640px) {
+          .adm-sidebar { display: none !important; }
+          .adm-sidebar.open { display: flex !important; position: fixed; inset: 0; z-index: 300; width: 220px !important; box-shadow: 4px 0 24px rgba(0,0,0,0.15); }
+          .adm-overlay { display: block !important; }
+          .adm-topbar { display: flex !important; }
+        }
+      `}</style>
+
+      <div style={{ position:'fixed', inset:0, zIndex:200, display:'flex', background:'#f0f4f8', overflow:'hidden' }}>
+
+        {/* Mobile overlay */}
+        <div className="adm-overlay"
+          style={{ display:'none', position:'fixed', inset:0, background:'rgba(0,0,0,0.4)', zIndex:299 }}
+          onClick={() => setSidebarOpen(false)} />
 
         {/* Sidebar */}
-        <div style={{ width: 200, minWidth: 200, background: 'white', borderRight: '1px solid rgba(0,119,181,0.12)', display: 'flex', flexDirection: 'column', padding: '24px 0' }}>
-          <div style={{ padding: '0 20px 20px', borderBottom: '1px solid #f1f5f9' }}>
-            <div style={{ fontWeight: 800, fontSize: 14, color: '#0d2137' }}>Admin Panel</div>
-            <div style={{ fontSize: 11, color: '#94a3b8', marginTop: 2 }}>OptimizaLK</div>
+        <div className={`adm-sidebar${sidebarOpen ? ' open' : ''}`}
+          style={{ width:210, minWidth:210, background:'white', borderRight:'1px solid #e2e8f0',
+            display:'flex', flexDirection:'column', zIndex:300, height:'100%' }}>
+
+          <div style={{ padding:'18px 20px 16px', borderBottom:'1px solid #f1f5f9' }}>
+            <div style={{ fontWeight:800, fontSize:14, color:'#0d2137' }}>Admin Panel</div>
+            <div style={{ fontSize:11, color:'#94a3b8', marginTop:1 }}>OptimizaLK</div>
           </div>
-          <nav style={{ flex: 1, padding: '12px 8px' }}>
+
+          <nav style={{ flex:1, padding:'10px 8px', overflowY:'auto' }}>
             {TABS.map(t => (
-              <button
-                key={t.id}
-                onClick={() => setTab(t.id)}
+              <button key={t.id} className="adm-nav-btn"
+                onClick={() => { setTab(t.id); setSidebarOpen(false) }}
                 style={{
-                  display: 'flex', alignItems: 'center', gap: 10, width: '100%', textAlign: 'left',
-                  padding: '10px 12px', borderRadius: 10, border: 'none', cursor: 'pointer',
-                  background: tab === t.id ? 'rgba(0,119,181,0.08)' : 'transparent',
+                  display:'flex', alignItems:'center', gap:10, width:'100%', textAlign:'left',
+                  padding:'10px 12px', borderRadius:9, border:'none', cursor:'pointer', marginBottom:2,
+                  background: tab === t.id ? 'rgba(0,119,181,0.09)' : 'transparent',
                   color: tab === t.id ? '#0077B5' : '#475569',
-                  fontWeight: tab === t.id ? 700 : 500,
-                  fontSize: 13, marginBottom: 2, transition: 'all 0.15s',
+                  fontWeight: tab === t.id ? 700 : 500, fontSize:13, transition:'all 0.15s',
                 }}>
-                <span style={{ fontSize: 15 }}>{t.icon}</span>
+                <span style={{ fontSize:16 }}>{t.icon}</span>
                 {t.label}
               </button>
             ))}
           </nav>
-          <div style={{ padding: '12px 8px' }}>
-            <button onClick={onClose} style={{ ...BTN_SEC, width: '100%', justifyContent: 'center', display: 'flex' }}>
-              ✕ Cerrar
+
+          <div style={{ padding:'10px 8px', borderTop:'1px solid #f1f5f9' }}>
+            <button onClick={onClose} style={{ ...C.sec, width:'100%', justifyContent:'center', display:'flex' }}>
+              ✕ Cerrar panel
             </button>
           </div>
         </div>
 
-        {/* Content */}
-        <div style={{ flex: 1, overflow: 'auto', padding: '28px 32px' }}>
-          <div style={{ maxWidth: 900 }}>
-            <h1 style={{ fontSize: 20, fontWeight: 800, color: '#0d2137', marginBottom: 24 }}>
-              {TABS.find(t => t.id === tab)?.icon} {TABS.find(t => t.id === tab)?.label}
-            </h1>
+        {/* Main */}
+        <div style={{ flex:1, display:'flex', flexDirection:'column', overflow:'hidden' }}>
 
-            {tab === 'dashboard' && <Dashboard adminFetch={adminFetch} />}
-            {tab === 'users'     && <UsersTab adminFetch={adminFetch} />}
-            {tab === 'premium'   && <UsersTab adminFetch={adminFetch} premiumOnly />}
-            {tab === 'codes'     && <CodesTab adminFetch={adminFetch} />}
-            {tab === 'logs'      && <LogsTab  adminFetch={adminFetch} />}
+          {/* Mobile top bar */}
+          <div className="adm-topbar"
+            style={{ display:'none', alignItems:'center', gap:12, padding:'12px 16px',
+              background:'white', borderBottom:'1px solid #e2e8f0', flexShrink:0 }}>
+            <button onClick={() => setSidebarOpen(s => !s)}
+              style={{ ...C.sec, padding:'6px 10px', fontSize:18, lineHeight:1 }}>☰</button>
+            <div style={{ fontWeight:700, fontSize:14, color:'#0d2137' }}>
+              {currentTab?.icon} {currentTab?.label}
+            </div>
+            <button onClick={onClose} style={{ ...C.sec, padding:'6px 10px', marginLeft:'auto', fontSize:12 }}>✕</button>
+          </div>
+
+          {/* Content scroll */}
+          <div style={{ flex:1, overflowY:'auto', padding:'24px 20px' }}>
+            <div style={{ maxWidth:860, marginBottom:8 }}>
+              <h1 style={{ fontSize:18, fontWeight:800, color:'#0d2137', marginBottom:20 }}>
+                {currentTab?.icon} {currentTab?.label}
+              </h1>
+              {tab === 'dashboard' && <Dashboard adminFetch={adminFetch} />}
+              {tab === 'users'     && <UsersTab  adminFetch={adminFetch} />}
+              {tab === 'premium'   && <UsersTab  adminFetch={adminFetch} premiumOnly />}
+              {tab === 'codes'     && <CodesTab  adminFetch={adminFetch} />}
+              {tab === 'logs'      && <LogsTab   adminFetch={adminFetch} />}
+            </div>
           </div>
         </div>
       </div>
