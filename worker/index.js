@@ -41,8 +41,9 @@ FECHAS:
 - Sin fecha → null. No uses la fecha de otra entrada como fallback.
 
 ESTRUCTURA:
-- Máx 3 experiencias (más recientes), máx 3 bullets cada una con verbo + métricas si existen.
-- Adicionales → "experiencias_anteriores" (cargo + empresa, sin bullets).
+- RANKING: Seleccioná las 3 experiencias más relevantes por (1) actualidad, (2) seniority/nivel, (3) alineación con objetivo profesional, (4) impacto y keywords ATS. No simplemente las últimas — si hay un cargo senior hace 2 años y uno junior más reciente, el senior puede ser más relevante.
+- Las 3 seleccionadas van en "experiencias" con hasta 3 bullets cada una.
+- "experiencias_anteriores" = ÚNICAMENTE las experiencias del perfil que NO están ya en el array "experiencias". Si todas las experiencias del perfil caben en los 3 slots, "experiencias_anteriores" debe ser []. NUNCA repitas en "experiencias_anteriores" un cargo+empresa que ya figure en "experiencias".
 - Resumen: 2 oraciones, datos reales. Sin objetivo laboral, sin datos personales.
 - Habilidades: 6-10 keywords del perfil. Idioma: español (técnicos en inglés si se usan así).
 

@@ -7,6 +7,28 @@ export function escapeHtml(s) {
     .replace(/'/g, '&#39;')
 }
 
+// Deduplicate CV experiences: removes from experiencias_anteriores any entry
+// already present in experiencias (matched by normalized cargo+empresa).
+// Also hard-caps experiencias at 3. Safe to call on any CV object.
+export function sanitizeCv(cv) {
+  if (!cv) return cv
+  const normKey = s => (s || '').toLowerCase().trim().replace(/\s+/g, ' ')
+  const featured = (cv.experiencias || []).slice(0, 3)
+  const featuredKeys = new Set(featured.map(e => `${normKey(e.cargo)}|${normKey(e.empresa)}`))
+  const anteriores = (cv.experiencias_anteriores || []).filter(
+    e => e.cargo && e.empresa && !featuredKeys.has(`${normKey(e.cargo)}|${normKey(e.empresa)}`)
+  )
+  // Deduplicate skills too (case-insensitive)
+  const seenSkills = new Set()
+  const habilidades = (cv.habilidades || []).filter(h => {
+    const k = normKey(h)
+    if (!k || seenSkills.has(k)) return false
+    seenSkills.add(k)
+    return true
+  })
+  return { ...cv, experiencias: featured, experiencias_anteriores: anteriores, habilidades }
+}
+
 // ── CV autofit script (shared across all templates) ─────────────────────────
 export const CV_AUTOFIT_SCRIPT = `<script>
 (function () {
@@ -45,6 +67,7 @@ export const CV_AUTOFIT_SCRIPT = `<script>
 
 // ── CV template: Minimal ─────────────────────────────────────────────────────
 export function buildCvHtmlMinimal(cv, photoBase64 = null, photoMime = 'image/jpeg') {
+  cv = sanitizeCv(cv)
   const e = escapeHtml
   const nameParts = (cv.nombre || '').trim().split(/\s+/)
   const apellido = nameParts.length > 1 ? nameParts[nameParts.length - 1] : nameParts[0] || ''
@@ -159,6 +182,7 @@ ${CV_AUTOFIT_SCRIPT}
 
 // ── CV template: Ejecutivo ───────────────────────────────────────────────────
 export function buildCvHtmlEjecutivo(cv, photoBase64 = null, photoMime = 'image/jpeg') {
+  cv = sanitizeCv(cv)
   const e = escapeHtml
   const nameParts = (cv.nombre || '').trim().split(/\s+/)
   const apellido = nameParts.length > 1 ? nameParts[nameParts.length - 1] : nameParts[0] || ''
@@ -280,6 +304,7 @@ ${CV_AUTOFIT_SCRIPT}
 }
 
 export function buildCvHtml(cv, photoBase64 = null, photoMime = 'image/jpeg', template = 'clasico') {
+  cv = sanitizeCv(cv)
   const e = escapeHtml
   if (template === 'minimal')   return buildCvHtmlMinimal(cv, photoBase64, photoMime)
   if (template === 'ejecutivo') return buildCvHtmlEjecutivo(cv, photoBase64, photoMime)

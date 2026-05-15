@@ -14,7 +14,7 @@ import {
   LOADING_MESSAGES_BY_SITUACION, LOADING_MESSAGES_DEFAULT,
 } from './data'
 import { AI_DEFAULTS, extractAIText, parseAIJson } from './utils/ai'
-import { buildCvHtml } from './cv/templates'
+import { buildCvHtml, sanitizeCv } from './cv/templates'
 import RateLimitUI from './components/RateLimitUI'
 import {
   LinkedInIcon, Logo, Spinner, OptionButton, CopyButton,
@@ -1970,8 +1970,9 @@ Generá el feedback en este JSON exacto:
     }
 
     p += `Período de cada experiencia/educación: copialo EXACTAMENTE del perfil para ESA entrada (nunca reutilices la fecha de otra).
+REGLA CRÍTICA: "experiencias_anteriores" debe contener SOLO experiencias que NO aparecen ya en el array "experiencias". Si no quedan experiencias sobrantes, dejá "experiencias_anteriores":[].
 JSON:
-{"nombre":"str","titular":"str","email":"str|null","telefono":"str|null","linkedin":"str|null","ubicacion":"str|null","resumen":"2 oraciones","experiencias":[{"cargo":"str","empresa":"str","periodo":"período exacto del perfil","logros":["str"]}],"educacion":[{"titulo":"str","institucion":"str","periodo":"período exacto, distinto por título"}],"habilidades":["str"],"idiomas":["str"],"experiencias_anteriores":[{"cargo":"str","empresa":"str"}]}`
+{"nombre":"str","titular":"str","email":"str|null","telefono":"str|null","linkedin":"str|null","ubicacion":"str|null","resumen":"2 oraciones","experiencias":[{"cargo":"str","empresa":"str","periodo":"período exacto del perfil","logros":["str"]}],"educacion":[{"titulo":"str","institucion":"str","periodo":"período exacto, distinto por título"}],"habilidades":["str"],"idiomas":["str"],"experiencias_anteriores":[{"cargo":"str","empresa":"str","periodo":"str|null"}]}`
     return p
   }
 
@@ -2092,7 +2093,7 @@ JSON:
         throw new Error(parseGeminiError(res.status, e))
       }
       const data = await res.json()
-      const cv = parseAIJson(extractAIText(data), AI_DEFAULTS.generate_cv, 'No se pudo interpretar el CV generado. Intentá de nuevo.')
+      const cv = sanitizeCv(parseAIJson(extractAIText(data), AI_DEFAULTS.generate_cv, 'No se pudo interpretar el CV generado. Intentá de nuevo.'))
       setCvDraft(cv)
       saveCvGenerado({ contacto, cv }).catch(err => console.error('[cv_generados save]', err))
       trackEvent('cv_draft_generated')
@@ -2262,7 +2263,7 @@ JSON:
     if (optimized.habilidades?.length > 0)             result.habilidades = optimized.habilidades
     if (optimized.idiomas?.length > 0)                 result.idiomas = optimized.idiomas
     if (optimized.experiencias_anteriores?.length > 0) result.experiencias_anteriores = optimized.experiencias_anteriores
-    return result
+    return sanitizeCv(result)
   }
 
   // ── Optimizar CV con IA ────────────────────────────────────────────────────
