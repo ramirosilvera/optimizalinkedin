@@ -413,13 +413,18 @@ export default function App() {
 
   const checkAdminStatus = async (token) => {
     try {
-      const res = await fetch(WORKER_URL, {
+      const res = await fetch(`${SUPABASE_URL}/rest/v1/rpc/get_my_admin_role`, {
         method: 'POST',
-        headers: { ...WORKER_HEADERS, Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ action: 'admin_stats' }),
+        headers: {
+          apikey: SUPABASE_KEY,
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+        body: '{}',
       })
-      const data = await res.json()
-      setIsAdmin(data.ok === true)
+      if (!res.ok) { setIsAdmin(false); return }
+      const role = await res.json()
+      setIsAdmin(typeof role === 'string' && role.length > 0)
     } catch {
       setIsAdmin(false)
     }
