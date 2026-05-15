@@ -1619,7 +1619,7 @@ JSON:
               ...(profilePhoto ? [{ inlineData: { mimeType: profilePhotoMime, data: profilePhoto } }] : []),
             ],
           }],
-          generationConfig: { responseMimeType: 'application/json', maxOutputTokens: 3000 },
+          generationConfig: { responseMimeType: 'application/json', maxOutputTokens: 2000 },
         }),
       })
       if (!res.ok) {
@@ -1958,7 +1958,7 @@ Generá el feedback en este JSON exacto:
       p += `\nContexto del candidato (respuestas del cuestionario — usá para enriquecer titular y resumen):\n${qaLines}\n`
     }
 
-    p += `\nPerfil LinkedIn:\n${pText.slice(0, 5500)}\n\n`
+    p += `\nPerfil LinkedIn:\n${pText.slice(0, r ? 3500 : 5500)}\n\n`
 
     // Incluir respuestas pre-generación del candidato
     const enrichedLines = cvPreQuestions
@@ -1997,7 +1997,7 @@ JSON:
         body: JSON.stringify({
           action: 'ai_cv_quality',
           contents: [{ parts: [{ text: `Analizá este CV:\n\n${cvText}` }] }],
-          generationConfig: { responseMimeType: 'application/json', maxOutputTokens: 1000 },
+          generationConfig: { responseMimeType: 'application/json', maxOutputTokens: 800 },
         }),
       })
       clearTimeout(timeoutId)
@@ -2019,7 +2019,14 @@ JSON:
       if (!WORKER_URL) { callGenerateCV(contacto, {}); return }
       const profesion = qaHistory.find(h => h.questionId === 'profesion')?.answer || qaHistory[0]?.answer || ''
       const situacion = qaHistory.find(h => h.questionId === 'situacion')?.answer || qaHistory[1]?.answer || ''
-      const prompt = `Profesión del candidato: ${profesion}\nSituación actual: ${situacion}\n\nTexto del perfil LinkedIn:\n${profileText.slice(0, 5000)}`
+      let profileContext
+      if (result) {
+        const kw = (result.palabras_clave_sugeridas || []).slice(0, 8).join(', ')
+        profileContext = `Análisis del perfil:\nNombre: ${result.nombre_completo || ''}\nTitular actual: ${result.titular_actual || ''}\nTitular propuesto: ${result.titular_propuesto || ''}\nPuntaje: ${result.puntaje_general ?? 'N/D'}/10\nKeywords: ${kw}\nDiagnóstico: ${(result.resumen_diagnostico || '').slice(0, 300)}`
+      } else {
+        profileContext = `Texto del perfil LinkedIn:\n${profileText.slice(0, 5000)}`
+      }
+      const prompt = `Profesión del candidato: ${profesion}\nSituación actual: ${situacion}\n\n${profileContext}`
       const controller = new AbortController()
       const timeoutId = setTimeout(() => controller.abort(), 25000)
       const res = await fetch(WORKER_URL, {

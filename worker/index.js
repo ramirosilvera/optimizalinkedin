@@ -172,7 +172,8 @@ async function checkRateLimit(env, ip, actionKey) {
 }
 
 // ── Gemini API helper ─────────────────────────────────────────────────────────
-async function callGeminiApi(env, geminiBody, corsHeaders) {
+async function callGeminiApi(env, geminiBody, corsHeaders, { feature = 'unknown', userId = null } = {}) {
+  const startMs = Date.now()
   const controller = new AbortController()
   const timeoutId = setTimeout(() => controller.abort(), GEMINI_TIMEOUT_MS)
   const geminiKeys = (env.GEMINI_API_KEYS || env.GEMINI_API_KEY || '').split(',').map(k => k.trim()).filter(Boolean)
@@ -199,12 +200,23 @@ async function callGeminiApi(env, geminiBody, corsHeaders) {
     }
   } catch (err) {
     clearTimeout(timeoutId)
-    const msg = err.name === 'AbortError' ? 'El servicio de IA tardó demasiado. Intentá de nuevo.' : 'Error de conexión con el servicio de IA.'
+    const isTimeout = err.name === 'AbortError'
+    logAiUsage(env, { feature, userId, durationMs: Date.now() - startMs, statusCode: 504, errorType: isTimeout ? 'timeout' : 'network' })
+    const msg = isTimeout ? 'El servicio de IA tardó demasiado. Intentá de nuevo.' : 'Error de conexión con el servicio de IA.'
     return new Response(JSON.stringify({ error: { message: msg } }), { status: 504, headers: corsHeaders })
   }
 
   clearTimeout(timeoutId)
   const data = await res.json().catch(() => ({ error: { message: 'Respuesta inválida del servicio de IA.' } }))
+  logAiUsage(env, {
+    feature,
+    userId,
+    inputTokens: data.usageMetadata?.promptTokenCount ?? null,
+    outputTokens: data.usageMetadata?.candidatesTokenCount ?? null,
+    durationMs: Date.now() - startMs,
+    statusCode: res.status,
+    errorType: res.status !== 200 ? `http_${res.status}` : null,
+  })
   return new Response(JSON.stringify(data), { status: res.status, headers: corsHeaders })
 }
 
@@ -254,6 +266,41 @@ async function logAdminAction(env, adminId, action, targetType, targetId, detail
     body: JSON.stringify({ admin_id: adminId, action, target_type: targetType, target_id: targetId ? String(targetId) : null, details }),
     headers: { Prefer: 'return=minimal' },
   }).catch(() => {})
+}
+
+// ── AI usage log (fire-and-forget) ───────────────────────────────────────────
+function logAiUsage(env, { feature, userId, inputTokens, outputTokens, durationMs, statusCode, errorType }) {
+  if (!env.SUPABASE_SERVICE_ROLE_KEY || !env.SUPABASE_URL) return
+  const row = {
+    user_id: userId || null,
+    feature,
+    model: DEFAULT_MODEL,
+    input_tokens: inputTokens ?? null,
+    output_tokens: outputTokens ?? null,
+    duration_ms: durationMs ?? null,
+    status_code: statusCode ?? null,
+    error_type: errorType || null,
+  }
+  fetch(`${env.SUPABASE_URL}/rest/v1/ai_usage_logs`, {
+    method: 'POST',
+    headers: {
+      apikey: env.SUPABASE_SERVICE_ROLE_KEY,
+      Authorization: `Bearer ${env.SUPABASE_SERVICE_ROLE_KEY}`,
+      'Content-Type': 'application/json',
+      Prefer: 'return=minimal',
+    },
+    body: JSON.stringify(row),
+  }).catch(() => {})
+}
+
+// ── Extract userId from Supabase JWT (best-effort, for analytics only) ────────
+function getUserIdFromToken(request) {
+  try {
+    const token = (request.headers.get('Authorization') || '').replace('Bearer ', '').trim()
+    if (!token) return null
+    const payload = JSON.parse(atob(token.split('.')[1].replace(/-/g, '+').replace(/_/g, '/')))
+    return payload.sub || null
+  } catch { return null }
 }
 
 
@@ -701,6 +748,37 @@ export default {
         return new Response(JSON.stringify({ ok: true, mp_subscription_id: sub.id, ...result }), { status: 200, headers: corsHeaders })
       }
 
+      if (body.action === 'admin_ai_stats') {
+        try {
+          const res = await fetch(`${env.SUPABASE_URL}/rest/v1/rpc/get_ai_stats`, {
+            method: 'POST',
+            headers: {
+              apikey: env.SUPABASE_SERVICE_ROLE_KEY,
+              Authorization: `Bearer ${env.SUPABASE_SERVICE_ROLE_KEY}`,
+              'Content-Type': 'application/json',
+            },
+            body: '{}',
+          })
+          const data = await res.json()
+          return new Response(JSON.stringify({ ok: true, ...data }), { status: 200, headers: corsHeaders })
+        } catch (e) {
+          return new Response(JSON.stringify({ ok: false, error: e.message }), { status: 500, headers: corsHeaders })
+        }
+      }
+
+      if (body.action === 'admin_ai_logs') {
+        const { offset: logsOffset = 0, limit = 50, feature_filter } = body
+        try {
+          let qs = `ai_usage_logs?select=*&order=created_at.desc&offset=${logsOffset}&limit=${limit}`
+          if (feature_filter) qs += `&feature=eq.${encodeURIComponent(feature_filter)}`
+          const res = await supabaseServiceFetch(env, qs)
+          const logs = await res.json()
+          return new Response(JSON.stringify({ ok: true, logs: Array.isArray(logs) ? logs : [] }), { status: 200, headers: corsHeaders })
+        } catch (e) {
+          return new Response(JSON.stringify({ ok: false, error: e.message }), { status: 500, headers: corsHeaders })
+        }
+      }
+
       return new Response(JSON.stringify({ error: 'Acción admin desconocida' }), { status: 400, headers: corsHeaders })
     }
 
@@ -952,11 +1030,12 @@ export default {
       if (!rl.ok) {
         return new Response(JSON.stringify({ error: { message: `Límite de uso alcanzado (${rl.limit} por hora). Volvé a intentarlo en 60 minutos.` } }), { status: 429, headers: corsHeaders })
       }
+      const userId = getUserIdFromToken(request)
       return callGeminiApi(env, {
         system_instruction: { parts: [{ text: systemPrompt }] },
         contents: body.contents,
         generationConfig: body.generationConfig,
-      }, corsHeaders)
+      }, corsHeaders, { feature: promptKey, userId })
     }
 
     // ── Gemini raw proxy (PDF extraction only) ────────────────────────────────

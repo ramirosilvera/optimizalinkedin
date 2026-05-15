@@ -16,7 +16,17 @@ const TABS = [
   { id:'premium',   label:'Premium',    icon:'⭐' },
   { id:'codes',     label:'Códigos',    icon:'🎫' },
   { id:'logs',      label:'Logs',       icon:'📋' },
+  { id:'ia',        label:'IA',         icon:'🤖' },
 ]
+
+// Gemini 2.5 Flash Lite pricing (USD per token)
+const COST_INPUT_PER_TOKEN  = 0.075  / 1_000_000
+const COST_OUTPUT_PER_TOKEN = 0.30   / 1_000_000
+const fmtCost = (inp, out) => {
+  const usd = (inp || 0) * COST_INPUT_PER_TOKEN + (out || 0) * COST_OUTPUT_PER_TOKEN
+  return usd < 0.01 ? `$${(usd * 100).toFixed(3)}¢` : `$${usd.toFixed(4)}`
+}
+const fmtK = n => n == null ? '—' : n >= 1000 ? `${(n / 1000).toFixed(1)}k` : String(n)
 
 // ── Primitives ────────────────────────────────────────────────────────────────
 function Spin() {
@@ -457,6 +467,147 @@ function LogsTab({ adminFetch }) {
   )
 }
 
+// ── IA Analytics Tab ─────────────────────────────────────────────────────────
+function IaTab({ adminFetch }) {
+  const [stats, setStats]     = useState(null)
+  const [logs, setLogs]       = useState([])
+  const [loading, setLoading] = useState(true)
+  const [logsLoading, setLogsLoading] = useState(false)
+  const [error, setError]     = useState('')
+  const [featureFilter, setFeatureFilter] = useState('')
+  const [logsOffset, setLogsOffset]       = useState(0)
+  const [hasMore, setHasMore] = useState(false)
+  const LIMIT = 40
+
+  const loadStats = useCallback(async () => {
+    setLoading(true); setError('')
+    const d = await adminFetch('admin_ai_stats')
+    if (d?.ok) setStats(d)
+    else setError(d?.error || 'Error al cargar estadísticas IA')
+    setLoading(false)
+  }, [adminFetch])
+
+  const loadLogs = useCallback(async (off, replace, feat) => {
+    setLogsLoading(true)
+    const d = await adminFetch('admin_ai_logs', { offset: off, limit: LIMIT, feature_filter: feat || undefined })
+    if (d?.ok) {
+      const list = d.logs || []
+      if (replace) setLogs(list); else setLogs(prev => [...prev, ...list])
+      setHasMore(list.length === LIMIT)
+      setLogsOffset(off)
+    }
+    setLogsLoading(false)
+  }, [adminFetch])
+
+  useEffect(() => { loadStats(); loadLogs(0, true, '') }, [loadStats, loadLogs])
+
+  const applyFilter = (feat) => {
+    setFeatureFilter(feat)
+    loadLogs(0, true, feat)
+  }
+
+  if (loading) return <div style={{ textAlign:'center', padding:60 }}><Spin /></div>
+  if (error)   return <ErrBox msg={error} onRetry={loadStats} />
+
+  const t30 = stats?.totals_30d || {}
+  const t7  = stats?.totals_7d  || {}
+  const t24 = stats?.totals_24h || {}
+  const byFeature = stats?.by_feature || {}
+  const topUsers  = stats?.top_users  || []
+
+  return (
+    <div style={{ display:'flex', flexDirection:'column', gap:16 }}>
+      {/* Summary cards */}
+      <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fill,minmax(130px,1fr))', gap:10 }}>
+        <StatCard label="Requests 24h"  value={fmtK(t24.count)}          color="#0077B5" sub={fmtCost(t24.input_tokens, t24.output_tokens)} />
+        <StatCard label="Requests 7d"   value={fmtK(t7.count)}           color="#6366f1" sub={fmtCost(t7.input_tokens, t7.output_tokens)} />
+        <StatCard label="Requests 30d"  value={fmtK(t30.count)}          color="#0d9488" sub={fmtCost(t30.input_tokens, t30.output_tokens)} />
+        <StatCard label="Errores 30d"   value={t30.error_count ?? '—'}   color="#dc2626" />
+        <StatCard label="Tokens 30d"    value={fmtK((t30.input_tokens||0)+(t30.output_tokens||0))} color="#f59e0b" />
+      </div>
+
+      {/* By feature breakdown */}
+      {Object.keys(byFeature).length > 0 && (
+        <div style={{ ...C.card }}>
+          <div style={{ padding:'12px 16px', borderBottom:'1px solid #f1f5f9', fontWeight:700, fontSize:13 }}>Por feature (30 días)</div>
+          <div style={{ overflowX:'auto' }}>
+            <table style={{ width:'100%', borderCollapse:'collapse', fontSize:12 }}>
+              <thead>
+                <tr>
+                  <Th ch="Feature" /><Th ch="Requests" /><Th ch="Tokens in" /><Th ch="Tokens out" /><Th ch="Costo est." /><Th ch="Avg ms" /><Th ch="Errores" />
+                </tr>
+              </thead>
+              <tbody>
+                {Object.entries(byFeature).sort((a,b) => (b[1].count||0)-(a[1].count||0)).map(([feat, d]) => (
+                  <tr key={feat} style={{ cursor:'pointer' }} onClick={() => applyFilter(featureFilter === feat ? '' : feat)}>
+                    <Td><span style={{ fontWeight:700, color:'#0077B5' }}>{feat}</span></Td>
+                    <Td>{d.count}</Td>
+                    <Td>{fmtK(d.input_tokens)}</Td>
+                    <Td>{fmtK(d.output_tokens)}</Td>
+                    <Td>{fmtCost(d.input_tokens, d.output_tokens)}</Td>
+                    <Td>{d.avg_duration_ms ? `${d.avg_duration_ms}ms` : '—'}</Td>
+                    <Td s={{ color: d.error_count > 0 ? '#dc2626' : '#64748b' }}>{d.error_count || 0}</Td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {/* Top users */}
+      {topUsers.length > 0 && (
+        <div style={{ ...C.card }}>
+          <div style={{ padding:'12px 16px', borderBottom:'1px solid #f1f5f9', fontWeight:700, fontSize:13 }}>Top usuarios por tokens (30 días)</div>
+          <div style={{ padding:'10px 14px', display:'flex', flexDirection:'column', gap:6 }}>
+            {topUsers.map((u, i) => (
+              <div key={u.user_id} style={{ display:'flex', justifyContent:'space-between', alignItems:'center', fontSize:12, padding:'6px 0', borderBottom:'1px solid #f8fafc' }}>
+                <span style={{ color:'#475569' }}>{i+1}. <span style={{ fontFamily:'monospace', fontSize:11 }}>{String(u.user_id).slice(0,8)}…</span></span>
+                <span style={{ color:'#64748b' }}>{u.requests} req · {fmtK(u.total_tokens)} tokens</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Recent logs */}
+      <div style={{ ...C.card }}>
+        <div style={{ padding:'12px 16px', borderBottom:'1px solid #f1f5f9', display:'flex', justifyContent:'space-between', alignItems:'center' }}>
+          <div style={{ fontWeight:700, fontSize:13 }}>
+            Logs recientes
+            {featureFilter && <span style={{ marginLeft:8, fontSize:11, background:'#e0f2fe', color:'#0369a1', borderRadius:99, padding:'2px 8px' }}>{featureFilter} <button onClick={() => applyFilter('')} style={{ border:'none', background:'none', cursor:'pointer', color:'#0369a1', fontWeight:700 }}>×</button></span>}
+          </div>
+          <button onClick={() => loadStats()} style={{ ...C.sec, fontSize:11, padding:'4px 10px' }}>↺ Refrescar</button>
+        </div>
+        <div style={{ padding:'10px 14px', display:'flex', flexDirection:'column', gap:6 }}>
+          {logs.length === 0 && !logsLoading && <Empty text="Sin logs registrados aún" />}
+          {logs.map(l => (
+            <div key={l.id} style={{ padding:'8px 12px', background:'#f8fafc', borderRadius:9, borderLeft:`3px solid ${l.status_code === 200 ? '#10b981' : l.status_code ? '#dc2626' : '#94a3b8'}`, fontSize:12 }}>
+              <div style={{ display:'flex', justifyContent:'space-between', flexWrap:'wrap', gap:4 }}>
+                <div style={{ display:'flex', gap:8, alignItems:'center' }}>
+                  <span style={{ fontWeight:700, color:'#0077B5' }}>{l.feature}</span>
+                  {l.status_code && l.status_code !== 200 && <span style={{ color:'#dc2626', fontWeight:700 }}>{l.status_code}{l.error_type ? ` · ${l.error_type}` : ''}</span>}
+                  {l.input_tokens != null && <span style={{ color:'#64748b' }}>in:{fmtK(l.input_tokens)} out:{fmtK(l.output_tokens)}</span>}
+                  {l.duration_ms != null && <span style={{ color:'#94a3b8' }}>{l.duration_ms}ms</span>}
+                </div>
+                <span style={{ color:'#94a3b8', whiteSpace:'nowrap' }}>
+                  {new Date(l.created_at).toLocaleString('es-AR',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'})}
+                </span>
+              </div>
+            </div>
+          ))}
+        </div>
+        {logsLoading && <div style={{ textAlign:'center', padding:10 }}><Spin /></div>}
+        {hasMore && !logsLoading && (
+          <div style={{ padding:'0 14px 14px' }}>
+            <button onClick={() => loadLogs(logsOffset + LIMIT, false, featureFilter)} style={{ ...C.sec, width:'100%' }}>Cargar más</button>
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
+
 // ── Main Panel — sin overlays, sin drawers ────────────────────────────────────
 export default function AdminPanel({ authToken, onClose }) {
   const [tab, setTab] = useState('dashboard')
@@ -582,6 +733,7 @@ export default function AdminPanel({ authToken, onClose }) {
               {tab === 'premium'   && <UsersTab  adminFetch={adminFetch} premiumOnly />}
               {tab === 'codes'     && <CodesTab  adminFetch={adminFetch} />}
               {tab === 'logs'      && <LogsTab   adminFetch={adminFetch} />}
+              {tab === 'ia'        && <IaTab     adminFetch={adminFetch} />}
             </div>
           </div>
         </div>
