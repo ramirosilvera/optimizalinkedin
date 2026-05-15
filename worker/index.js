@@ -374,6 +374,7 @@ export default {
           gemini_keys: (env.GEMINI_API_KEYS || env.GEMINI_API_KEY || '').split(',').filter(Boolean).length,
           rate_limit_kv: !!env.RATE_LIMIT_KV,
           supabase: !!env.SUPABASE_URL,
+          supabase_service_role: !!env.SUPABASE_SERVICE_ROLE_KEY,
           mp: !!env.MP_ACCESS_TOKEN,
           app_token: !!env.APP_TOKEN,
         },
