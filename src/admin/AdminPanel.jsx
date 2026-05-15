@@ -11,12 +11,13 @@ const C = {
 }
 
 const TABS = [
-  { id:'dashboard', label:'Dashboard',  icon:'📊' },
-  { id:'users',     label:'Usuarios',   icon:'👥' },
-  { id:'premium',   label:'Premium',    icon:'⭐' },
-  { id:'codes',     label:'Códigos',    icon:'🎫' },
-  { id:'logs',      label:'Logs',       icon:'📋' },
-  { id:'ia',        label:'IA',         icon:'🤖' },
+  { id:'dashboard',   label:'Dashboard',    icon:'📊' },
+  { id:'users',       label:'Usuarios',     icon:'👥' },
+  { id:'premium',     label:'Premium',      icon:'⭐' },
+  { id:'codes',       label:'Códigos',      icon:'🎫' },
+  { id:'comentarios', label:'Comentarios',  icon:'💬' },
+  { id:'logs',        label:'Logs',         icon:'📋' },
+  { id:'ia',          label:'IA',           icon:'🤖' },
 ]
 
 // Gemini 2.5 Flash Lite pricing (USD per token)
@@ -467,6 +468,317 @@ function LogsTab({ adminFetch }) {
   )
 }
 
+// ── Comments Tab ─────────────────────────────────────────────────────────────
+const STATUS_LABELS = { pending:'Pendiente', approved:'Aprobado', rejected:'Rechazado', hidden:'Oculto' }
+const STATUS_COLORS = { pending:'#f59e0b', approved:'#10b981', rejected:'#dc2626', hidden:'#64748b' }
+
+function StatusBadge({ status }) {
+  return (
+    <span style={{
+      background: (STATUS_COLORS[status] || '#94a3b8') + '22',
+      color: STATUS_COLORS[status] || '#94a3b8',
+      borderRadius: 99, padding:'2px 8px', fontSize:11, fontWeight:700,
+    }}>
+      {STATUS_LABELS[status] || status}
+    </span>
+  )
+}
+
+function StarRating({ rating }) {
+  if (!rating) return null
+  return (
+    <span style={{ fontSize:13, letterSpacing:1 }}>
+      {'★'.repeat(rating)}{'☆'.repeat(5 - rating)}
+    </span>
+  )
+}
+
+function CommentCard({ c, onAction, onSaved }) {
+  const [expanded, setExpanded] = useState(false)
+  const [editNombre, setEditNombre]     = useState('')
+  const [editComentario, setEditComentario] = useState('')
+  const [editReply, setEditReply]       = useState('')
+  const [saving, setSaving]   = useState(false)
+  const [busy, setBusy]       = useState(false)
+  const [msg, setMsg]         = useState('')
+
+  const displayNombre    = c.edited_nombre     || c.nombre
+  const displayComentario = c.edited_comentario || c.comentario
+
+  const openEdit = () => {
+    setEditNombre(c.edited_nombre || c.nombre || '')
+    setEditComentario(c.edited_comentario || c.comentario || '')
+    setEditReply(c.admin_reply || '')
+    setExpanded(true)
+  }
+
+  const handleAction = async (action) => {
+    setBusy(true); setMsg('')
+    const ok = await onAction(c.id, action)
+    setBusy(false)
+    if (!ok) setMsg('Error al ejecutar la acción')
+  }
+
+  const handleSave = async () => {
+    setSaving(true); setMsg('')
+    const ok = await onSaved(c.id, {
+      nombre: editNombre !== (c.nombre) ? editNombre : undefined,
+      comentario: editComentario !== c.comentario ? editComentario : undefined,
+      admin_reply: editReply !== (c.admin_reply || '') ? editReply : undefined,
+    })
+    setSaving(false)
+    if (ok) setExpanded(false)
+    else setMsg('Error al guardar')
+  }
+
+  return (
+    <div style={{
+      ...C.card, padding:'14px 16px',
+      borderLeft:`4px solid ${STATUS_COLORS[c.status] || '#e2e8f0'}`,
+      opacity: c.status === 'rejected' ? 0.7 : 1,
+    }}>
+      {/* Header row */}
+      <div style={{ display:'flex', justifyContent:'space-between', flexWrap:'wrap', gap:8, marginBottom:8 }}>
+        <div style={{ display:'flex', flexDirection:'column', gap:4 }}>
+          <div style={{ display:'flex', gap:6, alignItems:'center', flexWrap:'wrap' }}>
+            <span style={{ fontWeight:700, fontSize:13 }}>{displayNombre}</span>
+            {c.edited_nombre && <span style={{ fontSize:10, color:'#f59e0b' }}>✎ editado</span>}
+            <StatusBadge status={c.status} />
+            {c.featured && <span style={{ background:'#fef3c7', color:'#d97706', borderRadius:99, padding:'2px 8px', fontSize:11, fontWeight:700 }}>⭐ Destacado</span>}
+          </div>
+          <div style={{ fontSize:11, color:'#64748b' }}>
+            {c.titulo}
+            {c.feature && <span style={{ marginLeft:8, background:'#e0f2fe', color:'#0369a1', borderRadius:99, padding:'1px 6px', fontSize:10 }}>{c.feature}</span>}
+          </div>
+          {c.rating && <StarRating rating={c.rating} />}
+        </div>
+        <span style={{ fontSize:11, color:'#94a3b8', whiteSpace:'nowrap' }}>
+          {new Date(c.created_at).toLocaleDateString('es-AR',{day:'2-digit',month:'2-digit',year:'2-digit',hour:'2-digit',minute:'2-digit'})}
+        </span>
+      </div>
+
+      {/* Comment text */}
+      <p style={{ fontSize:13, color:'#374151', margin:'0 0 10px', lineHeight:1.5 }}>
+        {displayComentario}
+        {c.edited_comentario && <span style={{ fontSize:10, color:'#f59e0b', marginLeft:6 }}>✎ editado</span>}
+      </p>
+
+      {/* Admin reply preview */}
+      {c.admin_reply && !expanded && (
+        <div style={{ background:'#f0f9ff', borderRadius:8, padding:'8px 12px', fontSize:12, color:'#0369a1', marginBottom:10 }}>
+          <strong>Respuesta admin:</strong> {c.admin_reply}
+        </div>
+      )}
+
+      {/* Action buttons */}
+      <div style={{ display:'flex', gap:6, flexWrap:'wrap', alignItems:'center' }}>
+        {c.status !== 'approved'  && <button disabled={busy} onClick={() => handleAction('approve')}  style={{ ...C.pri,  fontSize:11, padding:'5px 10px' }}>✓ Aprobar</button>}
+        {c.status !== 'rejected'  && <button disabled={busy} onClick={() => handleAction('reject')}   style={{ ...C.danger, fontSize:11, padding:'5px 10px' }}>✗ Rechazar</button>}
+        {c.status !== 'hidden'    && <button disabled={busy} onClick={() => handleAction('hide')}     style={{ ...C.sec, fontSize:11, padding:'5px 10px' }}>👁 Ocultar</button>}
+        {!c.featured              && <button disabled={busy} onClick={() => handleAction('feature')}  style={{ ...C.sec, fontSize:11, padding:'5px 10px' }}>⭐ Destacar</button>}
+        {c.featured               && <button disabled={busy} onClick={() => handleAction('unfeature')} style={{ ...C.sec, fontSize:11, padding:'5px 10px' }}>☆ Quitar destaque</button>}
+        <button onClick={openEdit} style={{ ...C.sec, fontSize:11, padding:'5px 10px' }}>✎ Editar</button>
+        <button disabled={busy} onClick={() => { if (confirm('¿Eliminar este comentario?')) handleAction('delete') }} style={{ ...C.danger, fontSize:11, padding:'5px 10px', marginLeft:'auto' }}>🗑 Eliminar</button>
+      </div>
+
+      {msg && <div style={{ fontSize:12, color:'#dc2626', marginTop:6 }}>{msg}</div>}
+
+      {/* Edit panel */}
+      {expanded && (
+        <div style={{ marginTop:14, borderTop:'1px solid #f1f5f9', paddingTop:14, display:'flex', flexDirection:'column', gap:10 }}>
+          <div>
+            <label style={{ fontSize:11, fontWeight:700, color:'#64748b', display:'block', marginBottom:4 }}>Nombre público</label>
+            <input value={editNombre} onChange={e => setEditNombre(e.target.value)} style={C.input} maxLength={80} />
+          </div>
+          <div>
+            <label style={{ fontSize:11, fontWeight:700, color:'#64748b', display:'block', marginBottom:4 }}>Comentario</label>
+            <textarea value={editComentario} onChange={e => setEditComentario(e.target.value)}
+              style={{ ...C.input, resize:'vertical', minHeight:70 }} maxLength={300} />
+            <div style={{ fontSize:11, color:'#94a3b8', textAlign:'right' }}>{editComentario.length}/300</div>
+          </div>
+          <div>
+            <label style={{ fontSize:11, fontWeight:700, color:'#64748b', display:'block', marginBottom:4 }}>Respuesta del admin (opcional — visible públicamente)</label>
+            <textarea value={editReply} onChange={e => setEditReply(e.target.value)}
+              style={{ ...C.input, resize:'vertical', minHeight:60 }} placeholder="Dejá vacío para no mostrar respuesta…" maxLength={500} />
+          </div>
+          <div style={{ display:'flex', gap:8 }}>
+            <button onClick={handleSave} disabled={saving} style={C.pri}>{saving ? 'Guardando…' : '💾 Guardar cambios'}</button>
+            <button onClick={() => setExpanded(false)} style={C.sec}>Cancelar</button>
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
+function CommentsTab({ adminFetch }) {
+  const [stats, setStats]           = useState(null)
+  const [comments, setComments]     = useState([])
+  const [loading, setLoading]       = useState(true)
+  const [statsLoading, setStatsLoading] = useState(true)
+  const [error, setError]           = useState('')
+  const [statusFilter, setStatusFilter] = useState('pending')
+  const [search, setSearch]         = useState('')
+  const [searchInput, setSearchInput]   = useState('')
+  const [featuredOnly, setFeaturedOnly] = useState(false)
+  const [offset, setOffset]         = useState(0)
+  const [hasMore, setHasMore]       = useState(false)
+  const LIMIT = 20
+
+  const loadStats = useCallback(async () => {
+    setStatsLoading(true)
+    const d = await adminFetch('admin_comment_stats')
+    if (d?.ok) setStats(d.stats)
+    setStatsLoading(false)
+  }, [adminFetch])
+
+  const loadComments = useCallback(async (off, replace, sf, s, fo) => {
+    setLoading(true); setError('')
+    const d = await adminFetch('admin_list_comments', {
+      status_filter: sf, search: s, featured_only: fo, offset: off, limit: LIMIT,
+    })
+    if (d?.ok) {
+      const list = d.comments || []
+      if (replace) setComments(list); else setComments(prev => [...prev, ...list])
+      setHasMore(list.length === LIMIT)
+      setOffset(off)
+    } else {
+      setError(d?.error || 'Error al cargar comentarios')
+    }
+    setLoading(false)
+  }, [adminFetch])
+
+  useEffect(() => { loadStats(); loadComments(0, true, statusFilter, search, featuredOnly) }, []) // eslint-disable-line
+
+  const applyFilters = (sf, s, fo) => {
+    setStatusFilter(sf); setSearch(s); setFeaturedOnly(fo)
+    loadComments(0, true, sf, s, fo)
+  }
+
+  const handleAction = async (commentId, action) => {
+    if (action === 'delete') {
+      const d = await adminFetch('admin_comment_action', { comment_id: commentId, action })
+      if (d?.ok) { setComments(prev => prev.filter(c => c.id !== commentId)); loadStats(); return true }
+      return false
+    }
+    const d = await adminFetch('admin_comment_action', { comment_id: commentId, action })
+    if (d?.ok) {
+      setComments(prev => prev.map(c => {
+        if (c.id !== commentId) return c
+        const patch = {}
+        if (action === 'approve')   { patch.status = 'approved'; patch.moderated_at = new Date().toISOString() }
+        if (action === 'reject')    { patch.status = 'rejected'; patch.moderated_at = new Date().toISOString() }
+        if (action === 'hide')      { patch.status = 'hidden';   patch.moderated_at = new Date().toISOString() }
+        if (action === 'feature')   { patch.featured = true;  patch.status = 'approved' }
+        if (action === 'unfeature') { patch.featured = false }
+        return { ...c, ...patch }
+      }))
+      loadStats()
+      return true
+    }
+    return false
+  }
+
+  const handleSave = async (commentId, fields) => {
+    const payload = { comment_id: commentId }
+    if (fields.nombre     !== undefined) payload.nombre     = fields.nombre
+    if (fields.comentario !== undefined) payload.comentario = fields.comentario
+    if (fields.admin_reply !== undefined) payload.admin_reply = fields.admin_reply
+    const d = await adminFetch('admin_comment_edit', payload)
+    if (d?.ok) {
+      setComments(prev => prev.map(c => {
+        if (c.id !== commentId) return c
+        return {
+          ...c,
+          edited_nombre:     fields.nombre     !== undefined ? fields.nombre     : c.edited_nombre,
+          edited_comentario: fields.comentario !== undefined ? fields.comentario : c.edited_comentario,
+          admin_reply:       fields.admin_reply !== undefined ? fields.admin_reply : c.admin_reply,
+        }
+      }))
+      return true
+    }
+    return false
+  }
+
+  const STATUS_OPTS = [
+    { v:'pending',  l:'Pendientes' },
+    { v:'approved', l:'Aprobados' },
+    { v:'rejected', l:'Rechazados' },
+    { v:'hidden',   l:'Ocultos' },
+    { v:'all',      l:'Todos' },
+  ]
+
+  return (
+    <div style={{ display:'flex', flexDirection:'column', gap:14 }}>
+      {/* Stats bar */}
+      {!statsLoading && stats && (
+        <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fill,minmax(110px,1fr))', gap:10 }}>
+          <StatCard label="Total"      value={stats.total}    color="#0077B5" />
+          <StatCard label="Pendientes" value={stats.pending}  color="#f59e0b" />
+          <StatCard label="Aprobados"  value={stats.approved} color="#10b981" />
+          <StatCard label="Ocultos"    value={stats.hidden}   color="#64748b" />
+          <StatCard label="Rechazados" value={stats.rejected} color="#dc2626" />
+          <StatCard label="Destacados" value={stats.featured} color="#d97706" />
+        </div>
+      )}
+
+      {/* Filters */}
+      <div style={{ display:'flex', gap:8, flexWrap:'wrap', alignItems:'center' }}>
+        {STATUS_OPTS.map(o => (
+          <button key={o.v}
+            onClick={() => applyFilters(o.v, search, featuredOnly)}
+            style={{
+              ...C.sec, fontSize:12, padding:'5px 12px',
+              background: statusFilter === o.v ? '#0077B5' : undefined,
+              color:      statusFilter === o.v ? 'white'   : undefined,
+              borderColor: statusFilter === o.v ? '#0077B5' : undefined,
+            }}>
+            {o.l}
+            {o.v !== 'all' && stats?.[o.v] != null && (
+              <span style={{ marginLeft:5, background:'rgba(255,255,255,0.25)', borderRadius:99, padding:'0 5px', fontSize:10 }}>
+                {stats[o.v]}
+              </span>
+            )}
+          </button>
+        ))}
+        <label style={{ display:'flex', alignItems:'center', gap:6, fontSize:12, color:'#475569', cursor:'pointer' }}>
+          <input type="checkbox" checked={featuredOnly} onChange={e => applyFilters(statusFilter, search, e.target.checked)} />
+          Solo destacados
+        </label>
+      </div>
+
+      {/* Search */}
+      <div style={{ display:'flex', gap:8 }}>
+        <input
+          style={{ ...C.input, flex:1 }}
+          placeholder="Buscar por nombre, título o comentario…"
+          value={searchInput}
+          onChange={e => setSearchInput(e.target.value)}
+          onKeyDown={e => e.key === 'Enter' && applyFilters(statusFilter, searchInput, featuredOnly)}
+        />
+        <button onClick={() => applyFilters(statusFilter, searchInput, featuredOnly)} style={C.pri}>Buscar</button>
+        {search && <button onClick={() => { setSearchInput(''); applyFilters(statusFilter, '', featuredOnly) }} style={C.sec}>✕</button>}
+      </div>
+
+      {/* List */}
+      {error && <ErrBox msg={error} onRetry={() => loadComments(0, true, statusFilter, search, featuredOnly)} />}
+      {loading && comments.length === 0 && <div style={{ textAlign:'center', padding:60 }}><Spin /></div>}
+      {!loading && comments.length === 0 && !error && <Empty text="Sin comentarios para este filtro" />}
+
+      {comments.map(c => (
+        <CommentCard key={c.id} c={c} onAction={handleAction} onSaved={handleSave} />
+      ))}
+
+      {loading && comments.length > 0 && <div style={{ textAlign:'center', padding:10 }}><Spin /></div>}
+      {hasMore && !loading && (
+        <button onClick={() => loadComments(offset + LIMIT, false, statusFilter, search, featuredOnly)} style={{ ...C.sec, width:'100%' }}>
+          Cargar más
+        </button>
+      )}
+    </div>
+  )
+}
+
 // ── IA Analytics Tab ─────────────────────────────────────────────────────────
 function IaTab({ adminFetch }) {
   const [stats, setStats]     = useState(null)
@@ -728,12 +1040,13 @@ export default function AdminPanel({ authToken, onClose }) {
           {/* Content */}
           <div className="adm-content">
             <div style={{ maxWidth:860 }}>
-              {tab === 'dashboard' && <Dashboard adminFetch={adminFetch} />}
-              {tab === 'users'     && <UsersTab  adminFetch={adminFetch} />}
-              {tab === 'premium'   && <UsersTab  adminFetch={adminFetch} premiumOnly />}
-              {tab === 'codes'     && <CodesTab  adminFetch={adminFetch} />}
-              {tab === 'logs'      && <LogsTab   adminFetch={adminFetch} />}
-              {tab === 'ia'        && <IaTab     adminFetch={adminFetch} />}
+              {tab === 'dashboard'   && <Dashboard     adminFetch={adminFetch} />}
+              {tab === 'users'       && <UsersTab      adminFetch={adminFetch} />}
+              {tab === 'premium'     && <UsersTab      adminFetch={adminFetch} premiumOnly />}
+              {tab === 'codes'       && <CodesTab      adminFetch={adminFetch} />}
+              {tab === 'comentarios' && <CommentsTab   adminFetch={adminFetch} />}
+              {tab === 'logs'        && <LogsTab       adminFetch={adminFetch} />}
+              {tab === 'ia'          && <IaTab         adminFetch={adminFetch} />}
             </div>
           </div>
         </div>

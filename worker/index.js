@@ -779,6 +779,112 @@ export default {
         }
       }
 
+      // ── Comments moderation ──────────────────────────────────────────────────
+
+      if (body.action === 'admin_comment_stats') {
+        try {
+          const [pending, approved, rejected, hidden, featured, total] = await Promise.all([
+            getSupabaseCount(env, 'comments', 'status=eq.pending'),
+            getSupabaseCount(env, 'comments', 'status=eq.approved'),
+            getSupabaseCount(env, 'comments', 'status=eq.rejected'),
+            getSupabaseCount(env, 'comments', 'status=eq.hidden'),
+            getSupabaseCount(env, 'comments', 'featured=eq.true&status=eq.approved'),
+            getSupabaseCount(env, 'comments'),
+          ])
+          return new Response(JSON.stringify({ ok: true, stats: { total, pending, approved, rejected, hidden, featured } }), { status: 200, headers: corsHeaders })
+        } catch (e) {
+          return new Response(JSON.stringify({ ok: false, error: e.message }), { status: 500, headers: corsHeaders })
+        }
+      }
+
+      if (body.action === 'admin_list_comments') {
+        const { status_filter = 'all', search = '', featured_only = false, offset: off = 0, limit = 30 } = body
+        try {
+          let qs = `comments?select=*&order=created_at.desc&offset=${off}&limit=${limit}`
+          if (status_filter && status_filter !== 'all') qs += `&status=eq.${encodeURIComponent(status_filter)}`
+          if (featured_only) qs += '&featured=eq.true'
+          if (search) qs += `&or=(nombre.ilike.*${encodeURIComponent(search)}*,comentario.ilike.*${encodeURIComponent(search)}*,titulo.ilike.*${encodeURIComponent(search)}*)`
+          const res = await supabaseServiceFetch(env, qs)
+          const comments = await res.json()
+          return new Response(JSON.stringify({ ok: true, comments: Array.isArray(comments) ? comments : [] }), { status: 200, headers: corsHeaders })
+        } catch (e) {
+          return new Response(JSON.stringify({ ok: false, error: e.message }), { status: 500, headers: corsHeaders })
+        }
+      }
+
+      if (body.action === 'admin_comment_action') {
+        if (!canWrite) return new Response(JSON.stringify({ error: 'Sin permisos de escritura' }), { status: 403, headers: corsHeaders })
+        const { comment_id, action: commentAction } = body
+        if (!comment_id || !commentAction) return new Response(JSON.stringify({ error: 'Faltan comment_id y action' }), { status: 400, headers: corsHeaders })
+
+        const VALID_ACTIONS = ['approve', 'reject', 'hide', 'feature', 'unfeature', 'delete']
+        if (!VALID_ACTIONS.includes(commentAction)) return new Response(JSON.stringify({ error: 'Acción inválida' }), { status: 400, headers: corsHeaders })
+
+        try {
+          // Fetch current comment for logging
+          const curRes = await supabaseServiceFetch(env, `comments?id=eq.${comment_id}&select=status,featured`)
+          const curRows = await curRes.json()
+          const cur = curRows?.[0]
+
+          if (commentAction === 'delete') {
+            await supabaseServiceFetch(env, `comments?id=eq.${comment_id}`, { method: 'DELETE', headers: { Prefer: 'return=minimal' } })
+          } else {
+            const patch = {}
+            if (commentAction === 'approve')   { patch.status = 'approved';  patch.moderated_by = admin.userId; patch.moderated_at = new Date().toISOString() }
+            if (commentAction === 'reject')    { patch.status = 'rejected';  patch.moderated_by = admin.userId; patch.moderated_at = new Date().toISOString() }
+            if (commentAction === 'hide')      { patch.status = 'hidden';    patch.moderated_by = admin.userId; patch.moderated_at = new Date().toISOString() }
+            if (commentAction === 'feature')   { patch.featured = true;  patch.status = 'approved' }
+            if (commentAction === 'unfeature') { patch.featured = false }
+            await supabaseServiceFetch(env, `comments?id=eq.${comment_id}`, {
+              method: 'PATCH', body: JSON.stringify(patch), headers: { Prefer: 'return=minimal' },
+            })
+          }
+
+          // Log the moderation action
+          await supabaseServiceFetch(env, 'comment_moderation_logs', {
+            method: 'POST',
+            body: JSON.stringify({
+              comment_id,
+              admin_id: admin.userId,
+              action: commentAction,
+              old_status: cur?.status ?? null,
+              new_status: commentAction === 'delete' ? 'deleted'
+                : commentAction === 'approve' || commentAction === 'feature' ? 'approved'
+                : commentAction === 'reject'  ? 'rejected'
+                : commentAction === 'hide'    ? 'hidden'
+                : cur?.status ?? null,
+            }),
+            headers: { Prefer: 'return=minimal' },
+          })
+          await logAdminAction(env, admin.userId, `comment_${commentAction}`, 'comment', comment_id)
+          return new Response(JSON.stringify({ ok: true }), { status: 200, headers: corsHeaders })
+        } catch (e) {
+          return new Response(JSON.stringify({ ok: false, error: e.message }), { status: 500, headers: corsHeaders })
+        }
+      }
+
+      if (body.action === 'admin_comment_edit') {
+        if (!canWrite) return new Response(JSON.stringify({ error: 'Sin permisos de escritura' }), { status: 403, headers: corsHeaders })
+        const { comment_id, nombre, comentario, admin_reply } = body
+        if (!comment_id) return new Response(JSON.stringify({ error: 'Falta comment_id' }), { status: 400, headers: corsHeaders })
+        try {
+          const patch = { moderated_by: admin.userId, moderated_at: new Date().toISOString() }
+          if (nombre    !== undefined) patch.edited_nombre     = nombre    || null
+          if (comentario !== undefined) patch.edited_comentario = comentario || null
+          if (admin_reply !== undefined) {
+            patch.admin_reply    = admin_reply || null
+            patch.admin_reply_at = admin_reply ? new Date().toISOString() : null
+          }
+          await supabaseServiceFetch(env, `comments?id=eq.${comment_id}`, {
+            method: 'PATCH', body: JSON.stringify(patch), headers: { Prefer: 'return=minimal' },
+          })
+          await logAdminAction(env, admin.userId, 'comment_edit', 'comment', comment_id, { fields: Object.keys(patch) })
+          return new Response(JSON.stringify({ ok: true }), { status: 200, headers: corsHeaders })
+        } catch (e) {
+          return new Response(JSON.stringify({ ok: false, error: e.message }), { status: 500, headers: corsHeaders })
+        }
+      }
+
       return new Response(JSON.stringify({ error: 'Acción admin desconocida' }), { status: 400, headers: corsHeaders })
     }
 

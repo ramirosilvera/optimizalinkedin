@@ -14,7 +14,7 @@ export default function CommentsSection() {
   const [loading, setLoading] = useState(true)
   const [showForm, setShowForm] = useState(false)
   const [submitted, setSubmitted] = useState(false)
-  const [form, setForm] = useState({ nombre: '', titulo: '', linkedin_url: '', comentario: '' })
+  const [form, setForm] = useState({ nombre: '', titulo: '', linkedin_url: '', comentario: '', rating: 0 })
   const [submitting, setSubmitting] = useState(false)
   const [formError, setFormError] = useState('')
   const [fetchError, setFetchError] = useState(false)
@@ -60,12 +60,12 @@ export default function CommentsSection() {
           'Content-Type': 'application/json',
           Prefer: 'return=minimal',
         },
-        body: JSON.stringify({ ...form, status: 'pending' }),
+        body: JSON.stringify({ ...form, rating: form.rating || null, status: 'pending' }),
       })
       if (!res.ok) throw new Error()
       setSubmitted(true)
       setShowForm(false)
-      setForm({ nombre: '', titulo: '', linkedin_url: '', comentario: '' })
+      setForm({ nombre: '', titulo: '', linkedin_url: '', comentario: '', rating: 0 })
     } catch {
       setFormError('Error al enviar. Intentá de nuevo.')
     } finally {
@@ -97,33 +97,51 @@ export default function CommentsSection() {
         </p>
       ) : (
         <div className="space-y-3">
-          {comments.map(c => (
-            <div key={c.id} className="rounded-2xl p-4"
-              style={{ background: 'white', border: '1px solid rgba(0,119,181,0.12)', boxShadow: '0 1px 6px rgba(0,0,0,0.05)' }}>
-              <div className="flex items-start gap-3">
-                <div className="w-9 h-9 rounded-full flex items-center justify-center text-white text-xs font-bold shrink-0"
-                  style={{ background: avatarGrad(c.nombre) }}>
-                  {initials(c.nombre)}
-                </div>
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-start justify-between gap-2">
-                    <div>
-                      <p className="text-slate-900 text-sm font-semibold leading-tight">{c.nombre}</p>
-                      <p className="text-slate-500 text-xs mt-0.5">{c.titulo}</p>
+          {comments.map(c => {
+            const displayNombre    = c.edited_nombre     || c.nombre
+            const displayComentario = c.edited_comentario || c.comentario
+            return (
+              <div key={c.id} className="rounded-2xl p-4"
+                style={{ background: 'white', border: c.featured ? '1px solid rgba(0,119,181,0.3)' : '1px solid rgba(0,119,181,0.12)', boxShadow: c.featured ? '0 2px 12px rgba(0,119,181,0.1)' : '0 1px 6px rgba(0,0,0,0.05)' }}>
+                <div className="flex items-start gap-3">
+                  <div className="w-9 h-9 rounded-full flex items-center justify-center text-white text-xs font-bold shrink-0"
+                    style={{ background: avatarGrad(displayNombre) }}>
+                    {initials(displayNombre)}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-start justify-between gap-2">
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <p className="text-slate-900 text-sm font-semibold leading-tight">{displayNombre}</p>
+                          {c.featured && <span style={{ fontSize:10, color:'#d97706' }}>⭐</span>}
+                        </div>
+                        <p className="text-slate-500 text-xs mt-0.5">{c.titulo}</p>
+                        {c.rating && (
+                          <p style={{ color:'#f59e0b', fontSize:13, letterSpacing:1, marginTop:2 }}>
+                            {'★'.repeat(c.rating)}{'☆'.repeat(5 - c.rating)}
+                          </p>
+                        )}
+                      </div>
+                      {isValidLinkedIn(c.linkedin_url) && (
+                        <a href={c.linkedin_url} target="_blank" rel="noopener noreferrer"
+                          className="shrink-0 mt-0.5 transition-opacity hover:opacity-70"
+                          style={{ color: '#0077B5' }} title="Ver perfil de LinkedIn">
+                          <LinkedInIcon className="w-4 h-4" />
+                        </a>
+                      )}
                     </div>
-                    {isValidLinkedIn(c.linkedin_url) && (
-                      <a href={c.linkedin_url} target="_blank" rel="noopener noreferrer"
-                        className="shrink-0 mt-0.5 transition-opacity hover:opacity-70"
-                        style={{ color: '#0077B5' }} title="Ver perfil de LinkedIn">
-                        <LinkedInIcon className="w-4 h-4" />
-                      </a>
+                    <p className="text-slate-600 text-sm mt-2 leading-relaxed">"{displayComentario}"</p>
+                    {c.admin_reply && (
+                      <div className="mt-2 rounded-xl px-3 py-2" style={{ background:'rgba(0,119,181,0.06)', borderLeft:'3px solid #0077B5' }}>
+                        <p className="text-xs font-semibold" style={{ color:'#0077B5' }}>OptimizaLK responde:</p>
+                        <p className="text-xs mt-0.5" style={{ color:'#374151' }}>{c.admin_reply}</p>
+                      </div>
                     )}
                   </div>
-                  <p className="text-slate-600 text-sm mt-2 leading-relaxed">"{c.comentario}"</p>
                 </div>
               </div>
-            </div>
-          ))}
+            )
+          })}
         </div>
       )}
 
@@ -152,6 +170,26 @@ export default function CommentsSection() {
               style={{ background: '#f8fafc', border: '1px solid rgba(0,119,181,0.18)', color: '#0d2137' }}
             />
           ))}
+          {/* Star rating — optional */}
+          <div>
+            <p className="text-xs text-slate-500 mb-1.5">Calificación (opcional)</p>
+            <div className="flex gap-1">
+              {[1,2,3,4,5].map(n => (
+                <button key={n} type="button"
+                  onClick={() => setForm(f => ({ ...f, rating: f.rating === n ? 0 : n }))}
+                  style={{ fontSize:22, color: n <= form.rating ? '#f59e0b' : '#d1d5db', lineHeight:1, background:'none', border:'none', cursor:'pointer', padding:'2px 4px' }}>
+                  {n <= form.rating ? '★' : '☆'}
+                </button>
+              ))}
+              {form.rating > 0 && (
+                <button type="button" onClick={() => setForm(f => ({ ...f, rating: 0 }))}
+                  style={{ fontSize:11, color:'#94a3b8', background:'none', border:'none', cursor:'pointer', marginLeft:4 }}>
+                  quitar
+                </button>
+              )}
+            </div>
+          </div>
+
           <div className="relative">
             <textarea required
               value={form.comentario}
