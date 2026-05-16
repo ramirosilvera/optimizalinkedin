@@ -1120,6 +1120,27 @@ export default {
         }
       }
 
+      // ── Product Intelligence — overview + funnel + trend + AI breakdown ────────
+      if (body.action === 'admin_analytics_overview') {
+        try {
+          const rpcPost = (fn, params = {}) => supabaseServiceFetch(env, `rpc/${fn}`, {
+            method: 'POST', body: JSON.stringify(params),
+          })
+          const [overviewRes, funnelRes, trendRes, aiRes] = await Promise.all([
+            rpcPost('get_product_overview'),
+            rpcPost('get_product_funnel'),
+            rpcPost('get_weekly_activity_trend', { p_weeks: 8 }),
+            rpcPost('get_ai_feature_breakdown_30d'),
+          ])
+          const [overview, funnel, trend, ai_features] = await Promise.all([
+            overviewRes.json(), funnelRes.json(), trendRes.json(), aiRes.json(),
+          ])
+          return new Response(JSON.stringify({ ok: true, overview, funnel, trend, ai_features }), { status: 200, headers: corsHeaders })
+        } catch (e) {
+          return new Response(JSON.stringify({ ok: false, error: e.message }), { status: 500, headers: corsHeaders })
+        }
+      }
+
       return new Response(JSON.stringify({ error: 'Acción admin desconocida' }), { status: 400, headers: corsHeaders })
     }
 

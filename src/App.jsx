@@ -1707,6 +1707,7 @@ JSON:
     setInterviewLoading(true)
     setStep(STEPS.INTERVIEW_FEEDBACK)
     setInterviewError('')
+    const _tInterview = Date.now()
 
     const transcripcion = answers
       .map((a, i) => `Pregunta ${i + 1}: ${a.pregunta}\nRespuesta: ${a.respuesta}`)
@@ -1766,7 +1767,7 @@ Generá el feedback en este JSON exacto:
       if (candidate?.finishReason === 'MAX_TOKENS') throw new Error('Respuesta demasiado larga. Intentá de nuevo.')
       const parsed = parseAIJson(extractAIText(data), AI_DEFAULTS.interview_feedback, 'Error al procesar el feedback. Intentá de nuevo.')
       setInterviewFeedback(parsed)
-      trackEvent('entrevista_completada', { puntaje: parsed.puntaje_entrevista })
+      trackTiming('entrevista_completada', _tInterview, { puntaje: parsed.puntaje_entrevista })
       saveEntrevista(parsed, answers).catch(err => console.error('[entrevistas save]', err))
       saveToHistorial('entrevista', { feedback: parsed, respuestas: answers }, 'Simulación de entrevista')
     } catch (err) {
@@ -1788,6 +1789,7 @@ Generá el feedback en este JSON exacto:
     setStarLoading(true)
     setStarError('')
     setStarFeedback(null)
+    const _tStar = Date.now()
     const pregunta = STAR_QUESTIONS[starQuestionIdx]
     const userPrompt = `Pregunta de entrevista: "${pregunta}"\n\nRespuesta del candidato:\n"${starAnswer}"\n\nEvaluá si la respuesta aplica la metodología STAR. Respondé con este JSON exacto:\n{\n  "puntaje": número del 1 al 10,\n  "situacion": { "presente": true/false, "comentario": "max 1 oración" },\n  "tarea": { "presente": true/false, "comentario": "max 1 oración" },\n  "accion": { "presente": true/false, "comentario": "max 1 oración" },\n  "resultado": { "presente": true/false, "comentario": "max 1 oración" },\n  "sugerencia_clave": "1 mejora concreta y específica para esta respuesta"\n}`
     const controller = new AbortController()
@@ -1812,7 +1814,7 @@ Generá el feedback en este JSON exacto:
       const data = await res.json()
       const parsed = parseAIJson(extractAIText(data), AI_DEFAULTS.star_feedback, 'La IA devolvió una respuesta inesperada. Intentá de nuevo.')
       setStarFeedback(parsed)
-      trackEvent('star_feedback_received', { puntaje: parsed.puntaje, question_idx: starQuestionIdx })
+      trackTiming('star_feedback_received', _tStar, { puntaje: parsed.puntaje, question_idx: starQuestionIdx })
       saveStarPractica(pregunta, starAnswer, parsed).catch(err => console.error('[star_practicas save]', err))
     } catch (err) {
       trackError('star', err.isRateLimit ? 'rate_limit' : err.name === 'AbortError' ? 'timeout' : 'api_error')

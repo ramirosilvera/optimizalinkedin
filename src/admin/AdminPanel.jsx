@@ -11,14 +11,15 @@ const C = {
 }
 
 const TABS = [
-  { id:'dashboard',   label:'Dashboard',    icon:'📊' },
-  { id:'users',       label:'Usuarios',     icon:'👥' },
-  { id:'premium',     label:'Premium',      icon:'⭐' },
-  { id:'revenue',     label:'Revenue',      icon:'💰' },
-  { id:'codes',       label:'Códigos',      icon:'🎫' },
-  { id:'comentarios', label:'Comentarios',  icon:'💬' },
-  { id:'logs',        label:'Logs',         icon:'📋' },
-  { id:'ia',          label:'IA',           icon:'🤖' },
+  { id:'dashboard',    label:'Dashboard',     icon:'📊' },
+  { id:'users',        label:'Usuarios',      icon:'👥' },
+  { id:'premium',      label:'Premium',       icon:'⭐' },
+  { id:'revenue',      label:'Revenue',       icon:'💰' },
+  { id:'inteligencia', label:'Inteligencia',  icon:'🧠' },
+  { id:'codes',        label:'Códigos',       icon:'🎫' },
+  { id:'comentarios',  label:'Comentarios',   icon:'💬' },
+  { id:'logs',         label:'Logs',          icon:'📋' },
+  { id:'ia',           label:'IA',            icon:'🤖' },
 ]
 
 // Gemini 2.5 Flash Lite pricing (USD per token)
@@ -1621,6 +1622,639 @@ function RevenueTab({ adminFetch }) {
   )
 }
 
+// ══════════════════════════════════════════════════════════════════════════════
+// ── Inteligencia Tab — Product Intelligence Hub ───────────────────────────────
+// ══════════════════════════════════════════════════════════════════════════════
+
+const INTEL_SUBTABS = [
+  { id:'overview',  label:'Overview'   },
+  { id:'funnels',   label:'Funnels'    },
+  { id:'friccion',  label:'Diagnóstico'},
+  { id:'insights',  label:'Insights'   },
+  { id:'tracking',  label:'Tracking'   },
+]
+
+const SEVERITY_STYLES = {
+  danger:  { bg:'#fef2f2', border:'#fecaca', icon:'🔴', label:'Crítico',  text:'#dc2626' },
+  warning: { bg:'#fffbeb', border:'#fde68a', icon:'🟡', label:'Atención', text:'#92400e' },
+  success: { bg:'#f0fdf4', border:'#bbf7d0', icon:'🟢', label:'Bien',     text:'#15803d' },
+  info:    { bg:'#f0f9ff', border:'#bae6fd', icon:'🔵', label:'Info',     text:'#0369a1' },
+}
+
+function fmtN(n) { return n == null ? '—' : n >= 1000 ? `${(n/1000).toFixed(1)}k` : String(Math.round(n)) }
+function pct(num, den) { return den > 0 ? `${(num / den * 100).toFixed(1)}%` : '—' }
+function scorePct(num, den) { return den > 0 ? Math.min(100, Math.round(num / den * 100)) : 0 }
+
+// ── Sub-tab navigation ────────────────────────────────────────────────────────
+function IntelSubNav({ active, onChange }) {
+  return (
+    <div style={{ display:'flex', gap:4, marginBottom:20, flexWrap:'wrap' }}>
+      {INTEL_SUBTABS.map(t => (
+        <button key={t.id} onClick={() => onChange(t.id)} style={{
+          padding:'6px 14px', borderRadius:8, border:'1px solid',
+          fontSize:12, fontWeight:600, cursor:'pointer',
+          background: active === t.id ? '#0077B5' : 'white',
+          borderColor: active === t.id ? '#0077B5' : '#e2e8f0',
+          color: active === t.id ? 'white' : '#475569',
+        }}>{t.label}</button>
+      ))}
+    </div>
+  )
+}
+
+// ── KPI card with optional trend ──────────────────────────────────────────────
+function IKpiCard({ label, value, sub, color = '#0077B5', icon }) {
+  return (
+    <div style={{ ...C.card, padding:'16px 14px', textAlign:'center', minWidth:100, flex:1 }}>
+      {icon && <div style={{ fontSize:20, marginBottom:4 }}>{icon}</div>}
+      <div style={{ fontSize:24, fontWeight:800, color, lineHeight:1, letterSpacing:'-0.5px' }}>{value ?? '—'}</div>
+      <div style={{ fontSize:11, fontWeight:700, color:'#64748b', marginTop:4 }}>{label}</div>
+      {sub && <div style={{ fontSize:10, color:'#94a3b8', marginTop:2 }}>{sub}</div>}
+    </div>
+  )
+}
+
+// ── Health gauge (SVG half-circle) ────────────────────────────────────────────
+function HealthGauge({ score, label, color }) {
+  const R = 44, cx = 55, cy = 54
+  const toRad = d => d * Math.PI / 180
+  const clampedScore = Math.max(0, Math.min(100, score))
+  const sweepDeg = (clampedScore / 100) * 180
+  const startX = cx - R, startY = cy
+  const endX = cx + R * Math.cos(toRad(-180 + sweepDeg))
+  const endY = cy + R * Math.sin(toRad(-180 + sweepDeg))
+  const largeArc = sweepDeg > 180 ? 1 : 0
+  const scoreColor = score >= 70 ? '#16a34a' : score >= 40 ? '#f59e0b' : '#dc2626'
+  return (
+    <div style={{ ...C.card, padding:'14px 10px', textAlign:'center', flex:1, minWidth:120 }}>
+      <svg width={110} height={72} viewBox="0 0 110 72" style={{ display:'block', margin:'0 auto' }}>
+        <path d={`M ${cx - R} ${cy} A ${R} ${R} 0 0 1 ${cx + R} ${cy}`}
+          fill="none" stroke="#e2e8f0" strokeWidth={10} />
+        {clampedScore > 0 && (
+          <path d={`M ${startX} ${startY} A ${R} ${R} 0 ${largeArc} 1 ${endX} ${endY}`}
+            fill="none" stroke={color || scoreColor} strokeWidth={10} strokeLinecap="round" />
+        )}
+        <text x={cx} y={cy + 2} textAnchor="middle" fontSize={18} fontWeight="800" fill={color || scoreColor}>{clampedScore}</text>
+        <text x={cx} y={70} textAnchor="middle" fontSize={9} fill="#64748b">{label}</text>
+      </svg>
+    </div>
+  )
+}
+
+// ── Sparkline (SVG polyline) ──────────────────────────────────────────────────
+function Sparkline({ values, color = '#0077B5', height = 32 }) {
+  if (!values?.length) return null
+  const max = Math.max(...values, 1)
+  const W = 80
+  const pts = values.map((v, i) => {
+    const x = (i / (values.length - 1)) * W
+    const y = height - (v / max) * (height - 4) - 2
+    return `${x},${y}`
+  }).join(' ')
+  return (
+    <svg width={W} height={height} style={{ display:'block' }}>
+      <polyline points={pts} fill="none" stroke={color} strokeWidth={2} strokeLinejoin="round" />
+    </svg>
+  )
+}
+
+// ── Bar chart (SVG grouped) ───────────────────────────────────────────────────
+function BarChart({ data, keys, colors, keyLabels, height = 130 }) {
+  if (!data?.length) return <Empty text="Sin datos de tendencia aún" />
+  const maxVal = Math.max(1, ...data.flatMap(d => keys.map(k => d[k] || 0)))
+  const W = 560, PAD = { t:8, r:10, b:28, l:28 }
+  const cW = W - PAD.l - PAD.r
+  const cH = height - PAD.t - PAD.b
+  const colW = cW / data.length
+  const groupW = colW * 0.82
+  const eachW = Math.floor(groupW / keys.length)
+
+  return (
+    <div style={{ overflowX:'auto' }}>
+      <svg viewBox={`0 0 ${W} ${height}`} style={{ width:'100%', minWidth:260, maxHeight:height + 20 }}>
+        {/* Y gridlines */}
+        {[0.25, 0.5, 0.75, 1].map(f => {
+          const y = PAD.t + cH - f * cH
+          return <line key={f} x1={PAD.l} y1={y} x2={W - PAD.r} y2={y} stroke="#f1f5f9" strokeWidth={1} />
+        })}
+        {data.map((d, i) => (
+          <g key={i} transform={`translate(${PAD.l + i * colW},0)`}>
+            {keys.map((k, ki) => {
+              const val = d[k] || 0
+              const bH = val > 0 ? Math.max(2, (val / maxVal) * cH) : 0
+              const x = (colW - groupW) / 2 + ki * eachW
+              return (
+                <rect key={k} x={x} y={PAD.t + cH - bH} width={Math.max(1, eachW - 2)} height={bH}
+                  fill={colors[ki]} rx={2} opacity={0.85} />
+              )
+            })}
+            <text x={colW / 2} y={height - 6} fontSize={8} textAnchor="middle" fill="#94a3b8">{d.week}</text>
+          </g>
+        ))}
+        {[0, 0.5, 1].map((f, i) => (
+          <text key={i} x={PAD.l - 3} y={PAD.t + cH - f * cH + 4} fontSize={7} textAnchor="end" fill="#94a3b8">
+            {Math.round(maxVal * f)}
+          </text>
+        ))}
+      </svg>
+      <div style={{ display:'flex', gap:12, justifyContent:'center', flexWrap:'wrap', marginTop:4 }}>
+        {keys.map((k, i) => (
+          <div key={k} style={{ display:'flex', alignItems:'center', gap:4, fontSize:11, color:'#64748b' }}>
+            <span style={{ width:10, height:10, borderRadius:2, background:colors[i], display:'inline-block' }} />
+            {keyLabels[i]}
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
+
+// ── Funnel chart (horizontal bars) ───────────────────────────────────────────
+function FunnelBar({ stages }) {
+  if (!stages?.length) return <Empty text="Sin datos de funnel" />
+  const maxCount = Math.max(1, stages[0]?.count || 1)
+  const COLORS = ['#0077B5','#0ea5e9','#38bdf8','#7dd3fc','#bae6fd']
+  return (
+    <div style={{ display:'flex', flexDirection:'column', gap:10 }}>
+      {stages.map((s, i) => {
+        const prev = stages[i - 1]
+        const dropPct = prev && prev.count > 0 ? Math.round((1 - s.count / prev.count) * 100) : null
+        const barW = Math.max(4, (s.count / maxCount) * 100)
+        return (
+          <div key={i}>
+            <div style={{ display:'flex', alignItems:'center', gap:10, marginBottom:4 }}>
+              <div style={{ width:150, fontSize:12, color:'#475569', textAlign:'right', flexShrink:0, fontWeight:500 }}>
+                {s.stage}
+              </div>
+              <div style={{ flex:1, background:'#f1f5f9', borderRadius:6, height:26, overflow:'hidden' }}>
+                <div style={{
+                  height:'100%', borderRadius:6, width:`${barW}%`,
+                  background:COLORS[i] || '#0077B5',
+                  transition:'width 0.6s ease',
+                }} />
+              </div>
+              <div style={{ width:120, fontSize:12, fontWeight:700, color:'#0d2137', flexShrink:0 }}>
+                {fmtN(s.count)} <span style={{ color:'#94a3b8', fontWeight:500 }}>({s.pct}%)</span>
+              </div>
+            </div>
+            {dropPct !== null && dropPct > 0 && (
+              <div style={{ textAlign:'right', paddingRight:130, fontSize:10, color:'#dc2626', marginBottom:2 }}>
+                ↓ -{dropPct}% drop-off
+              </div>
+            )}
+          </div>
+        )
+      })}
+    </div>
+  )
+}
+
+// ── Issue / friction card ─────────────────────────────────────────────────────
+function IssueCard({ severity = 'warning', issue, detail, cause }) {
+  const s = SEVERITY_STYLES[severity] || SEVERITY_STYLES.info
+  return (
+    <div style={{ background:s.bg, border:`1px solid ${s.border}`, borderRadius:10, padding:'12px 14px', marginBottom:8 }}>
+      <div style={{ display:'flex', alignItems:'center', gap:8, marginBottom:4 }}>
+        <span style={{ fontSize:14 }}>{s.icon}</span>
+        <span style={{ fontWeight:700, fontSize:13, color:s.text }}>{issue}</span>
+        <span style={{ marginLeft:'auto', fontSize:10, fontWeight:600, color:s.text, background:`${s.border}60`, borderRadius:99, padding:'2px 8px' }}>{s.label}</span>
+      </div>
+      <div style={{ fontSize:12, color:'#475569', marginBottom:cause ? 6 : 0 }}>{detail}</div>
+      {cause && <div style={{ fontSize:11, color:'#64748b', fontStyle:'italic' }}>Causa probable: {cause}</div>}
+    </div>
+  )
+}
+
+// ── Insight card ──────────────────────────────────────────────────────────────
+function InsightCard({ severity, title, desc, action }) {
+  const s = SEVERITY_STYLES[severity] || SEVERITY_STYLES.info
+  return (
+    <div style={{ background:'white', border:`1px solid ${s.border}`, borderLeft:`4px solid ${s.text}`, borderRadius:10, padding:'14px 16px', marginBottom:10 }}>
+      <div style={{ display:'flex', alignItems:'center', gap:8, marginBottom:6 }}>
+        <span>{s.icon}</span>
+        <span style={{ fontWeight:700, fontSize:13, color:'#0d2137' }}>{title}</span>
+        <span style={{ marginLeft:'auto', fontSize:10, fontWeight:600, color:s.text, background:s.bg, border:`1px solid ${s.border}`, borderRadius:99, padding:'2px 8px' }}>{s.label}</span>
+      </div>
+      <p style={{ margin:0, fontSize:12, color:'#475569', lineHeight:1.5 }}>{desc}</p>
+      {action && <div style={{ marginTop:8, fontSize:11, color:'#0077B5', fontWeight:600 }}>Acción: {action}</div>}
+    </div>
+  )
+}
+
+// ── Health score computations ────────────────────────────────────────────────
+function computeHealthScores(ov) {
+  if (!ov) return { onboarding:0, engagement:0, conversion:0, platform:0 }
+  const onboarding = scorePct(ov.users_analysis, ov.total_users)
+  const engagement = scorePct(ov.users_cv, ov.users_analysis)
+  const conversionRaw = ov.total_users > 0 ? ov.premium_users / ov.total_users : 0
+  const conversion = Math.min(100, Math.round(conversionRaw / 0.12 * 100))
+  const aiErr = ov.ai_requests_30d > 0 ? ov.ai_errors_30d / ov.ai_requests_30d : 0
+  const platform = Math.min(100, Math.max(0, Math.round(100 - aiErr * 500)))
+  return { onboarding, engagement, conversion, platform }
+}
+
+// ── Auto-insights ─────────────────────────────────────────────────────────────
+function generateInsights(ov) {
+  if (!ov) return []
+  const insights = []
+  const tu = ov.total_users || 0
+  const ua = ov.users_analysis || 0
+  const uc = ov.users_cv || 0
+  const pr = ov.premium_users || 0
+  const air = ov.ai_requests_30d || 0
+  const aie = ov.ai_errors_30d || 0
+  const fp = ov.failed_payments_30d || 0
+  const can = ov.events_cancelled_30d || 0
+  const lat = ov.avg_ai_latency_ms || 0
+
+  if (tu > 10 && ua / tu < 0.5)
+    insights.push({ severity:'danger', title:'Bajo onboarding', desc:`Solo el ${Math.round(ua/tu*100)}% de los usuarios hicieron al menos 1 análisis.`, action:'Revisá el CTA inicial y el flujo de bienvenida.' })
+
+  if (ua > 5 && uc / ua < 0.4)
+    insights.push({ severity:'warning', title:'Drop-off análisis → CV', desc:`Solo el ${Math.round(uc/ua*100)}% de quienes analizaron generaron un CV.`, action:'Hacé el CTA de CV más prominente en la pantalla de resultados.' })
+
+  if (tu > 20 && pr / tu < 0.03)
+    insights.push({ severity:'danger', title:'Conversión Premium crítica', desc:`${(pr/tu*100).toFixed(1)}% de conversión a premium. La meta mínima viable es 3%.`, action:'Revisá visibilidad del upsell, precio percibido y propuesta de valor premium.' })
+  else if (tu > 20 && pr / tu < 0.08)
+    insights.push({ severity:'warning', title:'Conversión Premium mejorable', desc:`${(pr/tu*100).toFixed(1)}% de conversión. Meta saludable: 8–15%.`, action:'Probá mejoras en el modal premium y en el momento de presentación del upsell.' })
+
+  if (air > 20 && aie / air > 0.10)
+    insights.push({ severity:'danger', title:'Alta tasa de errores IA', desc:`${Math.round(aie/air*100)}% de los requests a Gemini están fallando (${aie} de ${air} en 30d).`, action:'Revisá el tab IA y el estado de la API key.' })
+
+  if (lat > 20000)
+    insights.push({ severity:'warning', title:'Latencia IA elevada', desc:`Promedio de ${(lat/1000).toFixed(1)}s en respuestas de Gemini esta semana.`, action:'Considerá reducir el contexto enviado a la IA o hacer streaming.' })
+
+  if (fp >= 3)
+    insights.push({ severity:'warning', title:`${fp} pagos fallidos`, desc:`${fp} pagos rechazados por Mercado Pago en los últimos 30 días.`, action:'Revisá el tab Revenue > Pagos para ver los detalles por usuario.' })
+
+  if (can >= 3 && pr > 0 && can / pr > 0.05)
+    insights.push({ severity:'warning', title:'Churn elevado', desc:`${can} cancelaciones/vencimientos en 30d sobre ${pr} premiums activos.`, action:'Identificá el patrón de cancelación (timing, features usadas, etc.).' })
+
+  if (ov.mau > 0 && ov.wau / ov.mau > 0.6)
+    insights.push({ severity:'success', title:'Excelente retención semanal', desc:`El ${Math.round(ov.wau/ov.mau*100)}% de usuarios activos mensuales también son activos esta semana.` })
+
+  if (ua > 0 && uc / ua >= 0.65)
+    insights.push({ severity:'success', title:'Alto engagement análisis → CV', desc:`El ${Math.round(uc/ua*100)}% de quienes analizan también generan CV. Muy buen número.` })
+
+  if (tu > 20 && pr / tu >= 0.10)
+    insights.push({ severity:'success', title:'Buena conversión premium', desc:`${(pr/tu*100).toFixed(1)}% de los usuarios son premium. Por encima del promedio SaaS.` })
+
+  if (!insights.length)
+    insights.push({ severity:'info', title:'Sin alertas activas', desc:'Todos los indicadores dentro de rangos normales. Volvé cuando haya más actividad para ver insights automáticos.', action:null })
+
+  return insights.sort((a, b) => {
+    const order = { danger:0, warning:1, success:2, info:3 }
+    return (order[a.severity] ?? 4) - (order[b.severity] ?? 4)
+  })
+}
+
+// ── Friction detection ────────────────────────────────────────────────────────
+function detectFriction(ov, aiFeatures) {
+  if (!ov) return { ux:[], tech:[], revenue:[] }
+  const ux = [], tech = [], revenue = []
+  const tu = ov.total_users || 0, ua = ov.users_analysis || 0
+  const uc = ov.users_cv || 0, pr = ov.premium_users || 0
+  const ui = ov.users_interview || 0, us = ov.users_star || 0
+  const air = ov.ai_requests_30d || 0, aie = ov.ai_errors_30d || 0
+
+  if (tu > 5 && ua / tu < 0.55)
+    ux.push({ severity:'high', issue:'Abandono en onboarding', detail:`${Math.round((1 - ua/tu)*100)}% de usuarios no completa el primer análisis.`, cause:'Formulario inicial con fricción, falta de valor percibido o CTA débil en landing.' })
+
+  if (ua > 3 && uc / ua < 0.45)
+    ux.push({ severity:'medium', issue:'Drop-off análisis → CV', detail:`${Math.round((1 - uc/ua)*100)}% no pasa del análisis a generar un CV.`, cause:'El CTA de CV puede no ser visible o el flujo post-análisis no lo incentiva suficientemente.' })
+
+  const advUsers = Math.max(ui, us)
+  if (tu > 15 && advUsers / tu < 0.08)
+    ux.push({ severity:'low', issue:'Features avanzadas poco descubiertas', detail:`Entrevista y STAR tienen adopción < 8% del total de usuarios.`, cause:'Estas features pueden no ser visibles o estar poco promovidas luego del análisis.' })
+
+  if (air > 10 && aie / air > 0.05)
+    tech.push({ severity: aie/air > 0.15 ? 'high' : 'medium', issue:`Errores IA: ${(aie/air*100).toFixed(1)}%`, detail:`${aie} errores en ${air} llamadas (30d). Impacta directamente la experiencia del usuario.`, cause:'Rate limits de Gemini, API key con cuota agotada, o timeouts por prompts largos.' })
+
+  if (ov.avg_ai_latency_ms > 18000)
+    tech.push({ severity:'medium', issue:`Latencia IA: ${(ov.avg_ai_latency_ms/1000).toFixed(1)}s`, detail:'Las respuestas de Gemini tardan más de 18s en promedio esta semana.', cause:'Prompts demasiado largos o modelo bajo presión. Considera optimizar el contexto.' })
+
+  if (ov.failed_payments_30d >= 2)
+    revenue.push({ severity:'high', issue:`${ov.failed_payments_30d} pagos fallidos`, detail:`Pagos rechazados por Mercado Pago en los últimos 30 días.`, cause:'Tarjetas vencidas, fondos insuficientes, o límites de procesamiento de MP.' })
+
+  if (pr > 0 && ov.events_cancelled_30d / pr > 0.08)
+    revenue.push({ severity:'high', issue:'Churn rate elevado', detail:`${ov.events_cancelled_30d} cancelaciones/vencimientos sobre ${pr} premiums activos.`, cause:'Revisá si hay un patrón temporal o de features antes de la cancelación.' })
+
+  if (ov.new_subs_30d === 0 && tu > 30)
+    revenue.push({ severity:'medium', issue:'Sin nuevas suscripciones (30d)', detail:'No se registraron nuevos pagos premium en los últimos 30 días.', cause:'Evaluar visibilidad del flujo premium, precio actual o saturación del segmento.' })
+
+  return { ux, tech, revenue }
+}
+
+// ── Tracking coverage audit (static based on codebase analysis) ───────────────
+const TRACKING_EVENTS = [
+  { category:'Onboarding',  event:'analysis_started',            params:'mode, has_photo',              ok:true  },
+  { category:'Onboarding',  event:'analysis_completed',          params:'duration_ms, puntaje, nivel_seo, mode', ok:true  },
+  { category:'Onboarding',  event:'cuestionario_completado',     params:'—',                            ok:true  },
+  { category:'Onboarding',  event:'paso_completado',             params:'paso, id',                     ok:true  },
+  { category:'CV',          event:'cv_generation_started',       params:'has_pre_answers, has_analysis', ok:true  },
+  { category:'CV',          event:'cv_generation_completed',     params:'duration_ms, with_photo, template', ok:true },
+  { category:'CV',          event:'cv_quality_scored',           params:'score, nivel, gap_count',      ok:true  },
+  { category:'CV',          event:'cv_optimized',                params:'titular_changed, resumen_changed, bullets_improved', ok:true },
+  { category:'CV',          event:'cv_gap_form_submitted',       params:'answered_count',               ok:true  },
+  { category:'Entrevista',  event:'entrevista_iniciada',         params:'—',                            ok:true  },
+  { category:'Entrevista',  event:'entrevista_completada',       params:'puntaje',                      ok:true  },
+  { category:'STAR',        event:'star_training_start',         params:'via',                          ok:true  },
+  { category:'STAR',        event:'star_feedback_received',      params:'puntaje, question_idx',        ok:true  },
+  { category:'Premium',     event:'premium_modal_shown',         params:'—',                            ok:true  },
+  { category:'Premium',     event:'premium_checkout_opened',     params:'—',                            ok:true  },
+  { category:'Premium',     event:'premium_activated',           params:'—',                            ok:true  },
+  { category:'Auth',        event:'auth_login',                  params:'—',                            ok:true  },
+  { category:'Auth',        event:'auth_register',               params:'—',                            ok:true  },
+  { category:'Errores',     event:'app_error',                   params:'feature, error_type',          ok:true  },
+  { category:'Entrevista',  event:'timing_entrevista',           params:'duration_ms',                  ok:false, note:'Sin timing de duración total' },
+  { category:'STAR',        event:'timing_star',                 params:'duration_ms',                  ok:false, note:'Sin timing de duración total' },
+  { category:'Premium',     event:'premium_payment_success',     params:'amount',                       ok:false, note:'No hay evento client-side post-pago' },
+  { category:'Premium',     event:'subscription_renewal',        params:'—',                            ok:false, note:'Solo se registra en Worker, no en GA4' },
+  { category:'CV',          event:'cv_download',                 params:'template, format',             ok:false, note:'Solo "cv_save_desktop" sin parámetros' },
+]
+
+function TrackingSection() {
+  const categories = [...new Set(TRACKING_EVENTS.map(e => e.category))]
+  const total = TRACKING_EVENTS.length
+  const covered = TRACKING_EVENTS.filter(e => e.ok).length
+  const health = Math.round(covered / total * 100)
+  const healthColor = health >= 80 ? '#16a34a' : health >= 60 ? '#f59e0b' : '#dc2626'
+
+  return (
+    <div>
+      <div style={{ display:'flex', alignItems:'center', gap:16, marginBottom:20, flexWrap:'wrap' }}>
+        <div style={{ ...C.card, padding:'12px 20px', display:'flex', alignItems:'center', gap:12 }}>
+          <div style={{ fontSize:24, fontWeight:800, color:healthColor }}>{health}%</div>
+          <div>
+            <div style={{ fontSize:12, fontWeight:700, color:'#0d2137' }}>Cobertura de tracking</div>
+            <div style={{ fontSize:11, color:'#64748b' }}>{covered}/{total} eventos cubiertos</div>
+          </div>
+        </div>
+        <div style={{ fontSize:12, color:'#64748b', maxWidth:360 }}>
+          Auditoría basada en análisis del código fuente. Los eventos marcados con ✗ son oportunidades de mejora.
+        </div>
+      </div>
+
+      {categories.map(cat => {
+        const events = TRACKING_EVENTS.filter(e => e.category === cat)
+        return (
+          <div key={cat} style={{ marginBottom:16 }}>
+            <div style={{ fontSize:12, fontWeight:700, color:'#64748b', marginBottom:8, textTransform:'uppercase', letterSpacing:'0.5px' }}>{cat}</div>
+            <div style={{ ...C.card, overflow:'hidden' }}>
+              <table style={{ width:'100%', borderCollapse:'collapse' }}>
+                <thead>
+                  <tr style={{ background:'#f8fafc' }}>
+                    <Th ch="Estado" />
+                    <Th ch="Evento" />
+                    <Th ch="Parámetros" />
+                    <Th ch="Nota" />
+                  </tr>
+                </thead>
+                <tbody>
+                  {events.map((ev, i) => (
+                    <tr key={i}>
+                      <Td><span style={{ fontSize:14 }}>{ev.ok ? '✅' : '❌'}</span></Td>
+                      <Td><code style={{ fontSize:11, background:'#f1f5f9', padding:'2px 6px', borderRadius:4, color:'#0d2137' }}>{ev.event}</code></Td>
+                      <Td s={{ fontSize:11, color:'#64748b', maxWidth:200 }}>{ev.params}</Td>
+                      <Td s={{ fontSize:11, color: ev.ok ? '#94a3b8' : '#dc2626' }}>{ev.note || '—'}</Td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )
+      })}
+    </div>
+  )
+}
+
+// ── Overview section ──────────────────────────────────────────────────────────
+function OverviewSection({ ov, trend, aiFeatures }) {
+  const scores = computeHealthScores(ov)
+  const errorRate = ov && ov.ai_requests_30d > 0
+    ? `${(ov.ai_errors_30d / ov.ai_requests_30d * 100).toFixed(1)}%` : '0%'
+
+  return (
+    <div>
+      {/* KPIs — usuarios */}
+      <div style={{ fontSize:12, fontWeight:700, color:'#64748b', marginBottom:8, textTransform:'uppercase', letterSpacing:'0.5px' }}>Actividad</div>
+      <div style={{ display:'flex', gap:8, marginBottom:16, flexWrap:'wrap' }}>
+        <IKpiCard label="Usuarios totales" value={fmtN(ov?.total_users)}     icon="👥" />
+        <IKpiCard label="Premium activos"  value={fmtN(ov?.premium_users)}   icon="⭐" color="#f59e0b" />
+        <IKpiCard label="DAU"              value={fmtN(ov?.dau)}             icon="📅" sub="24h" />
+        <IKpiCard label="WAU"              value={fmtN(ov?.wau)}             icon="📅" sub="7d" />
+        <IKpiCard label="MAU"              value={fmtN(ov?.mau)}             icon="📅" sub="30d" />
+        <IKpiCard label="Nuevos (7d)"      value={fmtN(ov?.users_7d)}        icon="🆕" color="#16a34a" />
+      </div>
+
+      {/* KPIs — features */}
+      <div style={{ fontSize:12, fontWeight:700, color:'#64748b', marginBottom:8, textTransform:'uppercase', letterSpacing:'0.5px' }}>Uso de features (total acumulado)</div>
+      <div style={{ display:'flex', gap:8, marginBottom:16, flexWrap:'wrap' }}>
+        <IKpiCard label="Análisis"       value={fmtN(ov?.total_analyses)}   icon="🔍" sub={`${fmtN(ov?.analyses_7d)} esta semana`} />
+        <IKpiCard label="CVs generados"  value={fmtN(ov?.total_cvs)}        icon="📄" sub={`${fmtN(ov?.cvs_7d)} esta semana`} />
+        <IKpiCard label="Entrevistas"    value={fmtN(ov?.total_interviews)}  icon="🎤" />
+        <IKpiCard label="STAR sessions"  value={fmtN(ov?.total_star)}        icon="⭐" />
+        <IKpiCard label="Requests IA (30d)" value={fmtN(ov?.ai_requests_30d)} icon="🤖" sub={`${errorRate} errores`} color={ov?.ai_errors_30d > 0 ? '#dc2626' : '#0077B5'} />
+        <IKpiCard label="Latencia IA"    value={ov?.avg_ai_latency_ms ? `${(ov.avg_ai_latency_ms/1000).toFixed(1)}s` : '—'} icon="⚡" sub="promedio 7d" color={ov?.avg_ai_latency_ms > 15000 ? '#f59e0b' : '#0077B5'} />
+      </div>
+
+      {/* Health scores */}
+      <div style={{ fontSize:12, fontWeight:700, color:'#64748b', marginBottom:8, textTransform:'uppercase', letterSpacing:'0.5px' }}>Health scores</div>
+      <div style={{ display:'flex', gap:8, marginBottom:20, flexWrap:'wrap' }}>
+        <HealthGauge score={scores.onboarding} label="Onboarding"  color="#0077B5" />
+        <HealthGauge score={scores.engagement} label="Engagement"  color="#0ea5e9" />
+        <HealthGauge score={scores.conversion} label="Conversión"  color="#f59e0b" />
+        <HealthGauge score={scores.platform}   label="Plataforma"  color="#16a34a" />
+      </div>
+
+      {/* Trend chart */}
+      <div style={{ fontSize:12, fontWeight:700, color:'#64748b', marginBottom:10, textTransform:'uppercase', letterSpacing:'0.5px' }}>Tendencia semanal (8 semanas)</div>
+      <div style={{ ...C.card, padding:'16px 14px', marginBottom:16 }}>
+        <BarChart
+          data={trend || []}
+          keys={['new_users','analyses','cvs','new_premiums']}
+          colors={['#0077B5','#38bdf8','#7dd3fc','#f59e0b']}
+          keyLabels={['Nuevos usuarios','Análisis','CVs','Nuevos premiums']}
+          height={130}
+        />
+      </div>
+
+      {/* AI feature breakdown */}
+      {aiFeatures?.length > 0 && (
+        <>
+          <div style={{ fontSize:12, fontWeight:700, color:'#64748b', marginBottom:8, textTransform:'uppercase', letterSpacing:'0.5px' }}>IA por feature (30d)</div>
+          <div style={{ ...C.card, overflow:'hidden', marginBottom:16 }}>
+            <table style={{ width:'100%', borderCollapse:'collapse' }}>
+              <thead>
+                <tr><Th ch="Feature" /><Th ch="Requests" /><Th ch="Errores" /><Th ch="Error %" /><Th ch="Latencia" /><Th ch="Tokens" /></tr>
+              </thead>
+              <tbody>
+                {aiFeatures.map((f, i) => (
+                  <tr key={i}>
+                    <Td><code style={{ fontSize:11, background:'#f1f5f9', padding:'2px 6px', borderRadius:4 }}>{f.feature}</code></Td>
+                    <Td>{fmtN(f.requests)}</Td>
+                    <Td s={{ color: f.errors > 0 ? '#dc2626' : '#94a3b8' }}>{f.errors}</Td>
+                    <Td s={{ color: f.error_rate > 10 ? '#dc2626' : f.error_rate > 5 ? '#f59e0b' : '#16a34a', fontWeight:700 }}>{f.error_rate}%</Td>
+                    <Td s={{ color: f.avg_duration_ms > 20000 ? '#f59e0b' : '#475569' }}>{f.avg_duration_ms ? `${(f.avg_duration_ms/1000).toFixed(1)}s` : '—'}</Td>
+                    <Td>{fmtK(f.total_tokens)}</Td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </>
+      )}
+    </div>
+  )
+}
+
+// ── Funnels section ───────────────────────────────────────────────────────────
+function FunnelsSection({ ov, funnel }) {
+  const stages = funnel?.stages || []
+  return (
+    <div>
+      <div style={{ fontSize:12, fontWeight:700, color:'#64748b', marginBottom:12, textTransform:'uppercase', letterSpacing:'0.5px' }}>Funnel de producto — todos los tiempos</div>
+      <div style={{ ...C.card, padding:'20px 16px', marginBottom:20 }}>
+        <FunnelBar stages={stages} />
+      </div>
+
+      <div style={{ fontSize:12, fontWeight:700, color:'#64748b', marginBottom:12, textTransform:'uppercase', letterSpacing:'0.5px' }}>Adopción de features (usuarios únicos)</div>
+      <div style={{ ...C.card, padding:'16px', marginBottom:20 }}>
+        {[
+          { label:'Análisis de perfil', count: ov?.users_analysis, total: ov?.total_users, color:'#0077B5' },
+          { label:'Generación de CV',   count: ov?.users_cv,       total: ov?.total_users, color:'#0ea5e9' },
+          { label:'Simulador entrevista', count: ov?.users_interview, total: ov?.total_users, color:'#38bdf8' },
+          { label:'Entrenador STAR',    count: ov?.users_star,     total: ov?.total_users, color:'#7dd3fc' },
+          { label:'Premium',            count: ov?.premium_users,  total: ov?.total_users, color:'#f59e0b' },
+        ].map((row, i) => {
+          const pctVal = row.total > 0 ? (row.count / row.total * 100) : 0
+          return (
+            <div key={i} style={{ marginBottom:10 }}>
+              <div style={{ display:'flex', justifyContent:'space-between', fontSize:12, marginBottom:4 }}>
+                <span style={{ fontWeight:600, color:'#0d2137' }}>{row.label}</span>
+                <span style={{ color:'#64748b' }}>{fmtN(row.count)} / {fmtN(row.total)} usuarios ({pctVal.toFixed(1)}%)</span>
+              </div>
+              <div style={{ background:'#f1f5f9', borderRadius:6, height:8, overflow:'hidden' }}>
+                <div style={{ height:'100%', width:`${Math.max(0, Math.min(100, pctVal))}%`, background:row.color, borderRadius:6, transition:'width 0.5s' }} />
+              </div>
+            </div>
+          )
+        })}
+      </div>
+
+      <div style={{ fontSize:12, fontWeight:700, color:'#64748b', marginBottom:12, textTransform:'uppercase', letterSpacing:'0.5px' }}>Análisis → CV (cobertura)</div>
+      <div style={{ ...C.card, padding:'16px' }}>
+        <div style={{ display:'flex', gap:20, flexWrap:'wrap' }}>
+          <div style={{ textAlign:'center', padding:'12px 20px' }}>
+            <div style={{ fontSize:28, fontWeight:800, color:'#0077B5' }}>{pct(funnel?.users_both_analysis_cv || 0, ov?.users_analysis || 1)}</div>
+            <div style={{ fontSize:11, color:'#64748b', marginTop:4 }}>de quienes analizaron también generaron CV</div>
+            <div style={{ fontSize:10, color:'#94a3b8', marginTop:2 }}>{fmtN(funnel?.users_both_analysis_cv)} usuarios</div>
+          </div>
+          <div style={{ textAlign:'center', padding:'12px 20px' }}>
+            <div style={{ fontSize:28, fontWeight:800, color:'#f59e0b' }}>{pct(ov?.premium_users || 0, ov?.users_analysis || 1)}</div>
+            <div style={{ fontSize:11, color:'#64748b', marginTop:4 }}>de quienes analizaron se volvieron premium</div>
+          </div>
+          <div style={{ textAlign:'center', padding:'12px 20px' }}>
+            <div style={{ fontSize:28, fontWeight:800, color:'#16a34a' }}>{fmtN(ov?.total_analyses)}</div>
+            <div style={{ fontSize:11, color:'#64748b', marginTop:4 }}>análisis totales ({(ov?.total_analyses / Math.max(1, ov?.users_analysis) || 0).toFixed(1)}x por usuario)</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ── Main InteligenicaTab ──────────────────────────────────────────────────────
+function InteligenicaTab({ adminFetch }) {
+  const [subTab, setSubTab] = useState('overview')
+  const [data, setData] = useState(null)
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState('')
+
+  const load = useCallback(async () => {
+    setLoading(true); setError('')
+    const d = await adminFetch('admin_analytics_overview')
+    if (d?.ok) setData(d)
+    else setError(d?.error || 'Error al cargar analytics')
+    setLoading(false)
+  }, [adminFetch])
+
+  useEffect(() => { load() }, [load])
+
+  if (loading) return <div style={{ textAlign:'center', padding:60 }}><Spin /></div>
+  if (error)   return <ErrBox msg={error} onRetry={load} />
+
+  const ov = data?.overview || {}
+  const funnel = data?.funnel || {}
+  const trend = data?.trend || []
+  const aiFeatures = data?.ai_features || []
+  const insights = generateInsights(ov)
+  const friction = detectFriction(ov, aiFeatures)
+
+  const sectionStyle = { marginBottom:0 }
+
+  return (
+    <div style={sectionStyle}>
+      <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:16, flexWrap:'wrap', gap:8 }}>
+        <div>
+          <div style={{ fontSize:16, fontWeight:800, color:'#0d2137' }}>Inteligencia de Producto</div>
+          <div style={{ fontSize:12, color:'#64748b', marginTop:2 }}>KPIs, funnels, diagnóstico y tracking — actualizado ahora</div>
+        </div>
+        <button onClick={load} style={{ ...C.sec, fontSize:12 }}>Actualizar</button>
+      </div>
+
+      <IntelSubNav active={subTab} onChange={setSubTab} />
+
+      {subTab === 'overview' && <OverviewSection ov={ov} trend={trend} aiFeatures={aiFeatures} />}
+
+      {subTab === 'funnels' && <FunnelsSection ov={ov} funnel={funnel} />}
+
+      {subTab === 'friccion' && (
+        <div>
+          {friction.ux.length === 0 && friction.tech.length === 0 && friction.revenue.length === 0 ? (
+            <div style={{ ...C.card, padding:'24px', textAlign:'center', color:'#16a34a', fontWeight:600 }}>
+              Sin problemas detectados. Todo parece estar funcionando bien.
+            </div>
+          ) : (
+            <>
+              {friction.ux.length > 0 && (
+                <>
+                  <div style={{ fontSize:12, fontWeight:700, color:'#64748b', marginBottom:8, textTransform:'uppercase', letterSpacing:'0.5px' }}>UX / Flujo de usuario</div>
+                  {friction.ux.map((f, i) => <IssueCard key={i} {...f} />)}
+                </>
+              )}
+              {friction.tech.length > 0 && (
+                <>
+                  <div style={{ fontSize:12, fontWeight:700, color:'#64748b', marginTop:16, marginBottom:8, textTransform:'uppercase', letterSpacing:'0.5px' }}>Técnicos</div>
+                  {friction.tech.map((f, i) => <IssueCard key={i} {...f} />)}
+                </>
+              )}
+              {friction.revenue.length > 0 && (
+                <>
+                  <div style={{ fontSize:12, fontWeight:700, color:'#64748b', marginTop:16, marginBottom:8, textTransform:'uppercase', letterSpacing:'0.5px' }}>Revenue</div>
+                  {friction.revenue.map((f, i) => <IssueCard key={i} {...f} />)}
+                </>
+              )}
+            </>
+          )}
+        </div>
+      )}
+
+      {subTab === 'insights' && (
+        <div>
+          <div style={{ fontSize:12, color:'#64748b', marginBottom:14 }}>
+            {insights.length} insight{insights.length !== 1 ? 's' : ''} generados automáticamente a partir de los datos actuales.
+          </div>
+          {insights.map((ins, i) => <InsightCard key={i} {...ins} />)}
+        </div>
+      )}
+
+      {subTab === 'tracking' && <TrackingSection />}
+    </div>
+  )
+}
+
 // ── Main Panel — sin overlays, sin drawers ────────────────────────────────────
 export default function AdminPanel({ authToken, onClose }) {
   const [tab, setTab] = useState('dashboard')
@@ -1741,14 +2375,15 @@ export default function AdminPanel({ authToken, onClose }) {
           {/* Content */}
           <div className="adm-content">
             <div style={{ maxWidth:860 }}>
-              {tab === 'dashboard'   && <Dashboard     adminFetch={adminFetch} />}
-              {tab === 'users'       && <CrmUsersTab   adminFetch={adminFetch} />}
-              {tab === 'premium'     && <CrmUsersTab   adminFetch={adminFetch} defaultPremiumStatus="active" />}
-              {tab === 'revenue'     && <RevenueTab    adminFetch={adminFetch} />}
-              {tab === 'codes'       && <CodesTab      adminFetch={adminFetch} />}
-              {tab === 'comentarios' && <CommentsTab   adminFetch={adminFetch} />}
-              {tab === 'logs'        && <LogsTab       adminFetch={adminFetch} />}
-              {tab === 'ia'          && <IaTab         adminFetch={adminFetch} />}
+              {tab === 'dashboard'    && <Dashboard        adminFetch={adminFetch} />}
+              {tab === 'users'        && <CrmUsersTab      adminFetch={adminFetch} />}
+              {tab === 'premium'      && <CrmUsersTab      adminFetch={adminFetch} defaultPremiumStatus="active" />}
+              {tab === 'revenue'      && <RevenueTab       adminFetch={adminFetch} />}
+              {tab === 'inteligencia' && <InteligenicaTab  adminFetch={adminFetch} />}
+              {tab === 'codes'        && <CodesTab         adminFetch={adminFetch} />}
+              {tab === 'comentarios'  && <CommentsTab      adminFetch={adminFetch} />}
+              {tab === 'logs'         && <LogsTab          adminFetch={adminFetch} />}
+              {tab === 'ia'           && <IaTab            adminFetch={adminFetch} />}
             </div>
           </div>
         </div>
