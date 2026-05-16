@@ -4,7 +4,8 @@ import './index.css'
 import {
   WORKER_URL, SUPABASE_URL, SUPABASE_KEY, WORKER_HEADERS,
   EMAILJS_TEMPLATE_WELCOME, EMAILJS_TEMPLATE_CANCEL,
-  sendEmail, parseGeminiError, makeRateLimitError, trackEvent,
+  sendEmail, parseGeminiError, makeRateLimitError,
+  trackEvent, trackError, trackTiming, setGaUser,
   STEPS, LI_GRADIENT, CARD_STYLE, INPUT_STYLE, INPUT_ALT_STYLE,
   BTN_BACK_STYLE, BTN_GHOST_STYLE, RAMIRO_LINKEDIN_URL,
   COMPANY_LINKEDIN_URL, MAX_PDF_SIZE,
@@ -1130,6 +1131,12 @@ export default function App() {
   // Scroll al tope en cada cambio de paso (crítico en mobile)
   useEffect(() => { window.scrollTo({ top: 0, behavior: 'instant' }) }, [step])
 
+  // GA4: sincronizar contexto de usuario (user_type, is_premium) en cada evento
+  useEffect(() => { setGaUser(user) }, [user])
+
+  // GA4: trackear cuando el modal premium se abre (sin importar desde dónde)
+  useEffect(() => { if (showPremiumModal) trackEvent('premium_modal_shown') }, [showPremiumModal])
+
   // Aviso antes de cerrar pestaña si hay resultados
   useEffect(() => {
     if (step < STEPS.RESULTS) return
@@ -1605,7 +1612,9 @@ JSON:
     const controller = new AbortController()
     analysisAbortRef.current = controller
     const timeoutId = setTimeout(() => controller.abort(), 58000)
+    const _tAnalysis = Date.now()
     try {
+      trackEvent('analysis_started', { mode: sinPerfilMode ? 'sin_perfil' : 'con_perfil', has_photo: !!profilePhoto })
       if (!WORKER_URL) throw new Error('Worker URL no configurada. Verificá el secret VITE_WORKER_URL en GitHub.')
       const res = await fetch(WORKER_URL, {
         method: 'POST',
@@ -1634,7 +1643,7 @@ JSON:
       }
       const parsed = parseAIJson(extractAIText(data), AI_DEFAULTS.analyze_linkedin, 'Error al procesar la respuesta. Intentá de nuevo.')
       setResult(parsed)
-      trackEvent('analisis_recibido', { puntaje: parsed.puntaje_general, nivel_seo: parsed.nivel_seo })
+      trackTiming('analysis_completed', _tAnalysis, { puntaje: parsed.puntaje_general, nivel_seo: parsed.nivel_seo, mode: sinPerfilMode ? 'sin_perfil' : 'con_perfil' })
       if (localStorage.getItem('ol_premium') === '1') {
         setShowAnalisisConsent(true)
         trackEvent('analisis_consent_shown', { puntaje: parsed.puntaje_general })
@@ -1642,6 +1651,7 @@ JSON:
       setStep(STEPS.RESULTS)
       saveToHistorial('analisis', { ...parsed, fortalezas: parsed.fortalezas||[], areas_de_mejora: parsed.areas_de_mejora||[], palabras_clave_sugeridas: parsed.palabras_clave_sugeridas||[] }, parsed.nombre_titular || 'Análisis LinkedIn')
     } catch (err) {
+      trackError('analysis', err.isRateLimit ? 'rate_limit' : err.name === 'AbortError' ? 'timeout' : 'api_error')
       if (err.isRateLimit) { setStep(STEPS.PROFILE_INPUT) }
       else if (err.name === 'AbortError') {
         setAnalysisError('El análisis fue cancelado o tardó demasiado (90 s). Revisá tu conexión e intentá de nuevo.')
@@ -1760,6 +1770,7 @@ Generá el feedback en este JSON exacto:
       saveEntrevista(parsed, answers).catch(err => console.error('[entrevistas save]', err))
       saveToHistorial('entrevista', { feedback: parsed, respuestas: answers }, 'Simulación de entrevista')
     } catch (err) {
+      trackError('interview', err.isRateLimit ? 'rate_limit' : err.name === 'AbortError' ? 'timeout' : 'api_error')
       if (!err.isRateLimit) {
         const msg = err.name === 'AbortError' ? 'El análisis tardó demasiado. Intentá de nuevo.' : err.message || 'Error al generar el feedback.'
         setInterviewError(msg)
@@ -1804,6 +1815,7 @@ Generá el feedback en este JSON exacto:
       trackEvent('star_feedback_received', { puntaje: parsed.puntaje, question_idx: starQuestionIdx })
       saveStarPractica(pregunta, starAnswer, parsed).catch(err => console.error('[star_practicas save]', err))
     } catch (err) {
+      trackError('star', err.isRateLimit ? 'rate_limit' : err.name === 'AbortError' ? 'timeout' : 'api_error')
       if (!err.isRateLimit) setStarError(err.name === 'AbortError' ? 'El pedido tardó demasiado. Intentá de nuevo.' : err.message || 'No se pudo obtener el feedback.')
     } finally {
       clearTimeout(timeoutId)
@@ -2071,6 +2083,8 @@ JSON:
     const resolvedContacto = contacto && Object.keys(contacto).length ? contacto : (cvContacto || {})
     setCvContacto(resolvedContacto)
     setCvStage('drafting')
+    const _tCv = Date.now()
+    trackEvent('cv_generation_started', { has_pre_answers: Object.keys(preAnswers || {}).length > 0, has_analysis: !!analysisResult })
 
     const userPrompt = buildCvPromptBase(resolvedContacto, preAnswers, analysisResult, overrideProfileText, overrideQaHistory)
     const controller = new AbortController()
@@ -2096,7 +2110,7 @@ JSON:
       const cv = sanitizeCv(parseAIJson(extractAIText(data), AI_DEFAULTS.generate_cv, 'No se pudo interpretar el CV generado. Intentá de nuevo.'))
       setCvDraft(cv)
       saveCvGenerado({ contacto, cv }).catch(err => console.error('[cv_generados save]', err))
-      trackEvent('cv_draft_generated')
+      trackTiming('cv_generation_completed', _tCv, { with_photo: !!profilePhoto, template: cvTemplate })
 
       // Detectar fechas faltantes del lado del cliente antes del scoring IA
       const dateGaps = []
@@ -2150,6 +2164,7 @@ JSON:
         setCvStage('gap_form')
       }
     } catch (err) {
+      trackError('cv', err.isRateLimit ? 'rate_limit' : err.name === 'AbortError' ? 'timeout' : 'api_error')
       setCvStage('idle')
       if (!err.isRateLimit) setCvError(err.name === 'AbortError' ? 'El pedido tardó demasiado. Intentá de nuevo.' : err.message || 'No se pudo generar el CV.')
     } finally {

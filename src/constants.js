@@ -32,10 +32,34 @@ export function makeRateLimitError() {
   return Object.assign(new Error('RATE_LIMIT'), { isRateLimit: true })
 }
 
+// ── Analytics context compartido — se enriquece automáticamente en cada evento ──
+let _analyticsCtx = {}
+export const setAnalyticsContext = (ctx) => { _analyticsCtx = { ..._analyticsCtx, ...ctx } }
+
 export const trackEvent = (name, params = {}) => {
-  if (typeof window !== 'undefined' && typeof window.gtag === 'function') {
-    window.gtag('event', name, params)
-  }
+  if (typeof window === 'undefined' || typeof window.gtag !== 'function') return
+  window.gtag('event', name, {
+    device_type: window.innerWidth < 768 ? 'mobile' : 'desktop',
+    ..._analyticsCtx,
+    ...params,
+  })
+}
+
+// Error tracking — rellena el mayor punto ciego (catch silenciosos)
+export const trackError = (feature, error_type, extra = {}) =>
+  trackEvent('app_error', { feature, error_type, ...extra })
+
+// Timing helper — agrega duration_ms automáticamente
+export const trackTiming = (name, startMs, params = {}) =>
+  trackEvent(name, { duration_ms: Math.round(Date.now() - startMs), ...params })
+
+// Sincroniza contexto GA4 con el usuario autenticado
+export const setGaUser = (user) => {
+  if (typeof window === 'undefined' || typeof window.gtag !== 'function') return
+  const user_type = !user ? 'anonymous' : user.es_premium ? 'premium' : 'free'
+  setAnalyticsContext({ user_type })
+  window.gtag('set', 'user_properties', { user_type, is_premium: String(!!user?.es_premium) })
+  if (user?.id) window.gtag('set', { user_id: user.id })
 }
 
 export const STEPS = {
