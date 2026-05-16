@@ -14,6 +14,7 @@ const TABS = [
   { id:'dashboard',   label:'Dashboard',    icon:'📊' },
   { id:'users',       label:'Usuarios',     icon:'👥' },
   { id:'premium',     label:'Premium',      icon:'⭐' },
+  { id:'revenue',     label:'Revenue',      icon:'💰' },
   { id:'codes',       label:'Códigos',      icon:'🎫' },
   { id:'comentarios', label:'Comentarios',  icon:'💬' },
   { id:'logs',        label:'Logs',         icon:'📋' },
@@ -1216,6 +1217,410 @@ function IaTab({ adminFetch }) {
   )
 }
 
+// ── Revenue / Business Analytics ─────────────────────────────────────────────
+const EVENT_COLORS = {
+  subscribed: '#16a34a', renewed: '#0077B5', cancelled: '#dc2626',
+  paused: '#d97706', reactivated: '#059669', code_redeemed: '#7c3aed',
+  manual_grant: '#0891b2', manual_revoke: '#be123c', failed_payment: '#ea580c',
+  expired: '#64748b',
+}
+const EVENT_LABELS = {
+  subscribed: 'Alta nueva', renewed: 'Renovación', cancelled: 'Cancelación',
+  paused: 'Pausa', reactivated: 'Reactivación', code_redeemed: 'Código',
+  manual_grant: 'Alta manual', manual_revoke: 'Revocación', failed_payment: 'Pago fallido',
+  expired: 'Expirado',
+}
+const fmtARS  = n => `$${Number(n || 0).toLocaleString('es-AR')} ARS`
+const fmtPct  = n => `${Number(n || 0).toFixed(1)}%`
+const fmtTrend = (cur, prev) => {
+  if (!prev || prev === 0) return null
+  const pct = ((cur - prev) / prev) * 100
+  return { pct: Math.abs(pct).toFixed(0), up: pct >= 0 }
+}
+const LIMIT_EV = 20
+
+function KpiCard({ label, value, sub, trend, accent = '#0077B5' }) {
+  return (
+    <div style={{ flex:'1 1 140px', minWidth:130, padding:'14px 16px', borderRadius:12,
+      background:'white', border:'1px solid rgba(0,119,181,0.12)', boxShadow:'0 1px 4px rgba(0,0,0,0.05)' }}>
+      <div style={{ fontSize:11, color:'#64748b', textTransform:'uppercase', letterSpacing:1, marginBottom:6 }}>{label}</div>
+      <div style={{ fontSize:20, fontWeight:800, color: accent }}>{value}</div>
+      {sub   && <div style={{ fontSize:11, color:'#94a3b8', marginTop:3 }}>{sub}</div>}
+      {trend && <div style={{ fontSize:11, marginTop:4, color: trend.up ? '#16a34a' : '#dc2626', fontWeight:600 }}>
+        {trend.up ? '↑' : '↓'} {trend.pct}% vs período ant.
+      </div>}
+    </div>
+  )
+}
+
+function OriginBar({ label, amount, total, color }) {
+  const pct = total > 0 ? Math.round((amount / total) * 100) : 0
+  return (
+    <div style={{ marginBottom:10 }}>
+      <div style={{ display:'flex', justifyContent:'space-between', fontSize:12, color:'#475569', marginBottom:4 }}>
+        <span style={{ fontWeight:600 }}>{label}</span>
+        <span>{fmtARS(amount)} <span style={{ color:'#94a3b8' }}>({pct}%)</span></span>
+      </div>
+      <div style={{ height:7, borderRadius:4, background:'#f1f5f9' }}>
+        <div style={{ height:'100%', borderRadius:4, background:color, width:`${pct}%`, transition:'width 0.5s' }} />
+      </div>
+    </div>
+  )
+}
+
+function EventBadge({ type }) {
+  const color = EVENT_COLORS[type] || '#64748b'
+  return (
+    <span style={{ display:'inline-block', padding:'2px 8px', borderRadius:20, fontSize:10, fontWeight:700,
+      background: color + '18', color, border:`1px solid ${color}40`, whiteSpace:'nowrap' }}>
+      {EVENT_LABELS[type] || type}
+    </span>
+  )
+}
+
+function RevenueTab({ adminFetch }) {
+  const [stats,      setStats]      = useState(null)
+  const [monthly,    setMonthly]    = useState([])
+  const [events,     setEvents]     = useState([])
+  const [evTotal,    setEvTotal]    = useState(0)
+  const [evOffset,   setEvOffset]   = useState(0)
+  const [evFilter,   setEvFilter]   = useState('all')
+  const [payments,   setPayments]   = useState([])
+  const [pyTotal,    setPyTotal]    = useState(0)
+  const [pyOffset,   setPyOffset]   = useState(0)
+  const [loading,    setLoading]    = useState(true)
+  const [evLoading,  setEvLoading]  = useState(false)
+  const [pyLoading,  setPyLoading]  = useState(false)
+  const [error,      setError]      = useState('')
+  const [section,    setSection]    = useState('events') // 'events' | 'payments'
+
+  useEffect(() => { loadAll() }, [])
+  useEffect(() => { if (!loading) loadEvents(0) }, [evFilter])
+
+  async function loadAll() {
+    setLoading(true); setError('')
+    try {
+      const d = await adminFetch('admin_revenue_stats')
+      setStats(d.stats); setMonthly(Array.isArray(d.monthly) ? d.monthly : [])
+      await Promise.all([loadEvents(0), loadPayments(0)])
+    } catch (e) { setError(e.message) }
+    finally { setLoading(false) }
+  }
+
+  async function loadEvents(offset) {
+    setEvLoading(true)
+    try {
+      const d = await adminFetch('admin_subscription_events', { offset, event_type: evFilter })
+      setEvents(offset === 0 ? (d.rows || []) : prev => [...prev, ...(d.rows || [])])
+      setEvTotal(d.total || 0); setEvOffset(offset)
+    } catch {}
+    finally { setEvLoading(false) }
+  }
+
+  async function loadPayments(offset) {
+    setPyLoading(true)
+    try {
+      const d = await adminFetch('admin_payments_log', { offset })
+      setPayments(offset === 0 ? (d.rows || []) : prev => [...prev, ...(d.rows || [])])
+      setPyTotal(d.total || 0); setPyOffset(offset)
+    } catch {}
+    finally { setPyLoading(false) }
+  }
+
+  function exportRevenueCsv() {
+    if (!monthly.length) return
+    const header = 'Mes,Nuevos,Renovaciones,Cancelados,Revenue ARS'
+    const rows = monthly.map(m => `${m.month},${m.new_subs},${m.renewals},${m.cancelled},${m.revenue_ars}`)
+    const csv = [header, ...rows].join('\n')
+    const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv' }))
+    const a = document.createElement('a'); a.href = url; a.download = `revenue_${new Date().toISOString().slice(0,10)}.csv`; a.click()
+    URL.revokeObjectURL(url)
+  }
+
+  if (loading) return <div style={{ textAlign:'center', padding:40 }}><Spin /></div>
+  if (error)   return <ErrBox msg={error} onRetry={loadAll} />
+
+  const s = stats || {}
+  const revTotal = (s.rev_mp || 0) + (s.rev_promo || 0) + (s.rev_manual || 0)
+  const revTrend = fmtTrend(s.revenue_30d, s.revenue_prev_30d)
+  const subsTrend = fmtTrend(s.new_subs_30d, s.new_subs_prev_30d)
+  const last6 = monthly.slice(-6)
+
+  const EVENT_FILTER_OPTS = [
+    { v:'all', l:'Todos' }, { v:'subscribed', l:'Altas' }, { v:'renewed', l:'Renovaciones' },
+    { v:'cancelled', l:'Cancelaciones' }, { v:'code_redeemed', l:'Códigos' },
+    { v:'manual_grant', l:'Manual' }, { v:'failed_payment', l:'Fallidos' },
+  ]
+
+  return (
+    <div>
+      {/* Header */}
+      <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:20 }}>
+        <div>
+          <div style={{ fontSize:18, fontWeight:800, color:'#0d2137' }}>💰 Revenue Analytics</div>
+          <div style={{ fontSize:12, color:'#64748b', marginTop:2 }}>Monetización y ciclo de vida de suscripciones</div>
+        </div>
+        <div style={{ display:'flex', gap:8 }}>
+          <button onClick={exportRevenueCsv} style={{ fontSize:12, padding:'7px 14px', borderRadius:8,
+            border:'1px solid rgba(0,119,181,0.2)', background:'#f8fafc', color:'#0077B5', cursor:'pointer', fontWeight:600 }}>
+            ↓ CSV Tendencia
+          </button>
+          <button onClick={loadAll} style={{ fontSize:12, padding:'7px 14px', borderRadius:8,
+            border:'1px solid rgba(0,119,181,0.2)', background:'#f8fafc', color:'#475569', cursor:'pointer' }}>
+            ↻ Actualizar
+          </button>
+        </div>
+      </div>
+
+      {/* KPI Row 1: Revenue */}
+      <div style={{ display:'flex', flexWrap:'wrap', gap:10, marginBottom:10 }}>
+        <KpiCard label="MRR estimado"   value={fmtARS(s.mrr)}  sub={`${s.active_subs || 0} suscripciones × $${(s.monthly_price||3000).toLocaleString('es-AR')}/mes`} accent="#0077B5" />
+        <KpiCard label="ARR estimado"   value={fmtARS(s.arr)}  sub="Anualización del MRR actual" accent="#0077B5" />
+        <KpiCard label="Rev. 30 días"   value={fmtARS(s.revenue_30d)} trend={revTrend} sub={`${s.payments_30d || 0} pagos aprobados`} accent="#16a34a" />
+        <KpiCard label="Rev. este mes"  value={fmtARS(s.revenue_this_month)} sub={`${s.payments_this_month || 0} transacciones`} accent="#059669" />
+        <KpiCard label="Rev. total"     value={fmtARS(s.revenue_total)} sub="Pagos MP aprobados" accent="#0891b2" />
+      </div>
+
+      {/* KPI Row 2: Subs */}
+      <div style={{ display:'flex', flexWrap:'wrap', gap:10, marginBottom:20 }}>
+        <KpiCard label="Activos ahora"  value={s.active_subs || 0}   sub={`${s.active_premium || 0} con acceso vigente`} accent="#7c3aed" />
+        <KpiCard label="Nuevos (30d)"   value={s.new_subs_30d || 0}  trend={subsTrend} sub="Primeras altas" accent="#16a34a" />
+        <KpiCard label="Renovaciones"   value={s.renewals_30d || 0}  sub="Últimos 30 días" accent="#0077B5" />
+        <KpiCard label="Cancelados"     value={s.cancelled_30d || 0} sub="Últimos 30 días" accent="#dc2626" />
+        <KpiCard label="Churn rate"     value={fmtPct(s.churn_rate)} sub="Cancelados / (activos+cancel.)" accent={s.churn_rate > 10 ? '#dc2626' : '#64748b'} />
+        <KpiCard label="Conversión"     value={fmtPct(s.conversion_rate)} sub="Nuevos premium / nuevos usuarios" accent="#d97706" />
+      </div>
+
+      {/* Metricas SaaS + Ingresos por origen */}
+      <div style={{ display:'flex', gap:16, flexWrap:'wrap', marginBottom:20 }}>
+
+        {/* SaaS metrics card */}
+        <div style={{ flex:'1 1 220px', padding:'16px 20px', borderRadius:12,
+          background:'white', border:'1px solid rgba(0,119,181,0.12)', boxShadow:'0 1px 4px rgba(0,0,0,0.04)' }}>
+          <div style={{ fontSize:12, fontWeight:700, color:'#3d5a73', textTransform:'uppercase', letterSpacing:1, marginBottom:12 }}>Métricas SaaS</div>
+          {[
+            ['ARPU',          fmtARS(s.arpu)],
+            ['LTV estimado',  fmtARS((s.arpu || 0) * 12)],
+            ['Total usuarios',String(s.total_users || 0)],
+            ['Nuevos usuarios (30d)', String(s.new_users_30d || 0)],
+            ['Usos de códigos', String(s.promo_total_uses || 0)],
+            ['Alta manual (30d)', String(s.manual_grants_30d || 0)],
+            ['Pagos fallidos (30d)', String(s.failed_payments_30d || 0)],
+          ].map(([l, v]) => (
+            <div key={l} style={{ display:'flex', justifyContent:'space-between', borderBottom:'1px solid #f1f5f9', padding:'5px 0', fontSize:12 }}>
+              <span style={{ color:'#64748b' }}>{l}</span>
+              <span style={{ fontWeight:700, color:'#1e293b' }}>{v}</span>
+            </div>
+          ))}
+        </div>
+
+        {/* Revenue by origin */}
+        <div style={{ flex:'2 1 280px', padding:'16px 20px', borderRadius:12,
+          background:'white', border:'1px solid rgba(0,119,181,0.12)', boxShadow:'0 1px 4px rgba(0,0,0,0.04)' }}>
+          <div style={{ fontSize:12, fontWeight:700, color:'#3d5a73', textTransform:'uppercase', letterSpacing:1, marginBottom:12 }}>Ingresos por origen</div>
+          {revTotal === 0
+            ? <p style={{ fontSize:12, color:'#94a3b8', textAlign:'center', paddingTop:20 }}>Sin pagos registrados aún.<br/><span style={{fontSize:11}}>Los pagos MP se registran al llegar el primer webhook.</span></p>
+            : <>
+                <OriginBar label="Mercado Pago"  amount={s.rev_mp}     total={revTotal} color="#0077B5" />
+                <OriginBar label="Códigos promo" amount={s.rev_promo}   total={revTotal} color="#7c3aed" />
+                <OriginBar label="Manual/Admin"  amount={s.rev_manual}  total={revTotal} color="#0891b2" />
+                <div style={{ marginTop:12, fontSize:11, color:'#94a3b8' }}>Total histórico: {fmtARS(revTotal)}</div>
+              </>
+          }
+        </div>
+      </div>
+
+      {/* Monthly trend table */}
+      <div style={{ marginBottom:20, borderRadius:12, background:'white',
+        border:'1px solid rgba(0,119,181,0.12)', boxShadow:'0 1px 4px rgba(0,0,0,0.04)', overflow:'hidden' }}>
+        <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', padding:'14px 18px', borderBottom:'1px solid #f1f5f9' }}>
+          <div style={{ fontSize:12, fontWeight:700, color:'#3d5a73', textTransform:'uppercase', letterSpacing:1 }}>Tendencia mensual (últimos 6 meses)</div>
+          <span style={{ fontSize:11, color:'#94a3b8' }}>Solo pagos reales (no estimados)</span>
+        </div>
+        {last6.length === 0
+          ? <p style={{ textAlign:'center', fontSize:12, color:'#94a3b8', padding:20 }}>Sin datos históricos todavía.</p>
+          : <table style={{ width:'100%', borderCollapse:'collapse', fontSize:12 }}>
+              <thead>
+                <tr style={{ background:'#f8fafc' }}>
+                  {['Mes','Altas','Renov.','Cancel.','Revenue ARS'].map(h => (
+                    <th key={h} style={{ padding:'8px 14px', textAlign:'left', color:'#64748b', fontWeight:600, fontSize:11, borderBottom:'1px solid #e2e8f0' }}>{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {last6.map((m, i) => (
+                  <tr key={m.month} style={{ background: i % 2 === 0 ? 'white' : '#fafbfc' }}>
+                    <td style={{ padding:'8px 14px', fontWeight:700, color:'#0d2137' }}>{m.month}</td>
+                    <td style={{ padding:'8px 14px', color: m.new_subs > 0 ? '#16a34a' : '#94a3b8', fontWeight: m.new_subs > 0 ? 700 : 400 }}>
+                      {m.new_subs > 0 ? `+${m.new_subs}` : '—'}
+                    </td>
+                    <td style={{ padding:'8px 14px', color: m.renewals > 0 ? '#0077B5' : '#94a3b8', fontWeight: m.renewals > 0 ? 700 : 400 }}>
+                      {m.renewals > 0 ? m.renewals : '—'}
+                    </td>
+                    <td style={{ padding:'8px 14px', color: m.cancelled > 0 ? '#dc2626' : '#94a3b8', fontWeight: m.cancelled > 0 ? 700 : 400 }}>
+                      {m.cancelled > 0 ? `-${m.cancelled}` : '—'}
+                    </td>
+                    <td style={{ padding:'8px 14px', fontWeight:700, color: m.revenue_ars > 0 ? '#059669' : '#94a3b8' }}>
+                      {m.revenue_ars > 0 ? fmtARS(m.revenue_ars) : '—'}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+        }
+      </div>
+
+      {/* Section toggle */}
+      <div style={{ display:'flex', gap:8, marginBottom:14 }}>
+        {[['events','📋 Eventos de ciclo de vida'],['payments','💳 Pagos registrados']].map(([id, label]) => (
+          <button key={id} onClick={() => setSection(id)}
+            style={{ padding:'7px 16px', borderRadius:8, fontSize:12, fontWeight: section === id ? 700 : 500, cursor:'pointer',
+              background: section === id ? '#0077B5' : '#f8fafc',
+              color:       section === id ? 'white'   : '#475569',
+              border:      section === id ? 'none'    : '1px solid rgba(0,119,181,0.18)' }}>
+            {label}
+          </button>
+        ))}
+      </div>
+
+      {/* Events log */}
+      {section === 'events' && (
+        <div style={{ borderRadius:12, background:'white', border:'1px solid rgba(0,119,181,0.12)', boxShadow:'0 1px 4px rgba(0,0,0,0.04)', overflow:'hidden' }}>
+          <div style={{ display:'flex', alignItems:'center', gap:8, padding:'12px 16px', borderBottom:'1px solid #f1f5f9', flexWrap:'wrap' }}>
+            <span style={{ fontSize:11, color:'#64748b', fontWeight:600, marginRight:4 }}>Filtrar:</span>
+            {EVENT_FILTER_OPTS.map(o => (
+              <button key={o.v} onClick={() => setEvFilter(o.v)}
+                style={{ padding:'4px 12px', borderRadius:20, fontSize:11, cursor:'pointer', fontWeight: evFilter === o.v ? 700 : 400,
+                  background: evFilter === o.v ? '#0077B5' : '#f1f5f9',
+                  color:       evFilter === o.v ? 'white'   : '#475569',
+                  border: 'none' }}>
+                {o.l}
+              </button>
+            ))}
+            <span style={{ marginLeft:'auto', fontSize:11, color:'#94a3b8' }}>{evTotal} eventos</span>
+          </div>
+          {evLoading && events.length === 0
+            ? <div style={{ textAlign:'center', padding:24 }}><Spin /></div>
+            : events.length === 0
+            ? <p style={{ textAlign:'center', fontSize:12, color:'#94a3b8', padding:24 }}>
+                Sin eventos registrados aún.<br/>
+                <span style={{fontSize:11}}>Los eventos se registran desde ahora en adelante (no retroactivo).</span>
+              </p>
+            : <>
+                <table style={{ width:'100%', borderCollapse:'collapse', fontSize:12 }}>
+                  <thead>
+                    <tr style={{ background:'#f8fafc' }}>
+                      {['Evento','Usuario','Origen','Detalle','Fecha'].map(h => (
+                        <th key={h} style={{ padding:'8px 12px', textAlign:'left', color:'#64748b', fontWeight:600, fontSize:11, borderBottom:'1px solid #e2e8f0' }}>{h}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {events.map((e, i) => (
+                      <tr key={e.id} style={{ borderBottom:'1px solid #f8fafc', background: i % 2 === 0 ? 'white' : '#fafbfc' }}>
+                        <td style={{ padding:'9px 12px' }}><EventBadge type={e.event_type} /></td>
+                        <td style={{ padding:'9px 12px', color:'#1e293b', fontWeight:600, fontSize:11 }}>
+                          {e.user_nombre || '—'}<br/>
+                          <span style={{ color:'#94a3b8', fontWeight:400 }}>{e.user_email || e.user_id?.slice(0,8) || '—'}</span>
+                        </td>
+                        <td style={{ padding:'9px 12px' }}>
+                          <span style={{ padding:'2px 7px', borderRadius:6, fontSize:10, fontWeight:700,
+                            background: e.origen === 'mp' ? '#eff6ff' : e.origen === 'promo' ? '#fdf4ff' : '#f0fdfa',
+                            color: e.origen === 'mp' ? '#1d4ed8' : e.origen === 'promo' ? '#7c3aed' : '#0891b2' }}>
+                            {e.origen?.toUpperCase()}
+                          </span>
+                        </td>
+                        <td style={{ padding:'9px 12px', color:'#64748b', fontSize:11, maxWidth:160, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>
+                          {e.code ? `Código: ${e.code}` : e.mp_subscription_id ? e.mp_subscription_id.slice(0,12) + '…' : '—'}
+                        </td>
+                        <td style={{ padding:'9px 12px', color:'#94a3b8', fontSize:11, whiteSpace:'nowrap' }}>
+                          {new Date(e.created_at).toLocaleDateString('es-AR', { day:'2-digit', month:'2-digit', year:'2-digit', hour:'2-digit', minute:'2-digit' })}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+                {events.length < evTotal && (
+                  <div style={{ textAlign:'center', padding:'12px 0' }}>
+                    <button onClick={() => loadEvents(evOffset + LIMIT_EV)} disabled={evLoading}
+                      style={{ padding:'7px 20px', borderRadius:8, fontSize:12, cursor:'pointer', border:'1px solid rgba(0,119,181,0.2)',
+                        background:'#f8fafc', color:'#0077B5', fontWeight:600 }}>
+                      {evLoading ? 'Cargando…' : `Cargar más (${events.length}/${evTotal})`}
+                    </button>
+                  </div>
+                )}
+              </>
+          }
+        </div>
+      )}
+
+      {/* Payments log */}
+      {section === 'payments' && (
+        <div style={{ borderRadius:12, background:'white', border:'1px solid rgba(0,119,181,0.12)', boxShadow:'0 1px 4px rgba(0,0,0,0.04)', overflow:'hidden' }}>
+          <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', padding:'12px 16px', borderBottom:'1px solid #f1f5f9' }}>
+            <span style={{ fontSize:12, fontWeight:700, color:'#3d5a73' }}>Pagos individuales (MP)</span>
+            <span style={{ fontSize:11, color:'#94a3b8' }}>{pyTotal} pagos</span>
+          </div>
+          {pyLoading && payments.length === 0
+            ? <div style={{ textAlign:'center', padding:24 }}><Spin /></div>
+            : payments.length === 0
+            ? <p style={{ textAlign:'center', fontSize:12, color:'#94a3b8', padding:24 }}>
+                Sin pagos registrados.<br/>
+                <span style={{fontSize:11}}>Los pagos se registran al recibir el webhook <code>subscription_authorized_payment</code> de MP.</span>
+              </p>
+            : <>
+                <table style={{ width:'100%', borderCollapse:'collapse', fontSize:12 }}>
+                  <thead>
+                    <tr style={{ background:'#f8fafc' }}>
+                      {['Usuario','Monto','Estado','MP Payment ID','Fecha pago'].map(h => (
+                        <th key={h} style={{ padding:'8px 12px', textAlign:'left', color:'#64748b', fontWeight:600, fontSize:11, borderBottom:'1px solid #e2e8f0' }}>{h}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {payments.map((p, i) => (
+                      <tr key={p.id} style={{ borderBottom:'1px solid #f8fafc', background: i % 2 === 0 ? 'white' : '#fafbfc' }}>
+                        <td style={{ padding:'9px 12px', color:'#1e293b', fontWeight:600, fontSize:11 }}>
+                          {p.user_nombre || '—'}<br/>
+                          <span style={{ color:'#94a3b8', fontWeight:400 }}>{p.user_email || '—'}</span>
+                        </td>
+                        <td style={{ padding:'9px 12px', fontWeight:800, color:'#059669', fontSize:13 }}>
+                          ${Number(p.amount).toLocaleString('es-AR')} <span style={{ fontSize:10, color:'#94a3b8', fontWeight:400 }}>{p.currency}</span>
+                        </td>
+                        <td style={{ padding:'9px 12px' }}>
+                          <span style={{ padding:'2px 8px', borderRadius:6, fontSize:10, fontWeight:700,
+                            background: p.status === 'approved' ? '#dcfce7' : '#fee2e2',
+                            color: p.status === 'approved' ? '#16a34a' : '#dc2626' }}>
+                            {p.status === 'approved' ? '✓ Aprobado' : p.status}
+                          </span>
+                        </td>
+                        <td style={{ padding:'9px 12px', color:'#64748b', fontSize:10, fontFamily:'monospace' }}>
+                          {p.mp_payment_id ? p.mp_payment_id.slice(0,16) + (p.mp_payment_id.length > 16 ? '…' : '') : '—'}
+                        </td>
+                        <td style={{ padding:'9px 12px', color:'#94a3b8', fontSize:11, whiteSpace:'nowrap' }}>
+                          {new Date(p.payment_date).toLocaleDateString('es-AR', { day:'2-digit', month:'2-digit', year:'2-digit', hour:'2-digit', minute:'2-digit' })}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+                {payments.length < pyTotal && (
+                  <div style={{ textAlign:'center', padding:'12px 0' }}>
+                    <button onClick={() => loadPayments(pyOffset + LIMIT_EV)} disabled={pyLoading}
+                      style={{ padding:'7px 20px', borderRadius:8, fontSize:12, cursor:'pointer', border:'1px solid rgba(0,119,181,0.2)',
+                        background:'#f8fafc', color:'#0077B5', fontWeight:600 }}>
+                      {pyLoading ? 'Cargando…' : `Cargar más (${payments.length}/${pyTotal})`}
+                    </button>
+                  </div>
+                )}
+              </>
+          }
+        </div>
+      )}
+    </div>
+  )
+}
+
 // ── Main Panel — sin overlays, sin drawers ────────────────────────────────────
 export default function AdminPanel({ authToken, onClose }) {
   const [tab, setTab] = useState('dashboard')
@@ -1339,6 +1744,7 @@ export default function AdminPanel({ authToken, onClose }) {
               {tab === 'dashboard'   && <Dashboard     adminFetch={adminFetch} />}
               {tab === 'users'       && <CrmUsersTab   adminFetch={adminFetch} />}
               {tab === 'premium'     && <CrmUsersTab   adminFetch={adminFetch} defaultPremiumStatus="active" />}
+              {tab === 'revenue'     && <RevenueTab    adminFetch={adminFetch} />}
               {tab === 'codes'       && <CodesTab      adminFetch={adminFetch} />}
               {tab === 'comentarios' && <CommentsTab   adminFetch={adminFetch} />}
               {tab === 'logs'        && <LogsTab       adminFetch={adminFetch} />}

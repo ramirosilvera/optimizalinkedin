@@ -344,7 +344,7 @@ async function findUserIdByEmail(env, email) {
 }
 
 // ── Persistir estado de suscripción en Supabase ───────────────────────────────
-async function persistSubscription(env, { userId, subId, status, nextPayment }) {
+async function persistSubscription(env, { userId, subId, status, nextPayment, eventType = null, paymentData = null }) {
   const isPremium = status === 'authorized'
   const premiumHasta = isPremium && nextPayment ? nextPayment : null
 
@@ -372,6 +372,7 @@ async function persistSubscription(env, { userId, subId, status, nextPayment }) 
         es_premium: true,
         premium_hasta: premiumHasta,
         mp_subscription_id: subId,
+        premium_origen: 'mp',
         updated_at: new Date().toISOString(),
       }),
     })
@@ -388,7 +389,49 @@ async function persistSubscription(env, { userId, subId, status, nextPayment }) 
     })
   }
 
-  console.log('[persist] suscripciones:', subRes.status, 'perfiles:', perfilRes?.status ?? 'no-update (cancelled)')
+  // ── Log subscription event (fire-and-forget) ──────────────────────────────
+  const derivedEvent = eventType || (
+    status === 'authorized' ? 'renewed' :
+    status === 'cancelled'  ? 'cancelled' :
+    status === 'paused'     ? 'failed_payment' : 'renewed'
+  )
+  supabaseServiceFetch(env, 'subscription_events', {
+    method: 'POST',
+    body: JSON.stringify({
+      user_id: userId,
+      event_type: derivedEvent,
+      origen: 'mp',
+      mp_subscription_id: subId,
+      metadata: { status, next_payment: nextPayment },
+      created_at: new Date().toISOString(),
+    }),
+  }).catch(() => {})
+
+  // ── Log individual payment (fire-and-forget) ──────────────────────────────
+  if (paymentData && paymentData.status === 'approved' && paymentData.id) {
+    supabaseServiceFetch(env, 'payments', {
+      method: 'POST',
+      body: JSON.stringify({
+        user_id: userId,
+        mp_subscription_id: subId,
+        mp_payment_id: String(paymentData.id),
+        amount: paymentData.transaction_amount || 3000,
+        currency: paymentData.currency_id || 'ARS',
+        status: 'approved',
+        origen: 'mp',
+        payment_date: paymentData.date_approved || new Date().toISOString(),
+        metadata: {
+          status_detail: paymentData.status_detail,
+          payment_method_id: paymentData.payment_method_id,
+          payer_email: paymentData.payer?.email,
+        },
+        created_at: new Date().toISOString(),
+      }),
+      headers: { Prefer: 'return=minimal,resolution=ignore-duplicates' },
+    }).catch(() => {})
+  }
+
+  console.log('[persist] suscripciones:', subRes.status, 'perfiles:', perfilRes?.status ?? 'no-update (cancelled)', 'event:', derivedEvent)
   return { isPremium, premiumHasta }
 }
 
@@ -483,7 +526,14 @@ export default {
             }
           }
 
-          await persistSubscription(env, { userId, subId: dataId, status, nextPayment })
+          // Determinar si es suscripción nueva o reactivación
+          const existingRows = await supabaseServiceFetch(env, `suscripciones?mp_subscription_id=eq.${dataId}&select=status`)
+          const existingStatus = (await existingRows.json())?.[0]?.status
+          const derivedEvent = status === 'authorized'
+            ? (existingStatus ? 'reactivated' : 'subscribed')
+            : status === 'cancelled' ? 'cancelled' : 'paused'
+
+          await persistSubscription(env, { userId, subId: dataId, status, nextPayment, eventType: derivedEvent })
         } catch (e) {
           console.error('[mp-webhook] preapproval error:', e.message)
         }
@@ -509,8 +559,21 @@ export default {
 
           // Solo extender premium si el pago fue aprobado
           if (payment?.status === 'approved') {
-            await persistSubscription(env, { userId, subId, status: 'authorized', nextPayment })
+            await persistSubscription(env, { userId, subId, status: 'authorized', nextPayment, eventType: 'renewed', paymentData: payment })
             console.log('[mp-webhook] renewal extended for userId:', userId, 'until:', nextPayment)
+          } else {
+            // Pago rechazado — logear evento
+            supabaseServiceFetch(env, 'subscription_events', {
+              method: 'POST',
+              body: JSON.stringify({
+                user_id: userId,
+                event_type: 'failed_payment',
+                origen: 'mp',
+                mp_subscription_id: subId,
+                metadata: { payment_status: payment?.status, payment_id: payment?.id },
+                created_at: new Date().toISOString(),
+              }),
+            }).catch(() => {})
           }
         } catch (e) {
           console.error('[mp-webhook] authorized_payment error:', e.message)
@@ -571,6 +634,16 @@ export default {
           body: JSON.stringify({ uses_count: promo.uses_count + 1 }),
           headers: { Prefer: 'return=minimal' },
         })
+        // Log subscription event for promo code
+        supabaseServiceFetch(env, 'subscription_events', {
+          method: 'POST',
+          body: JSON.stringify({
+            user_id: userId, event_type: 'code_redeemed', origen: 'promo',
+            code: code.toUpperCase().trim(),
+            metadata: { duration_days: promo.duration_days, premium_hasta: premiumHasta },
+            created_at: new Date().toISOString(),
+          }),
+        }).catch(() => {})
         console.log('[promo] code applied:', code, 'user:', userId, 'until:', premiumHasta)
         return new Response(JSON.stringify({ ok: true, premium_hasta: premiumHasta, duration_days: promo.duration_days }), { status: 200, headers: corsHeaders })
       } catch (e) {
@@ -761,6 +834,14 @@ export default {
           headers: { Prefer: 'resolution=merge-duplicates' },
         })
         await logAdminAction(env, admin.userId, 'grant_premium', 'user', user_id, { days, premium_hasta: premiumHasta })
+        supabaseServiceFetch(env, 'subscription_events', {
+          method: 'POST',
+          body: JSON.stringify({
+            user_id, event_type: 'manual_grant', origen: 'manual',
+            metadata: { days, premium_hasta: premiumHasta, granted_by: admin.userId },
+            created_at: new Date().toISOString(),
+          }),
+        }).catch(() => {})
         return new Response(JSON.stringify({ ok: true, premium_hasta: premiumHasta }), { status: 200, headers: corsHeaders })
       }
 
@@ -774,6 +855,14 @@ export default {
           headers: { Prefer: 'resolution=merge-duplicates' },
         })
         await logAdminAction(env, admin.userId, 'revoke_premium', 'user', user_id)
+        supabaseServiceFetch(env, 'subscription_events', {
+          method: 'POST',
+          body: JSON.stringify({
+            user_id, event_type: 'manual_revoke', origen: 'manual',
+            metadata: { revoked_by: admin.userId },
+            created_at: new Date().toISOString(),
+          }),
+        }).catch(() => {})
         return new Response(JSON.stringify({ ok: true }), { status: 200, headers: corsHeaders })
       }
 
@@ -979,6 +1068,53 @@ export default {
           })
           await logAdminAction(env, admin.userId, 'comment_edit', 'comment', comment_id, { fields: Object.keys(patch) })
           return new Response(JSON.stringify({ ok: true }), { status: 200, headers: corsHeaders })
+        } catch (e) {
+          return new Response(JSON.stringify({ ok: false, error: e.message }), { status: 500, headers: corsHeaders })
+        }
+      }
+
+      // ── Revenue stats ─────────────────────────────────────────────────────────
+      if (body.action === 'admin_revenue_stats') {
+        try {
+          const [statsRes, monthlyRes] = await Promise.all([
+            supabaseServiceFetch(env, 'rpc/get_revenue_stats', { method: 'POST', body: JSON.stringify({}) }),
+            supabaseServiceFetch(env, 'rpc/get_monthly_revenue', { method: 'POST', body: JSON.stringify({ months_back: 12 }) }),
+          ])
+          const stats = await statsRes.json()
+          const monthly = await monthlyRes.json()
+          return new Response(JSON.stringify({ ok: true, stats, monthly }), { status: 200, headers: corsHeaders })
+        } catch (e) {
+          return new Response(JSON.stringify({ ok: false, error: e.message }), { status: 500, headers: corsHeaders })
+        }
+      }
+
+      // ── Subscription events log ───────────────────────────────────────────────
+      if (body.action === 'admin_subscription_events') {
+        const { offset = 0, limit = 25, event_type = 'all' } = body
+        try {
+          const res = await supabaseServiceFetch(env, 'rpc/get_subscription_events_paged', {
+            method: 'POST',
+            body: JSON.stringify({ p_offset: offset, p_limit: limit, p_event_type: event_type }),
+          })
+          const rows = await res.json()
+          const total = rows?.[0]?.total ?? 0
+          return new Response(JSON.stringify({ ok: true, rows, total }), { status: 200, headers: corsHeaders })
+        } catch (e) {
+          return new Response(JSON.stringify({ ok: false, error: e.message }), { status: 500, headers: corsHeaders })
+        }
+      }
+
+      // ── Payments log ─────────────────────────────────────────────────────────
+      if (body.action === 'admin_payments_log') {
+        const { offset = 0, limit = 25 } = body
+        try {
+          const res = await supabaseServiceFetch(env, 'rpc/get_payments_paged', {
+            method: 'POST',
+            body: JSON.stringify({ p_offset: offset, p_limit: limit }),
+          })
+          const rows = await res.json()
+          const total = rows?.[0]?.total ?? 0
+          return new Response(JSON.stringify({ ok: true, rows, total }), { status: 200, headers: corsHeaders })
         } catch (e) {
           return new Response(JSON.stringify({ ok: false, error: e.message }), { status: 500, headers: corsHeaders })
         }
