@@ -136,6 +136,10 @@ function UserDetail({ user, adminFetch, onBack, onUpdated }) {
   const [days, setDays]         = useState(30)
   const [busy, setBusy]         = useState(false)
   const [msg, setMsg]           = useState({ text:'', ok:true })
+  const [newTag, setNewTag]     = useState('')
+  const [newNote, setNewNote]   = useState('')
+  const [tagBusy, setTagBusy]   = useState(false)
+  const [noteBusy, setNoteBusy] = useState(false)
 
   const load = useCallback(async () => {
     setLoading(true); setDetErr('')
@@ -196,7 +200,72 @@ function UserDetail({ user, adminFetch, onBack, onUpdated }) {
           </>
         ) : null}
 
-      <div style={{ borderTop:'1px solid #f1f5f9', paddingTop:16, marginTop: detail ? 0 : 8 }}>
+      {/* Tags */}
+      <div style={{ borderTop:'1px solid #f1f5f9', paddingTop:14, marginTop:8 }}>
+        <div style={{ fontSize:12, fontWeight:700, color:'#64748b', marginBottom:8 }}>Etiquetas internas</div>
+        <div style={{ display:'flex', flexWrap:'wrap', gap:6, marginBottom:8 }}>
+          {(detail?.tags || []).map(t => (
+            <span key={t.id || t.tag} style={{ background:'#e0f2fe', color:'#0369a1', borderRadius:99, padding:'3px 10px', fontSize:11, fontWeight:600, display:'flex', alignItems:'center', gap:4 }}>
+              {t.tag}
+              <button onClick={async () => {
+                setTagBusy(true)
+                const d = await adminFetch('admin_user_remove_tag', { user_id:user.id, tag:t.tag })
+                if (d?.ok) setDetail(prev => ({ ...prev, tags: prev.tags.filter(x => x.tag !== t.tag) }))
+                setTagBusy(false)
+              }} style={{ border:'none', background:'none', cursor:'pointer', color:'#0369a1', fontWeight:700, padding:0, lineHeight:1 }}>×</button>
+            </span>
+          ))}
+          {(detail?.tags || []).length === 0 && <span style={{ fontSize:11, color:'#94a3b8' }}>Sin etiquetas</span>}
+        </div>
+        <div style={{ display:'flex', gap:6 }}>
+          <input value={newTag} onChange={e => setNewTag(e.target.value.toLowerCase())}
+            onKeyDown={async e => { if (e.key === 'Enter' && newTag.trim()) {
+              setTagBusy(true)
+              const d = await adminFetch('admin_user_add_tag', { user_id:user.id, tag:newTag.trim() })
+              if (d?.ok) { setDetail(prev => ({ ...prev, tags: [...(prev.tags||[]), { tag:newTag.trim(), id:Date.now() }] })); setNewTag('') }
+              setTagBusy(false)
+            }}}
+            placeholder="Nueva etiqueta + Enter…" style={{ ...C.input, flex:1, fontSize:11 }} maxLength={30} />
+          <button disabled={tagBusy || !newTag.trim()} onClick={async () => {
+            if (!newTag.trim()) return
+            setTagBusy(true)
+            const d = await adminFetch('admin_user_add_tag', { user_id:user.id, tag:newTag.trim() })
+            if (d?.ok) { setDetail(prev => ({ ...prev, tags: [...(prev.tags||[]), { tag:newTag.trim(), id:Date.now() }] })); setNewTag('') }
+            setTagBusy(false)
+          }} style={{ ...C.pri, fontSize:11, padding:'5px 10px' }}>+</button>
+        </div>
+      </div>
+
+      {/* Notes */}
+      <div style={{ borderTop:'1px solid #f1f5f9', paddingTop:14, marginTop:4 }}>
+        <div style={{ fontSize:12, fontWeight:700, color:'#64748b', marginBottom:8 }}>Notas internas</div>
+        <div style={{ display:'flex', gap:6, marginBottom:10 }}>
+          <textarea value={newNote} onChange={e => setNewNote(e.target.value)}
+            placeholder="Agregar nota interna…" rows={2} maxLength={500}
+            style={{ ...C.input, resize:'vertical', flex:1, fontSize:12 }} />
+          <button disabled={noteBusy || !newNote.trim()} onClick={async () => {
+            if (!newNote.trim()) return
+            setNoteBusy(true)
+            const d = await adminFetch('admin_user_add_note', { user_id:user.id, nota:newNote.trim() })
+            if (d?.ok) { setDetail(prev => ({ ...prev, notes: [{ nota:newNote.trim(), created_at:new Date().toISOString(), id:Date.now() }, ...(prev.notes||[])] })); setNewNote('') }
+            setNoteBusy(false)
+          }} style={{ ...C.pri, fontSize:11, padding:'5px 10px', alignSelf:'flex-end' }}>Guardar</button>
+        </div>
+        <div style={{ display:'flex', flexDirection:'column', gap:6 }}>
+          {(detail?.notes || []).map(n => (
+            <div key={n.id} style={{ background:'#fefce8', border:'1px solid #fef08a', borderRadius:8, padding:'8px 12px', fontSize:12 }}>
+              <div style={{ color:'#374151', lineHeight:1.5 }}>{n.nota}</div>
+              <div style={{ fontSize:10, color:'#94a3b8', marginTop:4 }}>
+                {new Date(n.created_at).toLocaleString('es-AR',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'})}
+              </div>
+            </div>
+          ))}
+          {(detail?.notes || []).length === 0 && <span style={{ fontSize:11, color:'#94a3b8' }}>Sin notas</span>}
+        </div>
+      </div>
+
+      {/* Premium access management */}
+      <div style={{ borderTop:'1px solid #f1f5f9', paddingTop:16, marginTop:4 }}>
         <div style={{ fontSize:12, fontWeight:700, color:'#64748b', marginBottom:10 }}>Gestión de acceso</div>
         <div style={{ display:'flex', gap:8, flexWrap:'wrap', alignItems:'center' }}>
           <select value={days} onChange={e => setDays(Number(e.target.value))} style={{ ...C.input, width:100 }}>
@@ -215,90 +284,317 @@ function UserDetail({ user, adminFetch, onBack, onUpdated }) {
   )
 }
 
-// ── Users Tab ─────────────────────────────────────────────────────────────────
-function UsersTab({ adminFetch, premiumOnly }) {
-  const [users, setUsers]     = useState([])
-  const [search, setSearch]   = useState('')
-  const [offset, setOffset]   = useState(0)
-  const [hasMore, setHasMore] = useState(false)
-  const [loading, setLoading] = useState(false)
-  const [error, setError]     = useState('')
-  const [selected, setSelected] = useState(null)
-  const LIMIT = 20
+// ── CRM Users Tab ─────────────────────────────────────────────────────────────
+const PREMIUM_STATUS_OPTS = [
+  { v:'all',     l:'Todos' },
+  { v:'free',    l:'Free' },
+  { v:'active',  l:'Premium activo' },
+  { v:'expired', l:'Premium vencido' },
+]
+const FEATURE_OPTS = [
+  { v:'',           l:'Cualquier uso' },
+  { v:'analisis',   l:'Con análisis' },
+  { v:'cv',         l:'Con CV' },
+  { v:'entrevista', l:'Con entrevista' },
+  { v:'star',       l:'Con STAR' },
+]
+const SORT_OPTS = [
+  { v:'created_at_desc', l:'Más nuevos' },
+  { v:'created_at_asc',  l:'Más antiguos' },
+  { v:'activity_desc',   l:'Más activos' },
+  { v:'tokens_desc',     l:'Mayor consumo IA' },
+]
+const fmtActivity = u => [
+  u.analisis_count   ? `📊${u.analisis_count}`   : null,
+  u.cv_count         ? `📄${u.cv_count}`         : null,
+  u.entrevista_count ? `🎯${u.entrevista_count}` : null,
+  u.star_count       ? `⭐${u.star_count}`       : null,
+].filter(Boolean).join(' ') || '—'
 
-  const load = useCallback(async (q, off, replace) => {
+function exportToCsv(users, filters) {
+  const headers = ['ID','Nombre','Email','Estado','Origen Premium','MP Subscription','Alta','Análisis','CVs','Entrevistas','STAR','Tokens IA','Etiquetas']
+  const rows = users.map(u => [
+    u.id, u.nombre||'', u.email||'',
+    u.premium_status || (u.es_premium ? 'active' : 'free'),
+    u.premium_origen || '',
+    u.mp_subscription_id || '',
+    u.created_at ? new Date(u.created_at).toLocaleDateString('es-AR') : '',
+    u.analisis_count||0, u.cv_count||0, u.entrevista_count||0, u.star_count||0,
+    u.total_ai_tokens||0,
+    (Array.isArray(u.tags) ? u.tags.join(';') : ''),
+  ].map(v => `"${String(v).replace(/"/g,'""')}"`))
+  const csv = [headers.join(','), ...rows.map(r => r.join(','))].join('\n')
+  const blob = new Blob(['﻿'+csv], { type:'text/csv;charset=utf-8;' })
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a'); a.href = url
+  a.download = `usuarios-optimizalk-${new Date().toISOString().slice(0,10)}.csv`
+  document.body.appendChild(a); a.click()
+  document.body.removeChild(a); URL.revokeObjectURL(url)
+}
+
+function CrmUsersTab({ adminFetch, defaultPremiumStatus = 'all' }) {
+  const [users, setUsers]       = useState([])
+  const [total, setTotal]       = useState(0)
+  const [offset, setOffset]     = useState(0)
+  const [hasMore, setHasMore]   = useState(false)
+  const [loading, setLoading]   = useState(false)
+  const [error, setError]       = useState('')
+  const [selected, setSelected] = useState(null)
+  const [selectedIds, setSelectedIds] = useState(new Set())
+  const [allChecked, setAllChecked]   = useState(false)
+  const [copied, setCopied]     = useState(false)
+  const [exporting, setExporting] = useState(false)
+  const [availableTags, setAvailableTags] = useState([])
+  const [showFilters, setShowFilters]     = useState(false)
+  const [bulkTag, setBulkTag]   = useState('')
+  const [bulkBusy, setBulkBusy] = useState(false)
+
+  const [filters, setFilters] = useState({
+    search: '', premiumStatus: defaultPremiumStatus, featureUsed: '', tag: '', sort: 'created_at_desc',
+  })
+  const [searchInput, setSearchInput] = useState('')
+
+  const LIMIT = 25
+
+  const load = useCallback(async (f, off, replace) => {
     setLoading(true); setError('')
-    const body = { search:q, offset:off, limit:LIMIT }
-    if (premiumOnly) body.premium_only = true
-    const d = await adminFetch('admin_users', body)
+    const d = await adminFetch('admin_crm_users', {
+      search: f.search, premium_status: f.premiumStatus, feature_used: f.featureUsed,
+      tag: f.tag, sort: f.sort, offset: off, limit: LIMIT,
+    })
     if (d?.ok) {
       const list = d.users || []
-      if (replace) setUsers(list)
-      else setUsers(prev => [...prev, ...list])
+      if (replace) setUsers(list); else setUsers(prev => [...prev, ...list])
+      setTotal(d.total || 0)
       setHasMore(list.length === LIMIT)
       setOffset(off)
-    } else {
-      setError(d?.error || 'Error al cargar usuarios')
-    }
+      if (replace) { setSelectedIds(new Set()); setAllChecked(false) }
+    } else setError(d?.error || 'Error al cargar usuarios')
     setLoading(false)
-  }, [adminFetch, premiumOnly])
+  }, [adminFetch])
 
-  useEffect(() => { load('', 0, true) }, [load])
+  const loadTags = useCallback(async () => {
+    const d = await adminFetch('admin_user_all_tags')
+    if (d?.ok) setAvailableTags(d.tags || [])
+  }, [adminFetch])
+
+  useEffect(() => { load(filters, 0, true); loadTags() }, []) // eslint-disable-line
+
+  const applyFilters = (newF) => {
+    const f = { ...filters, ...newF }
+    setFilters(f); load(f, 0, true)
+  }
+
+  const toggleSelect = (id) => setSelectedIds(prev => {
+    const s = new Set(prev)
+    s.has(id) ? s.delete(id) : s.add(id)
+    return s
+  })
+
+  const toggleAll = () => {
+    if (allChecked) { setSelectedIds(new Set()); setAllChecked(false) }
+    else { setSelectedIds(new Set(users.map(u => u.id))); setAllChecked(true) }
+  }
+
+  const selectedUsers = users.filter(u => selectedIds.has(u.id))
+
+  const copyEmails = () => {
+    const emails = [...new Set(selectedUsers.map(u => u.email).filter(Boolean))]
+    navigator.clipboard.writeText(emails.join('\n')).then(() => {
+      setCopied(true); setTimeout(() => setCopied(false), 2000)
+    })
+  }
+
+  const doExport = async () => {
+    setExporting(true)
+    const d = await adminFetch('admin_crm_export', {
+      search: filters.search, premium_status: filters.premiumStatus,
+      feature_used: filters.featureUsed, tag: filters.tag, sort: filters.sort,
+    })
+    if (d?.ok) exportToCsv(d.users || [], filters)
+    setExporting(false)
+  }
+
+  const addTagToSelected = async () => {
+    if (!bulkTag.trim() || selectedIds.size === 0) return
+    setBulkBusy(true)
+    await Promise.all([...selectedIds].map(uid => adminFetch('admin_user_add_tag', { user_id:uid, tag:bulkTag.trim() })))
+    setBulkTag(''); setBulkBusy(false)
+    load(filters, 0, true); loadTags()
+  }
 
   if (selected) return (
-    <UserDetail
-      user={selected}
-      adminFetch={adminFetch}
+    <UserDetail user={selected} adminFetch={adminFetch}
       onBack={() => setSelected(null)}
-      onUpdated={() => { setSelected(null); load(search, 0, true) }}
-    />
+      onUpdated={() => { setSelected(null); load(filters, 0, true) }} />
   )
 
+  const PS_COLORS = { free:'#64748b', active:'#10b981', expired:'#f59e0b', all:'#0077B5' }
+
   return (
-    <div style={C.card}>
-      <div style={{ padding:'14px 16px', borderBottom:'1px solid #f1f5f9', display:'flex', gap:8 }}>
-        <input
-          placeholder={premiumOnly ? 'Buscar en premium...' : 'Nombre o email...'}
-          value={search}
-          onChange={e => setSearch(e.target.value)}
-          onKeyDown={e => e.key === 'Enter' && load(search, 0, true)}
-          style={C.input}
-        />
-        <button onClick={() => load(search, 0, true)} style={C.pri}>Buscar</button>
+    <div style={{ display:'flex', flexDirection:'column', gap:12 }}>
+      {/* Header */}
+      <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', flexWrap:'wrap', gap:8 }}>
+        <div style={{ fontSize:13, color:'#64748b' }}>
+          {loading ? 'Cargando…' : <><strong style={{ color:'#0d2137' }}>{total}</strong> usuarios</>}
+        </div>
+        <div style={{ display:'flex', gap:6 }}>
+          <button onClick={() => setShowFilters(f => !f)} style={{ ...C.sec, fontSize:12 }}>
+            {showFilters ? '▲ Filtros' : '▼ Filtros'}
+          </button>
+          <button onClick={doExport} disabled={exporting} style={{ ...C.sec, fontSize:12 }}>
+            {exporting ? <Spin /> : '⬇ CSV'}
+          </button>
+        </div>
       </div>
 
-      {error ? (
-        <div style={{ padding:16 }}><ErrBox msg={error} onRetry={() => load(search, 0, true)} /></div>
-      ) : (
-        <div style={{ overflowX:'auto' }}>
-          <table style={{ width:'100%', borderCollapse:'collapse', minWidth:360 }}>
-            <thead><tr><Th ch="Usuario" /><Th ch="Plan" /><Th ch="Registro" /></tr></thead>
-            <tbody>
-              {users.map(u => (
-                <tr key={u.id} onClick={() => setSelected(u)} style={{ cursor:'pointer' }}
-                  onMouseEnter={e => e.currentTarget.style.background='#f8fafc'}
-                  onMouseLeave={e => e.currentTarget.style.background='white'}>
-                  <Td>
-                    <div style={{ fontWeight:600 }}>{u.nombre || '—'}</div>
-                    <div style={{ fontSize:11, color:'#94a3b8', marginTop:1 }}>{u.email}</div>
-                  </Td>
-                  <Td><Badge premium={u.es_premium} hasta={u.premium_hasta} /></Td>
-                  <Td s={{ color:'#64748b', fontSize:12 }}>
-                    {u.created_at ? new Date(u.created_at).toLocaleDateString('es-AR') : '—'}
-                  </Td>
-                </tr>
+      {/* Filter panel */}
+      {showFilters && (
+        <div style={{ ...C.card, padding:'14px 16px', display:'flex', flexDirection:'column', gap:10 }}>
+          {/* Search */}
+          <div style={{ display:'flex', gap:6 }}>
+            <input style={{ ...C.input, flex:1 }} placeholder="Buscar nombre o email…"
+              value={searchInput} onChange={e => setSearchInput(e.target.value)}
+              onKeyDown={e => e.key === 'Enter' && applyFilters({ search:searchInput })} />
+            <button onClick={() => applyFilters({ search:searchInput })} style={C.pri}>Buscar</button>
+            {filters.search && <button onClick={() => { setSearchInput(''); applyFilters({ search:'' }) }} style={C.sec}>✕</button>}
+          </div>
+          {/* Premium status filter */}
+          <div>
+            <div style={{ fontSize:11, fontWeight:700, color:'#64748b', marginBottom:6 }}>Estado premium</div>
+            <div style={{ display:'flex', gap:6, flexWrap:'wrap' }}>
+              {PREMIUM_STATUS_OPTS.map(o => (
+                <button key={o.v} onClick={() => applyFilters({ premiumStatus:o.v })} style={{
+                  ...C.sec, fontSize:11, padding:'4px 10px',
+                  background: filters.premiumStatus === o.v ? PS_COLORS[o.v] : undefined,
+                  color:      filters.premiumStatus === o.v ? 'white'         : undefined,
+                  borderColor: filters.premiumStatus === o.v ? PS_COLORS[o.v] : undefined,
+                }}>{o.l}</button>
               ))}
-              {!loading && users.length === 0 && <tr><td colSpan={3}><Empty /></td></tr>}
-            </tbody>
-          </table>
+            </div>
+          </div>
+          {/* Feature filter */}
+          <div>
+            <div style={{ fontSize:11, fontWeight:700, color:'#64748b', marginBottom:6 }}>Funcionalidad usada</div>
+            <div style={{ display:'flex', gap:6, flexWrap:'wrap' }}>
+              {FEATURE_OPTS.map(o => (
+                <button key={o.v} onClick={() => applyFilters({ featureUsed:o.v })} style={{
+                  ...C.sec, fontSize:11, padding:'4px 10px',
+                  background: filters.featureUsed === o.v ? '#0077B5' : undefined,
+                  color:      filters.featureUsed === o.v ? 'white'   : undefined,
+                  borderColor: filters.featureUsed === o.v ? '#0077B5' : undefined,
+                }}>{o.l}</button>
+              ))}
+            </div>
+          </div>
+          {/* Tag filter + Sort */}
+          <div style={{ display:'flex', gap:10, flexWrap:'wrap' }}>
+            <div style={{ flex:1, minWidth:140 }}>
+              <div style={{ fontSize:11, fontWeight:700, color:'#64748b', marginBottom:6 }}>Etiqueta</div>
+              <select value={filters.tag} onChange={e => applyFilters({ tag:e.target.value })} style={C.input}>
+                <option value=''>Todas las etiquetas</option>
+                {availableTags.map(t => <option key={t} value={t}>{t}</option>)}
+              </select>
+            </div>
+            <div style={{ flex:1, minWidth:140 }}>
+              <div style={{ fontSize:11, fontWeight:700, color:'#64748b', marginBottom:6 }}>Ordenar por</div>
+              <select value={filters.sort} onChange={e => applyFilters({ sort:e.target.value })} style={C.input}>
+                {SORT_OPTS.map(o => <option key={o.v} value={o.v}>{o.l}</option>)}
+              </select>
+            </div>
+          </div>
         </div>
       )}
 
+      {/* Bulk action bar */}
+      {selectedIds.size > 0 && (
+        <div style={{ background:'#eff6ff', border:'1px solid #bfdbfe', borderRadius:10, padding:'10px 14px', display:'flex', gap:8, flexWrap:'wrap', alignItems:'center' }}>
+          <span style={{ fontSize:12, fontWeight:700, color:'#1d4ed8', flex:1 }}>
+            {selectedIds.size} usuario{selectedIds.size > 1 ? 's' : ''} seleccionado{selectedIds.size > 1 ? 's' : ''}
+          </span>
+          <button onClick={copyEmails} style={{ ...C.pri, fontSize:12 }}>
+            {copied ? '✓ Copiado' : '📋 Copiar emails'}
+          </button>
+          <button onClick={() => exportToCsv(selectedUsers, filters)} style={{ ...C.sec, fontSize:12 }}>
+            ⬇ CSV selección
+          </button>
+          <div style={{ display:'flex', gap:4 }}>
+            <input value={bulkTag} onChange={e => setBulkTag(e.target.value.toLowerCase())}
+              placeholder="Etiqueta a agregar…" style={{ ...C.input, width:140, fontSize:11 }} maxLength={30} />
+            <button onClick={addTagToSelected} disabled={bulkBusy || !bulkTag.trim()} style={{ ...C.sec, fontSize:11 }}>
+              🏷 Agregar
+            </button>
+          </div>
+          <button onClick={() => { setSelectedIds(new Set()); setAllChecked(false) }} style={{ ...C.sec, fontSize:11 }}>✕</button>
+        </div>
+      )}
+
+      {/* Error */}
+      {error && <ErrBox msg={error} onRetry={() => load(filters, 0, true)} />}
+
+      {/* Table — desktop */}
+      <div style={{ ...C.card, overflowX:'auto' }}>
+        <table style={{ width:'100%', borderCollapse:'collapse', minWidth:560 }}>
+          <thead>
+            <tr>
+              <Th ch={<input type="checkbox" checked={allChecked} onChange={toggleAll} style={{ cursor:'pointer' }} />} />
+              <Th ch="Usuario" />
+              <Th ch="Estado" />
+              <Th ch="Actividad" />
+              <Th ch="Tokens" />
+              <Th ch="Etiquetas" />
+              <Th ch="Alta" />
+            </tr>
+          </thead>
+          <tbody>
+            {users.map(u => {
+              const isSelected = selectedIds.has(u.id)
+              const ps = u.premium_status || (u.es_premium ? 'active' : 'free')
+              return (
+                <tr key={u.id} style={{ background: isSelected ? '#eff6ff' : 'white', cursor:'pointer' }}
+                  onMouseEnter={e => { if (!isSelected) e.currentTarget.style.background='#f8fafc' }}
+                  onMouseLeave={e => { if (!isSelected) e.currentTarget.style.background='white'; else e.currentTarget.style.background='#eff6ff' }}>
+                  <Td>
+                    <input type="checkbox" checked={isSelected} onChange={() => toggleSelect(u.id)} style={{ cursor:'pointer' }}
+                      onClick={e => e.stopPropagation()} />
+                  </Td>
+                  <Td s={{ maxWidth:180 }}>
+                    <div onClick={() => setSelected(u)} style={{ fontWeight:600, fontSize:13, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{u.nombre || '—'}</div>
+                    <div onClick={() => setSelected(u)} style={{ fontSize:11, color:'#94a3b8', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{u.email}</div>
+                  </Td>
+                  <Td s={{ onClick:() => setSelected(u) }}>
+                    <span style={{ background:PS_COLORS[ps]+'22', color:PS_COLORS[ps], borderRadius:99, padding:'2px 8px', fontSize:11, fontWeight:700, whiteSpace:'nowrap' }}>
+                      {ps === 'free' ? 'Free' : ps === 'active' ? '★ Premium' : '⚠ Vencido'}
+                    </span>
+                  </Td>
+                  <Td s={{ fontSize:12, color:'#64748b', whiteSpace:'nowrap', onClick:() => setSelected(u) }}>{fmtActivity(u)}</Td>
+                  <Td s={{ fontSize:11, color:'#64748b', whiteSpace:'nowrap', onClick:() => setSelected(u) }}>
+                    {u.total_ai_tokens > 0 ? fmtK(u.total_ai_tokens) : '—'}
+                  </Td>
+                  <Td s={{ maxWidth:130 }}>
+                    <div style={{ display:'flex', flexWrap:'wrap', gap:3 }}>
+                      {(Array.isArray(u.tags) ? u.tags : []).map(t => (
+                        <span key={t} onClick={() => applyFilters({ tag: filters.tag === t ? '' : t })}
+                          style={{ background:'#e0f2fe', color:'#0369a1', borderRadius:99, padding:'1px 6px', fontSize:10, fontWeight:600, cursor:'pointer' }}>{t}</span>
+                      ))}
+                    </div>
+                  </Td>
+                  <Td s={{ fontSize:11, color:'#64748b', whiteSpace:'nowrap', onClick:() => setSelected(u) }}>
+                    {u.created_at ? new Date(u.created_at).toLocaleDateString('es-AR') : '—'}
+                  </Td>
+                </tr>
+              )
+            })}
+            {!loading && users.length === 0 && <tr><td colSpan={7}><Empty text="Sin usuarios para este segmento" /></td></tr>}
+          </tbody>
+        </table>
+      </div>
+
       {loading && <div style={{ textAlign:'center', padding:16 }}><Spin /></div>}
       {hasMore && !loading && (
-        <div style={{ padding:'10px 14px', borderTop:'1px solid #f1f5f9' }}>
-          <button onClick={() => load(search, offset + LIMIT, false)} style={{ ...C.sec, width:'100%' }}>Cargar más</button>
-        </div>
+        <button onClick={() => load(filters, offset + LIMIT, false)} style={{ ...C.sec, width:'100%' }}>
+          Cargar más ({offset + LIMIT} / {total})
+        </button>
       )}
     </div>
   )
@@ -1041,8 +1337,8 @@ export default function AdminPanel({ authToken, onClose }) {
           <div className="adm-content">
             <div style={{ maxWidth:860 }}>
               {tab === 'dashboard'   && <Dashboard     adminFetch={adminFetch} />}
-              {tab === 'users'       && <UsersTab      adminFetch={adminFetch} />}
-              {tab === 'premium'     && <UsersTab      adminFetch={adminFetch} premiumOnly />}
+              {tab === 'users'       && <CrmUsersTab   adminFetch={adminFetch} />}
+              {tab === 'premium'     && <CrmUsersTab   adminFetch={adminFetch} defaultPremiumStatus="active" />}
               {tab === 'codes'       && <CodesTab      adminFetch={adminFetch} />}
               {tab === 'comentarios' && <CommentsTab   adminFetch={adminFetch} />}
               {tab === 'logs'        && <LogsTab       adminFetch={adminFetch} />}

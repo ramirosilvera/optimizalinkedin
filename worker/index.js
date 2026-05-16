@@ -630,23 +630,121 @@ export default {
         const { user_id } = body
         if (!user_id) return new Response(JSON.stringify({ error: 'Falta user_id' }), { status: 400, headers: corsHeaders })
         try {
-          const [perfilRes, subRes, histRes, linkedinRes] = await Promise.all([
+          const [perfilRes, subRes, histRes, linkedinRes, tagsRes, notesRes] = await Promise.all([
             supabaseServiceFetch(env, `perfiles?id=eq.${user_id}&select=*`),
             supabaseServiceFetch(env, `suscripciones?user_id=eq.${user_id}&select=*&order=updated_at.desc&limit=5`),
             supabaseServiceFetch(env, `historial?user_id=eq.${user_id}&select=id,tipo,titulo,created_at&order=created_at.desc&limit=10`),
             supabaseServiceFetch(env, `linkedin_profiles?user_id=eq.${user_id}&select=nombre,headline,email,fuente,synced_at&order=synced_at.desc&limit=1`),
+            supabaseServiceFetch(env, `user_tags?user_id=eq.${user_id}&select=tag,id,created_at&order=created_at.asc`),
+            supabaseServiceFetch(env, `admin_notes?user_id=eq.${user_id}&select=id,nota,created_at&order=created_at.desc&limit=20`),
           ])
-          const [p, s, h, l] = await Promise.all([perfilRes.json(), subRes.json(), histRes.json(), linkedinRes.json()])
+          const [p, s, h, l, tags, notes] = await Promise.all([perfilRes.json(), subRes.json(), histRes.json(), linkedinRes.json(), tagsRes.json(), notesRes.json()])
           return new Response(JSON.stringify({
             ok: true,
             perfil: p?.[0],
             suscripciones: s,
             historial: h,
             linkedin: l?.[0],
+            tags: Array.isArray(tags) ? tags : [],
+            notes: Array.isArray(notes) ? notes : [],
             analisis_count: Array.isArray(h) ? h.filter(x => x.tipo === 'analisis').length : 0,
             cv_count: Array.isArray(h) ? h.filter(x => x.tipo === 'cv').length : 0,
             entrevista_count: Array.isArray(h) ? h.filter(x => x.tipo === 'entrevista').length : 0,
           }), { status: 200, headers: corsHeaders })
+        } catch (e) {
+          return new Response(JSON.stringify({ ok: false, error: e.message }), { status: 500, headers: corsHeaders })
+        }
+      }
+
+      // ── CRM endpoints ────────────────────────────────────────────────────────
+
+      if (body.action === 'admin_crm_users') {
+        const { search = '', premium_status = 'all', feature_used = '', tag = '', sort = 'created_at_desc', offset: off = 0, limit = 25 } = body
+        try {
+          const res = await fetch(`${env.SUPABASE_URL}/rest/v1/rpc/get_admin_users_crm`, {
+            method: 'POST',
+            headers: { apikey: env.SUPABASE_SERVICE_ROLE_KEY, Authorization: `Bearer ${env.SUPABASE_SERVICE_ROLE_KEY}`, 'Content-Type': 'application/json' },
+            body: JSON.stringify({ p_search: search, p_premium_status: premium_status, p_feature_used: feature_used, p_tag: tag, p_sort: sort, p_offset: off, p_limit: limit }),
+          })
+          const data = await res.json()
+          return new Response(JSON.stringify({ ok: true, ...data }), { status: 200, headers: corsHeaders })
+        } catch (e) {
+          return new Response(JSON.stringify({ ok: false, error: e.message }), { status: 500, headers: corsHeaders })
+        }
+      }
+
+      if (body.action === 'admin_crm_export') {
+        if (!canWrite) return new Response(JSON.stringify({ error: 'Sin permisos' }), { status: 403, headers: corsHeaders })
+        const { search = '', premium_status = 'all', feature_used = '', tag = '', sort = 'created_at_desc' } = body
+        try {
+          await logAdminAction(env, admin.userId, 'crm_export', 'users', null, { premium_status, feature_used, tag, search })
+          const res = await fetch(`${env.SUPABASE_URL}/rest/v1/rpc/get_admin_users_crm`, {
+            method: 'POST',
+            headers: { apikey: env.SUPABASE_SERVICE_ROLE_KEY, Authorization: `Bearer ${env.SUPABASE_SERVICE_ROLE_KEY}`, 'Content-Type': 'application/json' },
+            body: JSON.stringify({ p_search: search, p_premium_status: premium_status, p_feature_used: feature_used, p_tag: tag, p_sort: sort, p_offset: 0, p_limit: 1000 }),
+          })
+          const data = await res.json()
+          return new Response(JSON.stringify({ ok: true, ...data }), { status: 200, headers: corsHeaders })
+        } catch (e) {
+          return new Response(JSON.stringify({ ok: false, error: e.message }), { status: 500, headers: corsHeaders })
+        }
+      }
+
+      if (body.action === 'admin_user_add_tag') {
+        if (!canWrite) return new Response(JSON.stringify({ error: 'Sin permisos' }), { status: 403, headers: corsHeaders })
+        const { user_id, tag } = body
+        if (!user_id || !tag?.trim()) return new Response(JSON.stringify({ error: 'Faltan user_id y tag' }), { status: 400, headers: corsHeaders })
+        try {
+          await supabaseServiceFetch(env, 'user_tags', {
+            method: 'POST',
+            body: JSON.stringify({ user_id, tag: tag.trim().toLowerCase(), created_by: admin.userId }),
+            headers: { Prefer: 'return=minimal,resolution=ignore-duplicates' },
+          })
+          await logAdminAction(env, admin.userId, 'user_add_tag', 'user', user_id, { tag: tag.trim() })
+          return new Response(JSON.stringify({ ok: true }), { status: 200, headers: corsHeaders })
+        } catch (e) {
+          return new Response(JSON.stringify({ ok: false, error: e.message }), { status: 500, headers: corsHeaders })
+        }
+      }
+
+      if (body.action === 'admin_user_remove_tag') {
+        if (!canWrite) return new Response(JSON.stringify({ error: 'Sin permisos' }), { status: 403, headers: corsHeaders })
+        const { user_id, tag } = body
+        if (!user_id || !tag) return new Response(JSON.stringify({ error: 'Faltan user_id y tag' }), { status: 400, headers: corsHeaders })
+        try {
+          await supabaseServiceFetch(env, `user_tags?user_id=eq.${user_id}&tag=eq.${encodeURIComponent(tag)}`, {
+            method: 'DELETE', headers: { Prefer: 'return=minimal' },
+          })
+          await logAdminAction(env, admin.userId, 'user_remove_tag', 'user', user_id, { tag })
+          return new Response(JSON.stringify({ ok: true }), { status: 200, headers: corsHeaders })
+        } catch (e) {
+          return new Response(JSON.stringify({ ok: false, error: e.message }), { status: 500, headers: corsHeaders })
+        }
+      }
+
+      if (body.action === 'admin_user_add_note') {
+        if (!canWrite) return new Response(JSON.stringify({ error: 'Sin permisos' }), { status: 403, headers: corsHeaders })
+        const { user_id, nota } = body
+        if (!user_id || !nota?.trim()) return new Response(JSON.stringify({ error: 'Faltan user_id y nota' }), { status: 400, headers: corsHeaders })
+        try {
+          await supabaseServiceFetch(env, 'admin_notes', {
+            method: 'POST',
+            body: JSON.stringify({ user_id, nota: nota.trim(), created_by: admin.userId }),
+            headers: { Prefer: 'return=minimal' },
+          })
+          await logAdminAction(env, admin.userId, 'user_add_note', 'user', user_id)
+          return new Response(JSON.stringify({ ok: true }), { status: 200, headers: corsHeaders })
+        } catch (e) {
+          return new Response(JSON.stringify({ ok: false, error: e.message }), { status: 500, headers: corsHeaders })
+        }
+      }
+
+      if (body.action === 'admin_user_all_tags') {
+        try {
+          const res = await supabaseServiceFetch(env, 'user_tags?select=tag&order=tag.asc')
+          const rows = await res.json()
+          const tags = [...new Set((Array.isArray(rows) ? rows : []).map(r => r.tag))].sort()
+          return new Response(JSON.stringify({ ok: true, tags }), { status: 200, headers: corsHeaders })
         } catch (e) {
           return new Response(JSON.stringify({ ok: false, error: e.message }), { status: 500, headers: corsHeaders })
         }
