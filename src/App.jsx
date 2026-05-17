@@ -95,6 +95,8 @@ export default function App() {
   const [interviewFeedback, setInterviewFeedback] = useState(null)
   const [interviewLoading, setInterviewLoading] = useState(false)
   const [interviewError, setInterviewError] = useState('')
+  const [dynamicInterviewQs, setDynamicInterviewQs] = useState(null)
+  const [interviewQsLoading, setInterviewQsLoading] = useState(false)
 
   // Contacto con Ramiro
   const [leadSaving, setLeadSaving] = useState(false)
@@ -1167,11 +1169,50 @@ export default function App() {
     setInterviewFeedback(null)
     setInterviewLoading(false)
     setInterviewError('')
+    setDynamicInterviewQs(null)
+    setInterviewQsLoading(false)
     setLeadSaving(false)
     setLeadSent(false)
     setShowLeadModal(false)
     setLeadNombre('')
     setLeadApellido('')
+  }
+
+  const generatePersonalizedInterviewQs = async () => {
+    const profesion = qaHistory.find(h => h.questionId === 'profesion')?.answer || qaHistory[0]?.answer || ''
+    const industria = qaHistory.find(h => h.questionId === 'industria')?.answer || ''
+    const seniority = qaHistory.find(h => h.questionId === 'seniority')?.answer || ''
+    if (!profesion || !WORKER_URL) return
+    setInterviewQsLoading(true)
+    try {
+      const prompt = `Sos un headhunter experto generando preguntas de entrevista laboral personalizadas.
+
+Candidato: ${profesion}${industria ? ` · Industria: ${industria}` : ''}${seniority ? ` · Nivel: ${seniority}` : ''}
+
+Generá exactamente 5 preguntas de entrevista adaptadas a este perfil. Deben ser relevantes para su profesión y nivel, no genéricas.
+Formato JSON exacto: [{"pregunta": "...", "hint": "..."}]
+
+Devolvé solo el array JSON, sin markdown ni explicación.`
+      const res = await fetch(WORKER_URL, {
+        method: 'POST',
+        headers: WORKER_HEADERS,
+        body: JSON.stringify({
+          action: 'ai_generic',
+          contents: [{ parts: [{ text: prompt }] }],
+          generationConfig: { responseMimeType: 'application/json', maxOutputTokens: 900 },
+        }),
+      })
+      if (!res.ok) throw new Error('err')
+      const data = await res.json()
+      const parsed = JSON.parse(extractAIText(data))
+      if (Array.isArray(parsed) && parsed.length === 5 && parsed[0]?.pregunta) {
+        setDynamicInterviewQs(parsed)
+      }
+    } catch {
+      // silently fallback to static questions
+    } finally {
+      setInterviewQsLoading(false)
+    }
   }
 
   const handleWaitlist = async (email) => {
@@ -1792,7 +1833,8 @@ Generá el feedback en este JSON exacto:
     setStarFeedback(null)
     const _tStar = Date.now()
     const pregunta = STAR_QUESTIONS[starQuestionIdx]
-    const userPrompt = `Pregunta de entrevista: "${pregunta}"\n\nRespuesta del candidato:\n"${starAnswer}"\n\nEvaluá si la respuesta aplica la metodología STAR. Respondé con este JSON exacto:\n{\n  "puntaje": número del 1 al 10,\n  "situacion": { "presente": true/false, "comentario": "max 1 oración" },\n  "tarea": { "presente": true/false, "comentario": "max 1 oración" },\n  "accion": { "presente": true/false, "comentario": "max 1 oración" },\n  "resultado": { "presente": true/false, "comentario": "max 1 oración" },\n  "sugerencia_clave": "1 mejora concreta y específica para esta respuesta"\n}`
+    const profesionCtx = (qaHistory.find(h => h.questionId === 'profesion')?.answer || qaHistory[0]?.answer || '').trim()
+    const userPrompt = `Pregunta de entrevista: "${pregunta}"\n${profesionCtx ? `\nContexto del candidato: ${profesionCtx}\n` : ''}\nRespuesta del candidato:\n"${starAnswer}"\n\nEvaluá si la respuesta aplica la metodología STAR. Respondé con este JSON exacto:\n{\n  "puntaje": número del 1 al 10,\n  "situacion": { "presente": true/false, "comentario": "max 1 oración" },\n  "tarea": { "presente": true/false, "comentario": "max 1 oración" },\n  "accion": { "presente": true/false, "comentario": "max 1 oración" },\n  "resultado": { "presente": true/false, "comentario": "max 1 oración" },\n  "sugerencia_clave": "1 mejora concreta y específica para esta respuesta"\n}`
     const controller = new AbortController()
     const timeoutId = setTimeout(() => controller.abort(), 30000)
     try {
@@ -2470,10 +2512,11 @@ JSON:
   // ── Avanzar en la entrevista ──
   const handleInterviewNext = (answer) => {
     if (interviewLoading) return
-    const newAnswers = [...interviewAnswers, { pregunta: INTERVIEW_QUESTIONS[interviewIdx].pregunta, respuesta: answer }]
+    const activeQs = dynamicInterviewQs || INTERVIEW_QUESTIONS
+    const newAnswers = [...interviewAnswers, { pregunta: activeQs[interviewIdx].pregunta, respuesta: answer }]
     setInterviewAnswers(newAnswers)
     setInterviewAnswer('')
-    if (newAnswers.length < INTERVIEW_QUESTIONS.length) {
+    if (newAnswers.length < activeQs.length) {
       setInterviewIdx(interviewIdx + 1)
     } else {
       callInterviewFeedback(newAnswers)
@@ -3463,7 +3506,15 @@ JSON:
                       {jobAdapterCheckLoading ? <Spinner size={5} /> : '📝'}
                     </div>
                     <div className="flex-1 min-w-0">
-                      <span className="font-bold text-slate-900 text-base block mb-1">Adaptar CV para un aviso</span>
+                      <div className="flex items-center gap-2 mb-1">
+                        <span className="font-bold text-slate-900 text-base">Adaptar CV para un aviso</span>
+                        {cvFinalData && (
+                          <span className="text-[10px] font-bold px-2 py-0.5 rounded-full shrink-0"
+                            style={{ background: 'rgba(99,102,241,0.12)', color: '#6366f1' }}>
+                            CV listo ✓
+                          </span>
+                        )}
+                      </div>
                       <p className="text-slate-500 text-xs leading-relaxed">
                         Pegá un aviso de empleo y la IA adapta tu CV y genera la carta de presentación personalizada.
                       </p>
@@ -4536,6 +4587,20 @@ JSON:
                     <p className="text-[10px] text-slate-500 mt-0.5">5 preguntas con IA</p>
                   </button>
                 </div>
+                {/* Job Adapter — aparece sólo cuando ya hay CV generado */}
+                {cvFinalData && (
+                  <button
+                    onClick={() => { setJobCvForAdapter(cvFinalData); setJobPosting(''); setJobResult(null); setJobError(''); setShowJobModal(true); trackEvent('job_adapter_from_results') }}
+                    className="w-full rounded-2xl p-3.5 text-left transition-all hover:shadow-md active:scale-[0.98] flex items-center gap-3"
+                    style={{ background: 'rgba(99,102,241,0.06)', border: '1px solid rgba(99,102,241,0.22)' }}
+                  >
+                    <span className="text-lg shrink-0">📝</span>
+                    <div>
+                      <p className="text-xs font-bold text-slate-800 leading-tight">Adaptar CV para una oferta</p>
+                      <p className="text-[10px] text-slate-500 mt-0.5">Pegá el aviso · IA lo ajusta + carta de presentación</p>
+                    </div>
+                  </button>
+                )}
               </div>
             )}
 
@@ -4560,27 +4625,45 @@ JSON:
                 </div>
               )}
 
-              {/* Loading states */}
-              {(cvStage === 'pre_loading' || cvStage === 'drafting' || cvStage === 'scoring' || cvStage === 'regenerating') && (
-                <div className="rounded-2xl p-5 text-center space-y-3"
-                  style={{ background: 'rgba(0,119,181,0.04)', border: '1px solid rgba(0,119,181,0.12)' }}>
-                  <div className="flex justify-center">
-                    <div className="w-8 h-8 border-2 rounded-full animate-spin" style={{ borderColor: 'rgba(0,119,181,0.25)', borderTopColor: '#0077B5' }} />
+              {/* Loading states — pipeline progress bar */}
+              {(cvStage === 'pre_loading' || cvStage === 'drafting' || cvStage === 'scoring' || cvStage === 'regenerating') && (() => {
+                const cvPipeline = [
+                  { label: 'Analizando', stage: 'pre_loading', sub: 'Identificando qué información potencia tu CV' },
+                  { label: 'Generando', stage: 'drafting', sub: 'Extrayendo experiencia real del perfil' },
+                  { label: 'Revisando', stage: 'scoring', sub: 'Evaluando calidad, logros y compatibilidad ATS' },
+                  { label: 'Mejorando', stage: 'regenerating', sub: 'Integrando la información que nos diste' },
+                ]
+                const activeIdx = cvPipeline.findIndex(s => s.stage === cvStage)
+                const active = cvPipeline[activeIdx]
+                return (
+                  <div className="rounded-2xl p-5 space-y-4"
+                    style={{ background: 'rgba(0,119,181,0.04)', border: '1px solid rgba(0,119,181,0.12)' }}>
+                    {/* Step bar */}
+                    <div className="flex items-center gap-1">
+                      {cvPipeline.map((s, i) => (
+                        <div key={s.stage} className="flex items-center gap-1 flex-1 min-w-0">
+                          <div className="flex flex-col items-center gap-1 flex-1 min-w-0">
+                            <div className={`w-full h-1.5 rounded-full transition-all duration-700 ${i < activeIdx ? 'opacity-100' : i === activeIdx ? 'opacity-100' : 'opacity-30'}`}
+                              style={{ background: i <= activeIdx ? 'linear-gradient(90deg,#0077B5,#0ea5e9)' : 'rgba(0,119,181,0.18)' }} />
+                            <span className="text-[10px] font-medium truncate w-full text-center"
+                              style={{ color: i === activeIdx ? '#0077B5' : i < activeIdx ? '#64748b' : '#cbd5e1' }}>
+                              {s.label}
+                            </span>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                    {/* Spinner + message */}
+                    <div className="flex items-center gap-3">
+                      <div className="w-6 h-6 shrink-0 border-2 rounded-full animate-spin" style={{ borderColor: 'rgba(0,119,181,0.2)', borderTopColor: '#0077B5' }} />
+                      <div>
+                        <p className="text-sm font-medium text-slate-700">{active?.label}...</p>
+                        <p className="text-xs text-slate-400">{active?.sub}</p>
+                      </div>
+                    </div>
                   </div>
-                  <p className="text-sm font-medium text-slate-700">
-                    {cvStage === 'pre_loading' && 'Analizando tu perfil...'}
-                    {cvStage === 'drafting' && 'Generando tu CV...'}
-                    {cvStage === 'scoring' && 'Revisando con consultor de empleabilidad...'}
-                    {cvStage === 'regenerating' && 'Aplicando mejoras...'}
-                  </p>
-                  <p className="text-xs text-slate-400">
-                    {cvStage === 'pre_loading' && 'Identificando qué información potenciaría tu CV'}
-                    {cvStage === 'drafting' && 'Extrayendo tu experiencia real del perfil'}
-                    {cvStage === 'scoring' && 'Evaluando calidad, fechas, logros y compatibilidad ATS'}
-                    {cvStage === 'regenerating' && 'Integrando la información que nos diste'}
-                  </p>
-                </div>
-              )}
+                )
+              })()}
 
               {/* Pre-questions — enriquecer antes de generar */}
               {cvStage === 'pre_questions' && cvPreQuestions.length > 0 && (
@@ -5298,10 +5381,10 @@ JSON:
 
                   <button
                     onClick={() => { setJobCvForAdapter(cvFinalData); setJobPosting(''); setJobResult(null); setJobError(''); setShowJobModal(true); trackEvent('job_adapter_opened') }}
-                    className="w-full py-3.5 rounded-xl text-sm font-semibold transition-all"
-                    style={{ background: 'rgba(99,102,241,0.08)', border: '1px solid rgba(99,102,241,0.25)', color: '#6366f1' }}
+                    className="btn-glow w-full py-3.5 rounded-xl text-sm font-semibold transition-all text-white flex items-center justify-center gap-2"
+                    style={{ background: 'linear-gradient(135deg,#6366f1,#8b5cf6)' }}
                   >
-                    📝 Adaptar para un aviso de empleo →
+                    📝 Adaptar este CV para una oferta →
                   </button>
                   <button
                     onClick={() => { setCvStage('idle'); setCvDraft(null); setCvFinalData(null); setCvQuality(null); setCvPreviewHtml(''); setShowCvPreview(false) }}
@@ -5651,7 +5734,11 @@ JSON:
 
             <div className="space-y-3">
               <button
-                onClick={() => { trackEvent('entrevista_iniciada'); setStep(STEPS.INTERVIEW) }}
+                onClick={() => {
+                  trackEvent('entrevista_iniciada')
+                  generatePersonalizedInterviewQs()
+                  setStep(STEPS.INTERVIEW)
+                }}
                 className="btn-glow w-full text-white font-semibold py-4 rounded-2xl text-base"
                 style={{ background: 'linear-gradient(135deg,#6366f1,#8b5cf6)' }}
               >
@@ -5673,31 +5760,52 @@ JSON:
           <div className="step-transition space-y-7">
             <Logo />
 
-            {/* Progress */}
-            <div className="flex items-center gap-1.5">
-              {INTERVIEW_QUESTIONS.map((_, i) => (
-                <div key={i} className="h-1.5 rounded-full transition-all duration-500 flex-1"
-                  style={{
-                    background: i < interviewIdx
-                      ? 'linear-gradient(90deg,#6366f1,#8b5cf6)'
-                      : i === interviewIdx
-                        ? 'rgba(99,102,241,0.5)'
-                        : 'rgba(0,119,181,0.12)',
-                  }} />
-              ))}
-            </div>
-            <p className="text-xs text-slate-500 -mt-4">
-              Pregunta {interviewIdx + 1} de {INTERVIEW_QUESTIONS.length}
-            </p>
+            {/* Personalized questions loading badge */}
+            {interviewQsLoading && (
+              <div className="flex items-center gap-2 text-xs px-3 py-1.5 rounded-full w-fit"
+                style={{ background: 'rgba(99,102,241,0.08)', color: '#6366f1' }}>
+                <Spinner size={3} /> Personalizando preguntas para tu perfil...
+              </div>
+            )}
+            {dynamicInterviewQs && !interviewQsLoading && (
+              <div className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-full w-fit"
+                style={{ background: 'rgba(99,102,241,0.08)', color: '#6366f1' }}>
+                ✦ Preguntas adaptadas a tu perfil
+              </div>
+            )}
 
-            <div>
-              <h2 className="text-2xl sm:text-3xl font-bold text-slate-900 leading-snug" style={{ letterSpacing: '-0.01em' }}>
-                {INTERVIEW_QUESTIONS[interviewIdx].pregunta}
-              </h2>
-              <p className="text-slate-500 text-sm mt-2 leading-relaxed">
-                {INTERVIEW_QUESTIONS[interviewIdx].hint}
-              </p>
-            </div>
+            {/* Progress */}
+            {(() => {
+              const activeQs = dynamicInterviewQs || INTERVIEW_QUESTIONS
+              return (
+                <>
+                  <div className="flex items-center gap-1.5">
+                    {activeQs.map((_, i) => (
+                      <div key={i} className="h-1.5 rounded-full transition-all duration-500 flex-1"
+                        style={{
+                          background: i < interviewIdx
+                            ? 'linear-gradient(90deg,#6366f1,#8b5cf6)'
+                            : i === interviewIdx
+                              ? 'rgba(99,102,241,0.5)'
+                              : 'rgba(0,119,181,0.12)',
+                        }} />
+                    ))}
+                  </div>
+                  <p className="text-xs text-slate-500 -mt-4">
+                    Pregunta {interviewIdx + 1} de {activeQs.length}
+                  </p>
+
+                  <div>
+                    <h2 className="text-2xl sm:text-3xl font-bold text-slate-900 leading-snug" style={{ letterSpacing: '-0.01em' }}>
+                      {activeQs[interviewIdx].pregunta}
+                    </h2>
+                    <p className="text-slate-500 text-sm mt-2 leading-relaxed">
+                      {activeQs[interviewIdx].hint}
+                    </p>
+                  </div>
+                </>
+              )
+            })()}
 
             <div className="space-y-3">
               <div className="relative">
@@ -6185,7 +6293,7 @@ JSON:
                   </div>
                 )}
 
-                {/* Premium upsell — solo se muestra cuando hay feedback */}
+                {/* Premium upsell + siguiente paso — solo se muestra cuando hay feedback */}
                 {starFeedback && (
                   <>
                     {!user?.es_premium && (
@@ -6202,6 +6310,21 @@ JSON:
                         </button>
                       </div>
                     )}
+                    {/* Siguiente paso: entrevista completa */}
+                    <div className="rounded-2xl p-4 space-y-2.5"
+                      style={{ background: 'rgba(99,102,241,0.06)', border: '1px solid rgba(99,102,241,0.22)' }}>
+                      <p className="text-sm font-semibold text-slate-800">🎙️ Ahora probalo en una entrevista real</p>
+                      <p className="text-slate-500 text-xs leading-relaxed">
+                        Aplicá la técnica STAR en nuestra simulación de entrevista completa. 5 preguntas con feedback detallado de IA.
+                      </p>
+                      <button
+                        onClick={() => { resetInterview(); trackEvent('star_to_interview_cta'); setStep(STEPS.INTERVIEW_INTRO) }}
+                        className="w-full py-2.5 rounded-xl text-white text-xs font-semibold"
+                        style={{ background: 'linear-gradient(135deg,#6366f1,#8b5cf6)' }}
+                      >
+                        Simulá una entrevista →
+                      </button>
+                    </div>
                   </>
                 )}
 
