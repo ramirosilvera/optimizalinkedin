@@ -145,6 +145,8 @@ export default function App() {
   const [cvPreviewHtml, setCvPreviewHtml] = useState('')
   const [showCvPreview, setShowCvPreview] = useState(false)
   const [cvCanvasLoading, setCvCanvasLoading] = useState(false)
+  const [cvCanvasError, setCvCanvasError] = useState('')
+  const [cvCanvasSuccess, setCvCanvasSuccess] = useState(false)
   const [cvOptimizing, setCvOptimizing] = useState(false)
   const [cvOptimizeError, setCvOptimizeError] = useState('')
   const [cvOptimizeSuggestion, setCvOptimizeSuggestion] = useState(null)
@@ -1950,42 +1952,95 @@ Generá el feedback en este JSON exacto:
   const downloadCvCanvas = useCallback(async () => {
     if (!cvPreviewHtml || cvCanvasLoading) return
     setCvCanvasLoading(true)
+    setCvCanvasError('')
+    setCvCanvasSuccess(false)
+
+    const isIOS = /iPhone|iPad|iPod/i.test(navigator.userAgent)
+    let wrap = null
     try {
       const { default: html2canvas } = await import('html2canvas')
       const parser = new DOMParser()
       const doc = parser.parseFromString(cvPreviewHtml, 'text/html')
+      // Extract only <style> tags — scripts intentionally excluded so autofit doesn't fire
       const styles = Array.from(doc.querySelectorAll('style')).map(s => s.textContent).join('\n')
 
-      const wrap = document.createElement('div')
-      wrap.style.cssText = 'position:fixed;left:-9999px;top:0;width:794px;background:#fff;z-index:-100;box-sizing:border-box;'
+      wrap = document.createElement('div')
+      // Visible to html2canvas but outside viewport — no z-index tricks that break rendering
+      wrap.style.cssText = 'position:fixed;left:-9999px;top:0;width:794px;height:auto;background:#fff;overflow:visible;visibility:hidden;'
       const styleEl = document.createElement('style')
       styleEl.textContent = styles
       wrap.appendChild(styleEl)
       const content = document.createElement('div')
+      content.style.cssText = 'width:794px;background:#fff;'
       content.innerHTML = doc.body.innerHTML
+      // Remove any inline script tags from injected HTML (won't execute via innerHTML anyway but clean up)
+      content.querySelectorAll('script').forEach(s => s.remove())
       wrap.appendChild(content)
       document.body.appendChild(wrap)
 
-      await new Promise(r => setTimeout(r, 500))
+      // Give browser time to apply styles (fonts, layout)
+      await new Promise(r => setTimeout(r, 700))
 
       const canvas = await html2canvas(content, {
-        scale: 2, useCORS: true, allowTaint: true,
-        backgroundColor: '#ffffff', logging: false, windowWidth: 794,
+        scale: 2,
+        useCORS: true,
+        allowTaint: true,
+        backgroundColor: '#ffffff',
+        logging: false,
+        windowWidth: 794,
+        onclone: (clonedDoc) => {
+          // Ensure cloned root has correct width and no overflow clipping
+          const clonedContent = clonedDoc.querySelector('div')
+          if (clonedContent) clonedContent.style.overflow = 'visible'
+        },
       })
-      document.body.removeChild(wrap)
 
-      const nombre = (cvFinalData?.nombre || 'mi-cv').replace(/[^a-zA-Z0-9\s]/g, '').replace(/\s+/g, '-')
-      canvas.toBlob(blob => {
-        if (!blob) return
+      document.body.removeChild(wrap)
+      wrap = null
+
+      const nombre = (cvFinalData?.nombre || 'mi-cv')
+        .normalize('NFD').replace(/[̀-ͯ]/g, '')
+        .replace(/[^a-zA-Z0-9\s]/g, '').trim().replace(/\s+/g, '-') || 'mi-cv'
+
+      if (isIOS) {
+        // iOS Safari blocks blob downloads — open data URL in new tab so user can long-press → Save to Photos
+        const dataUrl = canvas.toDataURL('image/png')
+        const win = window.open('', '_blank')
+        if (win) {
+          win.document.write(`<!DOCTYPE html><html><head><title>CV ${nombre}</title>
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<style>*{margin:0;padding:0;box-sizing:border-box}body{background:#0f172a;min-height:100vh;display:flex;flex-direction:column;align-items:center;padding:16px 12px 32px}
+.hint{color:#94a3b8;font-family:-apple-system,sans-serif;font-size:13px;line-height:1.5;text-align:center;padding:12px 0 16px;max-width:300px}
+.hint strong{color:#e2e8f0}img{max-width:100%;border-radius:4px;box-shadow:0 4px 24px rgba(0,0,0,0.4)}</style></head>
+<body><p class="hint"><strong>Mantené presionada la imagen</strong><br>→ "Guardar en Fotos"</p>
+<img src="${dataUrl}" alt="CV de ${nombre}"></body></html>`)
+          win.document.close()
+          trackEvent('cv_download_canvas', { format: 'png', platform: 'ios', method: 'new_tab' })
+        } else {
+          throw new Error('El navegador bloqueó la nueva pestaña. Habilitá pop-ups para esta página.')
+        }
+      } else {
+        // Desktop + Android Chrome: promisified toBlob → anchor download
+        const blob = await new Promise((resolve, reject) => {
+          canvas.toBlob(b => b ? resolve(b) : reject(new Error('No se pudo generar el blob')), 'image/png')
+        })
         const url = URL.createObjectURL(blob)
         const a = document.createElement('a')
-        a.href = url; a.download = `CV-${nombre}.png`
-        document.body.appendChild(a); a.click(); document.body.removeChild(a)
-        URL.revokeObjectURL(url)
-        trackEvent('cv_download_canvas', { format: 'png' })
-      }, 'image/png', 0.95)
-    } catch (e) {
-      console.error('[canvas cv]', e)
+        a.href = url
+        a.download = `CV-${nombre}.png`
+        document.body.appendChild(a)
+        a.click()
+        document.body.removeChild(a)
+        setTimeout(() => URL.revokeObjectURL(url), 2000)
+        setCvCanvasSuccess(true)
+        setTimeout(() => setCvCanvasSuccess(false), 4000)
+        trackEvent('cv_download_canvas', { format: 'png', platform: 'other' })
+      }
+    } catch (err) {
+      if (wrap && wrap.parentNode) wrap.parentNode.removeChild(wrap)
+      console.error('[canvas cv]', err)
+      setCvCanvasError(err.message || 'No se pudo generar la imagen. Intentá de nuevo.')
+      trackEvent('cv_canvas_error', { reason: err.message || 'unknown' })
     } finally {
       setCvCanvasLoading(false)
     }
@@ -2742,29 +2797,61 @@ Generá el feedback en este JSON exacto:
               </button>
             </div>
           </div>
-          {/* Instrucción contextual */}
-          <div className="px-4 py-2 shrink-0 flex items-center justify-center gap-2"
+          {/* Barra de acciones contextual */}
+          <div className="px-4 py-2 shrink-0 space-y-1.5"
             style={{ background: '#f0f7ff', borderBottom: '1px solid rgba(0,119,181,0.12)' }}>
-            {/iPhone|iPad|iPod|Android/i.test(navigator.userAgent) ? (
-              <button
-                onClick={downloadCvCanvas}
-                disabled={cvCanvasLoading}
-                className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-white text-xs font-semibold"
-                style={{ background: cvCanvasLoading ? 'rgba(0,119,181,0.4)' : LI_GRADIENT }}>
-                {cvCanvasLoading ? '⏳ Generando...' : '📥 Descargar imagen (PNG)'}
-              </button>
-            ) : (
-              <>
+            <div className="flex items-center justify-center gap-2 flex-wrap">
+              {/iPhone|iPad|iPod/i.test(navigator.userAgent) ? (
+                // iOS: botón prominente + instrucción de guardado
                 <button
                   onClick={downloadCvCanvas}
                   disabled={cvCanvasLoading}
-                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold"
-                  style={{ background: 'rgba(0,119,181,0.08)', color: '#0077B5', border: '1px solid rgba(0,119,181,0.2)' }}>
-                  {cvCanvasLoading ? '⏳...' : '🖼️ PNG'}
+                  className="flex items-center gap-2 px-5 py-2.5 rounded-xl text-white text-sm font-semibold"
+                  style={{ background: cvCanvasLoading ? 'rgba(0,119,181,0.45)' : LI_GRADIENT, minWidth: 200, justifyContent: 'center' }}>
+                  {cvCanvasLoading
+                    ? <><span className="w-3.5 h-3.5 rounded-full border-2 border-white border-t-transparent animate-spin inline-block" /> Generando imagen…</>
+                    : '📥 Guardar como imagen'}
                 </button>
-                <span className="text-xs text-slate-400">·</span>
-                <span className="text-xs text-slate-500">Para PDF: clic en <strong>Guardar PDF</strong> → elegí <em>Guardar como PDF</em></span>
-              </>
+              ) : /Android/i.test(navigator.userAgent) ? (
+                // Android: descarga directa
+                <button
+                  onClick={downloadCvCanvas}
+                  disabled={cvCanvasLoading}
+                  className="flex items-center gap-2 px-5 py-2.5 rounded-xl text-white text-sm font-semibold"
+                  style={{ background: cvCanvasLoading ? 'rgba(0,119,181,0.45)' : LI_GRADIENT, minWidth: 200, justifyContent: 'center' }}>
+                  {cvCanvasLoading
+                    ? <><span className="w-3.5 h-3.5 rounded-full border-2 border-white border-t-transparent animate-spin inline-block" /> Generando…</>
+                    : cvCanvasSuccess ? '✅ Imagen descargada' : '📥 Descargar PNG'}
+                </button>
+              ) : (
+                // Desktop: botón PNG + instrucción PDF
+                <>
+                  <button
+                    onClick={downloadCvCanvas}
+                    disabled={cvCanvasLoading}
+                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all"
+                    style={{ background: 'rgba(0,119,181,0.10)', color: '#0077B5', border: '1px solid rgba(0,119,181,0.25)', minWidth: 80, justifyContent: 'center' }}>
+                    {cvCanvasLoading
+                      ? <><span className="w-3 h-3 rounded-full border-2 border-blue-500 border-t-transparent animate-spin inline-block" /></>
+                      : cvCanvasSuccess ? '✅ Descargado' : '🖼️ Descargar PNG'}
+                  </button>
+                  <span className="text-xs text-slate-400">·</span>
+                  <span className="text-xs text-slate-500">PDF: clic en <strong>Guardar PDF</strong> → <em>Guardar como PDF</em></span>
+                </>
+              )}
+            </div>
+            {/* Instrucción iOS post-click */}
+            {/iPhone|iPad|iPod/i.test(navigator.userAgent) && !cvCanvasLoading && !cvCanvasError && (
+              <p className="text-center text-xs text-slate-500 leading-relaxed">
+                Se abrirá una nueva pestaña → <strong>Mantené presionada la imagen</strong> → "Guardar en Fotos"
+              </p>
+            )}
+            {/* Error */}
+            {cvCanvasError && (
+              <p className="text-center text-xs font-medium" style={{ color: '#ef4444' }}>
+                ⚠ {cvCanvasError}
+                <button onClick={() => setCvCanvasError('')} className="ml-2 underline opacity-70">OK</button>
+              </p>
             )}
           </div>
           <iframe
