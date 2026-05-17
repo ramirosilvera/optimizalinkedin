@@ -26,6 +26,9 @@ import AdminPanel from './admin/AdminPanel'
 import { useTracking } from './hooks/useTracking'
 import WelcomeScreen from './components/screens/WelcomeScreen'
 import ModeSelectScreen from './components/screens/ModeSelectScreen'
+import QuestionnaireScreen from './components/screens/QuestionnaireScreen'
+import LoadingScreen from './components/screens/LoadingScreen'
+import InterviewIntroScreen from './components/screens/InterviewIntroScreen'
 
 // ── Main App ───────────────────────────────────────────────────
 
