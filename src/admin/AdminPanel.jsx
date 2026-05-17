@@ -11,15 +11,11 @@ const C = {
 }
 
 const TABS = [
-  { id:'dashboard',    label:'Dashboard',     icon:'📊' },
-  { id:'users',        label:'Usuarios',      icon:'👥' },
-  { id:'premium',      label:'Premium',       icon:'⭐' },
-  { id:'revenue',      label:'Revenue',       icon:'💰' },
-  { id:'inteligencia', label:'Inteligencia',  icon:'🧠' },
-  { id:'codes',        label:'Códigos',       icon:'🎫' },
-  { id:'comentarios',  label:'Comentarios',   icon:'💬' },
-  { id:'logs',         label:'Logs',          icon:'📋' },
-  { id:'ia',           label:'IA',            icon:'🤖' },
+  { id:'overview',  label:'Overview',  icon:'📊' },
+  { id:'clientes',  label:'Clientes',  icon:'👥' },
+  { id:'revenue',   label:'Revenue',   icon:'💰' },
+  { id:'producto',  label:'Producto',  icon:'🧠' },
+  { id:'sistema',   label:'Sistema',   icon:'⚙️'  },
 ]
 
 // Gemini 2.5 Flash Lite pricing (USD per token)
@@ -435,6 +431,18 @@ function CrmUsersTab({ adminFetch, defaultPremiumStatus = 'all' }) {
 
   return (
     <div style={{ display:'flex', flexDirection:'column', gap:12 }}>
+      {/* Segment toggle */}
+      <div style={{ display:'flex', gap:6, flexWrap:'wrap' }}>
+        {[{ v:'all', l:'Todos' }, { v:'active', l:'★ Premium' }, { v:'free', l:'Free' }, { v:'expired', l:'⚠ Vencidos' }].map(o => (
+          <button key={o.v} onClick={() => applyFilters({ premiumStatus: o.v })} style={{
+            padding:'6px 14px', borderRadius:8, fontSize:12, fontWeight:600, cursor:'pointer',
+            background:   filters.premiumStatus === o.v ? PS_COLORS[o.v] : 'white',
+            color:        filters.premiumStatus === o.v ? 'white'         : '#475569',
+            border:       `1px solid ${filters.premiumStatus === o.v ? PS_COLORS[o.v] : '#e2e8f0'}`,
+          }}>{o.l}</button>
+        ))}
+      </div>
+
       {/* Header */}
       <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', flexWrap:'wrap', gap:8 }}>
         <div style={{ fontSize:13, color:'#64748b' }}>
@@ -1472,8 +1480,8 @@ function RevenueTab({ adminFetch }) {
       </div>
 
       {/* Section toggle */}
-      <div style={{ display:'flex', gap:8, marginBottom:14 }}>
-        {[['events','📋 Eventos de ciclo de vida'],['payments','💳 Pagos registrados']].map(([id, label]) => (
+      <div style={{ display:'flex', gap:8, marginBottom:14, flexWrap:'wrap' }}>
+        {[['events','📋 Eventos'],['payments','💳 Pagos'],['codigos','🎫 Códigos promo']].map(([id, label]) => (
           <button key={id} onClick={() => setSection(id)}
             style={{ padding:'7px 16px', borderRadius:8, fontSize:12, fontWeight: section === id ? 700 : 500, cursor:'pointer',
               background: section === id ? '#0077B5' : '#f8fafc',
@@ -1618,6 +1626,8 @@ function RevenueTab({ adminFetch }) {
           }
         </div>
       )}
+
+      {section === 'codigos' && <CodesTab adminFetch={adminFetch} />}
     </div>
   )
 }
@@ -1632,6 +1642,7 @@ const INTEL_SUBTABS = [
   { id:'friccion',  label:'Diagnóstico'},
   { id:'insights',  label:'Insights'   },
   { id:'tracking',  label:'Tracking'   },
+  { id:'ia',        label:'IA'         },
 ]
 
 const SEVERITY_STYLES = {
@@ -1783,7 +1794,7 @@ function FunnelBar({ stages }) {
         return (
           <div key={i}>
             <div style={{ display:'flex', alignItems:'center', gap:10, marginBottom:4 }}>
-              <div style={{ width:150, fontSize:12, color:'#475569', textAlign:'right', flexShrink:0, fontWeight:500 }}>
+              <div style={{ minWidth:50, flexBasis:130, flexShrink:1, fontSize:12, color:'#475569', textAlign:'right', fontWeight:500, wordBreak:'break-word' }}>
                 {s.stage}
               </div>
               <div style={{ flex:1, background:'#f1f5f9', borderRadius:6, height:26, overflow:'hidden' }}>
@@ -2389,13 +2400,125 @@ function InteligenicaTab({ adminFetch }) {
       )}
 
       {subTab === 'tracking' && <TrackingSection />}
+
+      {subTab === 'ia' && <IaTab adminFetch={adminFetch} />}
+    </div>
+  )
+}
+
+// ── OverviewTab — lean command-center view ────────────────────────────────────
+function OverviewTab({ adminFetch }) {
+  const [data, setData]     = useState(null)
+  const [loading, setLoading] = useState(true)
+  const [error, setError]   = useState('')
+
+  const load = useCallback(async () => {
+    setLoading(true); setError('')
+    const d = await adminFetch('admin_analytics_overview')
+    if (d?.ok) setData(d)
+    else setError(d?.error || 'Error al cargar resumen')
+    setLoading(false)
+  }, [adminFetch])
+
+  useEffect(() => { load() }, [load])
+
+  if (loading) return <div style={{ textAlign:'center', padding:60 }}><Spin /></div>
+  if (error)   return <ErrBox msg={error} onRetry={load} />
+
+  const ov = data?.overview || {}
+  const scores = computeHealthScores(ov)
+  const insights = generateInsights(ov)
+  const critical = insights.filter(i => i.severity === 'danger')
+  const warnings  = insights.filter(i => i.severity === 'warning')
+  const errorRate = ov.ai_requests_30d > 0
+    ? `${(ov.ai_errors_30d / ov.ai_requests_30d * 100).toFixed(1)}% err.` : 'sin errores'
+
+  return (
+    <div>
+      <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:20, flexWrap:'wrap', gap:8 }}>
+        <div>
+          <div style={{ fontSize:16, fontWeight:800, color:'#0d2137' }}>Resumen general</div>
+          <div style={{ fontSize:12, color:'#64748b', marginTop:2 }}>Estado actual del producto — actualizado ahora</div>
+        </div>
+        <button onClick={load} style={{ ...C.sec, fontSize:12 }}>↺ Actualizar</button>
+      </div>
+
+      {critical.length > 0 && (
+        <div style={{ background:'#fef2f2', border:'1px solid #fecaca', borderRadius:10, padding:'12px 16px', marginBottom:16 }}>
+          <div style={{ fontWeight:700, fontSize:12, color:'#dc2626', marginBottom:6 }}>
+            🔴 {critical.length} alerta{critical.length > 1 ? 's' : ''} crítica{critical.length > 1 ? 's' : ''}
+          </div>
+          {critical.map((c, i) => (
+            <div key={i} style={{ fontSize:12, color:'#991b1b', lineHeight:1.5 }}>{c.title}: {c.desc}</div>
+          ))}
+        </div>
+      )}
+
+      <div style={{ fontSize:12, fontWeight:700, color:'#64748b', marginBottom:8, textTransform:'uppercase', letterSpacing:'0.5px' }}>Usuarios</div>
+      <div style={{ display:'flex', gap:8, marginBottom:16, flexWrap:'wrap' }}>
+        <IKpiCard label="Usuarios"    value={fmtN(ov.total_users)}   icon="👥" />
+        <IKpiCard label="Premium"     value={fmtN(ov.premium_users)} icon="⭐" color="#f59e0b" />
+        <IKpiCard label="DAU"         value={fmtN(ov.dau)}           icon="📅" sub="24h" />
+        <IKpiCard label="WAU"         value={fmtN(ov.wau)}           icon="📅" sub="7d" />
+        <IKpiCard label="MAU"         value={fmtN(ov.mau)}           icon="📅" sub="30d" />
+        <IKpiCard label="Nuevos (7d)" value={fmtN(ov.users_7d)}     icon="🆕" color="#16a34a" />
+      </div>
+
+      <div style={{ fontSize:12, fontWeight:700, color:'#64748b', marginBottom:8, textTransform:'uppercase', letterSpacing:'0.5px' }}>Producto</div>
+      <div style={{ display:'flex', gap:8, marginBottom:16, flexWrap:'wrap' }}>
+        <IKpiCard label="Análisis"    value={fmtN(ov.total_analyses)}  icon="🔍" sub={`${fmtN(ov.analyses_7d)} esta sem.`} />
+        <IKpiCard label="CVs"         value={fmtN(ov.total_cvs)}       icon="📄" sub={`${fmtN(ov.cvs_7d)} esta sem.`} />
+        <IKpiCard label="Entrevistas" value={fmtN(ov.total_interviews)} icon="🎤" />
+        <IKpiCard label="STAR"        value={fmtN(ov.total_star)}       icon="⭐" />
+        <IKpiCard label="IA (30d)"    value={fmtN(ov.ai_requests_30d)} icon="🤖" sub={errorRate} color={ov.ai_errors_30d > 0 ? '#dc2626' : '#0077B5'} />
+      </div>
+
+      <div style={{ fontSize:12, fontWeight:700, color:'#64748b', marginBottom:8, textTransform:'uppercase', letterSpacing:'0.5px' }}>Health</div>
+      <div style={{ display:'flex', gap:8, marginBottom:20, flexWrap:'wrap' }}>
+        <HealthGauge score={scores.onboarding} label="Onboarding" color="#0077B5" />
+        <HealthGauge score={scores.engagement} label="Engagement" color="#0ea5e9" />
+        <HealthGauge score={scores.conversion} label="Conversión" color="#f59e0b" />
+        <HealthGauge score={scores.platform}   label="Plataforma" color="#16a34a" />
+      </div>
+
+      {(critical.length > 0 || warnings.length > 0) && (
+        <>
+          <div style={{ fontSize:12, fontWeight:700, color:'#64748b', marginBottom:8, textTransform:'uppercase', letterSpacing:'0.5px' }}>Insights prioritarios</div>
+          {[...critical, ...warnings].slice(0, 4).map((ins, i) => <InsightCard key={i} {...ins} />)}
+        </>
+      )}
+    </div>
+  )
+}
+
+// ── SistemaTab — Comments + Logs with sub-nav ─────────────────────────────────
+function SistemaTab({ adminFetch }) {
+  const [sub, setSub] = useState('comentarios')
+  const SUB = [
+    { id:'comentarios', label:'💬 Comentarios' },
+    { id:'logs',        label:'📋 Logs'        },
+  ]
+  return (
+    <div>
+      <div style={{ display:'flex', gap:6, marginBottom:20, flexWrap:'wrap' }}>
+        {SUB.map(s => (
+          <button key={s.id} onClick={() => setSub(s.id)} style={{
+            padding:'7px 16px', borderRadius:8, fontSize:12, fontWeight:600, cursor:'pointer',
+            background: sub === s.id ? '#0077B5' : 'white',
+            color:       sub === s.id ? 'white'   : '#475569',
+            border:      sub === s.id ? 'none'    : '1px solid #e2e8f0',
+          }}>{s.label}</button>
+        ))}
+      </div>
+      {sub === 'comentarios' && <CommentsTab adminFetch={adminFetch} />}
+      {sub === 'logs'        && <LogsTab     adminFetch={adminFetch} />}
     </div>
   )
 }
 
 // ── Main Panel — sin overlays, sin drawers ────────────────────────────────────
 export default function AdminPanel({ authToken, onClose }) {
-  const [tab, setTab] = useState('dashboard')
+  const [tab, setTab] = useState('overview')
   const adminFetch = useAdminFetch(authToken)
   const cur = TABS.find(t => t.id === tab)
 
@@ -2513,15 +2636,11 @@ export default function AdminPanel({ authToken, onClose }) {
           {/* Content */}
           <div className="adm-content">
             <div style={{ maxWidth:860 }}>
-              {tab === 'dashboard'    && <Dashboard        adminFetch={adminFetch} />}
-              {tab === 'users'        && <CrmUsersTab      adminFetch={adminFetch} />}
-              {tab === 'premium'      && <CrmUsersTab      adminFetch={adminFetch} defaultPremiumStatus="active" />}
-              {tab === 'revenue'      && <RevenueTab       adminFetch={adminFetch} />}
-              {tab === 'inteligencia' && <InteligenicaTab  adminFetch={adminFetch} />}
-              {tab === 'codes'        && <CodesTab         adminFetch={adminFetch} />}
-              {tab === 'comentarios'  && <CommentsTab      adminFetch={adminFetch} />}
-              {tab === 'logs'         && <LogsTab          adminFetch={adminFetch} />}
-              {tab === 'ia'           && <IaTab            adminFetch={adminFetch} />}
+              {tab === 'overview'  && <OverviewTab     adminFetch={adminFetch} />}
+              {tab === 'clientes'  && <CrmUsersTab     adminFetch={adminFetch} />}
+              {tab === 'revenue'   && <RevenueTab      adminFetch={adminFetch} />}
+              {tab === 'producto'  && <InteligenicaTab adminFetch={adminFetch} />}
+              {tab === 'sistema'   && <SistemaTab      adminFetch={adminFetch} />}
             </div>
           </div>
         </div>
