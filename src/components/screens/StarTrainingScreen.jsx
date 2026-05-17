@@ -1,7 +1,7 @@
 import { STAR_QUESTIONS } from '../../data'
 import { STEPS, trackEvent, BTN_BACK_STYLE, LI_GRADIENT, INPUT_STYLE } from '../../constants'
 import { Logo } from '../ui'
-import { RateLimitUI } from '../RateLimitUI'
+import RateLimitUI from '../RateLimitUI'
 
 export default function StarTrainingScreen({ starPhase, setStarPhase, starQuestionIdx, setStarQuestionIdx, starAnswer, setStarAnswer, starFeedback, setStarFeedback, starLoading, starError, setStarError, rateLimitEvento, rateLimitSecs, waitlistEmail, setWaitlistEmail, waitlistSent, waitlistLoading, handleWaitlist, callStarFeedback, resetInterview, interviewFeedback, user, result, setStep, setShowPremiumModal }) {
   return (

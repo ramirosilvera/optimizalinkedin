@@ -4566,1028 +4566,117 @@ Generá el feedback en este JSON exacto:
 
         {/* ── INTERVIEW ── */}
         {step === STEPS.INTERVIEW && (
-          <div className="step-transition space-y-7">
-            <Logo />
-
-            {/* Personalized questions loading badge */}
-            {interviewQsLoading && (
-              <div className="flex items-center gap-2 text-xs px-3 py-1.5 rounded-full w-fit"
-                style={{ background: 'rgba(99,102,241,0.08)', color: '#6366f1' }}>
-                <Spinner size={3} /> Personalizando preguntas para tu perfil...
-              </div>
-            )}
-            {dynamicInterviewQs && !interviewQsLoading && (
-              <div className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-full w-fit"
-                style={{ background: 'rgba(99,102,241,0.08)', color: '#6366f1' }}>
-                ✦ Preguntas adaptadas a tu perfil
-              </div>
-            )}
-
-            {/* Progress */}
-            {(() => {
-              const activeQs = dynamicInterviewQs || INTERVIEW_QUESTIONS
-              return (
-                <>
-                  <div className="flex items-center gap-1.5">
-                    {activeQs.map((_, i) => (
-                      <div key={i} className="h-1.5 rounded-full transition-all duration-500 flex-1"
-                        style={{
-                          background: i < interviewIdx
-                            ? 'linear-gradient(90deg,#6366f1,#8b5cf6)'
-                            : i === interviewIdx
-                              ? 'rgba(99,102,241,0.5)'
-                              : 'rgba(0,119,181,0.12)',
-                        }} />
-                    ))}
-                  </div>
-                  <p className="text-xs text-slate-500 -mt-4">
-                    Pregunta {interviewIdx + 1} de {activeQs.length}
-                  </p>
-
-                  <div>
-                    <h2 className="text-2xl sm:text-3xl font-bold text-slate-900 leading-snug" style={{ letterSpacing: '-0.01em' }}>
-                      {activeQs[interviewIdx].pregunta}
-                    </h2>
-                    <p className="text-slate-500 text-sm mt-2 leading-relaxed">
-                      {activeQs[interviewIdx].hint}
-                    </p>
-                  </div>
-                </>
-              )
-            })()}
-
-            <div className="space-y-3">
-              <div className="relative">
-                <textarea
-                  value={interviewAnswer}
-                  onChange={e => setInterviewAnswer(e.target.value)}
-                  placeholder="Escribí tu respuesta acá... (mínimo 20 caracteres)"
-                  rows={6}
-                  maxLength={800}
-                  className="w-full rounded-2xl px-4 py-3 text-sm resize-none outline-none transition-all duration-200"
-                  style={{
-                    background: '#f8fafc',
-                    border: interviewAnswer.trim().length >= 20 ? '1px solid rgba(99,102,241,0.5)' : '1px solid rgba(0,119,181,0.15)',
-                    color: '#0d2137',
-                  }}
-                />
-                <span className="absolute bottom-2.5 right-3 text-xs pointer-events-none"
-                  style={{ color: interviewAnswer.length > 720 ? '#f59e0b' : '#94a3b8' }}>
-                  {interviewAnswer.length}/800
-                </span>
-              </div>
-              {interviewAnswer.trim().length > 0 && interviewAnswer.trim().length < 20 && (
-                <p className="text-xs text-amber-600">Escribí al menos {20 - interviewAnswer.trim().length} caracteres más para continuar.</p>
-              )}
-              <button
-                disabled={interviewAnswer.trim().length < 20}
-                onClick={() => handleInterviewNext(interviewAnswer.trim())}
-                className={`btn-glow w-full font-semibold py-4 rounded-2xl text-white text-sm ${interviewAnswer.trim().length < 20 ? 'opacity-40 cursor-not-allowed' : ''}`}
-                style={{ background: 'linear-gradient(135deg,#6366f1,#8b5cf6)' }}
-              >
-                {interviewIdx < INTERVIEW_QUESTIONS.length - 1 ? 'Siguiente →' : 'Ver mi feedback →'}
-              </button>
-            </div>
-
-            <button onClick={handleInterviewBack} className="text-slate-600 text-sm hover:text-slate-400 transition-colors py-3 px-3 min-h-[44px]">
-              ← {interviewIdx === 0 ? 'Volver al inicio' : 'Pregunta anterior'}
-            </button>
-          </div>
+          <InterviewScreen
+            interviewQsLoading={interviewQsLoading}
+            dynamicInterviewQs={dynamicInterviewQs}
+            interviewIdx={interviewIdx}
+            interviewAnswer={interviewAnswer}
+            setInterviewAnswer={setInterviewAnswer}
+            handleInterviewNext={handleInterviewNext}
+            handleInterviewBack={handleInterviewBack}
+          />
         )}
 
         {/* ── INTERVIEW FEEDBACK ── */}
         {step === STEPS.INTERVIEW_FEEDBACK && (
-          <div className="step-transition space-y-6">
-            <Logo />
-
-            {interviewLoading ? (
-              <div className="flex flex-col items-center justify-center min-h-[55vh] space-y-8 text-center">
-                <div className="relative w-28 h-28">
-                  <div className="absolute inset-0 rounded-full"
-                    style={{ boxShadow: '0 0 50px rgba(99,102,241,0.25), 0 0 80px rgba(139,92,246,0.1)' }} />
-                  <div className="absolute inset-3 rounded-full" style={{ border: '2px solid rgba(99,102,241,0.10)' }} />
-                  <div className="absolute inset-3 rounded-full border-2 animate-spin"
-                    style={{ borderColor: 'rgba(99,102,241,0.25)', borderTopColor: '#8b5cf6' }} />
-                  <div className="absolute inset-0 flex items-center justify-center text-2xl">🎙️</div>
-                </div>
-                <div className="space-y-2 max-w-xs">
-                  <h2 className="text-2xl font-bold text-slate-900" style={{ letterSpacing: '-0.02em' }}>Evaluando tu entrevista...</h2>
-                  <p className="text-slate-500 text-sm leading-relaxed">Analizando tus respuestas con criterio de headhunter.</p>
-                </div>
-                <div className="flex gap-2">
-                  {[0, 1, 2].map(i => (
-                    <div key={i} className="w-1.5 h-1.5 rounded-full animate-bounce"
-                      style={{ backgroundColor: '#8b5cf6', animationDelay: `${i * 0.15}s` }} />
-                  ))}
-                </div>
-              </div>
-            ) : rateLimitEvento === 'entrevista' ? (
-              <div className="space-y-4">
-                <RateLimitUI secs={rateLimitSecs} evento={rateLimitEvento}
-                  email={waitlistEmail} onEmailChange={setWaitlistEmail}
-                  sent={waitlistSent} loading={waitlistLoading} onSubmit={handleWaitlist} />
-              </div>
-            ) : interviewError ? (
-              <div className="space-y-4">
-                <div className="rounded-xl p-4 text-sm"
-                  style={{ backgroundColor: 'rgba(254,226,226,0.8)', border: '1px solid #fca5a5', color: '#b91c1c' }}>
-                  ⚠️ {interviewError}
-                </div>
-                <button onClick={() => { setInterviewError(''); callInterviewFeedback(interviewAnswers) }}
-                  className="btn-glow w-full font-semibold py-4 rounded-2xl text-white text-sm"
-                  style={{ background: 'linear-gradient(135deg,#6366f1,#8b5cf6)' }}>
-                  Reintentar
-                </button>
-              </div>
-            ) : !interviewFeedback ? (
-              <div className="flex flex-col items-center justify-center min-h-[55vh] gap-5 text-center">
-                <p className="text-slate-500 text-sm">No hay datos de entrevista. Completá la simulación primero.</p>
-                <button onClick={() => setStep(STEPS.INTERVIEW_INTRO)}
-                  className="btn-glow font-semibold px-6 py-3 rounded-2xl text-white text-sm"
-                  style={{ background: 'linear-gradient(135deg,#6366f1,#8b5cf6)' }}>
-                  ← Ir a la entrevista
-                </button>
-              </div>
-            ) : (
-              <>
-                {/* Score */}
-                <ResultCard title="Resultado de la entrevista" accent="#6366f1">
-                  <div className="flex flex-col sm:flex-row items-center sm:items-start gap-6">
-                    <ScoreRing score={interviewFeedback.puntaje_entrevista} />
-                    <p className="text-slate-600 text-sm leading-relaxed sm:pt-4">{interviewFeedback.evaluacion_general}</p>
-                  </div>
-                </ResultCard>
-
-                {/* Fortalezas / áreas — completo, sin restricción */}
-                <ResultCard title="Fortalezas y áreas de mejora" accent="#6366f1">
-                  <div className="grid sm:grid-cols-2 gap-6">
-                    <div className="space-y-2">
-                      <p className="text-xs font-semibold uppercase tracking-wide mb-3" style={{ color: '#4ade80' }}>✅ Fortalezas</p>
-                      {(interviewFeedback.fortalezas_entrevista || []).map((f, i) => (
-                        <div key={i} className="flex items-start gap-2">
-                          <span className="mt-0.5 shrink-0" style={{ color: '#16a34a' }}>•</span>
-                          <p className="text-slate-600 text-sm">{f}</p>
-                        </div>
-                      ))}
-                    </div>
-                    <div className="space-y-2">
-                      <p className="text-xs font-semibold uppercase tracking-wide mb-3" style={{ color: '#d97706' }}>⚠️ Áreas de mejora</p>
-                      {(interviewFeedback.areas_de_mejora_entrevista || []).map((a, i) => (
-                        <div key={i} className="flex items-start gap-2">
-                          <span className="mt-0.5 shrink-0" style={{ color: '#d97706' }}>•</span>
-                          <p className="text-slate-600 text-sm">{a}</p>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                </ResultCard>
-
-                {/* Feedback detallado por respuesta — completo, visible */}
-                {(interviewFeedback.feedback_por_respuesta || []).length > 0 && (
-                  <ResultCard title="Feedback por respuesta" accent="#6366f1">
-                    <div className="space-y-4">
-                      {(interviewFeedback.feedback_por_respuesta || []).map((fb, i) => (
-                        <div key={i} className="rounded-xl p-4"
-                          style={{ background: '#f8fafc', border: '1px solid rgba(99,102,241,0.12)' }}>
-                          <p className="text-xs font-semibold uppercase tracking-wide mb-2" style={{ color: '#6366f1' }}>
-                            Pregunta {fb.numero}
-                          </p>
-                          {fb.aspecto_positivo && (
-                            <p className="text-sm text-slate-600 mb-1">✅ {fb.aspecto_positivo}</p>
-                          )}
-                          {fb.sugerencia && (
-                            <p className="text-sm text-slate-600">💡 {fb.sugerencia}</p>
-                          )}
-                        </div>
-                      ))}
-                    </div>
-                  </ResultCard>
-                )}
-
-                {/* Recomendación final */}
-                {interviewFeedback.recomendacion_final && (
-                  <div className="rounded-xl p-4"
-                    style={{ background: 'rgba(99,102,241,0.06)', border: '1px solid rgba(99,102,241,0.20)' }}>
-                    <p className="text-xs font-semibold uppercase tracking-wide mb-1.5" style={{ color: '#6366f1' }}>⚡ Recomendación final</p>
-                    <p className="text-sm text-slate-700 leading-relaxed">{interviewFeedback.recomendacion_final}</p>
-                  </div>
-                )}
-
-                {!user?.es_premium && (
-                  <div className="rounded-2xl p-4 space-y-2.5"
-                    style={{ background: 'rgba(0,119,181,0.04)', border: '1px solid rgba(0,119,181,0.15)' }}>
-                    <p className="text-slate-700 text-sm font-semibold">⭐ Mejorá tus resultados con Premium</p>
-                    <p className="text-slate-500 text-xs leading-snug">
-                      Guardá este informe, accedé a tu historial de simulaciones y practicá sin límites. 7 días gratis, luego $3.000/mes.
-                    </p>
-                    <button onClick={() => setShowPremiumModal(true)}
-                      className="px-4 py-2 rounded-xl text-white text-xs font-semibold"
-                      style={{ background: LI_GRADIENT }}>
-                      Desbloqueá Premium
-                    </button>
-                  </div>
-                )}
-
-                {/* Seguir en LinkedIn — Ramiro + página */}
-                <div className="rounded-2xl overflow-hidden"
-                  style={{ border: '1px solid rgba(0,119,181,0.15)', boxShadow: '0 2px 12px rgba(0,0,0,0.06)' }}>
-                  <div className="px-5 pt-4 pb-3 text-center"
-                    style={{ background: 'linear-gradient(135deg,rgba(0,119,181,0.06),rgba(14,165,233,0.08))' }}>
-                    <p className="text-slate-900 font-bold text-sm">Si este análisis te sirvió, seguinos</p>
-                    <p className="text-slate-500 text-xs mt-1 leading-relaxed">Tips de empleabilidad y recursos para potenciar tu búsqueda.</p>
-                  </div>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 divide-y sm:divide-y-0 sm:divide-x divide-slate-100">
-                    <div className="p-4 flex flex-col gap-2.5 items-center text-center">
-                      <div className="w-9 h-9 rounded-xl flex items-center justify-center shrink-0"
-                        style={{ background: LI_GRADIENT }}>
-                        <LinkedInIcon className="w-4 h-4 text-white" />
-                      </div>
-                      <div>
-                        <p className="text-slate-900 text-xs font-semibold">Perfil de Ramiro</p>
-                        <p className="text-slate-500 text-xs mt-0.5 leading-relaxed">Mejoras concretas y casos reales de optimización.</p>
-                      </div>
-                      <a href={RAMIRO_LINKEDIN_URL} target="_blank" rel="noopener noreferrer"
-                        onClick={() => trackEvent('click_externo', { destino: 'linkedin_ramiro', ubicacion: 'interview_feedback' })}
-                        className="btn-glow w-full inline-flex items-center justify-center gap-1.5 py-2 rounded-xl text-white text-xs font-semibold mt-auto"
-                        style={{ background: LI_GRADIENT }}>
-                        <LinkedInIcon className="w-3.5 h-3.5" /> Seguir a Ramiro
-                      </a>
-                    </div>
-                    <div className="p-4 flex flex-col gap-2.5 items-center text-center">
-                      <div className="w-9 h-9 rounded-xl flex items-center justify-center shrink-0"
-                        style={{ background: LI_GRADIENT }}>
-                        <LinkedInIcon className="w-4 h-4 text-white" />
-                      </div>
-                      <div>
-                        <p className="text-slate-900 text-xs font-semibold">Página OptimizaLK</p>
-                        <p className="text-slate-500 text-xs mt-0.5 leading-relaxed">Guías y contenido sobre búsqueda de empleo.</p>
-                      </div>
-                      <a href={COMPANY_LINKEDIN_URL} target="_blank" rel="noopener noreferrer"
-                        onClick={() => trackEvent('click_externo', { destino: 'linkedin_pagina', ubicacion: 'interview_feedback' })}
-                        className="btn-glow w-full inline-flex items-center justify-center gap-1.5 py-2 rounded-xl text-white text-xs font-semibold mt-auto"
-                        style={{ background: LI_GRADIENT }}>
-                        <LinkedInIcon className="w-3.5 h-3.5" /> Seguir la página
-                      </a>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Card Ramiro — asesoramiento personalizado */}
-                <div className="rounded-2xl p-5"
-                  style={{ background: 'rgba(0,119,181,0.05)', border: '1px solid rgba(0,119,181,0.18)' }}>
-                  <p className="text-xs font-semibold uppercase tracking-wide mb-2" style={{ color: '#0077B5' }}>
-                    🎯 ¿Querés asesoramiento personalizado?
-                  </p>
-                  <p className="text-slate-600 text-sm leading-relaxed mb-3">
-                    Podemos revisar tu perfil en vivo, reescribir tu titular y prepararte para entrevistas reales. Escribime por privado en LinkedIn.
-                  </p>
-                  <button
-                    onClick={() => {
-                      trackEvent('lead_modal_open', { ubicacion: 'interview_feedback' })
-                      !leadSaving && !leadSent && setShowLeadModal(true)
-                    }}
-                    disabled={leadSaving || leadSent}
-                    className={`inline-flex items-center gap-2 px-5 py-2.5 rounded-xl text-white font-semibold text-sm ${!leadSent ? 'btn-glow' : ''}`}
-                    style={{
-                      background: leadSent ? 'rgba(34,197,94,0.15)' : LI_GRADIENT,
-                      border: leadSent ? '1px solid rgba(34,197,94,0.4)' : 'none',
-                      color: leadSent ? '#4ade80' : '#fff',
-                      cursor: leadSaving || leadSent ? 'default' : 'pointer',
-                    }}
-                  >
-                    {leadSaving ? (
-                      <><Spinner size={4} /> Enviando...</>
-                    ) : leadSent ? (
-                      '✓ Mensaje enviado'
-                    ) : (
-                      <><LinkedInIcon className="w-4 h-4" /> Escribirle a Ramiro</>
-                    )}
-                  </button>
-                </div>
-
-                {/* Premium banner */}
-                {!user?.es_premium && (
-                  <div className="rounded-2xl p-4 space-y-2.5"
-                    style={{ background: 'rgba(0,119,181,0.04)', border: '1px solid rgba(0,119,181,0.15)' }}>
-                    <div>
-                      <p className="text-slate-700 text-sm font-semibold">💾 ¿Querés guardar esta entrevista?</p>
-                      <p className="text-slate-500 text-xs mt-0.5 leading-snug">
-                        Podés seguir usando la app sin guardar nada. Si querés acceder a tu historial después, Premium incluye <strong>7 días gratis</strong> — luego $3.000/mes.
-                      </p>
-                    </div>
-                    <button onClick={() => setShowPremiumModal(true)}
-                      disabled={subscriptionLoading}
-                      className="px-4 py-2 rounded-xl text-white text-xs font-semibold"
-                      style={{ background: LI_GRADIENT, opacity: subscriptionLoading ? 0.7 : 1 }}>
-                      {subscriptionLoading ? '...' : 'Probar 7 días gratis'}
-                    </button>
-                  </div>
-                )}
-
-                {/* ── Sugerencia STAR ── */}
-                <div className="rounded-2xl p-5 space-y-3"
-                  style={{ background: 'rgba(99,102,241,0.06)', border: '1px solid rgba(99,102,241,0.22)' }}>
-                  <p className="text-sm font-semibold text-slate-800">🎯 ¿Querés mejorar tus respuestas de entrevista?</p>
-                  <p className="text-slate-500 text-xs leading-relaxed">
-                    Aprendé y practicá la <strong>metodología STAR</strong> — el framework que usan los mejores candidatos para estructurar sus respuestas y causar impacto real en los reclutadores.
-                  </p>
-                  <button
-                    onClick={() => { trackEvent('star_cta_click', { location: 'interview_feedback' }); setShowStarModal(true) }}
-                    className="w-full py-3 rounded-xl text-white text-sm font-semibold transition-all"
-                    style={{ background: 'linear-gradient(135deg,#6366f1,#8b5cf6)' }}
-                  >
-                    Entrenar metodología STAR →
-                  </button>
-                </div>
-
-                <button
-                  onClick={() => result ? setStep(STEPS.RESULTS) : setStep(STEPS.MODE_SELECT)}
-                  className="w-full font-semibold py-4 rounded-2xl text-sm"
-                  style={BTN_BACK_STYLE}
-                >
-                  {result ? '← Volver a mi análisis' : '← Volver al menú'}
-                </button>
-              </>
-            )}
-          </div>
+          <InterviewFeedbackScreen
+            interviewLoading={interviewLoading}
+            rateLimitEvento={rateLimitEvento}
+            rateLimitSecs={rateLimitSecs}
+            waitlistEmail={waitlistEmail}
+            setWaitlistEmail={setWaitlistEmail}
+            waitlistSent={waitlistSent}
+            waitlistLoading={waitlistLoading}
+            handleWaitlist={handleWaitlist}
+            interviewError={interviewError}
+            setInterviewError={setInterviewError}
+            callInterviewFeedback={callInterviewFeedback}
+            interviewAnswers={interviewAnswers}
+            interviewFeedback={interviewFeedback}
+            user={user}
+            leadSaving={leadSaving}
+            leadSent={leadSent}
+            setShowLeadModal={setShowLeadModal}
+            setShowPremiumModal={setShowPremiumModal}
+            subscriptionLoading={subscriptionLoading}
+            setShowStarModal={setShowStarModal}
+            result={result}
+            setStep={setStep}
+          />
         )}
 
         {/* ── STAR TRAINING ── */}
         {step === STEPS.STAR_TRAINING && (
-          <div className="step-transition space-y-6">
-            <Logo />
-
-            {starPhase === 'theory' && (
-              <>
-                <div className="text-center space-y-2">
-                  <h2 className="text-2xl font-bold text-slate-900">Metodología STAR</h2>
-                  <p className="text-slate-500 text-sm leading-relaxed max-w-sm mx-auto">
-                    Un framework simple para dar respuestas claras, estructuradas y memorables en cualquier entrevista.
-                  </p>
-                </div>
-
-                <div className="space-y-3">
-                  {[
-                    { letra: 'S', color: '#6366f1', bg: 'rgba(99,102,241,0.08)', border: 'rgba(99,102,241,0.22)', nombre: 'Situación', def: 'Describí el contexto. ¿Cuándo y dónde ocurrió? ¿Qué estaba en juego?', ej: 'Ej: "Era finales de año y el sistema de facturación colapsó justo antes del cierre."' },
-                    { letra: 'T', color: '#0ea5e9', bg: 'rgba(14,165,233,0.08)', border: 'rgba(14,165,233,0.22)', nombre: 'Tarea', def: '¿Cuál era tu responsabilidad específica en esa situación?', ej: 'Ej: "Yo era el responsable de garantizar que los pagos se procesaran a tiempo."' },
-                    { letra: 'A', color: '#059669', bg: 'rgba(5,150,105,0.08)', border: 'rgba(5,150,105,0.22)', nombre: 'Acción', def: '¿Qué hiciste vos concretamente? Usá verbos de acción en primera persona.', ej: 'Ej: "Coordiné al equipo, prioricé manualmente las cuentas críticas y contacté al proveedor."' },
-                    { letra: 'R', color: '#f59e0b', bg: 'rgba(245,158,11,0.08)', border: 'rgba(245,158,11,0.22)', nombre: 'Resultado', def: '¿Qué lograste? Con métricas si podés. ¿Qué aprendiste?', ej: 'Ej: "Procesamos el 95% de los pagos en tiempo. El cliente renovó el contrato por 2 años más."' },
-                  ].map(({ letra, color, bg, border, nombre, def, ej }) => (
-                    <div key={letra} className="rounded-2xl p-4 flex gap-4 items-start"
-                      style={{ background: bg, border: `1px solid ${border}` }}>
-                      <div className="w-10 h-10 rounded-xl flex items-center justify-center text-white text-lg font-black shrink-0"
-                        style={{ background: color }}>{letra}</div>
-                      <div className="space-y-1">
-                        <p className="font-semibold text-sm text-slate-800">{nombre}</p>
-                        <p className="text-slate-600 text-xs leading-relaxed">{def}</p>
-                        <p className="text-xs italic" style={{ color }}>{ej}</p>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-
-                <div className="rounded-2xl p-5 space-y-3"
-                  style={{ background: 'white', border: '1px solid rgba(99,102,241,0.20)', boxShadow: '0 2px 12px rgba(0,0,0,0.06)' }}>
-                  <p className="text-xs font-semibold uppercase tracking-wide" style={{ color: '#6366f1' }}>Ejemplo completo bien estructurado</p>
-                  <p className="text-xs text-slate-500 italic mb-1">Pregunta: "Contame sobre un logro profesional del que estés orgulloso/a."</p>
-                  <p className="text-slate-700 text-sm leading-relaxed">
-                    <strong className="text-indigo-600">S:</strong> "En mi anterior empresa, el equipo de ventas no tenía visibilidad en tiempo real de los resultados." <strong className="text-sky-600">T:</strong> "Como analista de datos, me propuse crear un dashboard que resolviera ese problema sin presupuesto adicional." <strong className="text-emerald-600">A:</strong> "Dediqué 3 semanas fuera del horario laboral, aprendí Power BI y coordiné con el equipo de IT para los accesos." <strong className="text-amber-600">R:</strong> "El dashboard redujo el tiempo de reporte semanal de 4 horas a 20 minutos. El gerente lo adoptó para toda la región."
-                  </p>
-                </div>
-
-                <button
-                  onClick={() => { setStarPhase('practice'); trackEvent('star_phase_change', { phase: 'practice' }) }}
-                  className="w-full py-4 rounded-2xl text-white text-sm font-semibold transition-all btn-glow"
-                  style={{ background: 'linear-gradient(135deg,#6366f1,#8b5cf6)' }}
-                >
-                  Practicar ahora →
-                </button>
-                <button onClick={() => { trackEvent('star_back', { from: 'theory' }); interviewFeedback ? setStep(STEPS.INTERVIEW_FEEDBACK) : setStep(STEPS.MODE_SELECT) }}
-                  className="w-full py-3 rounded-2xl text-sm font-semibold" style={BTN_BACK_STYLE}>
-                  {interviewFeedback ? '← Volver al feedback' : '← Menú'}
-                </button>
-              </>
-            )}
-
-            {starPhase === 'practice' && (
-              <>
-                <div className="rounded-2xl p-5 space-y-2"
-                  style={{ background: 'rgba(99,102,241,0.06)', border: '1px solid rgba(99,102,241,0.22)' }}>
-                  <p className="text-xs font-semibold uppercase tracking-wide" style={{ color: '#6366f1' }}>
-                    Pregunta {starQuestionIdx + 1} de {STAR_QUESTIONS.length}
-                  </p>
-                  <p className="text-slate-800 text-base font-semibold leading-snug">
-                    {STAR_QUESTIONS[starQuestionIdx]}
-                  </p>
-                </div>
-
-                <div className="flex gap-2 flex-wrap">
-                  {[
-                    { l: 'S', label: 'Situación', color: '#6366f1' },
-                    { l: 'T', label: 'Tarea', color: '#0ea5e9' },
-                    { l: 'A', label: 'Acción', color: '#059669' },
-                    { l: 'R', label: 'Resultado', color: '#f59e0b' },
-                  ].map(({ l, label, color }) => (
-                    <span key={l} className="text-xs px-3 py-1 rounded-full font-semibold"
-                      style={{ background: `${color}15`, color, border: `1px solid ${color}40` }}>
-                      {l} · {label}
-                    </span>
-                  ))}
-                </div>
-
-                {!starFeedback ? (
-                  <div className="space-y-3">
-                    <div className="relative">
-                      <textarea
-                        value={starAnswer}
-                        onChange={e => setStarAnswer(e.target.value)}
-                        placeholder="Escribí tu respuesta usando la estructura STAR. Empezá describiendo la Situación..."
-                        rows={7}
-                        maxLength={1000}
-                        className="w-full rounded-2xl px-4 py-3.5 text-sm text-slate-800 resize-none outline-none transition-all"
-                        style={{
-                          ...INPUT_STYLE,
-                          border: `1px solid ${starAnswer.length >= 40 ? 'rgba(99,102,241,0.4)' : 'rgba(0,119,181,0.20)'}`,
-                        }}
-                      />
-                      <span className="absolute bottom-3 right-4 text-xs text-slate-400">{starAnswer.length}/1000</span>
-                    </div>
-                    {starAnswer.length > 0 && starAnswer.length < 40 && (
-                      <p className="text-xs text-slate-400">{40 - starAnswer.length} caracteres más para habilitar el feedback</p>
-                    )}
-                    {rateLimitEvento === 'star' && <RateLimitUI secs={rateLimitSecs} evento={rateLimitEvento} email={waitlistEmail} onEmailChange={setWaitlistEmail} sent={waitlistSent} loading={waitlistLoading} onSubmit={handleWaitlist} />}
-                    {starError && !rateLimitEvento && <p className="text-xs text-red-500">{starError}</p>}
-                    <button
-                      disabled={starAnswer.trim().length < 40 || starLoading}
-                      onClick={() => { trackEvent('star_practice_submit', { question_idx: starQuestionIdx }); callStarFeedback() }}
-                      className={`w-full py-4 rounded-2xl text-sm font-semibold text-white transition-all ${starAnswer.trim().length >= 40 && !starLoading ? 'btn-glow' : ''}`}
-                      style={{
-                        background: starAnswer.trim().length >= 40 && !starLoading ? 'linear-gradient(135deg,#6366f1,#8b5cf6)' : '#94a3b8',
-                        opacity: starAnswer.trim().length < 40 || starLoading ? 0.6 : 1,
-                      }}
-                    >
-                      {starLoading ? '⏳ Analizando tu respuesta...' : 'Obtener feedback →'}
-                    </button>
-                  </div>
-                ) : (
-                  <div className="space-y-4">
-                    <div className="flex items-center gap-4 rounded-2xl p-4"
-                      style={{ background: 'white', border: '1px solid rgba(99,102,241,0.15)', boxShadow: '0 2px 12px rgba(0,0,0,0.06)' }}>
-                      <div className="flex flex-col items-center shrink-0">
-                        <span className="text-3xl font-black" style={{ color: starFeedback.puntaje >= 7 ? '#059669' : starFeedback.puntaje >= 5 ? '#6366f1' : '#f59e0b' }}>
-                          {starFeedback.puntaje}
-                        </span>
-                        <span className="text-xs text-slate-400">/ 10</span>
-                      </div>
-                      <div>
-                        <p className="text-sm font-semibold text-slate-800">Puntaje STAR</p>
-                        <p className="text-xs text-slate-500">
-                          {starFeedback.puntaje >= 8 ? '¡Excelente estructura!' : starFeedback.puntaje >= 6 ? 'Buena base, hay margen de mejora.' : 'Seguí practicando — vas a mejorar rápido.'}
-                        </p>
-                      </div>
-                    </div>
-
-                    <div className="space-y-2">
-                      {[
-                        { key: 'situacion', letra: 'S', nombre: 'Situación', color: '#6366f1' },
-                        { key: 'tarea', letra: 'T', nombre: 'Tarea', color: '#0ea5e9' },
-                        { key: 'accion', letra: 'A', nombre: 'Acción', color: '#059669' },
-                        { key: 'resultado', letra: 'R', nombre: 'Resultado', color: '#f59e0b' },
-                      ].map(({ key, letra, nombre, color }) => {
-                        const item = starFeedback[key]
-                        return (
-                          <div key={key} className="flex items-start gap-3 rounded-xl p-3"
-                            style={{ background: item.presente ? `${color}08` : 'rgba(239,68,68,0.05)', border: `1px solid ${item.presente ? `${color}25` : 'rgba(239,68,68,0.20)'}` }}>
-                            <div className="w-7 h-7 rounded-lg flex items-center justify-center text-white text-xs font-black shrink-0"
-                              style={{ background: item.presente ? color : '#ef4444' }}>{letra}</div>
-                            <div>
-                              <p className="text-xs font-semibold" style={{ color: item.presente ? color : '#ef4444' }}>
-                                {nombre} — {item.presente ? '✓ Presente' : '✗ Falta o poco claro'}
-                              </p>
-                              <p className="text-xs text-slate-500 mt-0.5 leading-relaxed">{item.comentario}</p>
-                            </div>
-                          </div>
-                        )
-                      })}
-                    </div>
-
-                    <div className="rounded-2xl p-4 space-y-1"
-                      style={{ background: 'rgba(99,102,241,0.06)', border: '1px solid rgba(99,102,241,0.22)' }}>
-                      <p className="text-xs font-semibold uppercase tracking-wide" style={{ color: '#6366f1' }}>💡 Sugerencia clave</p>
-                      <p className="text-slate-700 text-sm leading-relaxed">{starFeedback.sugerencia_clave}</p>
-                    </div>
-
-                    <div className="flex gap-3">
-                      <button
-                        onClick={() => { setStarFeedback(null); setStarAnswer(''); setStarError(''); trackEvent('star_retry', { question_idx: starQuestionIdx }) }}
-                        className="flex-1 py-3 rounded-xl text-sm font-semibold" style={BTN_BACK_STYLE}
-                      >
-                        Intentar de nuevo
-                      </button>
-                      <button
-                        onClick={() => {
-                          const next = (starQuestionIdx + 1) % STAR_QUESTIONS.length
-                          setStarQuestionIdx(next)
-                          setStarFeedback(null)
-                          setStarAnswer('')
-                          setStarError('')
-                          trackEvent('star_next_question', { question_idx: next })
-                        }}
-                        className="btn-glow flex-1 py-3 rounded-xl text-sm font-semibold text-white"
-                        style={{ background: 'linear-gradient(135deg,#6366f1,#8b5cf6)' }}
-                      >
-                        Nueva pregunta →
-                      </button>
-                    </div>
-                  </div>
-                )}
-
-                {/* Premium upsell + siguiente paso — solo se muestra cuando hay feedback */}
-                {starFeedback && (
-                  <>
-                    {!user?.es_premium && (
-                      <div className="rounded-2xl p-4 space-y-2.5"
-                        style={{ background: 'rgba(0,119,181,0.04)', border: '1px solid rgba(0,119,181,0.15)' }}>
-                        <p className="text-slate-700 text-sm font-semibold">⭐ Guardá tus prácticas STAR con Premium</p>
-                        <p className="text-slate-500 text-xs leading-snug">
-                          Accedé a tu historial completo de prácticas y seguí tu progreso. 7 días gratis, luego $3.000/mes.
-                        </p>
-                        <button onClick={() => setShowPremiumModal(true)}
-                          className="px-4 py-2 rounded-xl text-white text-xs font-semibold"
-                          style={{ background: LI_GRADIENT }}>
-                          Desbloqueá Premium
-                        </button>
-                      </div>
-                    )}
-                    {/* Siguiente paso: entrevista completa */}
-                    <div className="rounded-2xl p-4 space-y-2.5"
-                      style={{ background: 'rgba(99,102,241,0.06)', border: '1px solid rgba(99,102,241,0.22)' }}>
-                      <p className="text-sm font-semibold text-slate-800">🎙️ Ahora probalo en una entrevista real</p>
-                      <p className="text-slate-500 text-xs leading-relaxed">
-                        Aplicá la técnica STAR en nuestra simulación de entrevista completa. 5 preguntas con feedback detallado de IA.
-                      </p>
-                      <button
-                        onClick={() => { resetInterview(); trackEvent('star_to_interview_cta'); setStep(STEPS.INTERVIEW_INTRO) }}
-                        className="w-full py-2.5 rounded-xl text-white text-xs font-semibold"
-                        style={{ background: 'linear-gradient(135deg,#6366f1,#8b5cf6)' }}
-                      >
-                        Simulá una entrevista →
-                      </button>
-                    </div>
-                  </>
-                )}
-
-                <button onClick={() => { trackEvent('star_back', { from: 'practice' }); result ? setStep(STEPS.RESULTS) : setStep(STEPS.MODE_SELECT) }}
-                  className="w-full py-3 rounded-2xl text-sm font-semibold" style={BTN_BACK_STYLE}>
-                  {result ? '← Volver a mi análisis' : '← Volver al menú'}
-                </button>
-              </>
-            )}
-          </div>
+          <StarTrainingScreen
+            starPhase={starPhase}
+            setStarPhase={setStarPhase}
+            starQuestionIdx={starQuestionIdx}
+            setStarQuestionIdx={setStarQuestionIdx}
+            starAnswer={starAnswer}
+            setStarAnswer={setStarAnswer}
+            starFeedback={starFeedback}
+            setStarFeedback={setStarFeedback}
+            starLoading={starLoading}
+            starError={starError}
+            setStarError={setStarError}
+            rateLimitEvento={rateLimitEvento}
+            rateLimitSecs={rateLimitSecs}
+            waitlistEmail={waitlistEmail}
+            setWaitlistEmail={setWaitlistEmail}
+            waitlistSent={waitlistSent}
+            waitlistLoading={waitlistLoading}
+            handleWaitlist={handleWaitlist}
+            callStarFeedback={callStarFeedback}
+            resetInterview={resetInterview}
+            interviewFeedback={interviewFeedback}
+            user={user}
+            result={result}
+            setStep={setStep}
+            setShowPremiumModal={setShowPremiumModal}
+          />
         )}
 
         {/* ── TRACKING ── */}
         {step === STEPS.TRACKING && (
-          <div className="step-transition w-full" style={{ minHeight: '70vh' }}>
-            {!user?.es_premium ? (
-              /* Non-premium teaser */
-              <div className="text-center space-y-5 py-12 px-4">
-                <div className="text-5xl">📍</div>
-                <h2 className="text-xl font-bold" style={{ color: '#0d2137' }}>Seguimiento de Postulaciones</h2>
-                <p className="text-sm max-w-xs mx-auto" style={{ color: '#475569' }}>
-                  Organizá todas tus postulaciones en un tablero kanban. Vinculá el CV adaptado a cada oferta y nunca más pierdas el hilo de tu búsqueda laboral.
-                </p>
-                <button onClick={() => setShowPremiumModal(true)}
-                  className="px-6 py-3 rounded-xl text-sm font-semibold text-white"
-                  style={{ background: LI_GRADIENT }}>
-                  ⬆ Activar Premium para acceder
-                </button>
-                <button onClick={() => setStep(STEPS.MODE_SELECT)}
-                  className="block mx-auto text-xs mt-2" style={{ color: '#94a3b8' }}>
-                  Volver al menú
-                </button>
-              </div>
-            ) : (
-              <div className="space-y-4">
-                {/* Header */}
-                <div className="flex items-center justify-between flex-wrap gap-2">
-                  <h2 className="text-lg font-bold" style={{ color: '#0d2137' }}>📍 Mis Postulaciones</h2>
-                  <div className="flex gap-2 flex-wrap">
-                    <button onClick={() => setKanbanListMode(v => !v)}
-                      className="text-xs px-3 py-1.5 rounded-lg font-medium"
-                      style={kanbanListMode ? { background: LI_GRADIENT, color: 'white' } : BTN_GHOST_STYLE}>
-                      {kanbanListMode ? '⊞ Tablero' : '☰ Lista'}
-                    </button>
-                    <button onClick={() => setShowAddColumna(true)}
-                      className="text-xs px-3 py-1.5 rounded-lg font-medium"
-                      style={BTN_GHOST_STYLE}>
-                      + Columna
-                    </button>
-                    <button onClick={() => setStep(STEPS.MODE_SELECT)}
-                      className="text-xs px-3 py-1.5 rounded-lg font-medium"
-                      style={BTN_BACK_STYLE}>
-                      ← Menú
-                    </button>
-                  </div>
-                </div>
-
-                {trackingError && (
-                  <p className="text-xs text-red-500 text-center">{trackingError}</p>
-                )}
-
-                {trackingLoading ? (
-                  <div className="text-center py-10">
-                    <div className="inline-block w-6 h-6 border-2 border-blue-400 border-t-transparent rounded-full animate-spin" />
-                    <p className="text-xs mt-2" style={{ color: '#64748b' }}>Cargando tablero...</p>
-                  </div>
-                ) : kanbanListMode ? (
-                  /* ── Lista view (mobile-friendly) ── */
-                  <div className="space-y-2">
-                    {trackingCards.length === 0 ? (
-                      <p className="text-center text-sm py-10" style={{ color: '#94a3b8' }}>No hay postulaciones cargadas aún.</p>
-                    ) : (
-                      trackingCards.map(card => {
-                        const col = trackingColumnas.find(c => c.id === card.columna_id)
-                        return (
-                          <div key={card.id} className="rounded-xl p-3 flex items-start gap-3"
-                            style={{ background: 'white', border: '1px solid rgba(0,0,0,0.08)', boxShadow: '0 1px 4px rgba(0,0,0,0.04)' }}>
-                            {col && <div className="w-2 h-full rounded-full shrink-0 mt-1" style={{ background: col.color, minHeight: 36 }} />}
-                            <div className="flex-1 min-w-0">
-                              <div className="flex items-start justify-between gap-2">
-                                <div className="min-w-0">
-                                  <p className="text-sm font-bold truncate" style={{ color: '#0d2137' }}>{card.empresa}</p>
-                                  <p className="text-xs truncate" style={{ color: '#0077B5' }}>{card.puesto}</p>
-                                </div>
-                                <div className="flex gap-1.5 shrink-0">
-                                  {card.cv_data && <span className="text-xs px-1.5 py-0.5 rounded" style={{ background: 'rgba(0,119,181,0.08)', color: '#0077B5' }}>📄</span>}
-                                  {col && <span className="text-[10px] px-1.5 py-0.5 rounded font-medium" style={{ background: col.color + '18', color: col.color }}>{col.nombre}</span>}
-                                </div>
-                              </div>
-                              {card.fecha_aplicacion && <p className="text-[10px] mt-0.5" style={{ color: '#94a3b8' }}>{card.fecha_aplicacion}</p>}
-                              <div className="flex gap-2 mt-2">
-                                <button onClick={() => setEditCard(card)}
-                                  className="text-xs px-2.5 py-1 rounded-lg font-medium"
-                                  style={BTN_GHOST_STYLE}>
-                                  Editar
-                                </button>
-                                <button
-                                  onClick={() => {
-                                    setInterviewJobContext({ empresa: card.empresa, puesto: card.puesto })
-                                    resetInterview()
-                                    trackEvent('kanban_to_interview', { empresa: card.empresa, puesto: card.puesto })
-                                    setStep(STEPS.INTERVIEW_INTRO)
-                                  }}
-                                  className="text-xs px-2.5 py-1 rounded-lg font-medium text-white"
-                                  style={{ background: 'linear-gradient(135deg,#6366f1,#8b5cf6)' }}>
-                                  🎙️ Preparar entrevista
-                                </button>
-                              </div>
-                            </div>
-                          </div>
-                        )
-                      })
-                    )}
-                  </div>
-                ) : (
-                  /* ── Kanban board — horizontal scroll ── */
-                  <div className="overflow-x-auto pb-4">
-                    <div className="flex gap-4" style={{ minWidth: `${Math.max(trackingColumnas.length, 1) * 260}px` }}>
-                      {trackingColumnas.map(col => {
-                        const cards = trackingCards.filter(c => c.columna_id === col.id)
-                        return (
-                          <div key={col.id} className="flex-shrink-0 rounded-xl flex flex-col" style={{ width: 248, background: '#f8fafc', border: '1px solid rgba(0,0,0,0.07)' }}>
-                            {/* Column header */}
-                            <div className="flex items-center justify-between px-3 py-2.5 rounded-t-xl"
-                              style={{ background: col.color + '18', borderBottom: `2px solid ${col.color}` }}>
-                              <div className="flex items-center gap-2 min-w-0">
-                                <div className="w-2.5 h-2.5 rounded-full shrink-0" style={{ background: col.color }} />
-                                <span className="text-xs font-bold truncate" style={{ color: '#0d2137' }}>{col.nombre}</span>
-                                <span className="text-xs shrink-0" style={{ color: '#94a3b8' }}>({cards.length})</span>
-                              </div>
-                              <div className="flex gap-1 shrink-0">
-                                <button onClick={() => setRenameColumna({ id: col.id, nombre: col.nombre, color: col.color })}
-                                  className="text-xs px-1.5 py-0.5 rounded hover:bg-black/10 transition-colors"
-                                  title="Renombrar">✏️</button>
-                                <button onClick={async () => {
-                                  if (confirm(`¿Eliminar la columna "${col.nombre}"? Las postulaciones sin columna quedarán sin asignar.`))
-                                    await deleteColumna(col.id)
-                                }}
-                                  className="text-xs px-1.5 py-0.5 rounded hover:bg-red-100 transition-colors"
-                                  title="Eliminar">🗑</button>
-                              </div>
-                            </div>
-                            {/* Cards */}
-                            <div className="flex flex-col gap-2 p-2 flex-1 overflow-y-auto" style={{ maxHeight: 480 }}>
-                              {cards.map(card => (
-                                <div key={card.id} className="rounded-lg p-3 space-y-1"
-                                  style={{ background: 'white', border: '1px solid rgba(0,0,0,0.08)' }}>
-                                  <div className="cursor-pointer" onClick={() => setEditCard(card)}>
-                                    <p className="text-xs font-bold truncate" style={{ color: '#0d2137' }}>{card.empresa}</p>
-                                    <p className="text-xs truncate" style={{ color: '#0077B5' }}>{card.puesto}</p>
-                                    <p className="text-xs" style={{ color: '#94a3b8' }}>{card.fecha_aplicacion}</p>
-                                    {card.cv_data && (
-                                      <span className="inline-block text-xs px-1.5 py-0.5 rounded"
-                                        style={{ background: 'rgba(0,119,181,0.08)', color: '#0077B5' }}>📄 CV</span>
-                                    )}
-                                    {card.notas && (
-                                      <p className="text-xs line-clamp-2 italic" style={{ color: '#64748b' }}>{card.notas}</p>
-                                    )}
-                                  </div>
-                                  <button
-                                    onClick={() => {
-                                      setInterviewJobContext({ empresa: card.empresa, puesto: card.puesto })
-                                      resetInterview()
-                                      trackEvent('kanban_to_interview', { empresa: card.empresa, puesto: card.puesto })
-                                      setStep(STEPS.INTERVIEW_INTRO)
-                                    }}
-                                    className="w-full text-[10px] py-1 rounded-md font-medium text-white mt-1"
-                                    style={{ background: 'linear-gradient(135deg,#6366f1,#8b5cf6)' }}>
-                                    🎙️ Preparar entrevista
-                                  </button>
-                                </div>
-                              ))}
-                              <button onClick={() => { setNewCardForm({ empresa: '', puesto: '', link_aviso: '', fecha_aplicacion: new Date().toISOString().slice(0, 10), notas: '' }); setShowAddCard(col.id) }}
-                                className="w-full py-2 rounded-lg text-xs font-medium text-center transition-colors hover:bg-slate-100"
-                                style={{ border: '1px dashed rgba(0,0,0,0.15)', color: '#94a3b8' }}>
-                                + Agregar postulación
-                              </button>
-                            </div>
-                          </div>
-                        )
-                      })}
-
-                      {trackingColumnas.length === 0 && (
-                        <div className="flex-1 text-center py-10">
-                          <p className="text-sm" style={{ color: '#94a3b8' }}>No hay columnas. Hacé clic en "+ Columna" para empezar.</p>
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                )}
-              </div>
-            )}
-          </div>
+          <TrackingScreen
+            user={user}
+            setShowPremiumModal={setShowPremiumModal}
+            setStep={setStep}
+            kanbanListMode={kanbanListMode}
+            setKanbanListMode={setKanbanListMode}
+            trackingColumnas={trackingColumnas}
+            trackingCards={trackingCards}
+            trackingLoading={trackingLoading}
+            trackingError={trackingError}
+            showAddCard={showAddCard}
+            setShowAddCard={setShowAddCard}
+            newCardForm={newCardForm}
+            setNewCardForm={setNewCardForm}
+            editCard={editCard}
+            setEditCard={setEditCard}
+            showAddColumna={showAddColumna}
+            setShowAddColumna={setShowAddColumna}
+            newColumnaName={newColumnaName}
+            setNewColumnaName={setNewColumnaName}
+            newColumnaColor={newColumnaColor}
+            setNewColumnaColor={setNewColumnaColor}
+            renameColumna={renameColumna}
+            setRenameColumna={setRenameColumna}
+            createCard={createCard}
+            updateCard={updateCard}
+            deleteCard={deleteCard}
+            createColumna={createColumna}
+            updateColumna={updateColumna}
+            deleteColumna={deleteColumna}
+            moveCard={moveCard}
+            setInterviewJobContext={setInterviewJobContext}
+            resetInterview={resetInterview}
+            cvFinalData={cvFinalData}
+          />
         )}
 
       </div>
 
-      {/* ── Modal: Agregar columna ── */}
-      {showAddColumna && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center px-4"
-          style={{ background: 'rgba(0,0,0,0.5)', backdropFilter: 'blur(4px)' }}
-          onClick={e => { if (e.target === e.currentTarget) setShowAddColumna(false) }}>
-          <div className="w-full max-w-xs rounded-2xl p-6 space-y-4"
-            style={{ background: 'white', boxShadow: '0 20px 60px rgba(0,0,0,0.2)' }}>
-            <h3 className="text-base font-bold" style={{ color: '#0d2137' }}>Nueva columna</h3>
-            <div className="space-y-3">
-              <input
-                autoFocus
-                placeholder="Nombre de la columna"
-                value={newColumnaName}
-                onChange={e => setNewColumnaName(e.target.value)}
-                className="w-full px-3 py-2.5 rounded-xl text-sm outline-none"
-                style={INPUT_STYLE}
-                maxLength={50}
-                onKeyDown={e => e.key === 'Enter' && newColumnaName.trim() && createColumna(newColumnaName.trim(), newColumnaColor).then(() => { setShowAddColumna(false); setNewColumnaName(''); setNewColumnaColor('#64748b') }).catch(() => {})}
-              />
-              <div className="flex items-center gap-3">
-                <label className="text-xs font-medium" style={{ color: '#475569' }}>Color:</label>
-                <input type="color" value={newColumnaColor} onChange={e => setNewColumnaColor(e.target.value)} className="w-8 h-8 rounded cursor-pointer border-0" />
-                <div className="flex gap-1.5 flex-wrap">
-                  {['#64748b','#0077B5','#16a34a','#dc2626','#d97706','#7c3aed'].map(c => (
-                    <button key={c} onClick={() => setNewColumnaColor(c)}
-                      className="w-5 h-5 rounded-full border-2 transition-transform hover:scale-110"
-                      style={{ background: c, borderColor: newColumnaColor === c ? '#0d2137' : 'transparent' }} />
-                  ))}
-                </div>
-              </div>
-            </div>
-            <div className="flex gap-2">
-              <button onClick={() => setShowAddColumna(false)}
-                className="flex-1 py-2 rounded-xl text-sm" style={BTN_BACK_STYLE}>Cancelar</button>
-              <button
-                disabled={!newColumnaName.trim()}
-                onClick={() => createColumna(newColumnaName.trim(), newColumnaColor).then(() => { setShowAddColumna(false); setNewColumnaName(''); setNewColumnaColor('#64748b') }).catch(() => {})}
-                className="flex-1 py-2 rounded-xl text-sm font-semibold text-white"
-                style={{ background: newColumnaName.trim() ? LI_GRADIENT : 'rgba(0,0,0,0.2)' }}>
-                Crear
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* ── Modal: Renombrar columna ── */}
-      {renameColumna && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center px-4"
-          style={{ background: 'rgba(0,0,0,0.5)', backdropFilter: 'blur(4px)' }}
-          onClick={e => { if (e.target === e.currentTarget) setRenameColumna(null) }}>
-          <div className="w-full max-w-xs rounded-2xl p-6 space-y-4"
-            style={{ background: 'white', boxShadow: '0 20px 60px rgba(0,0,0,0.2)' }}>
-            <h3 className="text-base font-bold" style={{ color: '#0d2137' }}>Editar columna</h3>
-            <div className="space-y-3">
-              <input
-                autoFocus
-                value={renameColumna.nombre}
-                onChange={e => setRenameColumna(prev => ({ ...prev, nombre: e.target.value }))}
-                className="w-full px-3 py-2.5 rounded-xl text-sm outline-none"
-                style={INPUT_STYLE}
-                maxLength={50}
-              />
-              <div className="flex items-center gap-3">
-                <label className="text-xs font-medium" style={{ color: '#475569' }}>Color:</label>
-                <input type="color" value={renameColumna.color} onChange={e => setRenameColumna(prev => ({ ...prev, color: e.target.value }))} className="w-8 h-8 rounded cursor-pointer border-0" />
-                <div className="flex gap-1.5 flex-wrap">
-                  {['#64748b','#0077B5','#16a34a','#dc2626','#d97706','#7c3aed'].map(c => (
-                    <button key={c} onClick={() => setRenameColumna(prev => ({ ...prev, color: c }))}
-                      className="w-5 h-5 rounded-full border-2 transition-transform hover:scale-110"
-                      style={{ background: c, borderColor: renameColumna.color === c ? '#0d2137' : 'transparent' }} />
-                  ))}
-                </div>
-              </div>
-            </div>
-            <div className="flex gap-2">
-              <button onClick={() => setRenameColumna(null)}
-                className="flex-1 py-2 rounded-xl text-sm" style={BTN_BACK_STYLE}>Cancelar</button>
-              <button
-                disabled={!renameColumna.nombre.trim()}
-                onClick={() => updateColumna(renameColumna.id, { nombre: renameColumna.nombre.trim(), color: renameColumna.color }).then(() => setRenameColumna(null)).catch(() => {})}
-                className="flex-1 py-2 rounded-xl text-sm font-semibold text-white"
-                style={{ background: renameColumna.nombre.trim() ? LI_GRADIENT : 'rgba(0,0,0,0.2)' }}>
-                Guardar
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* ── Modal: Agregar postulación ── */}
-      {showAddCard && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center px-4 py-6 overflow-y-auto"
-          style={{ background: 'rgba(0,0,0,0.5)', backdropFilter: 'blur(4px)' }}
-          onClick={e => { if (e.target === e.currentTarget) setShowAddCard(null) }}>
-          <div className="w-full max-w-sm rounded-2xl p-6 space-y-4"
-            style={{ background: 'white', boxShadow: '0 20px 60px rgba(0,0,0,0.2)' }}>
-            <h3 className="text-base font-bold" style={{ color: '#0d2137' }}>Nueva postulación</h3>
-            <div className="space-y-3">
-              {[
-                { label: 'Empresa *', key: 'empresa', type: 'text', placeholder: 'Ej: Mercado Libre', max: 100 },
-                { label: 'Puesto *', key: 'puesto', type: 'text', placeholder: 'Ej: Product Manager', max: 100 },
-                { label: 'Link del aviso', key: 'link_aviso', type: 'url', placeholder: 'https://...' },
-                { label: 'Fecha de aplicación', key: 'fecha_aplicacion', type: 'date' },
-              ].map(({ label, key, type, placeholder, max }) => (
-                <div key={key}>
-                  <label className="text-xs font-medium block mb-1" style={{ color: '#475569' }}>{label}</label>
-                  <input
-                    type={type}
-                    value={newCardForm[key]}
-                    onChange={e => setNewCardForm(prev => ({ ...prev, [key]: e.target.value }))}
-                    placeholder={placeholder}
-                    maxLength={max}
-                    className="w-full px-3 py-2.5 rounded-xl text-sm outline-none"
-                    style={INPUT_STYLE}
-                  />
-                </div>
-              ))}
-              <div>
-                <label className="text-xs font-medium block mb-1" style={{ color: '#475569' }}>Notas</label>
-                <textarea
-                  value={newCardForm.notas}
-                  onChange={e => setNewCardForm(prev => ({ ...prev, notas: e.target.value }))}
-                  placeholder="Requisitos, contacto, estado..."
-                  rows={3}
-                  className="w-full px-3 py-2.5 rounded-xl text-sm outline-none resize-none"
-                  style={INPUT_STYLE}
-                />
-              </div>
-            </div>
-            <div className="flex gap-2">
-              <button onClick={() => setShowAddCard(null)}
-                className="flex-1 py-2 rounded-xl text-sm" style={BTN_BACK_STYLE}>Cancelar</button>
-              <button
-                disabled={!newCardForm.empresa.trim() || !newCardForm.puesto.trim()}
-                onClick={() => {
-                  if (!newCardForm.empresa.trim() || !newCardForm.puesto.trim()) return
-                  createCard(showAddCard, newCardForm).then(() => setShowAddCard(null)).catch(() => {})
-                }}
-                className="flex-1 py-2.5 rounded-xl text-sm font-semibold text-white"
-                style={{ background: newCardForm.empresa.trim() && newCardForm.puesto.trim() ? LI_GRADIENT : 'rgba(0,0,0,0.2)' }}>
-                Agregar
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* ── Modal: Editar postulación ── */}
-      {editCard && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center px-4 py-6 overflow-y-auto"
-          style={{ background: 'rgba(0,0,0,0.5)', backdropFilter: 'blur(4px)' }}
-          onClick={e => { if (e.target === e.currentTarget) setEditCard(null) }}>
-          <div className="w-full max-w-sm rounded-2xl p-6 space-y-4"
-            style={{ background: 'white', boxShadow: '0 20px 60px rgba(0,0,0,0.2)' }}>
-            <div className="flex items-center justify-between">
-              <h3 className="text-base font-bold" style={{ color: '#0d2137' }}>Editar postulación</h3>
-              <button onClick={async () => {
-                if (confirm(`¿Eliminar "${editCard.empresa} — ${editCard.puesto}"?`)) {
-                  await deleteCard(editCard.id)
-                  setEditCard(null)
-                }
-              }} className="text-xs px-2 py-1 rounded-lg hover:bg-red-50 transition-colors"
-                style={{ color: '#dc2626', border: '1px solid rgba(220,38,38,0.2)' }}>
-                🗑 Eliminar
-              </button>
-            </div>
-            <div className="space-y-3">
-              {[
-                { label: 'Empresa *', key: 'empresa', type: 'text', max: 100 },
-                { label: 'Puesto *', key: 'puesto', type: 'text', max: 100 },
-                { label: 'Link del aviso', key: 'link_aviso', type: 'url' },
-                { label: 'Fecha de aplicación', key: 'fecha_aplicacion', type: 'date' },
-              ].map(({ label, key, type, max }) => (
-                <div key={key}>
-                  <label className="text-xs font-medium block mb-1" style={{ color: '#475569' }}>{label}</label>
-                  <input
-                    type={type}
-                    value={editCard[key] || ''}
-                    onChange={e => setEditCard(prev => ({ ...prev, [key]: e.target.value }))}
-                    maxLength={max}
-                    className="w-full px-3 py-2.5 rounded-xl text-sm outline-none"
-                    style={INPUT_STYLE}
-                  />
-                </div>
-              ))}
-              <div>
-                <label className="text-xs font-medium block mb-1" style={{ color: '#475569' }}>Columna</label>
-                <select
-                  value={editCard.columna_id || ''}
-                  onChange={e => setEditCard(prev => ({ ...prev, columna_id: e.target.value || null }))}
-                  className="w-full px-3 py-2.5 rounded-xl text-sm outline-none"
-                  style={INPUT_STYLE}>
-                  <option value="">Sin columna</option>
-                  {trackingColumnas.map(col => (
-                    <option key={col.id} value={col.id}>{col.nombre}</option>
-                  ))}
-                </select>
-              </div>
-              <div>
-                <label className="text-xs font-medium block mb-1" style={{ color: '#475569' }}>Notas</label>
-                <textarea
-                  value={editCard.notas || ''}
-                  onChange={e => setEditCard(prev => ({ ...prev, notas: e.target.value }))}
-                  rows={3}
-                  className="w-full px-3 py-2.5 rounded-xl text-sm outline-none resize-none"
-                  style={INPUT_STYLE}
-                />
-              </div>
-              {/* CV link section */}
-              <div className="rounded-xl p-3 space-y-2"
-                style={{ background: 'rgba(0,119,181,0.05)', border: '1px solid rgba(0,119,181,0.12)' }}>
-                <p className="text-xs font-semibold" style={{ color: '#0077B5' }}>📄 CV vinculado</p>
-                {editCard.cv_data ? (
-                  <div className="space-y-2">
-                    <p className="text-xs" style={{ color: '#475569' }}>
-                      CV de <strong>{editCard.cv_data.nombreCompleto || 'candidato'}</strong> vinculado
-                    </p>
-                    <button onClick={() => setEditCard(prev => ({ ...prev, cv_data: null }))}
-                      className="text-xs px-2 py-1 rounded-lg"
-                      style={{ color: '#dc2626', border: '1px solid rgba(220,38,38,0.2)' }}>
-                      Desvincular CV
-                    </button>
-                  </div>
-                ) : (
-                  <div className="space-y-1">
-                    <p className="text-xs" style={{ color: '#94a3b8' }}>No hay CV vinculado a esta postulación.</p>
-                    {cvFinalData && (
-                      <button onClick={() => setEditCard(prev => ({ ...prev, cv_data: cvFinalData }))}
-                        className="text-xs px-2 py-1 rounded-lg font-medium"
-                        style={{ background: 'rgba(0,119,181,0.08)', color: '#0077B5', border: '1px solid rgba(0,119,181,0.2)' }}>
-                        Vincular CV actual ({cvFinalData.nombreCompleto || 'sin nombre'})
-                      </button>
-                    )}
-                  </div>
-                )}
-              </div>
-            </div>
-            <div className="flex gap-2">
-              <button onClick={() => setEditCard(null)}
-                className="flex-1 py-2 rounded-xl text-sm" style={BTN_BACK_STYLE}>Cancelar</button>
-              <button
-                disabled={!editCard.empresa?.trim() || !editCard.puesto?.trim()}
-                onClick={async () => {
-                  if (!editCard.empresa?.trim() || !editCard.puesto?.trim()) return
-                  const { id, user_id, created_at, updated_at, ...patch } = editCard
-                  await updateCard(id, patch).catch(() => {})
-                  setEditCard(null)
-                }}
-                className="flex-1 py-2.5 rounded-xl text-sm font-semibold text-white"
-                style={{ background: editCard.empresa?.trim() && editCard.puesto?.trim() ? LI_GRADIENT : 'rgba(0,0,0,0.2)' }}>
-                Guardar
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
 
       {/* ── Preview CV — overlay unificado (mobile + desktop) ── */}
       {showCvPreview && cvPreviewHtml && (

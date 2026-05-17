@@ -1,6 +1,6 @@
 import { STEPS, trackEvent, BTN_BACK_STYLE, LI_GRADIENT, RAMIRO_LINKEDIN_URL, COMPANY_LINKEDIN_URL } from '../../constants'
 import { Logo, Spinner, LinkedInIcon, ResultCard, ScoreRing } from '../ui'
-import { RateLimitUI } from '../RateLimitUI'
+import RateLimitUI from '../RateLimitUI'
 
 export default function InterviewFeedbackScreen({ interviewLoading, rateLimitEvento, rateLimitSecs, waitlistEmail, setWaitlistEmail, waitlistSent, waitlistLoading, handleWaitlist, interviewError, setInterviewError, callInterviewFeedback, interviewAnswers, interviewFeedback, user, leadSaving, leadSent, setShowLeadModal, setShowPremiumModal, subscriptionLoading, setShowStarModal, result, setStep }) {
   return (
