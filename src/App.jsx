@@ -35,6 +35,15 @@ import StarTrainingScreen from './components/screens/StarTrainingScreen'
 import TrackingScreen from './components/screens/TrackingScreen'
 import ProfileInputScreen from './components/screens/ProfileInputScreen'
 import ResultsScreen from './components/screens/ResultsScreen'
+import AuthModal from './components/modals/AuthModal'
+import PremiumModal from './components/modals/PremiumModal'
+import ManageSubscriptionModal from './components/modals/ManageSubscriptionModal'
+import HistorialDrawer from './components/modals/HistorialDrawer'
+import PostPaymentModal from './components/modals/PostPaymentModal'
+import JobAdapterModal from './components/modals/JobAdapterModal'
+import StarModal from './components/modals/StarModal'
+import CvModal from './components/modals/CvModal'
+import LeadModal from './components/modals/LeadModal'
 
 // ── Main App ───────────────────────────────────────────────────
 
@@ -2175,570 +2184,101 @@ Generá el feedback en este JSON exacto:
       )}
 
       {/* ── Auth Modal ── */}
-      {showAuthModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4"
-          style={{ background: 'rgba(0,0,0,0.55)', backdropFilter: 'blur(4px)' }}
-          onClick={e => { if (e.target === e.currentTarget) { setShowAuthModal(false); setAuthError(''); setAuthSuccess(null) } }}>
-          <div className="w-full max-w-sm rounded-3xl p-6 space-y-4"
-            style={{ background: 'white', boxShadow: '0 25px 60px rgba(0,0,0,0.2)' }}>
-
-            {authSuccess ? (
-              /* ── Pantalla de éxito ── */
-              <div className="text-center space-y-5 py-2">
-                <div className="w-16 h-16 rounded-full flex items-center justify-center mx-auto text-3xl"
-                  style={{ background: 'rgba(0,119,181,0.08)' }}>✓</div>
-                <div className="space-y-1">
-                  <p className="font-bold text-slate-900 text-xl">
-                    {authSuccess === 'linkedin_needs_premium'
-                      ? `Hola, ${user?.nombre}!`
-                      : authSuccess === 'register' ? '¡Cuenta creada!' : `¡Bienvenido/a, ${user?.nombre}!`}
-                  </p>
-                  <p className="text-slate-500 text-sm leading-relaxed">
-                    {authSuccess === 'linkedin_needs_premium'
-                      ? 'Conectaste con LinkedIn. La app es gratuita — si querés guardar tu historial, podés probar Premium 7 días gratis.'
-                      : authSuccess === 'register'
-                        ? 'Cuenta creada. La app funciona completa sin Premium. Si querés guardar tu historial, podés probarlo 7 días gratis.'
-                        : 'Ya podés usar la app con tu historial guardado.'}
-                  </p>
-                </div>
-                {authSuccess === 'linkedin_needs_premium' ? (
-                  <div className="space-y-2 pt-1">
-                    <button onClick={() => { setShowAuthModal(false); setAuthSuccess(null); setShowPremiumModal(true) }}
-                      className="btn-glow w-full py-3 rounded-xl text-white font-semibold text-sm"
-                      style={{ background: LI_GRADIENT }}>
-                      Probar Premium 7 días gratis →
-                    </button>
-                    <button onClick={() => { authLogout(); setShowAuthModal(false); setAuthSuccess(null) }}
-                      className="w-full py-2.5 text-sm font-medium rounded-xl"
-                      style={{ color: '#64748b' }}>
-                      Seguir usando gratis sin guardar
-                    </button>
-                  </div>
-                ) : authSuccess === 'register' ? (
-                  <div className="space-y-2 pt-1">
-                    <button onClick={() => { setShowAuthModal(false); setAuthSuccess(null); setShowPremiumModal(true) }}
-                      className="btn-glow w-full py-3 rounded-xl text-white font-semibold text-sm"
-                      style={{ background: LI_GRADIENT }}>
-                      Probar Premium 7 días gratis →
-                    </button>
-                    <button onClick={() => { setShowAuthModal(false); setAuthSuccess(null) }}
-                      className="w-full py-2.5 text-sm font-medium rounded-xl"
-                      style={{ color: '#64748b' }}>
-                      Ahora no, seguir usando gratis
-                    </button>
-                  </div>
-                ) : (
-                  <button onClick={() => { setShowAuthModal(false); setAuthSuccess(null) }}
-                    className="btn-glow w-full py-3 rounded-xl text-white font-semibold text-sm"
-                    style={{ background: LI_GRADIENT }}>
-                    Continuar →
-                  </button>
-                )}
-              </div>
-            ) : (
-              /* ── Formulario login ── */
-              <>
-                <div className="flex items-center justify-between">
-                  <h2 className="text-slate-900 font-bold text-lg">Ingresá a tu cuenta</h2>
-                  <button onClick={() => { setShowAuthModal(false); setAuthError('') }}
-                    className="text-slate-400 hover:text-slate-600 text-2xl leading-none w-8 h-8 flex items-center justify-center">×</button>
-                </div>
-
-                <button onClick={handleLinkedinAuthViaSupabase}
-                  className="w-full py-3 rounded-xl flex items-center justify-center gap-2 text-sm font-semibold transition-opacity hover:opacity-90"
-                  style={{ background: '#0077B5', color: 'white' }}>
-                  <LinkedInIcon className="w-4 h-4" style={{ fill: 'white' }} />
-                  Continuar con LinkedIn
-                </button>
-
-                <div className="flex items-center gap-3">
-                  <div className="flex-1 h-px" style={{ background: '#e2e8f0' }} />
-                  <span className="text-xs text-slate-400">o con email</span>
-                  <div className="flex-1 h-px" style={{ background: '#e2e8f0' }} />
-                </div>
-
-                <div className="space-y-3">
-                  <input type="email" placeholder="Email" value={authEmail}
-                    onChange={e => setAuthEmail(e.target.value)} autoComplete="email"
-                    className="w-full px-4 py-3 rounded-xl text-sm outline-none" style={INPUT_STYLE} />
-                  <input type="password" placeholder="Contraseña" value={authPassword}
-                    onChange={e => setAuthPassword(e.target.value)} autoComplete="current-password"
-                    onKeyDown={e => e.key === 'Enter' && authEmail.includes('@') && authPassword.length >= 6 && authLogin(authEmail, authPassword)}
-                    className="w-full px-4 py-3 rounded-xl text-sm outline-none" style={INPUT_STYLE} />
-                </div>
-
-                {authError && <p className="text-sm text-center font-medium" style={{ color: '#ef4444' }}>{authError}</p>}
-
-                <button
-                  onClick={() => authLogin(authEmail, authPassword)}
-                  disabled={authLoading || !authEmail.includes('@') || authPassword.length < 6}
-                  className="btn-glow w-full py-3 rounded-xl text-white font-semibold text-sm"
-                  style={{ background: LI_GRADIENT, opacity: (authLoading || !authEmail.includes('@') || authPassword.length < 6) ? 0.5 : 1 }}>
-                  {authLoading ? 'Procesando...' : 'Ingresar'}
-                </button>
-
-                <p className="text-xs text-center text-slate-400 leading-relaxed">
-                  ¿Todavía no tenés cuenta? <button onClick={() => { setShowAuthModal(false); setShowPremiumModal(true) }} className="underline" style={{ color: '#0077B5' }}>Probá Premium gratis 7 días</button> para crear una y guardar tu historial.
-                </p>
-              </>
-            )}
-          </div>
-        </div>
-      )}
+      {showAuthModal && <AuthModal
+        user={user}
+        authSuccess={authSuccess}
+        setAuthSuccess={setAuthSuccess}
+        setShowAuthModal={setShowAuthModal}
+        setShowPremiumModal={setShowPremiumModal}
+        authError={authError}
+        setAuthError={setAuthError}
+        authEmail={authEmail}
+        setAuthEmail={setAuthEmail}
+        authPassword={authPassword}
+        setAuthPassword={setAuthPassword}
+        authLoading={authLoading}
+        authLogin={authLogin}
+        authLogout={authLogout}
+        handleLinkedinAuthViaSupabase={handleLinkedinAuthViaSupabase}
+      />}
 
       {/* ── Premium Modal ── */}
-      {showPremiumModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4"
-          style={{ background: 'rgba(0,0,0,0.55)', backdropFilter: 'blur(4px)' }}
-          onClick={e => { if (e.target === e.currentTarget) { setShowPremiumModal(false); setShowCouponField(false); setCouponCode(''); setCouponError(''); setCouponSuccess(false) } }}>
-          <div className="w-full max-w-sm rounded-3xl overflow-hidden"
-            style={{ boxShadow: '0 25px 60px rgba(0,0,0,0.2)' }}>
-            <div className="p-6 text-white" style={{ background: LI_GRADIENT }}>
-              <p className="text-xs font-semibold opacity-80 mb-1">OPTIMIZA LINKEDIN</p>
-              <h2 className="text-2xl font-bold">Premium</h2>
-              <div className="flex items-baseline gap-2 mt-2">
-                <p className="text-4xl font-bold">$3.000<span className="text-lg font-normal opacity-80">/mes</span></p>
-                <span className="text-xs font-bold px-2 py-0.5 rounded-full" style={{ background: 'rgba(255,255,255,0.22)', color: 'white' }}>7 DÍAS GRATIS</span>
-              </div>
-              <p className="text-sm opacity-75 mt-1">Cancelás antes del día 7 y no te cobramos nada</p>
-            </div>
-            <div className="p-6 space-y-5 bg-white">
-              <ul className="space-y-3">
-                {[
-                  ['🚀', 'Centro de carrera completo', 'Análisis, CV, simulador de entrevistas y STAR en un solo lugar, todo guardado'],
-                  ['📄', 'CV ATS descargable', 'Generá y re-descargá cualquier versión de tu CV cuando lo necesites'],
-                  ['🎙️', 'Entrenador de entrevistas', 'Practicá respuestas y revisá tu feedback acumulado para mejorar'],
-                  ['📍', 'Seguimiento de postulaciones', 'Kanban visual para llevar el control de todas tus búsquedas activas'],
-                ].map(([icon, title, desc]) => (
-                  <li key={title} className="flex gap-3">
-                    <span className="text-xl shrink-0">{icon}</span>
-                    <div>
-                      <p className="text-slate-800 font-semibold text-sm">{title}</p>
-                      <p className="text-slate-500 text-xs leading-snug">{desc}</p>
-                    </div>
-                  </li>
-                ))}
-              </ul>
-
-              {!user && (
-                <>
-                  <button onClick={() => { setShowPremiumModal(false); handleLinkedinAuthViaSupabase() }}
-                    className="w-full py-3 rounded-xl flex items-center justify-center gap-2 text-sm font-semibold transition-opacity hover:opacity-90"
-                    style={{ background: '#0077B5', color: 'white' }}>
-                    <LinkedInIcon className="w-4 h-4" style={{ fill: 'white' }} />
-                    Continuar con LinkedIn
-                  </button>
-                  <div className="flex items-center gap-3">
-                    <div className="flex-1 h-px" style={{ background: '#e2e8f0' }} />
-                    <span className="text-xs text-slate-400">o con email</span>
-                    <div className="flex-1 h-px" style={{ background: '#e2e8f0' }} />
-                  </div>
-                  <input type="email" placeholder="Tu email para crear la cuenta"
-                    value={premiumEmail} onChange={e => setPremiumEmail(e.target.value)}
-                    className="w-full px-4 py-3 rounded-xl text-sm outline-none" style={INPUT_STYLE} />
-                </>
-              )}
-
-              <button onClick={() => startSubscription()} disabled={subscriptionLoading || (!user && !premiumEmail.includes('@'))}
-                className="btn-glow w-full py-3.5 rounded-xl text-white font-bold text-sm"
-                style={{ background: LI_GRADIENT, opacity: (subscriptionLoading || (!user && !premiumEmail.includes('@'))) ? 0.6 : 1 }}>
-                {subscriptionLoading ? 'Procesando...' : 'Probar 7 días gratis → Mercado Pago'}
-              </button>
-              <p className="text-center text-xs text-slate-400 -mt-1">
-                La app seguirá siendo 100% gratuita. Premium es solo para guardar tu historial.
-              </p>
-              <button onClick={() => setShowPremiumModal(false)}
-                className="w-full py-2 text-sm text-slate-400 text-center">
-                Ahora no, seguir usando gratis
-              </button>
-
-              {/* ── Cupón / código de acceso ── */}
-              {!showCouponField ? (
-                <button
-                  onClick={() => { setShowCouponField(true); setCouponError(''); setCouponSuccess(false) }}
-                  className="w-full py-1 text-xs text-slate-400 text-center hover:text-slate-600 transition-colors">
-                  ¿Tenés un código de acceso?
-                </button>
-              ) : couponSuccess ? (
-                <p className="text-center text-sm font-semibold py-2" style={{ color: '#16a34a' }}>
-                  ✓ ¡Premium activado correctamente!
-                </p>
-              ) : (
-                <div className="space-y-2 pt-1 border-t" style={{ borderColor: 'rgba(0,119,181,0.1)' }}>
-                  <p className="text-xs text-slate-500 text-center pt-2">Ingresá tu código de acceso</p>
-                  {!user && (
-                    <input type="email" placeholder="Tu email"
-                      value={couponEmail} onChange={e => setCouponEmail(e.target.value)}
-                      className="w-full px-3 py-2.5 rounded-xl text-sm outline-none" style={INPUT_STYLE} />
-                  )}
-                  <div className="flex gap-2">
-                    <input type="text" placeholder="Código"
-                      value={couponCode} onChange={e => { setCouponCode(e.target.value); setCouponError('') }}
-                      onKeyDown={e => e.key === 'Enter' && applyCoupon()}
-                      className="flex-1 px-3 py-2.5 rounded-xl text-sm outline-none" style={INPUT_STYLE} />
-                    <button onClick={applyCoupon}
-                      disabled={couponLoading || !couponCode.trim() || (!user && !couponEmail.includes('@'))}
-                      className="px-4 py-2.5 rounded-xl text-sm font-semibold text-white shrink-0"
-                      style={{ background: LI_GRADIENT, opacity: (couponLoading || !couponCode.trim() || (!user && !couponEmail.includes('@'))) ? 0.5 : 1 }}>
-                      {couponLoading ? '...' : 'Aplicar'}
-                    </button>
-                  </div>
-                  {couponError && <p className="text-xs text-center" style={{ color: '#ef4444' }}>{couponError}</p>}
-                </div>
-              )}
-            </div>
-          </div>
-        </div>
-      )}
+      {showPremiumModal && <PremiumModal
+        user={user}
+        setShowPremiumModal={setShowPremiumModal}
+        subscriptionLoading={subscriptionLoading}
+        premiumEmail={premiumEmail}
+        setPremiumEmail={setPremiumEmail}
+        startSubscription={startSubscription}
+        couponCode={couponCode}
+        setCouponCode={setCouponCode}
+        couponEmail={couponEmail}
+        setCouponEmail={setCouponEmail}
+        couponLoading={couponLoading}
+        applyCoupon={applyCoupon}
+        couponError={couponError}
+        setCouponError={setCouponError}
+        couponSuccess={couponSuccess}
+        setCouponSuccess={setCouponSuccess}
+        showCouponField={showCouponField}
+        setShowCouponField={setShowCouponField}
+        handleLinkedinAuthViaSupabase={handleLinkedinAuthViaSupabase}
+      />}
 
       {/* ── Gestionar Suscripción Modal ── */}
-      {showManageModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4"
-          style={{ background: 'rgba(0,0,0,0.55)', backdropFilter: 'blur(4px)' }}
-          onClick={e => { if (e.target === e.currentTarget) { setShowManageModal(false); setCancelConfirm(false); setCancelDone(false) } }}>
-          <div className="w-full max-w-sm rounded-3xl overflow-hidden"
-            style={{ boxShadow: '0 25px 60px rgba(0,0,0,0.2)' }}>
-            <div className="p-6 text-white" style={{ background: LI_GRADIENT }}>
-              <p className="text-xs font-semibold opacity-80 mb-1">TU SUSCRIPCIÓN</p>
-              <h2 className="text-xl font-bold">Cuenta Premium</h2>
-              {user?.premium_hasta && (
-                <p className="text-sm opacity-80 mt-1">
-                  Activa hasta {new Date(user.premium_hasta).toLocaleDateString('es-AR', { day: 'numeric', month: 'long', year: 'numeric' })}
-                </p>
-              )}
-            </div>
-            <div className="p-6 space-y-4 bg-white">
-              {cancelDone ? (
-                <div className="text-center space-y-3 py-2">
-                  <p className="text-2xl">✓</p>
-                  <p className="font-semibold text-slate-800">Cancelación procesada</p>
-                  <p className="text-sm text-slate-500">
-                    No se realizarán cobros futuros. Tu acceso Premium continúa activo
-                    {user?.premium_hasta
-                      ? ` hasta el ${new Date(user.premium_hasta).toLocaleDateString('es-AR', { day: 'numeric', month: 'long' })}.`
-                      : ' hasta el vencimiento del período actual.'}
-                  </p>
-                  <button onClick={() => { setShowManageModal(false); setCancelDone(false) }}
-                    className="w-full py-3 rounded-xl text-sm font-semibold text-white"
-                    style={{ background: LI_GRADIENT }}>
-                    Entendido
-                  </button>
-                </div>
-              ) : cancelConfirm ? (
-                <div className="space-y-3">
-                  <p className="text-sm text-slate-700 text-center font-medium">¿Confirmar cancelación?</p>
-                  <p className="text-xs text-slate-500 text-center">No se realizarán cargos futuros. Tu acceso Premium continúa hasta que venza el período actual.</p>
-                  <button onClick={cancelSubscription} disabled={cancelLoading}
-                    className="w-full py-3 rounded-xl text-sm font-semibold text-white"
-                    style={{ background: '#ef4444', opacity: cancelLoading ? 0.7 : 1 }}>
-                    {cancelLoading ? 'Cancelando...' : 'Sí, cancelar suscripción'}
-                  </button>
-                  <button onClick={() => setCancelConfirm(false)} disabled={cancelLoading}
-                    className="w-full py-2 text-sm text-slate-500 text-center">
-                    Volver
-                  </button>
-                </div>
-              ) : (
-                <div className="space-y-3">
-                  <p className="text-sm text-slate-600">
-                    Tu suscripción se renueva automáticamente cada mes a través de <strong>Mercado Pago</strong>.
-                  </p>
-                  <p className="text-xs text-slate-400">
-                    Podés cancelar desde aquí o directamente desde tu cuenta de Mercado Pago en <em>Suscripciones activas</em>.
-                  </p>
-                  <button onClick={() => setCancelConfirm(true)}
-                    className="w-full py-3 rounded-xl text-sm font-medium border"
-                    style={{ borderColor: '#ef4444', color: '#ef4444', background: 'transparent' }}>
-                    Cancelar suscripción
-                  </button>
-                  <button onClick={() => { setShowManageModal(false); setCancelConfirm(false) }}
-                    className="w-full py-2 text-sm text-slate-400 text-center">
-                    Cerrar
-                  </button>
-                </div>
-              )}
-            </div>
-          </div>
-        </div>
-      )}
+      {showManageModal && <ManageSubscriptionModal
+        user={user}
+        setShowManageModal={setShowManageModal}
+        cancelConfirm={cancelConfirm}
+        setCancelConfirm={setCancelConfirm}
+        cancelDone={cancelDone}
+        setCancelDone={setCancelDone}
+        cancelLoading={cancelLoading}
+        cancelSubscription={cancelSubscription}
+      />}
 
       {/* ── Historial Modal ── */}
-      {showHistorial && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4"
-          style={{ background: 'rgba(0,0,0,0.55)', backdropFilter: 'blur(4px)' }}>
-          <div className="w-full max-w-lg rounded-3xl p-6 space-y-4 max-h-[85vh] overflow-y-auto"
-            style={{ background: 'white', boxShadow: '0 25px 60px rgba(0,0,0,0.2)' }}>
-            <div className="flex items-center justify-between">
-              <h2 className="text-slate-900 font-bold text-lg">Mis resultados</h2>
-              <button onClick={() => { setShowHistorial(false); setDeletingHistorialId(null) }}
-                className="text-slate-400 hover:text-slate-600 text-2xl leading-none w-8 h-8 flex items-center justify-center">×</button>
-            </div>
-            {historialLoading ? (
-              <div className="flex justify-center py-10"><Spinner size={8} /></div>
-            ) : historial.length === 0 ? (
-              <p className="text-center text-slate-500 text-sm py-10 leading-relaxed">
-                Todavía no hay items guardados.<br />
-                Los análisis, CVs y entrevistas se guardan automáticamente.
-              </p>
-            ) : (
-              <div className="space-y-2">
-                {historial.map(item => {
-                  const icons = { analisis: '📊', cv: '📄', entrevista: '🎙️', star: '⭐' }
-                  const labels = { analisis: 'Análisis', cv: 'CV', entrevista: 'Entrevista', star: 'STAR' }
-                  const colors = {
-                    analisis: { background: '#dbeafe', color: '#1d4ed8' },
-                    cv:       { background: '#dcfce7', color: '#15803d' },
-                    entrevista: { background: '#f3e8ff', color: '#7c3aed' },
-                    star:     { background: '#fef3c7', color: '#b45309' },
-                  }
-                  const isRestorable = item.tipo === 'analisis' || item.tipo === 'cv' || item.tipo === 'entrevista'
-                  const isPremium = localStorage.getItem('ol_premium') === '1'
-                  const isConfirming = deletingHistorialId === item.id
-
-                  if (isConfirming) {
-                    return (
-                      <div key={item.id} className="rounded-2xl p-4 flex items-center justify-between gap-3"
-                        style={{ border: '1px solid rgba(239,68,68,0.25)', background: 'rgba(239,68,68,0.04)' }}>
-                        <p className="text-sm text-slate-700 font-medium">¿Eliminar este registro?</p>
-                        <div className="flex items-center gap-2 shrink-0">
-                          <button
-                            onClick={() => setDeletingHistorialId(null)}
-                            className="px-3 py-1.5 rounded-lg text-xs font-medium transition-all"
-                            style={{ background: 'rgba(100,116,139,0.10)', color: '#475569' }}>
-                            Cancelar
-                          </button>
-                          <button
-                            onClick={() => deleteHistorialItem(item.id)}
-                            disabled={deleteHistorialLoading}
-                            className="px-3 py-1.5 rounded-lg text-xs font-semibold text-white transition-all"
-                            style={{ background: '#ef4444', opacity: deleteHistorialLoading ? 0.6 : 1 }}>
-                            {deleteHistorialLoading ? '...' : 'Sí, eliminar'}
-                          </button>
-                        </div>
-                      </div>
-                    )
-                  }
-
-                  return (
-                    <div key={item.id}
-                      onClick={isRestorable ? () => restoreFromHistorial(item) : undefined}
-                      className={`rounded-2xl p-4 flex items-center justify-between gap-3 transition-all duration-150 ${isRestorable ? 'cursor-pointer hover:shadow-md active:scale-[0.99]' : ''}`}
-                      style={{ border: '1px solid rgba(0,119,181,0.12)', background: isRestorable ? 'white' : '#f8fafc' }}>
-                      <div className="flex items-center gap-2 min-w-0">
-                        <span className="text-xs font-semibold px-2 py-0.5 rounded-full shrink-0"
-                          style={colors[item.tipo] || colors.analisis}>
-                          {icons[item.tipo]} {labels[item.tipo]}
-                        </span>
-                        <span className="text-slate-700 text-sm font-medium truncate">{item.titulo || '—'}</span>
-                      </div>
-                      <div className="flex items-center gap-2 shrink-0">
-                        <span className="text-xs text-slate-400">
-                          {new Date(item.created_at).toLocaleDateString('es-AR', { day: 'numeric', month: 'short', year: '2-digit' })}
-                        </span>
-                        {isPremium && (
-                          <button
-                            onClick={e => { e.stopPropagation(); setDeletingHistorialId(item.id) }}
-                            className="w-7 h-7 rounded-lg flex items-center justify-center transition-all opacity-40 hover:opacity-100"
-                            style={{ background: 'transparent' }}
-                            title="Eliminar">
-                            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4 text-slate-400 hover:text-red-500">
-                              <path fillRule="evenodd" d="M8.75 1A2.75 2.75 0 006 3.75v.443c-.795.077-1.584.176-2.365.298a.75.75 0 10.23 1.482l.149-.022.841 10.518A2.75 2.75 0 007.596 19h4.807a2.75 2.75 0 002.742-2.53l.841-10.52.149.023a.75.75 0 00.23-1.482A41.03 41.03 0 0014 4.193v-.443A2.75 2.75 0 0011.25 1h-2.5zM10 4c.84 0 1.673.025 2.5.075V3.75c0-.69-.56-1.25-1.25-1.25h-2.5c-.69 0-1.25.56-1.25 1.25v.325C8.327 4.025 9.16 4 10 4zM8.58 7.72a.75.75 0 00-1.5.06l.3 7.5a.75.75 0 101.5-.06l-.3-7.5zm4.34.06a.75.75 0 10-1.5-.06l-.3 7.5a.75.75 0 101.5.06l.3-7.5z" clipRule="evenodd" />
-                            </svg>
-                          </button>
-                        )}
-                        {isRestorable && <span className="text-slate-300 text-base">›</span>}
-                      </div>
-                    </div>
-                  )
-                })}
-              </div>
-            )}
-          </div>
-        </div>
-      )}
+      {showHistorial && <HistorialDrawer
+        historial={historial}
+        historialLoading={historialLoading}
+        setShowHistorial={setShowHistorial}
+        deletingHistorialId={deletingHistorialId}
+        setDeletingHistorialId={setDeletingHistorialId}
+        deleteHistorialLoading={deleteHistorialLoading}
+        deleteHistorialItem={deleteHistorialItem}
+        restoreFromHistorial={restoreFromHistorial}
+      />}
 
       {/* ── Post-Payment Modal ── */}
-      {showPostPayment && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4"
-          style={{ background: 'rgba(0,0,0,0.55)', backdropFilter: 'blur(4px)' }}>
-          <div className="w-full max-w-sm rounded-3xl p-6 space-y-4"
-            style={{ background: 'white', boxShadow: '0 25px 60px rgba(0,0,0,0.2)' }}>
-            <div className="text-center space-y-1">
-              <div className="w-14 h-14 rounded-full flex items-center justify-center mx-auto text-2xl mb-3"
-                style={{ background: 'rgba(0,119,181,0.08)' }}>✦</div>
-              <h2 className="text-slate-900 font-bold text-xl">¡Suscripción activada!</h2>
-              <p className="text-slate-500 text-sm leading-relaxed">Creá tu contraseña para acceder a tu historial desde cualquier dispositivo.</p>
-            </div>
-
-            <div className="space-y-3">
-              <input type="email" value={postPaymentEmail} readOnly
-                className="w-full px-4 py-3 rounded-xl text-sm outline-none"
-                style={{ ...INPUT_STYLE, background: '#f8fafc', color: '#64748b' }} />
-              <input type="password" placeholder="Elegí una contraseña (mínimo 6 caracteres)"
-                value={postPaymentPassword} onChange={e => setPostPaymentPassword(e.target.value)}
-                autoComplete="new-password"
-                onKeyDown={e => e.key === 'Enter' && postPaymentPassword.length >= 6 && createAccountPostPayment()}
-                className="w-full px-4 py-3 rounded-xl text-sm outline-none" style={INPUT_STYLE} />
-            </div>
-
-            {postPaymentError && <p className="text-sm text-center font-medium" style={{ color: '#ef4444' }}>{postPaymentError}</p>}
-
-            <button onClick={createAccountPostPayment}
-              disabled={postPaymentLoading || postPaymentPassword.length < 6}
-              className="btn-glow w-full py-3 rounded-xl text-white font-semibold text-sm"
-              style={{ background: LI_GRADIENT, opacity: (postPaymentLoading || postPaymentPassword.length < 6) ? 0.5 : 1 }}>
-              {postPaymentLoading ? 'Creando cuenta...' : 'Crear mi cuenta →'}
-            </button>
-          </div>
-        </div>
-      )}
+      {showPostPayment && <PostPaymentModal
+        postPaymentEmail={postPaymentEmail}
+        postPaymentPassword={postPaymentPassword}
+        setPostPaymentPassword={setPostPaymentPassword}
+        postPaymentLoading={postPaymentLoading}
+        postPaymentError={postPaymentError}
+        createAccountPostPayment={createAccountPostPayment}
+      />}
 
       {/* ── Job Adapter Modal ── */}
-      {showJobModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4"
-          style={{ background: 'rgba(0,0,0,0.60)', backdropFilter: 'blur(4px)' }}
-          onClick={e => { if (e.target === e.currentTarget) { setShowJobModal(false); setJobResult(null); setJobError('') } }}>
-          <div className="w-full max-w-lg rounded-3xl overflow-hidden flex flex-col max-h-[90vh]"
-            style={{ background: 'white', boxShadow: '0 25px 60px rgba(0,0,0,0.25)' }}>
-
-            {/* Header */}
-            <div className="flex items-center justify-between p-5 border-b shrink-0" style={{ borderColor: 'rgba(0,119,181,0.12)' }}>
-              <div>
-                <h2 className="text-slate-900 font-bold text-base">Adaptar CV para un aviso</h2>
-                <p className="text-slate-500 text-xs mt-0.5">Gemini ajusta tu CV y genera la carta de presentación</p>
-              </div>
-              <button onClick={() => { setShowJobModal(false); setJobResult(null); setJobError('') }}
-                className="text-slate-400 hover:text-slate-600 text-2xl leading-none w-8 h-8 flex items-center justify-center shrink-0">×</button>
-            </div>
-
-            <div className="overflow-y-auto flex-1 p-5 space-y-4">
-              {!jobResult ? (
-                <>
-                  <div className="space-y-2">
-                    <label className="text-xs font-semibold text-slate-600 uppercase tracking-wide">Pegá el aviso de empleo</label>
-                    <textarea
-                      value={jobPosting}
-                      onChange={e => { setJobPosting(e.target.value); setJobError('') }}
-                      placeholder="Pegá acá el texto completo del aviso: título del puesto, responsabilidades, requisitos, empresa, etc."
-                      rows={9}
-                      className="w-full rounded-2xl px-4 py-3 text-sm resize-none outline-none"
-                      style={{ background: '#f8fafc', border: '1px solid rgba(0,119,181,0.18)', color: '#0d2137' }}
-                    />
-                    <p className="text-xs text-slate-400 text-right">{jobPosting.length} caracteres</p>
-                  </div>
-                  {jobError && <p className="text-xs text-center" style={{ color: '#ef4444' }}>{jobError}</p>}
-                  <button
-                    onClick={callAdaptCvForJob}
-                    disabled={jobLoading || jobPosting.trim().length < 50}
-                    className="btn-glow w-full py-3.5 rounded-xl text-white font-bold text-sm"
-                    style={{ background: LI_GRADIENT, opacity: (jobLoading || jobPosting.trim().length < 50) ? 0.5 : 1 }}>
-                    {jobLoading ? (
-                      <span className="flex items-center justify-center gap-2"><Spinner size={4} /><span>Generando CV adaptado y carta...</span></span>
-                    ) : 'Generar CV adaptado + Carta →'}
-                  </button>
-                </>
-              ) : (
-                <div className="space-y-5">
-                  {/* Ajustes realizados */}
-                  {jobResult.ajustes_principales?.length > 0 && (
-                    <div className="rounded-2xl p-4 space-y-2"
-                      style={{ background: 'rgba(0,119,181,0.04)', border: '1px solid rgba(0,119,181,0.15)' }}>
-                      <p className="text-xs font-semibold uppercase tracking-wide" style={{ color: '#0077B5' }}>Ajustes realizados al CV</p>
-                      {jobResult.ajustes_principales.map((a, i) => (
-                        <div key={i} className="flex items-start gap-2">
-                          <span className="text-blue-400 shrink-0 text-xs mt-0.5">✓</span>
-                          <p className="text-slate-600 text-xs leading-snug">{a}</p>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-
-                  {/* Keywords */}
-                  {jobResult.palabras_clave_incorporadas?.length > 0 && (
-                    <div>
-                      <p className="text-xs font-semibold uppercase tracking-wide text-slate-500 mb-2">Keywords incorporadas</p>
-                      <div className="flex flex-wrap gap-1.5">
-                        {jobResult.palabras_clave_incorporadas.map((kw, i) => (
-                          <span key={i} className="text-xs px-2.5 py-1 rounded-full font-medium"
-                            style={{ background: 'rgba(0,119,181,0.08)', border: '1px solid rgba(0,119,181,0.2)', color: '#0077B5' }}>
-                            {kw}
-                          </span>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-
-                  {/* CV adaptado — foto + descargar */}
-                  {jobResult.cv_adaptado && (
-                    <>
-                      <div className="rounded-2xl p-4 space-y-3"
-                        style={{ background: profilePhotoPreview ? 'rgba(5,150,105,0.05)' : 'rgba(0,119,181,0.05)', border: `1px solid ${profilePhotoPreview ? 'rgba(5,150,105,0.2)' : 'rgba(0,119,181,0.18)'}` }}>
-                        <p className="text-xs font-semibold text-slate-700">
-                          {profilePhotoPreview ? '📸 Foto de perfil cargada' : '📸 ¿Querés incluir tu foto de perfil?'}
-                        </p>
-                        {!profilePhotoPreview && (
-                          <p className="text-xs text-slate-500">Las fotos no se guardan en el historial. Podés cargarla ahora o descargar sin ella.</p>
-                        )}
-                        <div className="flex items-center gap-3">
-                          {profilePhotoPreview && (
-                            <div className="w-10 h-10 rounded-full overflow-hidden shrink-0 relative"
-                              style={{ border: '2px solid rgba(5,150,105,0.4)' }}>
-                              <img src={profilePhotoPreview} alt="Foto" style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover' }} />
-                            </div>
-                          )}
-                          <label htmlFor="job-modal-photo" className="cursor-pointer px-3 py-1.5 rounded-lg text-xs font-semibold transition-all"
-                            style={{ background: 'rgba(0,119,181,0.12)', color: '#0077B5', border: '1px solid rgba(0,119,181,0.25)' }}>
-                            {profilePhotoPreview ? 'Cambiar foto' : 'Cargar foto'}
-                          </label>
-                          <input id="job-modal-photo" type="file" accept="image/*" className="hidden" onChange={handleCvPhotoUpload} />
-                          {profilePhotoPreview && (
-                            <button onClick={() => { setProfilePhotoPreview(null); setProfilePhoto(null); setProfilePhotoMime('image/jpeg') }}
-                              className="text-xs transition-colors" style={{ color: '#94a3b8' }}>
-                              ✕ Quitar
-                            </button>
-                          )}
-                        </div>
-                      </div>
-                      <button
-                        onClick={() => {
-                          const html = buildCvHtml(jobResult.cv_adaptado, profilePhoto, profilePhotoMime, cvTemplate)
-                          const win = window.open('', '_blank')
-                          if (win) { win.document.write(html); win.document.close(); win.focus(); setTimeout(() => { try { win.print() } catch {} }, 300) }
-                          trackEvent('job_adapter_cv_download')
-                        }}
-                        className="w-full py-3.5 rounded-xl text-sm font-semibold text-white"
-                        style={{ background: 'linear-gradient(135deg,#059669,#10b981)', boxShadow: '0 4px 12px rgba(5,150,105,0.25)' }}>
-                        📥 Descargar CV adaptado →
-                      </button>
-                    </>
-                  )}
-
-                  {/* Carta de presentación */}
-                  {jobResult.carta_de_presentacion && (
-                    <div className="rounded-2xl overflow-hidden"
-                      style={{ border: '1px solid rgba(99,102,241,0.25)' }}>
-                      <div className="flex items-center justify-between px-4 py-3"
-                        style={{ background: 'rgba(99,102,241,0.06)' }}>
-                        <p className="text-sm font-semibold text-slate-800">✉ Carta de presentación</p>
-                        <CopyButton text={jobResult.carta_de_presentacion} />
-                      </div>
-                      <div className="px-4 py-4 bg-white">
-                        <p className="text-sm text-slate-700 leading-relaxed whitespace-pre-wrap">{jobResult.carta_de_presentacion}</p>
-                      </div>
-                    </div>
-                  )}
-
-                  <button
-                    onClick={() => { setJobResult(null); setJobPosting(''); setJobError('') }}
-                    className="w-full py-2.5 rounded-xl text-sm text-slate-400 hover:text-slate-600 transition-colors">
-                    ← Adaptar para otro aviso
-                  </button>
-                </div>
-              )}
-            </div>
-          </div>
-        </div>
-      )}
+      {showJobModal && <JobAdapterModal
+        setShowJobModal={setShowJobModal}
+        jobPosting={jobPosting}
+        setJobPosting={setJobPosting}
+        callAdaptCvForJob={callAdaptCvForJob}
+        jobLoading={jobLoading}
+        jobResult={jobResult}
+        setJobResult={setJobResult}
+        jobError={jobError}
+        setJobError={setJobError}
+        profilePhotoPreview={profilePhotoPreview}
+        setProfilePhotoPreview={setProfilePhotoPreview}
+        profilePhoto={profilePhoto}
+        setProfilePhoto={setProfilePhoto}
+        profilePhotoMime={profilePhotoMime}
+        setProfilePhotoMime={setProfilePhotoMime}
+        handleCvPhotoUpload={handleCvPhotoUpload}
+        cvTemplate={cvTemplate}
+      />}
 
       {/* ── Barra de usuario ── */}
       <div className="w-full max-w-xl mb-2 flex justify-end items-center gap-2 flex-wrap">
@@ -3240,255 +2780,40 @@ Generá el feedback en este JSON exacto:
       )}
 
       {/* ── Modal STAR paywall ── */}
-      {showStarModal && (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center px-4 py-6 overflow-y-auto"
-          style={{ background: 'rgba(0,0,0,0.70)', backdropFilter: 'blur(4px)' }}
-          onClick={e => { if (e.target === e.currentTarget) setShowStarModal(false) }}
-        >
-          <div className="w-full max-w-sm rounded-2xl overflow-hidden step-transition"
-            style={{ background: '#1e293b', border: '1px solid #334155', boxShadow: '0 20px 60px rgba(0,0,0,0.5)' }}>
-            <div className="p-6 pb-4 space-y-2">
-              <h3 className="text-lg font-bold text-white">🎯 Entrenador STAR</h3>
-              <p className="text-xs leading-relaxed" style={{ color: '#64748b' }}>
-                El método que usan los mejores candidatos para estructurar respuestas que impactan.
-              </p>
-              <ul className="text-xs space-y-1 pt-1" style={{ color: '#64748b' }}>
-                <li>✓ Teoría explicada paso a paso (S · T · A · R)</li>
-                <li>✓ Ejemplo completo de una respuesta bien estructurada</li>
-                <li>✓ Práctica real con preguntas de RRHH</li>
-                <li>✓ Feedback de IA por cada componente STAR</li>
-              </ul>
-            </div>
-            <div className="px-6 pb-6 pt-4 space-y-3" style={{ borderTop: '1px solid rgba(255,255,255,0.07)' }}>
-              <button
-                onClick={() => {
-                  trackEvent('star_training_start', { via: 'free' })
-                  setShowStarModal(false)
-                  setStarPhase('theory')
-                  setStarFeedback(null)
-                  setStarAnswer('')
-                  setStep(STEPS.STAR_TRAINING)
-                }}
-                className="w-full py-3.5 rounded-xl text-sm font-semibold"
-                style={{ background: 'linear-gradient(135deg,#6366f1,#8b5cf6)', color: 'white' }}
-              >
-                Empezar gratis →
-              </button>
-              <button
-                onClick={() => setShowStarModal(false)}
-                className="w-full py-2 text-xs transition-colors"
-                style={{ color: '#475569' }}
-              >
-                Cancelar
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      {showStarModal && <StarModal
+        setShowStarModal={setShowStarModal}
+        setStarPhase={setStarPhase}
+        setStarFeedback={setStarFeedback}
+        setStarAnswer={setStarAnswer}
+        setStep={setStep}
+      />}
 
       {/* ── Modal CV de 1 página ── */}
-      {showCvModal && (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center px-4 py-6 overflow-y-auto"
-          style={{ background: 'rgba(0,0,0,0.70)', backdropFilter: 'blur(4px)' }}
-          onClick={e => { if (e.target === e.currentTarget) setShowCvModal(false) }}
-        >
-          <div className="w-full max-w-sm rounded-2xl overflow-hidden"
-            style={{ background: '#1e293b', border: '1px solid #334155', boxShadow: '0 20px 60px rgba(0,0,0,0.5)' }}>
-            <div className="p-6 pb-4 space-y-2">
-              <h3 className="text-lg font-bold text-white">📄 Tu CV de 1 página</h3>
-              <ul className="text-xs space-y-1 pt-1" style={{ color: '#64748b' }}>
-                <li>✓ Solo datos reales — sin métricas inventadas</li>
-                <li>✓ Titular y resumen optimizados de tu análisis</li>
-                <li>✓ Foto de perfil incluida si la subiste</li>
-                <li>✓ Evaluación de calidad automática con preguntas de mejora</li>
-                <li>✓ ATS-compatible · un clic para imprimir como PDF</li>
-              </ul>
-            </div>
-            <div className="px-6 pb-6 pt-4 space-y-3" style={{ borderTop: '1px solid rgba(255,255,255,0.07)' }}>
-              <p className="text-xs font-semibold" style={{ color: '#cbd5e1' }}>Datos de contacto para el CV</p>
-              <div>
-                <label className="text-xs block mb-1" style={{ color: '#64748b' }}>
-                  Email <span style={{ color: '#f87171' }}>*</span>
-                </label>
-                <input
-                  type="email"
-                  value={contactEmail}
-                  onChange={e => setContactEmail(e.target.value)}
-                  placeholder="tu@email.com"
-                  className="w-full rounded-xl px-4 py-2.5 text-sm text-white outline-none"
-                  style={{ background: 'rgba(15,23,42,0.8)', border: `1px solid ${contactEmail.trim() ? 'rgba(0,119,181,0.5)' : '#334155'}` }}
-                />
-              </div>
-              <div className="grid grid-cols-2 gap-2">
-                <div>
-                  <label className="text-xs block mb-1" style={{ color: '#64748b' }}>Teléfono</label>
-                  <input
-                    type="tel"
-                    value={contactTelefono}
-                    onChange={e => setContactTelefono(e.target.value)}
-                    placeholder="+54 11 1234-5678"
-                    className="w-full rounded-xl px-3 py-2.5 text-sm text-white outline-none"
-                    style={{ background: 'rgba(15,23,42,0.8)', border: '1px solid #334155' }}
-                  />
-                </div>
-                <div>
-                  <label className="text-xs block mb-1" style={{ color: '#64748b' }}>URL LinkedIn</label>
-                  <input
-                    type="url"
-                    value={contactLinkedin}
-                    onChange={e => setContactLinkedin(e.target.value)}
-                    placeholder="linkedin.com/in/..."
-                    className="w-full rounded-xl px-3 py-2.5 text-sm text-white outline-none"
-                    style={{ background: 'rgba(15,23,42,0.8)', border: '1px solid #334155' }}
-                  />
-                </div>
-              </div>
-              {/* Foto para el CV */}
-              <div>
-                <label className="text-xs block mb-2" style={{ color: '#cbd5e1' }}>
-                  Foto de perfil <span style={{ color: '#64748b', fontWeight: 400 }}>(opcional — aparece en el CV)</span>
-                </label>
-                <div className="flex items-center gap-3">
-                  <div className="w-12 h-12 rounded-full overflow-hidden shrink-0 relative flex-shrink-0"
-                    style={{ border: '2px solid rgba(0,119,181,0.4)', background: '#0d2137' }}>
-                    {profilePhotoPreview
-                      ? <img src={profilePhotoPreview} alt="Foto" style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover' }} />
-                      : <span className="text-xl absolute inset-0 flex items-center justify-center">👤</span>
-                    }
-                  </div>
-                  <label htmlFor="cv-modal-photo" className="cursor-pointer px-3 py-1.5 rounded-lg text-xs font-medium transition-all"
-                    style={{ background: 'rgba(0,119,181,0.15)', color: '#60a5fa', border: '1px solid rgba(0,119,181,0.3)' }}>
-                    {profilePhotoPreview ? 'Cambiar foto' : 'Subir foto'}
-                  </label>
-                  <input id="cv-modal-photo" type="file" accept="image/*" className="hidden" onChange={handleCvPhotoUpload} />
-                  {profilePhotoPreview && (
-                    <button onClick={() => { setProfilePhotoPreview(null); setProfilePhoto(null); setProfilePhotoMime('image/jpeg') }}
-                      className="text-xs transition-colors" style={{ color: '#64748b' }}>
-                      ✕ Quitar
-                    </button>
-                  )}
-                </div>
-                {!profilePhotoPreview && (
-                  <p className="text-xs mt-1.5" style={{ color: '#475569' }}>
-                    Sin foto el CV se genera igualmente, pero con foto tiene más impacto.
-                  </p>
-                )}
-              </div>
-
-              <p className="text-xs leading-relaxed pt-1" style={{ color: '#475569' }}>
-                🔒 Tus datos se usan solo para confeccionar el CV y no se comparten con terceros.
-              </p>
-              <button
-                onClick={() => {
-                  if (!contactEmail.trim()) return
-                  const contacto = { email: contactEmail.trim(), telefono: contactTelefono.trim(), linkedinUrl: contactLinkedin.trim() }
-                  setShowCvModal(false)
-                  callGenerateCV(contacto)
-                }}
-                disabled={!contactEmail.trim()}
-                className="w-full py-3.5 rounded-xl text-sm font-semibold transition-opacity"
-                style={{
-                  background: contactEmail.trim() ? '#0077B5' : '#334155',
-                  color: 'white',
-                  opacity: contactEmail.trim() ? 1 : 0.5,
-                  cursor: contactEmail.trim() ? 'pointer' : 'not-allowed',
-                }}
-              >
-                Crear mi CV →
-              </button>
-              <button
-                onClick={() => setShowCvModal(false)}
-                className="w-full py-2 text-xs transition-colors"
-                style={{ color: '#475569' }}
-              >
-                Cancelar
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      {showCvModal && <CvModal
+        setShowCvModal={setShowCvModal}
+        contactEmail={contactEmail}
+        setContactEmail={setContactEmail}
+        contactTelefono={contactTelefono}
+        setContactTelefono={setContactTelefono}
+        contactLinkedin={contactLinkedin}
+        setContactLinkedin={setContactLinkedin}
+        profilePhotoPreview={profilePhotoPreview}
+        setProfilePhotoPreview={setProfilePhotoPreview}
+        setProfilePhoto={setProfilePhoto}
+        setProfilePhotoMime={setProfilePhotoMime}
+        handleCvPhotoUpload={handleCvPhotoUpload}
+        callGenerateCV={callGenerateCV}
+      />}
 
       {/* ── Modal nombre + colaboración ── */}
-      {showLeadModal && (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center px-4 py-6 overflow-y-auto"
-          style={{ background: 'rgba(0,0,0,0.40)', backdropFilter: 'blur(4px)' }}
-          onClick={e => { if (e.target === e.currentTarget) setShowLeadModal(false) }}
-        >
-          <div className="w-full max-w-sm rounded-2xl step-transition overflow-hidden"
-            style={{ background: 'white', boxShadow: '0 20px 60px rgba(0,0,0,0.20)', border: '1px solid rgba(0,119,181,0.15)' }}>
-
-            {/* Sección nombre */}
-            <div className="p-6 space-y-4">
-              <div>
-                <h3 className="text-lg font-bold text-slate-900">Conectate con Ramiro</h3>
-                <p className="text-slate-500 text-sm mt-1 leading-relaxed">
-                  Ingresá tu nombre para que Ramiro pueda revisar tu análisis antes del primer mensaje.
-                </p>
-              </div>
-              <div className="space-y-2.5">
-                <input
-                  type="text"
-                  placeholder="Nombre"
-                  value={leadNombre}
-                  onChange={e => setLeadNombre(e.target.value)}
-                  onKeyDown={e => { if (e.key === 'Enter' && leadNombre.trim() && leadApellido.trim()) saveAndConnectRamiro(leadNombre, leadApellido) }}
-                  maxLength={60}
-                  className="w-full rounded-xl px-4 py-3 text-sm outline-none transition-all duration-200"
-                  style={{
-                    background: '#f8fafc',
-                    border: leadNombre.trim() ? '1px solid rgba(0,119,181,0.5)' : '1px solid rgba(0,119,181,0.15)',
-                    color: '#0d2137',
-                  }}
-                />
-                <input
-                  type="text"
-                  placeholder="Apellido"
-                  value={leadApellido}
-                  onChange={e => setLeadApellido(e.target.value)}
-                  onKeyDown={e => { if (e.key === 'Enter' && leadNombre.trim() && leadApellido.trim()) saveAndConnectRamiro(leadNombre, leadApellido) }}
-                  maxLength={60}
-                  className="w-full rounded-xl px-4 py-3 text-sm outline-none transition-all duration-200"
-                  style={{
-                    background: '#f8fafc',
-                    border: leadApellido.trim() ? '1px solid rgba(0,119,181,0.5)' : '1px solid rgba(0,119,181,0.15)',
-                    color: '#0d2137',
-                  }}
-                />
-              </div>
-              <p className="text-slate-400 text-xs leading-relaxed">
-                Tu nombre y análisis serán compartidos con Ramiro para que pueda orientarte desde el inicio.
-              </p>
-              <p className="text-slate-400 text-xs">
-                La consultoría personalizada tiene costo — se cotiza en el momento.
-              </p>
-            </div>
-
-            <div className="px-6 pb-6 pt-1 space-y-3"
-              style={{ borderTop: '1px solid rgba(0,119,181,0.10)' }}>
-              <button
-                onClick={() => saveAndConnectRamiro(leadNombre, leadApellido)}
-                disabled={!leadNombre.trim() || !leadApellido.trim()}
-                className={`w-full py-3 rounded-xl text-white text-sm font-semibold btn-glow transition-all ${leadNombre.trim() && leadApellido.trim() ? '' : 'opacity-40 cursor-not-allowed'}`}
-                style={{ background: leadNombre.trim() && leadApellido.trim() ? LI_GRADIENT : 'rgba(0,119,181,0.3)' }}
-              >
-                <LinkedInIcon className="w-4 h-4 inline mr-1.5" /> Conectar con Ramiro →
-              </button>
-              <button
-                onClick={() => setShowLeadModal(false)}
-                className="w-full py-2 text-slate-400 text-xs hover:text-slate-600 transition-colors"
-              >
-                Cancelar
-              </button>
-              <p className="text-center text-slate-400 text-xs">
-                🔒 Tu nombre y análisis se almacenan de forma segura y solo Ramiro puede acceder a ellos.
-              </p>
-            </div>
-          </div>
-        </div>
-      )}
+      {showLeadModal && <LeadModal
+        setShowLeadModal={setShowLeadModal}
+        leadNombre={leadNombre}
+        setLeadNombre={setLeadNombre}
+        leadApellido={leadApellido}
+        setLeadApellido={setLeadApellido}
+        saveAndConnectRamiro={saveAndConnectRamiro}
+      />}
     </main>
   )
 }
