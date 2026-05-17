@@ -29,6 +29,10 @@ import ModeSelectScreen from './components/screens/ModeSelectScreen'
 import QuestionnaireScreen from './components/screens/QuestionnaireScreen'
 import LoadingScreen from './components/screens/LoadingScreen'
 import InterviewIntroScreen from './components/screens/InterviewIntroScreen'
+import InterviewScreen from './components/screens/InterviewScreen'
+import InterviewFeedbackScreen from './components/screens/InterviewFeedbackScreen'
+import StarTrainingScreen from './components/screens/StarTrainingScreen'
+import TrackingScreen from './components/screens/TrackingScreen'
 
 // ── Main App ───────────────────────────────────────────────────
 
