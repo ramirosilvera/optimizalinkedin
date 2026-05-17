@@ -345,26 +345,33 @@ async function getGa4AccessToken(creds) {
 }
 
 async function runGa4FunnelReport(token, propertyId, steps, days = 30) {
-  const res = await fetch(`https://analyticsdata.googleapis.com/v1beta/properties/${propertyId}:runFunnelReport`, {
+  // runFunnelReport only exists in v1alpha (not v1beta)
+  const url = `https://analyticsdata.googleapis.com/v1alpha/properties/${propertyId}:runFunnelReport`
+  const requestBody = {
+    dateRanges: [{ startDate: `${days}daysAgo`, endDate: 'today' }],
+    funnel: {
+      isOpenFunnel: false,
+      steps: steps.map(s => ({
+        name: s.name,
+        filterExpression: { funnelEventFilter: { eventName: s.event } },
+      })),
+    },
+    funnelVisualizationType: 'STANDARD_FUNNEL',
+  }
+  console.log('[ga4_funnel] POST', url, 'steps:', steps.map(s => s.event).join(' → '))
+  const res = await fetch(url, {
     method: 'POST',
     headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      dateRanges: [{ startDate: `${days}daysAgo`, endDate: 'today' }],
-      funnel: {
-        isOpenFunnel: false,
-        steps: steps.map(s => ({
-          name: s.name,
-          filterExpression: { funnelEventFilter: { eventName: s.event } },
-        })),
-      },
-      funnelVisualizationType: 'STANDARD_FUNNEL',
-    }),
+    body: JSON.stringify(requestBody),
   })
+  const responseText = await res.text()
+  console.log('[ga4_funnel] status:', res.status, 'body:', responseText.slice(0, 500))
   if (!res.ok) {
-    const err = await res.json().catch(() => ({}))
-    throw new Error(`GA4 API ${res.status}: ${err?.error?.message || res.statusText}`)
+    let errMsg = `${res.status}: ${res.statusText}`
+    try { errMsg = `${res.status}: ${JSON.parse(responseText)?.error?.message || res.statusText}` } catch {}
+    throw new Error(`GA4 API ${errMsg}`)
   }
-  return res.json()
+  return JSON.parse(responseText)
 }
 
 function parseGa4FunnelResponse(report, stepNames) {
