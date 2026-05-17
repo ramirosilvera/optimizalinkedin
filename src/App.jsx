@@ -33,6 +33,8 @@ import InterviewScreen from './components/screens/InterviewScreen'
 import InterviewFeedbackScreen from './components/screens/InterviewFeedbackScreen'
 import StarTrainingScreen from './components/screens/StarTrainingScreen'
 import TrackingScreen from './components/screens/TrackingScreen'
+import ProfileInputScreen from './components/screens/ProfileInputScreen'
+import ResultsScreen from './components/screens/ResultsScreen'
 
 // ── Main App ───────────────────────────────────────────────────
 
