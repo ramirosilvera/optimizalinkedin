@@ -778,8 +778,8 @@ export default {
             getSupabaseCount(env, 'perfiles'),
             getSupabaseCount(env, 'perfiles', 'es_premium=eq.true'),
             getSupabaseCount(env, 'suscripciones', 'status=eq.authorized'),
-            getSupabaseCount(env, 'analisis'),
-            getSupabaseCount(env, 'cv_generados'),
+            getSupabaseCount(env, 'historial', 'tipo=eq.analisis'),
+            getSupabaseCount(env, 'historial', 'tipo=eq.cv'),
             getSupabaseCount(env, 'leads'),
             getSupabaseCount(env, 'perfiles', `created_at=gt.${new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString()}`),
           ])

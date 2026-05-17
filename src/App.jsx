@@ -116,12 +116,6 @@ export default function App() {
   const [starLoading, setStarLoading] = useState(false)
   const [starError, setStarError] = useState('')
 
-  // Consentimiento para guardar análisis
-  const [showAnalisisConsent, setShowAnalisisConsent] = useState(false)
-  const [analisisSaved, setAnalisisSaved] = useState(false)
-  const [analisisSaving, setAnalisisSaving] = useState(false)
-  const [analisisError, setAnalisisError] = useState('')
-
   // CV de 1 página
   const [cvLoading, setCvLoading] = useState(false)
   const [cvError, setCvError] = useState('')
@@ -636,7 +630,7 @@ export default function App() {
     } catch { /* silencioso */ }
   }
 
-  const saveToHistorial = async (tipo, datos, titulo = '') => {
+  const saveToHistorial = async (tipo, datos, titulo = '', puntaje = null) => {
     const token = localStorage.getItem('ol_at')
     const uid = localStorage.getItem('ol_uid')
     const isPremium = localStorage.getItem('ol_premium') === '1'
@@ -648,7 +642,7 @@ export default function App() {
           apikey: SUPABASE_KEY, Authorization: `Bearer ${token}`,
           'Content-Type': 'application/json', Prefer: 'return=minimal',
         },
-        body: JSON.stringify({ user_id: uid, tipo, titulo, datos }),
+        body: JSON.stringify({ user_id: uid, tipo, titulo, datos, puntaje }),
       })
     } catch { /* silencioso */ }
   }
@@ -1265,10 +1259,6 @@ Devolvé solo el array JSON, sin markdown ni explicación.`
     setAnalysisError('')
     setAnalyzing(false)
     setLoadingMsgIdx(0)
-    setShowAnalisisConsent(false)
-    setAnalisisSaved(false)
-    setAnalisisSaving(false)
-    setAnalisisError('')
     setCvLoading(false)
     setCvError('')
     setCvSuccess('')
@@ -1690,12 +1680,8 @@ JSON:
       const parsed = parseAIJson(extractAIText(data), AI_DEFAULTS.analyze_linkedin, 'Error al procesar la respuesta. Intentá de nuevo.')
       setResult(parsed)
       trackTiming('analysis_completed', _tAnalysis, { puntaje: parsed.puntaje_general, nivel_seo: parsed.nivel_seo, mode: sinPerfilMode ? 'sin_perfil' : 'con_perfil' })
-      if (localStorage.getItem('ol_premium') === '1') {
-        // Auto-save silently — no consent modal needed
-        setTimeout(() => saveAnalisis(), 800)
-      }
       setStep(STEPS.RESULTS)
-      saveToHistorial('analisis', { ...parsed, fortalezas: parsed.fortalezas||[], areas_de_mejora: parsed.areas_de_mejora||[], palabras_clave_sugeridas: parsed.palabras_clave_sugeridas||[] }, parsed.nombre_titular || 'Análisis LinkedIn')
+      saveToHistorial('analisis', { ...parsed, fortalezas: parsed.fortalezas||[], areas_de_mejora: parsed.areas_de_mejora||[], palabras_clave_sugeridas: parsed.palabras_clave_sugeridas||[] }, parsed.nombre_titular || 'Análisis LinkedIn', parsed.puntaje_general ?? null)
     } catch (err) {
       trackError('analysis', err.isRateLimit ? 'rate_limit' : err.name === 'AbortError' ? 'timeout' : 'api_error')
       if (err.isRateLimit) { setStep(STEPS.PROFILE_INPUT) }
@@ -1814,8 +1800,7 @@ Generá el feedback en este JSON exacto:
       const parsed = parseAIJson(extractAIText(data), AI_DEFAULTS.interview_feedback, 'Error al procesar el feedback. Intentá de nuevo.')
       setInterviewFeedback(parsed)
       trackTiming('entrevista_completada', _tInterview, { puntaje: parsed.puntaje_entrevista })
-      saveEntrevista(parsed, answers).catch(err => console.error('[entrevistas save]', err))
-      saveToHistorial('entrevista', { feedback: parsed, respuestas: answers }, 'Simulación de entrevista')
+      saveToHistorial('entrevista', { feedback: parsed, respuestas: answers }, 'Simulación de entrevista', parsed?.puntaje_entrevista ?? null)
     } catch (err) {
       trackError('interview', err.isRateLimit ? 'rate_limit' : err.name === 'AbortError' ? 'timeout' : 'api_error')
       if (!err.isRateLimit) {
@@ -1862,7 +1847,7 @@ Generá el feedback en este JSON exacto:
       const parsed = parseAIJson(extractAIText(data), AI_DEFAULTS.star_feedback, 'La IA devolvió una respuesta inesperada. Intentá de nuevo.')
       setStarFeedback(parsed)
       trackTiming('star_feedback_received', _tStar, { puntaje: parsed.puntaje, question_idx: starQuestionIdx })
-      saveStarPractica(pregunta, starAnswer, parsed).catch(err => console.error('[star_practicas save]', err))
+      saveToHistorial('star', { pregunta, respuesta: starAnswer, feedback_star: parsed }, 'Práctica STAR', parsed?.puntaje ?? null)
     } catch (err) {
       trackError('star', err.isRateLimit ? 'rate_limit' : err.name === 'AbortError' ? 'timeout' : 'api_error')
       if (!err.isRateLimit) setStarError(err.name === 'AbortError' ? 'El pedido tardó demasiado. Intentá de nuevo.' : err.message || 'No se pudo obtener el feedback.')
@@ -1873,124 +1858,6 @@ Generá el feedback en este JSON exacto:
   }
 
   // ── CV de 1 página ──────────────────────────────────────────
-
-  const saveAnalisis = async () => {
-    if (analisisSaving || analisisSaved) return
-    if (localStorage.getItem('ol_premium') !== '1') return
-    if (!SUPABASE_URL || !SUPABASE_KEY) {
-      setAnalisisError('Servicio de guardado no disponible. Intentá más tarde.')
-      return
-    }
-    setAnalisisSaving(true)
-    setAnalisisError('')
-    const ctrl = new AbortController()
-    const tid = setTimeout(() => ctrl.abort(), 15000)
-    try {
-      const res = await fetch(`${SUPABASE_URL}/rest/v1/analisis`, {
-        signal: ctrl.signal,
-        method: 'POST',
-        headers: {
-          apikey: SUPABASE_KEY,
-          Authorization: `Bearer ${SUPABASE_KEY}`,
-          'Content-Type': 'application/json',
-          Prefer: 'return=minimal',
-        },
-        body: JSON.stringify({
-          qa_history: qaHistory,
-          resultado_analisis: result,
-          puntaje_general: result?.puntaje_general ?? null,
-          consentimiento: true,
-        }),
-      })
-      if (!res.ok) {
-        const body = await res.json().catch(() => ({}))
-        console.error('[analisis save] error response:', res.status, body)
-        throw new Error(`Error al guardar (${res.status}). Verificá que la tabla exista en Supabase.`)
-      }
-      setAnalisisSaved(true)
-      setShowAnalisisConsent(false)
-      trackEvent('analisis_saved', { puntaje: result?.puntaje_general })
-    } catch (err) {
-      const msg = err.name === 'AbortError' ? 'Tiempo agotado. Intentá de nuevo.' : err.message
-      setAnalisisError(msg)
-      console.error('[analisis save]', err)
-    } finally {
-      clearTimeout(tid)
-      setAnalisisSaving(false)
-    }
-  }
-
-  const saveCvGenerado = async ({ contacto, cv }) => {
-    if (localStorage.getItem('ol_premium') !== '1') return
-    if (!SUPABASE_URL || !SUPABASE_KEY) return
-    await fetch(`${SUPABASE_URL}/rest/v1/cv_generados`, {
-      method: 'POST',
-      headers: {
-        'apikey': SUPABASE_KEY,
-        'Authorization': `Bearer ${SUPABASE_KEY}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        nombre: cv.nombre || null,
-        email: contacto.email,
-        telefono: contacto.telefono || null,
-        linkedin_url: contacto.linkedinUrl || null,
-        cv_data: cv,
-        consentimiento: true,
-      }),
-    }).catch(err => console.error('[cv_generados save]', err))
-  }
-
-  const saveStarPractica = async (pregunta, respuesta, feedback) => {
-    if (localStorage.getItem('ol_premium') !== '1') return
-    if (!SUPABASE_URL || !SUPABASE_KEY) return
-    try {
-      await fetch(`${SUPABASE_URL}/rest/v1/star_practicas`, {
-        method: 'POST',
-        headers: {
-          apikey: SUPABASE_KEY,
-          Authorization: `Bearer ${SUPABASE_KEY}`,
-          'Content-Type': 'application/json',
-          Prefer: 'return=minimal',
-        },
-        body: JSON.stringify({
-          pregunta,
-          respuesta,
-          feedback_star: feedback,
-          puntaje: feedback?.puntaje ?? null,
-          qa_history: qaHistory,
-        }),
-      })
-      trackEvent('star_saved', { puntaje: feedback?.puntaje })
-    } catch (err) {
-      console.error('[star_practicas save]', err)
-    }
-  }
-
-  const saveEntrevista = async (feedback, answers) => {
-    if (localStorage.getItem('ol_premium') !== '1') return
-    if (!SUPABASE_URL || !SUPABASE_KEY) return
-    try {
-      await fetch(`${SUPABASE_URL}/rest/v1/entrevistas`, {
-        method: 'POST',
-        headers: {
-          apikey: SUPABASE_KEY,
-          Authorization: `Bearer ${SUPABASE_KEY}`,
-          'Content-Type': 'application/json',
-          Prefer: 'return=minimal',
-        },
-        body: JSON.stringify({
-          qa_history: qaHistory,
-          respuestas_entrevista: answers,
-          feedback_entrevista: feedback,
-          puntaje_entrevista: feedback?.puntaje_entrevista ?? null,
-        }),
-      })
-      trackEvent('entrevista_saved', { puntaje: feedback?.puntaje_entrevista })
-    } catch (err) {
-      console.error('[entrevistas save]', err)
-    }
-  }
 
   const updateCv = (newData) => {
     setCvFinalData(newData)
@@ -2158,7 +2025,6 @@ JSON:
       const data = await res.json()
       const cv = sanitizeCv(parseAIJson(extractAIText(data), AI_DEFAULTS.generate_cv, 'No se pudo interpretar el CV generado. Intentá de nuevo.'))
       setCvDraft(cv)
-      saveCvGenerado({ contacto, cv }).catch(err => console.error('[cv_generados save]', err))
       trackTiming('cv_generation_completed', _tCv, { with_photo: !!profilePhoto, template: cvTemplate })
 
       // Detectar fechas faltantes del lado del cliente antes del scoring IA
@@ -2207,7 +2073,7 @@ JSON:
         setCvStage('done')
         setCvPreviewHtml(buildCvHtml(cv, profilePhoto, profilePhotoMime, cvTemplate))
         setShowCvPreview(true)
-        saveToHistorial('cv', cv, cv.nombre || 'CV generado')
+        saveToHistorial('cv', cv, cv.nombre || 'CV generado', null)
       } else {
         trackEvent('cv_gap_form_shown', { gap_count: mergedQuality.gaps?.length || 0 })
         setCvStage('gap_form')
@@ -2264,8 +2130,7 @@ JSON:
       setCvPreviewHtml(buildCvHtml(cv, profilePhoto, profilePhotoMime, cvTemplate))
       setShowCvPreview(true)
       trackEvent('cv_regenerated', { answered_count: Object.keys(gapAnswers).length })
-      saveCvGenerado({ contacto: cvContacto, cv }).catch(err => console.error('[cv_generados regen save]', err))
-      saveToHistorial('cv', cv, cv.nombre || 'CV generado')
+      saveToHistorial('cv', cv, cv.nombre || 'CV generado', null)
     } catch (err) {
       if (!err.isRateLimit) {
         setCvStage('gap_form')
@@ -4279,45 +4144,6 @@ JSON:
                   )}
                 </div>
               </div>
-            )}
-
-            {/* Consentimiento para guardar análisis */}
-            {showAnalisisConsent && !analisisSaved && (
-              <div className="rounded-2xl p-4 space-y-3"
-                style={{ background: 'white', border: '1px solid rgba(0,119,181,0.15)', boxShadow: '0 2px 12px rgba(0,0,0,0.06)' }}>
-                <div className="flex items-start gap-3">
-                  <span className="text-xl shrink-0">🔒</span>
-                  <div>
-                    <p className="text-slate-800 text-sm font-semibold mb-1">¿Guardamos tu análisis?</p>
-                    <p className="text-slate-500 text-xs leading-relaxed">
-                      Si lo autorizás, guardamos los resultados para poder brindarte recomendaciones más personalizadas. Solo Ramiro tiene acceso — nunca se comparte con terceros.
-                    </p>
-                  </div>
-                </div>
-                <div className="flex gap-2">
-                  <button
-                    onClick={saveAnalisis}
-                    disabled={analisisSaving}
-                    className="flex-1 py-2 rounded-xl text-white text-xs font-semibold transition-all"
-                    style={{ background: analisisSaving ? '#94a3b8' : 'linear-gradient(135deg,#0077B5,#0ea5e9)' }}
-                  >
-                    {analisisSaving ? '⏳ Guardando...' : 'Sí, guardar mi análisis'}
-                  </button>
-                  <button
-                    onClick={() => { setShowAnalisisConsent(false); trackEvent('analisis_declined') }}
-                    className="px-4 py-2 rounded-xl text-xs font-medium text-slate-400 hover:text-slate-600 transition-colors"
-                    style={{ border: '1px solid rgba(0,0,0,0.08)' }}
-                  >
-                    No, gracias
-                  </button>
-                </div>
-                {analisisError && <p className="text-xs text-red-500">{analisisError}</p>}
-              </div>
-            )}
-            {analisisSaved && (
-              <p className="text-xs text-center font-medium" style={{ color: '#059669' }}>
-                ✓ Análisis guardado de forma segura.
-              </p>
             )}
 
             {/* ══ BLOQUE 2 — Diagnóstico estratégico ══ */}
