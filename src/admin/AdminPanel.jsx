@@ -2109,6 +2109,69 @@ function OverviewSection({ ov, trend, aiFeatures }) {
   )
 }
 
+// ── GA4 empty / diagnostic panel ─────────────────────────────────────────────
+function Ga4EmptyDiag({ diag, days, onRetry, onExpand }) {
+  const [show, setShow] = useState(false)
+  const rowCount = diag?.row_count ?? 0
+  const stepTotals = diag?.step_totals_found || {}
+  const anyEvents = Object.values(stepTotals).some(v => v > 0)
+
+  const reason = !diag?.has_funnelTable
+    ? 'GA4 no devolvió funnelTable en la respuesta.'
+    : rowCount === 0
+    ? `GA4 no encontró sesiones con estos eventos en los últimos ${days} días.`
+    : !anyEvents
+    ? `GA4 devolvió ${rowCount} filas pero ninguna matchea los nombres de los pasos del funnel.`
+    : 'Los datos existen pero los conteos son 0 para todos los pasos.'
+
+  return (
+    <div style={{ padding:'16px', background:'#f8fafc', borderRadius:10, border:'1px solid #e2e8f0' }}>
+      <div style={{ display:'flex', alignItems:'flex-start', gap:10, marginBottom:8 }}>
+        <span style={{ fontSize:20 }}>📭</span>
+        <div>
+          <div style={{ fontWeight:700, fontSize:13, color:'#0d2137', marginBottom:4 }}>Sin datos GA4 ({days}d)</div>
+          <div style={{ fontSize:12, color:'#475569', lineHeight:1.6 }}>{reason}</div>
+        </div>
+      </div>
+
+      {rowCount === 0 && days < 90 && (
+        <div style={{ marginBottom:8 }}>
+          <div style={{ fontSize:12, color:'#64748b', marginBottom:6 }}>
+            Probables causas:
+          </div>
+          <ul style={{ margin:0, paddingLeft:18, fontSize:12, color:'#475569', lineHeight:1.8 }}>
+            <li>Los eventos se empezaron a trackear hace poco y GA4 no tiene histórico aún (demora 24-48h)</li>
+            <li>En los últimos {days} días no hubo usuarios que dispararan <code style={{ fontSize:11, background:'#f1f5f9', padding:'1px 4px', borderRadius:3 }}>analysis_started</code></li>
+            <li>El measurement ID de la app no coincide con la propiedad GA4 que estamos leyendo</li>
+          </ul>
+        </div>
+      )}
+
+      {!anyEvents && rowCount > 0 && (
+        <div style={{ marginBottom:8, fontSize:12, color:'#475569' }}>
+          GA4 devolvió pasos con otros nombres. Abrí el diagnóstico para ver cuáles.
+        </div>
+      )}
+
+      <div style={{ display:'flex', gap:8, marginTop:10, flexWrap:'wrap' }}>
+        {days < 90 && <button onClick={onExpand} style={{ ...C.sec, fontSize:11, padding:'4px 12px' }}>Probar con 90 días</button>}
+        <button onClick={onRetry} style={{ ...C.sec, fontSize:11, padding:'4px 12px' }}>↺ Reintentar</button>
+        <button onClick={() => setShow(s => !s)} style={{ ...C.sec, fontSize:11, padding:'4px 12px' }}>
+          {show ? 'Ocultar' : 'Ver'} diagnóstico
+        </button>
+      </div>
+
+      {show && (
+        <div style={{ marginTop:12, padding:'10px 12px', background:'#1e293b', borderRadius:8, overflowX:'auto' }}>
+          <pre style={{ margin:0, fontSize:10, color:'#94a3b8', fontFamily:'monospace', whiteSpace:'pre-wrap', wordBreak:'break-all' }}>
+            {JSON.stringify(diag, null, 2)}
+          </pre>
+        </div>
+      )}
+    </div>
+  )
+}
+
 // ── GA4 funnel source badge ───────────────────────────────────────────────────
 function SourceBadge({ source }) {
   const styles = {
@@ -2177,9 +2240,11 @@ function FunnelsSection({ ov, funnel, adminFetch }) {
           </div>
         ) : ga4Error ? (
           <ErrBox msg={ga4Error} onRetry={() => loadGa4(ga4Days)} />
-        ) : (
-          <FunnelBar stages={ga4?.stages || []} />
-        )}
+        ) : ga4?.stages?.length > 0 ? (
+          <FunnelBar stages={ga4.stages} />
+        ) : ga4 ? (
+          <Ga4EmptyDiag diag={ga4.diag} days={ga4Days} onRetry={() => loadGa4(ga4Days)} onExpand={() => setGa4Days(90)} />
+        ) : null}
       </div>
 
       {/* Supabase funnel — registered users */}

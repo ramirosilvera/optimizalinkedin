@@ -375,27 +375,48 @@ async function runGa4FunnelReport(token, propertyId, steps, days = 30) {
 }
 
 function parseGa4FunnelResponse(report, stepNames) {
-  if (!report?.funnelTable?.rows) return []
-  const dimHeaders = (report.funnelTable.dimensionHeaders || []).map(h => h.name)
-  const metHeaders = (report.funnelTable.metricHeaders || []).map(h => h.name)
-  const stepDimIdx = dimHeaders.findIndex(h => h === 'funnelStepName')
-  const usersIdx   = metHeaders.findIndex(h => h === 'activeUsers')
+  const diag = {
+    has_funnelTable: !!report?.funnelTable,
+    row_count: report?.funnelTable?.rows?.length ?? 0,
+    dim_headers: (report?.funnelTable?.dimensionHeaders || []).map(h => h.name),
+    metric_headers: (report?.funnelTable?.metricHeaders || []).map(h => h.name),
+    step_totals_found: {},
+  }
 
-  // Aggregate users per step name
+  if (!report?.funnelTable?.rows?.length) return { stages: [], diag }
+
+  const dimHeaders = diag.dim_headers
+  const metHeaders = diag.metric_headers
+
+  // Look for funnelStepName; fallback to first dimension
+  let stepDimIdx = dimHeaders.findIndex(h => h === 'funnelStepName')
+  if (stepDimIdx === -1) stepDimIdx = 0
+
+  // activeUsers is the primary count metric
+  let usersIdx = metHeaders.findIndex(h => h === 'activeUsers')
+  if (usersIdx === -1) usersIdx = 0
+
+  diag.using_dim = dimHeaders[stepDimIdx] || '(index 0)'
+  diag.using_metric = metHeaders[usersIdx] || '(index 0)'
+
   const stepTotals = {}
   for (const row of report.funnelTable.rows) {
     const stepName = row.dimensionValues?.[stepDimIdx]?.value
-    const users    = parseInt(row.metricValues?.[usersIdx]?.value || '0', 10)
-    if (stepName) stepTotals[stepName] = (stepTotals[stepName] || 0) + users
+    const users = parseInt(row.metricValues?.[usersIdx]?.value || '0', 10)
+    if (stepName && stepName !== 'RESERVED_TOTAL') {
+      stepTotals[stepName] = (stepTotals[stepName] || 0) + users
+    }
   }
+  diag.step_totals_found = stepTotals
 
-  // Return in order, computing pct from step 0
   const first = stepTotals[stepNames[0]] || 0
-  return stepNames.map(name => ({
+  const stages = stepNames.map(name => ({
     stage: name,
     count: stepTotals[name] || 0,
     pct: first > 0 ? parseFloat(((stepTotals[name] || 0) / first * 100).toFixed(1)) : 0,
   }))
+
+  return { stages, diag }
 }
 
 async function supabaseServiceFetch(env, table, options = {}) {
@@ -1253,8 +1274,9 @@ export default {
             { name: 'Abre checkout',     event: 'premium_checkout_opened'  },
           ]
           const report = await runGa4FunnelReport(token, GA4_PROPERTY, FUNNEL_STEPS, days)
-          const stages = parseGa4FunnelResponse(report, FUNNEL_STEPS.map(s => s.name))
-          return new Response(JSON.stringify({ ok: true, stages, days }), { status: 200, headers: corsHeaders })
+          const { stages, diag } = parseGa4FunnelResponse(report, FUNNEL_STEPS.map(s => s.name))
+          console.log('[ga4_funnel] parsed stages:', stages.length, 'diag:', JSON.stringify(diag))
+          return new Response(JSON.stringify({ ok: true, stages, days, diag }), { status: 200, headers: corsHeaders })
         } catch (e) {
           return new Response(JSON.stringify({ ok: false, error: e.message }), { status: 500, headers: corsHeaders })
         }
