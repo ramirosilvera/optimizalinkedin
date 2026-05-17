@@ -68,7 +68,7 @@ export default function App() {
     return () => window.removeEventListener('message', handleYTMessage)
   }, [])
   const [isDragging, setIsDragging] = useState(false)
-  const [inputMode, setInputMode] = useState('linkedin') // 'linkedin' | 'pdf' | 'form' | 'sinperfil'
+  const [inputMode, setInputMode] = useState('pdf') // 'pdf' | 'form' | 'sinperfil' | 'linkedin'
   const [linkedinUrl, setLinkedinUrl] = useState('')
   const [urlLoading, setUrlLoading] = useState(false)
   const [urlAttempted, setUrlAttempted] = useState(false)
@@ -125,6 +125,7 @@ export default function App() {
 
   const [cvPreviewHtml, setCvPreviewHtml] = useState('')
   const [showCvPreview, setShowCvPreview] = useState(false)
+  const [cvCanvasLoading, setCvCanvasLoading] = useState(false)
   const [cvOptimizing, setCvOptimizing] = useState(false)
   const [cvOptimizeError, setCvOptimizeError] = useState('')
   const [cvOptimizeSuggestion, setCvOptimizeSuggestion] = useState(null)
@@ -1645,8 +1646,8 @@ JSON:
       setResult(parsed)
       trackTiming('analysis_completed', _tAnalysis, { puntaje: parsed.puntaje_general, nivel_seo: parsed.nivel_seo, mode: sinPerfilMode ? 'sin_perfil' : 'con_perfil' })
       if (localStorage.getItem('ol_premium') === '1') {
-        setShowAnalisisConsent(true)
-        trackEvent('analisis_consent_shown', { puntaje: parsed.puntaje_general })
+        // Auto-save silently — no consent modal needed
+        setTimeout(() => saveAnalisis(), 800)
       }
       setStep(STEPS.RESULTS)
       saveToHistorial('analisis', { ...parsed, fortalezas: parsed.fortalezas||[], areas_de_mejora: parsed.areas_de_mejora||[], palabras_clave_sugeridas: parsed.palabras_clave_sugeridas||[] }, parsed.nombre_titular || 'Análisis LinkedIn')
@@ -2265,6 +2266,50 @@ JSON:
     setTimeout(() => { try { win.focus(); win.print() } catch {} }, 800)
   }
 
+  const downloadCvCanvas = useCallback(async () => {
+    if (!cvPreviewHtml || cvCanvasLoading) return
+    setCvCanvasLoading(true)
+    try {
+      const { default: html2canvas } = await import('html2canvas')
+      const parser = new DOMParser()
+      const doc = parser.parseFromString(cvPreviewHtml, 'text/html')
+      const styles = Array.from(doc.querySelectorAll('style')).map(s => s.textContent).join('\n')
+
+      const wrap = document.createElement('div')
+      wrap.style.cssText = 'position:fixed;left:-9999px;top:0;width:794px;background:#fff;z-index:-100;box-sizing:border-box;'
+      const styleEl = document.createElement('style')
+      styleEl.textContent = styles
+      wrap.appendChild(styleEl)
+      const content = document.createElement('div')
+      content.innerHTML = doc.body.innerHTML
+      wrap.appendChild(content)
+      document.body.appendChild(wrap)
+
+      await new Promise(r => setTimeout(r, 500))
+
+      const canvas = await html2canvas(content, {
+        scale: 2, useCORS: true, allowTaint: true,
+        backgroundColor: '#ffffff', logging: false, windowWidth: 794,
+      })
+      document.body.removeChild(wrap)
+
+      const nombre = (cvFinalData?.nombre || 'mi-cv').replace(/[^a-zA-Z0-9\s]/g, '').replace(/\s+/g, '-')
+      canvas.toBlob(blob => {
+        if (!blob) return
+        const url = URL.createObjectURL(blob)
+        const a = document.createElement('a')
+        a.href = url; a.download = `CV-${nombre}.png`
+        document.body.appendChild(a); a.click(); document.body.removeChild(a)
+        URL.revokeObjectURL(url)
+        trackEvent('cv_download_canvas', { format: 'png' })
+      }, 'image/png', 0.95)
+    } catch (e) {
+      console.error('[canvas cv]', e)
+    } finally {
+      setCvCanvasLoading(false)
+    }
+  }, [cvPreviewHtml, cvFinalData, cvCanvasLoading])
+
 
   // ── Merge seguro: solo aplica campos con contenido real, nunca sobreescribe con vacíos ──
   const safeMergeOptimized = (original, optimized) => {
@@ -2587,10 +2632,10 @@ JSON:
             <div className="p-6 space-y-5 bg-white">
               <ul className="space-y-3">
                 {[
-                  ['💾', 'Historial completo', 'Todos tus análisis, CVs y entrevistas guardados y accesibles cuando quieras'],
-                  ['📊', 'Análisis guardados', 'Revisá tu progreso y compará resultados entre perfiles'],
-                  ['📄', 'CVs anteriores', 'Accedé y re-descargá cualquier CV que generaste'],
-                  ['🎙️', 'Entrevistas guardadas', 'Revisá tu feedback y seguí mejorando tus respuestas'],
+                  ['🚀', 'Centro de carrera completo', 'Análisis, CV, simulador de entrevistas y STAR en un solo lugar, todo guardado'],
+                  ['📄', 'CV ATS descargable', 'Generá y re-descargá cualquier versión de tu CV cuando lo necesites'],
+                  ['🎙️', 'Entrenador de entrevistas', 'Practicá respuestas y revisá tu feedback acumulado para mejorar'],
+                  ['📍', 'Seguimiento de postulaciones', 'Kanban visual para llevar el control de todas tus búsquedas activas'],
                 ].map(([icon, title, desc]) => (
                   <li key={title} className="flex gap-3">
                     <span className="text-xl shrink-0">{icon}</span>
@@ -3569,10 +3614,10 @@ JSON:
 
                 <div className="flex rounded-xl overflow-hidden" style={{ border: '1px solid rgba(0,119,181,0.15)' }}>
                   {[
-                    { id: 'linkedin',  label: '🔗  LinkedIn' },
                     { id: 'pdf',       label: '📄  PDF' },
                     { id: 'form',      label: '✏️  Manual' },
                     { id: 'sinperfil', label: '💡  Sin perfil' },
+                    { id: 'linkedin',  label: '🔗  LinkedIn' },
                   ].map(tab => (
                     <button
                       key={tab.id}
@@ -4457,47 +4502,38 @@ JSON:
             {/* ══ BLOQUE 3 — Acciones inmediatas ══ */}
             {result && (
               <div className="space-y-2">
-                <p className="text-xs font-bold uppercase tracking-wide px-1" style={{ color: '#475569' }}>Próximos pasos</p>
-                <div className="grid grid-cols-2 gap-2.5">
-                  {/* CV */}
-                  <button
-                    onClick={() => { if (cvStage === 'idle') callGenerateCV({}); document.getElementById('cv-section')?.scrollIntoView({ behavior: 'smooth', block: 'start' }) }}
-                    className="rounded-2xl p-4 text-left transition-all hover:shadow-md active:scale-[0.98]"
-                    style={{ background: 'linear-gradient(135deg,rgba(5,150,105,0.08),rgba(16,185,129,0.05))', border: '1px solid rgba(5,150,105,0.25)' }}
-                  >
-                    <p className="text-xl mb-1">📄</p>
-                    <p className="text-sm font-bold text-slate-800 leading-tight">Generá tu CV</p>
-                    <p className="text-[11px] text-slate-500 mt-0.5 leading-snug">ATS-compatible · 1 página</p>
-                  </button>
-                  {/* Titular/Resumen */}
+                <p className="text-xs font-bold uppercase tracking-wide px-1" style={{ color: '#475569' }}>Siguiente paso</p>
+                {/* CV — acción principal prominente */}
+                <button
+                  onClick={() => { if (cvStage === 'idle') callGenerateCV({}); document.getElementById('cv-section')?.scrollIntoView({ behavior: 'smooth', block: 'start' }) }}
+                  className="btn-glow w-full rounded-2xl p-5 text-left transition-all hover:shadow-lg active:scale-[0.99] flex items-center gap-4"
+                  style={{ background: 'linear-gradient(135deg,#059669,#10b981)', boxShadow: '0 4px 16px rgba(5,150,105,0.25)' }}
+                >
+                  <span className="text-3xl shrink-0">📄</span>
+                  <div>
+                    <p className="text-base font-bold text-white leading-tight">Crear mi CV con estos datos →</p>
+                    <p className="text-[12px] text-white/80 mt-0.5">ATS-compatible · 1 página · generado en segundos</p>
+                  </div>
+                </button>
+                {/* Acciones secundarias */}
+                <div className="grid grid-cols-2 gap-2">
                   <button
                     onClick={() => document.getElementById('mejorar-perfil')?.scrollIntoView({ behavior: 'smooth', block: 'start' })}
-                    className="rounded-2xl p-4 text-left transition-all hover:shadow-md active:scale-[0.98]"
+                    className="rounded-2xl p-3.5 text-left transition-all hover:shadow-md active:scale-[0.98]"
                     style={{ background: 'linear-gradient(135deg,rgba(0,119,181,0.08),rgba(14,165,233,0.05))', border: '1px solid rgba(0,119,181,0.22)' }}
                   >
-                    <p className="text-xl mb-1">✏️</p>
-                    <p className="text-sm font-bold text-slate-800 leading-tight">Optimizá tu perfil</p>
-                    <p className="text-[11px] text-slate-500 mt-0.5 leading-snug">Titular · Resumen · SEO</p>
+                    <p className="text-lg mb-0.5">✏️</p>
+                    <p className="text-xs font-bold text-slate-800 leading-tight">Optimizá el perfil</p>
+                    <p className="text-[10px] text-slate-500 mt-0.5">Titular · Resumen · SEO</p>
                   </button>
-                  {/* Networking */}
-                  <button
-                    onClick={() => { setShowGrowthSection(true); document.getElementById('crecimiento')?.scrollIntoView({ behavior: 'smooth', block: 'start' }) }}
-                    className="rounded-2xl p-4 text-left transition-all hover:shadow-md active:scale-[0.98]"
-                    style={{ background: 'linear-gradient(135deg,rgba(99,102,241,0.08),rgba(139,92,246,0.05))', border: '1px solid rgba(99,102,241,0.22)' }}
-                  >
-                    <p className="text-xl mb-1">🚀</p>
-                    <p className="text-sm font-bold text-slate-800 leading-tight">Networking plan</p>
-                    <p className="text-[11px] text-slate-500 mt-0.5 leading-snug">Banner + 90 días de acciones</p>
-                  </button>
-                  {/* Entrevista */}
                   <button
                     onClick={() => { resetInterview(); setStep(STEPS.INTERVIEW_INTRO); trackEvent('modo_entrevista_desde_resultados') }}
-                    className="rounded-2xl p-4 text-left transition-all hover:shadow-md active:scale-[0.98]"
+                    className="rounded-2xl p-3.5 text-left transition-all hover:shadow-md active:scale-[0.98]"
                     style={{ background: 'linear-gradient(135deg,rgba(245,158,11,0.08),rgba(249,115,22,0.05))', border: '1px solid rgba(245,158,11,0.25)' }}
                   >
-                    <p className="text-xl mb-1">🎙️</p>
-                    <p className="text-sm font-bold text-slate-800 leading-tight">Simulá entrevista</p>
-                    <p className="text-[11px] text-slate-500 mt-0.5 leading-snug">5 preguntas con feedback IA</p>
+                    <p className="text-lg mb-0.5">🎙️</p>
+                    <p className="text-xs font-bold text-slate-800 leading-tight">Practicá entrevista</p>
+                    <p className="text-[10px] text-slate-500 mt-0.5">5 preguntas con IA</p>
                   </button>
                 </div>
               </div>
@@ -6149,53 +6185,9 @@ JSON:
                   </div>
                 )}
 
-                {/* Seguir + contribución — solo se muestra cuando hay feedback */}
+                {/* Premium upsell — solo se muestra cuando hay feedback */}
                 {starFeedback && (
                   <>
-                    {/* Follows */}
-                    <div className="rounded-2xl overflow-hidden"
-                      style={{ border: '1px solid rgba(0,119,181,0.15)', boxShadow: '0 2px 12px rgba(0,0,0,0.06)' }}>
-                      <div className="px-5 pt-4 pb-3 text-center"
-                        style={{ background: 'linear-gradient(135deg,rgba(0,119,181,0.06),rgba(14,165,233,0.08))' }}>
-                        <p className="text-slate-900 font-bold text-sm">Si este análisis te sirvió, seguinos</p>
-                        <p className="text-slate-500 text-xs mt-1 leading-relaxed">Tips de empleabilidad y recursos para potenciar tu búsqueda.</p>
-                      </div>
-                      <div className="grid grid-cols-1 sm:grid-cols-2 divide-y sm:divide-y-0 sm:divide-x divide-slate-100">
-                        <div className="p-4 flex flex-col gap-2.5 items-center text-center">
-                          <div className="w-9 h-9 rounded-xl flex items-center justify-center shrink-0"
-                            style={{ background: LI_GRADIENT }}>
-                            <LinkedInIcon className="w-4 h-4 text-white" />
-                          </div>
-                          <div>
-                            <p className="text-slate-900 text-xs font-semibold">Perfil de Ramiro</p>
-                            <p className="text-slate-500 text-xs mt-0.5 leading-relaxed">Mejoras concretas y casos reales de optimización.</p>
-                          </div>
-                          <a href={RAMIRO_LINKEDIN_URL} target="_blank" rel="noopener noreferrer"
-                            onClick={() => trackEvent('click_externo', { destino: 'linkedin_ramiro', ubicacion: 'star_feedback' })}
-                            className="btn-glow w-full inline-flex items-center justify-center gap-1.5 py-2 rounded-xl text-white text-xs font-semibold mt-auto"
-                            style={{ background: LI_GRADIENT }}>
-                            <LinkedInIcon className="w-3.5 h-3.5" /> Seguir a Ramiro
-                          </a>
-                        </div>
-                        <div className="p-4 flex flex-col gap-2.5 items-center text-center">
-                          <div className="w-9 h-9 rounded-xl flex items-center justify-center shrink-0"
-                            style={{ background: LI_GRADIENT }}>
-                            <LinkedInIcon className="w-4 h-4 text-white" />
-                          </div>
-                          <div>
-                            <p className="text-slate-900 text-xs font-semibold">Página OptimizaLK</p>
-                            <p className="text-slate-500 text-xs mt-0.5 leading-relaxed">Guías y contenido sobre búsqueda de empleo.</p>
-                          </div>
-                          <a href={COMPANY_LINKEDIN_URL} target="_blank" rel="noopener noreferrer"
-                            onClick={() => trackEvent('click_externo', { destino: 'linkedin_pagina', ubicacion: 'star_feedback' })}
-                            className="btn-glow w-full inline-flex items-center justify-center gap-1.5 py-2 rounded-xl text-white text-xs font-semibold mt-auto"
-                            style={{ background: LI_GRADIENT }}>
-                            <LinkedInIcon className="w-3.5 h-3.5" /> Seguir la página
-                          </a>
-                        </div>
-                      </div>
-                    </div>
-
                     {!user?.es_premium && (
                       <div className="rounded-2xl p-4 space-y-2.5"
                         style={{ background: 'rgba(0,119,181,0.04)', border: '1px solid rgba(0,119,181,0.15)' }}>
@@ -6634,12 +6626,29 @@ JSON:
             </div>
           </div>
           {/* Instrucción contextual */}
-          <div className="px-4 py-2 shrink-0 text-xs text-center"
-            style={{ background: '#f0f7ff', borderBottom: '1px solid rgba(0,119,181,0.12)', color: '#64748b' }}>
-            {/iPhone|iPad|iPod|Android/i.test(navigator.userAgent)
-              ? <span>📸 Sacá una <strong>captura de pantalla</strong> del CV · Para PDF usá una computadora</span>
-              : <span>Clic en <strong>Guardar PDF</strong> → en el diálogo de impresión elegí <em>Guardar como PDF</em></span>
-            }
+          <div className="px-4 py-2 shrink-0 flex items-center justify-center gap-2"
+            style={{ background: '#f0f7ff', borderBottom: '1px solid rgba(0,119,181,0.12)' }}>
+            {/iPhone|iPad|iPod|Android/i.test(navigator.userAgent) ? (
+              <button
+                onClick={downloadCvCanvas}
+                disabled={cvCanvasLoading}
+                className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-white text-xs font-semibold"
+                style={{ background: cvCanvasLoading ? 'rgba(0,119,181,0.4)' : LI_GRADIENT }}>
+                {cvCanvasLoading ? '⏳ Generando...' : '📥 Descargar imagen (PNG)'}
+              </button>
+            ) : (
+              <>
+                <button
+                  onClick={downloadCvCanvas}
+                  disabled={cvCanvasLoading}
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold"
+                  style={{ background: 'rgba(0,119,181,0.08)', color: '#0077B5', border: '1px solid rgba(0,119,181,0.2)' }}>
+                  {cvCanvasLoading ? '⏳...' : '🖼️ PNG'}
+                </button>
+                <span className="text-xs text-slate-400">·</span>
+                <span className="text-xs text-slate-500">Para PDF: clic en <strong>Guardar PDF</strong> → elegí <em>Guardar como PDF</em></span>
+              </>
+            )}
           </div>
           <iframe
             id="cv-preview-iframe"
