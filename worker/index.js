@@ -305,6 +305,92 @@ function getUserIdFromToken(request) {
 }
 
 
+// ── GA4 Data API helpers (Web Crypto API — compatible con Cloudflare Workers) ──
+async function getGa4AccessToken(creds) {
+  const base64url = buf => btoa(String.fromCharCode(...new Uint8Array(buf)))
+    .replace(/=/g, '').replace(/\+/g, '-').replace(/\//g, '_')
+
+  const enc = new TextEncoder()
+  const now = Math.floor(Date.now() / 1000)
+  const header  = base64url(enc.encode(JSON.stringify({ alg:'RS256', typ:'JWT' })))
+  const payload = base64url(enc.encode(JSON.stringify({
+    iss: creds.client_email,
+    scope: 'https://www.googleapis.com/auth/analytics.readonly',
+    aud: creds.token_uri,
+    iat: now, exp: now + 3600,
+  })))
+  const unsigned = `${header}.${payload}`
+
+  const pemKey = creds.private_key
+    .replace(/-----BEGIN PRIVATE KEY-----/, '')
+    .replace(/-----END PRIVATE KEY-----/, '')
+    .replace(/\s/g, '')
+  const keyBytes = Uint8Array.from(atob(pemKey), c => c.charCodeAt(0))
+  const cryptoKey = await crypto.subtle.importKey(
+    'pkcs8', keyBytes,
+    { name: 'RSASSA-PKCS1-v1_5', hash: 'SHA-256' },
+    false, ['sign']
+  )
+  const sigBytes = await crypto.subtle.sign('RSASSA-PKCS1-v1_5', cryptoKey, enc.encode(unsigned))
+  const jwt = `${unsigned}.${base64url(sigBytes)}`
+
+  const res = await fetch(creds.token_uri, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({ grant_type: 'urn:ietf:params:oauth:grant-type:jwt-bearer', assertion: jwt }),
+  })
+  const data = await res.json()
+  if (!data.access_token) throw new Error(`GA4 auth error: ${data.error_description || JSON.stringify(data)}`)
+  return data.access_token
+}
+
+async function runGa4FunnelReport(token, propertyId, steps, days = 30) {
+  const res = await fetch(`https://analyticsdata.googleapis.com/v1beta/properties/${propertyId}:runFunnelReport`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      dateRanges: [{ startDate: `${days}daysAgo`, endDate: 'today' }],
+      funnel: {
+        isOpenFunnel: false,
+        steps: steps.map(s => ({
+          name: s.name,
+          filterExpression: { funnelEventFilter: { eventName: s.event } },
+        })),
+      },
+      funnelVisualizationType: 'STANDARD_FUNNEL',
+    }),
+  })
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}))
+    throw new Error(`GA4 API ${res.status}: ${err?.error?.message || res.statusText}`)
+  }
+  return res.json()
+}
+
+function parseGa4FunnelResponse(report, stepNames) {
+  if (!report?.funnelTable?.rows) return []
+  const dimHeaders = (report.funnelTable.dimensionHeaders || []).map(h => h.name)
+  const metHeaders = (report.funnelTable.metricHeaders || []).map(h => h.name)
+  const stepDimIdx = dimHeaders.findIndex(h => h === 'funnelStepName')
+  const usersIdx   = metHeaders.findIndex(h => h === 'activeUsers')
+
+  // Aggregate users per step name
+  const stepTotals = {}
+  for (const row of report.funnelTable.rows) {
+    const stepName = row.dimensionValues?.[stepDimIdx]?.value
+    const users    = parseInt(row.metricValues?.[usersIdx]?.value || '0', 10)
+    if (stepName) stepTotals[stepName] = (stepTotals[stepName] || 0) + users
+  }
+
+  // Return in order, computing pct from step 0
+  const first = stepTotals[stepNames[0]] || 0
+  return stepNames.map(name => ({
+    stage: name,
+    count: stepTotals[name] || 0,
+    pct: first > 0 ? parseFloat(((stepTotals[name] || 0) / first * 100).toFixed(1)) : 0,
+  }))
+}
+
 async function supabaseServiceFetch(env, table, options = {}) {
   const url = `${env.SUPABASE_URL}/rest/v1/${table}`
   const res = await fetch(url, {
@@ -1136,6 +1222,32 @@ export default {
             overviewRes.json(), funnelRes.json(), trendRes.json(), aiRes.json(),
           ])
           return new Response(JSON.stringify({ ok: true, overview, funnel, trend, ai_features }), { status: 200, headers: corsHeaders })
+        } catch (e) {
+          return new Response(JSON.stringify({ ok: false, error: e.message }), { status: 500, headers: corsHeaders })
+        }
+      }
+
+      // ── GA4 Data API — runFunnelReport ───────────────────────────────────────
+      if (body.action === 'admin_ga4_funnel') {
+        if (!env.GA4_CREDENTIALS_JSON) {
+          return new Response(JSON.stringify({ ok: true, not_configured: true }), { status: 200, headers: corsHeaders })
+        }
+        try {
+          const creds = JSON.parse(env.GA4_CREDENTIALS_JSON)
+          const token = await getGa4AccessToken(creds)
+          const { days = 30 } = body
+          const GA4_PROPERTY = '534867380'
+          const FUNNEL_STEPS = [
+            { name: 'Inicia análisis',   event: 'analysis_started'        },
+            { name: 'Completa análisis', event: 'analysis_completed'       },
+            { name: 'Inicia CV',         event: 'cv_generation_started'    },
+            { name: 'Completa CV',       event: 'cv_generation_completed'  },
+            { name: 'Ve modal premium',  event: 'premium_modal_shown'      },
+            { name: 'Abre checkout',     event: 'premium_checkout_opened'  },
+          ]
+          const report = await runGa4FunnelReport(token, GA4_PROPERTY, FUNNEL_STEPS, days)
+          const stages = parseGa4FunnelResponse(report, FUNNEL_STEPS.map(s => s.name))
+          return new Response(JSON.stringify({ ok: true, stages, days }), { status: 200, headers: corsHeaders })
         } catch (e) {
           return new Response(JSON.stringify({ ok: false, error: e.message }), { status: 500, headers: corsHeaders })
         }

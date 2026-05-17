@@ -2109,31 +2109,104 @@ function OverviewSection({ ov, trend, aiFeatures }) {
   )
 }
 
+// ── GA4 funnel source badge ───────────────────────────────────────────────────
+function SourceBadge({ source }) {
+  const styles = {
+    ga4:      { background:'#fff8e1', color:'#f59e0b', border:'1px solid #fde68a' },
+    supabase: { background:'#f0f9ff', color:'#0369a1', border:'1px solid #bae6fd' },
+  }
+  const labels = { ga4:'GA4 · sesiones reales', supabase:'Supabase · usuarios registrados' }
+  const s = styles[source] || styles.supabase
+  return (
+    <span style={{ ...s, fontSize:10, fontWeight:700, borderRadius:99, padding:'2px 8px' }}>
+      {labels[source] || source}
+    </span>
+  )
+}
+
 // ── Funnels section ───────────────────────────────────────────────────────────
-function FunnelsSection({ ov, funnel }) {
+function FunnelsSection({ ov, funnel, adminFetch }) {
   const stages = funnel?.stages || []
+  const [ga4, setGa4] = useState(null)
+  const [ga4Loading, setGa4Loading] = useState(false)
+  const [ga4Error, setGa4Error] = useState('')
+  const [ga4Days, setGa4Days] = useState(30)
+
+  const loadGa4 = useCallback(async (days) => {
+    setGa4Loading(true); setGa4Error('')
+    const d = await adminFetch('admin_ga4_funnel', { days })
+    if (d?.ok && d.not_configured) {
+      setGa4({ not_configured: true })
+    } else if (d?.ok) {
+      setGa4(d)
+    } else {
+      setGa4Error(d?.error || 'Error al obtener datos de GA4')
+    }
+    setGa4Loading(false)
+  }, [adminFetch])
+
+  useEffect(() => { loadGa4(ga4Days) }, [loadGa4, ga4Days])
+
   return (
     <div>
-      <div style={{ fontSize:12, fontWeight:700, color:'#64748b', marginBottom:12, textTransform:'uppercase', letterSpacing:'0.5px' }}>Funnel de producto — todos los tiempos</div>
+      {/* GA4 funnel — real sessions */}
+      <div style={{ display:'flex', alignItems:'center', gap:10, marginBottom:12, flexWrap:'wrap' }}>
+        <div style={{ fontSize:12, fontWeight:700, color:'#64748b', textTransform:'uppercase', letterSpacing:'0.5px' }}>Funnel de conversión</div>
+        <SourceBadge source="ga4" />
+        <div style={{ marginLeft:'auto', display:'flex', gap:6, alignItems:'center' }}>
+          {[7, 30, 90].map(d => (
+            <button key={d} onClick={() => setGa4Days(d)} style={{
+              padding:'3px 10px', borderRadius:6, fontSize:11, fontWeight:600, cursor:'pointer',
+              border:'1px solid', borderColor: ga4Days === d ? '#0077B5' : '#e2e8f0',
+              background: ga4Days === d ? '#0077B5' : 'white',
+              color: ga4Days === d ? 'white' : '#475569',
+            }}>{d}d</button>
+          ))}
+          <button onClick={() => loadGa4(ga4Days)} style={{ ...C.sec, padding:'3px 10px', fontSize:11 }}>↺</button>
+        </div>
+      </div>
+      <div style={{ ...C.card, padding:'20px 16px', marginBottom:20 }}>
+        {ga4Loading ? (
+          <div style={{ textAlign:'center', padding:24 }}><Spin /></div>
+        ) : ga4?.not_configured ? (
+          <div style={{ padding:'16px', background:'#fff8e1', borderRadius:10, border:'1px solid #fde68a' }}>
+            <div style={{ fontWeight:700, fontSize:13, color:'#92400e', marginBottom:6 }}>GA4 no configurado</div>
+            <div style={{ fontSize:12, color:'#78350f', lineHeight:1.6 }}>
+              Para ver el funnel con sesiones reales (incluyendo usuarios anónimos), agregá el secret <code style={{ background:'#fef3c7', padding:'1px 5px', borderRadius:4 }}>GA4_CREDENTIALS_JSON</code> en Cloudflare Workers con el contenido del nuevo JSON de cuenta de servicio.
+            </div>
+          </div>
+        ) : ga4Error ? (
+          <ErrBox msg={ga4Error} onRetry={() => loadGa4(ga4Days)} />
+        ) : (
+          <FunnelBar stages={ga4?.stages || []} />
+        )}
+      </div>
+
+      {/* Supabase funnel — registered users */}
+      <div style={{ display:'flex', alignItems:'center', gap:10, marginBottom:12, flexWrap:'wrap' }}>
+        <div style={{ fontSize:12, fontWeight:700, color:'#64748b', textTransform:'uppercase', letterSpacing:'0.5px' }}>Adopción acumulada</div>
+        <SourceBadge source="supabase" />
+      </div>
       <div style={{ ...C.card, padding:'20px 16px', marginBottom:20 }}>
         <FunnelBar stages={stages} />
       </div>
 
-      <div style={{ fontSize:12, fontWeight:700, color:'#64748b', marginBottom:12, textTransform:'uppercase', letterSpacing:'0.5px' }}>Adopción de features (usuarios únicos)</div>
+      {/* Feature adoption bars */}
+      <div style={{ fontSize:12, fontWeight:700, color:'#64748b', marginBottom:12, textTransform:'uppercase', letterSpacing:'0.5px' }}>Adopción por feature (usuarios únicos)</div>
       <div style={{ ...C.card, padding:'16px', marginBottom:20 }}>
         {[
-          { label:'Análisis de perfil', count: ov?.users_analysis, total: ov?.total_users, color:'#0077B5' },
-          { label:'Generación de CV',   count: ov?.users_cv,       total: ov?.total_users, color:'#0ea5e9' },
-          { label:'Simulador entrevista', count: ov?.users_interview, total: ov?.total_users, color:'#38bdf8' },
-          { label:'Entrenador STAR',    count: ov?.users_star,     total: ov?.total_users, color:'#7dd3fc' },
-          { label:'Premium',            count: ov?.premium_users,  total: ov?.total_users, color:'#f59e0b' },
+          { label:'Análisis de perfil',   count: ov?.users_analysis,  total: ov?.total_users, color:'#0077B5' },
+          { label:'Generación de CV',     count: ov?.users_cv,        total: ov?.total_users, color:'#0ea5e9' },
+          { label:'Simulador entrevista', count: ov?.users_interview,  total: ov?.total_users, color:'#38bdf8' },
+          { label:'Entrenador STAR',      count: ov?.users_star,      total: ov?.total_users, color:'#7dd3fc' },
+          { label:'Premium',              count: ov?.premium_users,   total: ov?.total_users, color:'#f59e0b' },
         ].map((row, i) => {
           const pctVal = row.total > 0 ? (row.count / row.total * 100) : 0
           return (
             <div key={i} style={{ marginBottom:10 }}>
               <div style={{ display:'flex', justifyContent:'space-between', fontSize:12, marginBottom:4 }}>
                 <span style={{ fontWeight:600, color:'#0d2137' }}>{row.label}</span>
-                <span style={{ color:'#64748b' }}>{fmtN(row.count)} / {fmtN(row.total)} usuarios ({pctVal.toFixed(1)}%)</span>
+                <span style={{ color:'#64748b' }}>{fmtN(row.count)} / {fmtN(row.total)} ({pctVal.toFixed(1)}%)</span>
               </div>
               <div style={{ background:'#f1f5f9', borderRadius:6, height:8, overflow:'hidden' }}>
                 <div style={{ height:'100%', width:`${Math.max(0, Math.min(100, pctVal))}%`, background:row.color, borderRadius:6, transition:'width 0.5s' }} />
@@ -2143,21 +2216,21 @@ function FunnelsSection({ ov, funnel }) {
         })}
       </div>
 
-      <div style={{ fontSize:12, fontWeight:700, color:'#64748b', marginBottom:12, textTransform:'uppercase', letterSpacing:'0.5px' }}>Análisis → CV (cobertura)</div>
+      {/* Summary metrics */}
       <div style={{ ...C.card, padding:'16px' }}>
         <div style={{ display:'flex', gap:20, flexWrap:'wrap' }}>
           <div style={{ textAlign:'center', padding:'12px 20px' }}>
             <div style={{ fontSize:28, fontWeight:800, color:'#0077B5' }}>{pct(funnel?.users_both_analysis_cv || 0, ov?.users_analysis || 1)}</div>
-            <div style={{ fontSize:11, color:'#64748b', marginTop:4 }}>de quienes analizaron también generaron CV</div>
+            <div style={{ fontSize:11, color:'#64748b', marginTop:4 }}>analizaron → generaron CV</div>
             <div style={{ fontSize:10, color:'#94a3b8', marginTop:2 }}>{fmtN(funnel?.users_both_analysis_cv)} usuarios</div>
           </div>
           <div style={{ textAlign:'center', padding:'12px 20px' }}>
             <div style={{ fontSize:28, fontWeight:800, color:'#f59e0b' }}>{pct(ov?.premium_users || 0, ov?.users_analysis || 1)}</div>
-            <div style={{ fontSize:11, color:'#64748b', marginTop:4 }}>de quienes analizaron se volvieron premium</div>
+            <div style={{ fontSize:11, color:'#64748b', marginTop:4 }}>analizaron → se volvieron premium</div>
           </div>
           <div style={{ textAlign:'center', padding:'12px 20px' }}>
-            <div style={{ fontSize:28, fontWeight:800, color:'#16a34a' }}>{fmtN(ov?.total_analyses)}</div>
-            <div style={{ fontSize:11, color:'#64748b', marginTop:4 }}>análisis totales ({(ov?.total_analyses / Math.max(1, ov?.users_analysis) || 0).toFixed(1)}x por usuario)</div>
+            <div style={{ fontSize:28, fontWeight:800, color:'#16a34a' }}>{(ov?.total_analyses / Math.max(1, ov?.users_analysis) || 0).toFixed(1)}×</div>
+            <div style={{ fontSize:11, color:'#64748b', marginTop:4 }}>análisis por usuario (promedio)</div>
           </div>
         </div>
       </div>
@@ -2208,7 +2281,7 @@ function InteligenicaTab({ adminFetch }) {
 
       {subTab === 'overview' && <OverviewSection ov={ov} trend={trend} aiFeatures={aiFeatures} />}
 
-      {subTab === 'funnels' && <FunnelsSection ov={ov} funnel={funnel} />}
+      {subTab === 'funnels' && <FunnelsSection ov={ov} funnel={funnel} adminFetch={adminFetch} />}
 
       {subTab === 'friccion' && (
         <div>
