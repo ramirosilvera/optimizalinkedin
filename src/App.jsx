@@ -143,7 +143,7 @@ export default function App() {
   const [cvDraft, setCvDraft] = useState(null)
   const [cvQuality, setCvQuality] = useState(null)
   const [cvGapAnswers, setCvGapAnswers] = useState({})
-  const [cvStage, setCvStage] = useState('idle') // 'idle'|'pre_loading'|'pre_questions'|'drafting'|'scoring'|'gap_form'|'regenerating'|'done'
+  const [cvStage, setCvStage] = useState('idle') // 'idle'|'drafting'|'gap_form'|'regenerating'|'done'
   const [cvTemplate, setCvTemplate] = useState('clasico')
   const [cvEditing, setCvEditing] = useState(false)
   const [linkedinGrowth, setLinkedinGrowth] = useState(null)
@@ -153,8 +153,6 @@ export default function App() {
   const [showGrowthSection, setShowGrowthSection] = useState(false)
   const [cvFinalData, setCvFinalData] = useState(null)
   const [cvContacto, setCvContacto] = useState(null)
-  const [cvPreQuestions, setCvPreQuestions] = useState([])  // Questions generated pre-CV from profile analysis
-  const [cvPreAnswers, setCvPreAnswers] = useState({})      // User's answers to pre-generation questions
 
   // LinkedIn OAuth
   const [linkedinOAuth, setLinkedinOAuth] = useState(null)
@@ -1863,7 +1861,7 @@ Generá el feedback en este JSON exacto:
     setCvFinalData(newData)
   }
 
-  const buildCvPromptBase = (contacto, preAnswers = {}, analysisResult = null, overrideProfileText = null, overrideQaHistory = null) => {
+  const buildCvPromptBase = (contacto, analysisResult = null, overrideProfileText = null, overrideQaHistory = null) => {
     const r = analysisResult || result
     const pText = overrideProfileText ?? profileText
     const qa = overrideQaHistory ?? qaHistory
@@ -1877,7 +1875,6 @@ Generá el feedback en este JSON exacto:
     if (contacto.telefono)    p += `Teléfono: ${contacto.telefono}\n`
     if (contacto.linkedinUrl) p += `URL LinkedIn: ${contacto.linkedinUrl}\n`
 
-    // Include QA interview context (profession, situation, goals)
     const qaLines = qa
       .filter(h => h.answer?.trim())
       .map(h => `- ${h.question}: ${h.answer}`)
@@ -1887,106 +1884,10 @@ Generá el feedback en este JSON exacto:
     }
 
     p += `\nPerfil LinkedIn:\n${pText.slice(0, r ? 3500 : 5500)}\n\n`
-
-    // Incluir respuestas pre-generación del candidato
-    const enrichedLines = cvPreQuestions
-      .filter(q => preAnswers[q.id]?.trim())
-      .map(q => `- ${q.contexto ? `[${q.contexto}] ` : ''}${preAnswers[q.id].trim()}`)
-      .join('\n')
-    if (enrichedLines) {
-      p += `INFORMACIÓN ADICIONAL REAL PROVISTA POR EL CANDIDATO — integrala en los bullets y resumen correspondientes, NUNCA inventes nada extra más allá de lo que el candidato escribió:\n${enrichedLines}\n\n`
-    }
-
-    p += `Período de cada experiencia/educación: copialo EXACTAMENTE del perfil para ESA entrada (nunca reutilices la fecha de otra).
-REGLA CRÍTICA: "experiencias_anteriores" debe contener SOLO experiencias que NO aparecen ya en el array "experiencias". Si no quedan experiencias sobrantes, dejá "experiencias_anteriores":[].
-JSON:
-{"nombre":"str","titular":"str","email":"str|null","telefono":"str|null","linkedin":"str|null","ubicacion":"str|null","resumen":"2 oraciones","experiencias":[{"cargo":"str","empresa":"str","periodo":"período exacto del perfil","logros":["str"]}],"educacion":[{"titulo":"str","institucion":"str","periodo":"período exacto, distinto por título"}],"habilidades":["str"],"idiomas":["str"],"experiencias_anteriores":[{"cargo":"str","empresa":"str","periodo":"str|null"}]}`
     return p
   }
 
-  const callAnalyzeCvQuality = async (cv) => {
-    try {
-      const cvText = [
-        `Nombre: ${cv.nombre}`,
-        `Titular: ${cv.titular}`,
-        `Resumen: ${cv.resumen || '(sin resumen)'}`,
-        ...(cv.experiencias || []).map(ex =>
-          `Cargo: ${ex.cargo} en ${ex.empresa} | Período: ${ex.periodo || 'SIN FECHA'}\nLogros: ${(ex.logros || []).join(' | ') || '(sin logros)'}`
-        ),
-        `Educación: ${(cv.educacion || []).map(ed => `${ed.titulo} — ${ed.institucion} (${ed.periodo || 'SIN FECHA'})`).join(' | ') || '(sin educación)'}`,
-        `Habilidades: ${(cv.habilidades || []).join(', ') || '(ninguna)'}`,
-        cv.idiomas?.length ? `Idiomas: ${cv.idiomas.join(', ')}` : null,
-      ].filter(Boolean).join('\n\n')
-      const controller = new AbortController()
-      const timeoutId = setTimeout(() => controller.abort(), 30000)
-      const res = await fetch(WORKER_URL, {
-        method: 'POST',
-        headers: WORKER_HEADERS,
-        signal: controller.signal,
-        body: JSON.stringify({
-          action: 'ai_cv_quality',
-          contents: [{ parts: [{ text: `Analizá este CV:\n\n${cvText}` }] }],
-          generationConfig: { responseMimeType: 'application/json', maxOutputTokens: 800 },
-        }),
-      })
-      clearTimeout(timeoutId)
-      if (!res.ok) return null
-      const data = await res.json()
-      return parseAIJson(extractAIText(data), AI_DEFAULTS.cv_quality)
-    } catch {
-      return null
-    }
-  }
-
-  const callGenerateCvPreQuestions = async (contacto) => {
-    if (cvLoading) return
-    setCvContacto(contacto)
-    setCvPreQuestions([])
-    setCvPreAnswers({})
-    setCvStage('pre_loading')
-    try {
-      if (!WORKER_URL) { callGenerateCV(contacto, {}); return }
-      const profesion = qaHistory.find(h => h.questionId === 'profesion')?.answer || qaHistory[0]?.answer || ''
-      const situacion = qaHistory.find(h => h.questionId === 'situacion')?.answer || qaHistory[1]?.answer || ''
-      let profileContext
-      if (result) {
-        const kw = (result.palabras_clave_sugeridas || []).slice(0, 8).join(', ')
-        profileContext = `Análisis del perfil:\nNombre: ${result.nombre_completo || ''}\nTitular actual: ${result.titular_actual || ''}\nTitular propuesto: ${result.titular_propuesto || ''}\nPuntaje: ${result.puntaje_general ?? 'N/D'}/10\nKeywords: ${kw}\nDiagnóstico: ${(result.resumen_diagnostico || '').slice(0, 300)}`
-      } else {
-        profileContext = `Texto del perfil LinkedIn:\n${profileText.slice(0, 5000)}`
-      }
-      const prompt = `Profesión del candidato: ${profesion}\nSituación actual: ${situacion}\n\n${profileContext}`
-      const controller = new AbortController()
-      const timeoutId = setTimeout(() => controller.abort(), 25000)
-      const res = await fetch(WORKER_URL, {
-        method: 'POST',
-        headers: WORKER_HEADERS,
-        signal: controller.signal,
-        body: JSON.stringify({
-          action: 'ai_cv_pre_questions',
-          contents: [{ parts: [{ text: prompt }] }],
-          generationConfig: { responseMimeType: 'application/json', maxOutputTokens: 800 },
-        }),
-      })
-      clearTimeout(timeoutId)
-      if (!res.ok) { callGenerateCV(contacto, {}); return }
-      const data = await res.json()
-      let parsed
-      try { parsed = parseAIJson(extractAIText(data), AI_DEFAULTS.cv_pre_questions) } catch { parsed = AI_DEFAULTS.cv_pre_questions }
-      const preguntas = parsed?.preguntas?.filter(q => q.id && q.pregunta) || []
-      if (preguntas.length === 0) {
-        callGenerateCV(contacto, {})
-      } else {
-        setCvPreQuestions(preguntas)
-        setCvStage('pre_questions')
-        trackEvent('cv_pre_questions_shown', { count: preguntas.length })
-      }
-    } catch {
-      callGenerateCV(contacto, {})
-    }
-  }
-
-  const callGenerateCV = async (contacto = {}, preAnswers = {}, analysisResult = null, overrideProfileText = null, overrideQaHistory = null) => {
+  const callGenerateCV = async (contacto = {}, analysisResult = null, overrideProfileText = null, overrideQaHistory = null) => {
     if (cvLoading) return
     setCvLoading(true)
     setCvError('')
@@ -2000,11 +1901,11 @@ JSON:
     setCvContacto(resolvedContacto)
     setCvStage('drafting')
     const _tCv = Date.now()
-    trackEvent('cv_generation_started', { has_pre_answers: Object.keys(preAnswers || {}).length > 0, has_analysis: !!analysisResult })
+    trackEvent('cv_generation_started', { has_analysis: !!analysisResult })
 
-    const userPrompt = buildCvPromptBase(resolvedContacto, preAnswers, analysisResult, overrideProfileText, overrideQaHistory)
+    const userPrompt = buildCvPromptBase(resolvedContacto, analysisResult, overrideProfileText, overrideQaHistory)
     const controller = new AbortController()
-    const timeoutId = setTimeout(() => controller.abort(), 58000)
+    const timeoutId = setTimeout(() => controller.abort(), 70000)
     try {
       if (!WORKER_URL) throw new Error('Worker URL no configurada.')
       const res = await fetch(WORKER_URL, {
@@ -2012,9 +1913,9 @@ JSON:
         headers: WORKER_HEADERS,
         signal: controller.signal,
         body: JSON.stringify({
-          action: 'ai_generate_cv',
+          action: 'ai_generate_cv_full',
           contents: [{ parts: [{ text: userPrompt }] }],
-          generationConfig: { responseMimeType: 'application/json', maxOutputTokens: 2000 },
+          generationConfig: { responseMimeType: 'application/json', maxOutputTokens: 3000 },
         }),
       })
       if (!res.ok) {
@@ -2023,59 +1924,25 @@ JSON:
         throw new Error(parseGeminiError(res.status, e))
       }
       const data = await res.json()
-      const cv = sanitizeCv(parseAIJson(extractAIText(data), AI_DEFAULTS.generate_cv, 'No se pudo interpretar el CV generado. Intentá de nuevo.'))
+      const parsed = parseAIJson(extractAIText(data), AI_DEFAULTS.generate_cv_full, 'No se pudo interpretar el CV generado. Intentá de nuevo.')
+      const cv = sanitizeCv(parsed.cv || parsed)
+      const quality = parsed.quality || null
       setCvDraft(cv)
+      setCvQuality(quality)
       trackTiming('cv_generation_completed', _tCv, { with_photo: !!profilePhoto, template: cvTemplate })
-
-      // Detectar fechas faltantes del lado del cliente antes del scoring IA
-      const dateGaps = []
-      ;(cv.experiencias || []).forEach((ex, i) => {
-        if (!ex.periodo) dateGaps.push({
-          id: `fecha_exp_${i}`,
-          campo: `${ex.cargo} en ${ex.empresa}`,
-          descripcion: 'Faltan las fechas de esta experiencia laboral.',
-          pregunta: `¿En qué período trabajaste como ${ex.cargo} en ${ex.empresa}? (mes/año de inicio y fin)`,
-          placeholder: 'ej: mar 2019 – dic 2022',
-          impacto: 'Alto',
-        })
-      })
-      ;(cv.educacion || []).forEach((ed, i) => {
-        if (!ed.periodo) dateGaps.push({
-          id: `fecha_edu_${i}`,
-          campo: `${ed.titulo} — ${ed.institucion}`,
-          descripcion: 'Faltan las fechas de este título educativo.',
-          pregunta: `¿En qué período cursaste ${ed.titulo} en ${ed.institucion}?`,
-          placeholder: 'ej: 2015 – 2019',
-          impacto: 'Alto',
-        })
-      })
-
-      setCvStage('scoring')
-      const quality = await callAnalyzeCvQuality(cv)
-
-      // Fusionar gaps de fecha del cliente con los de IA (evitar duplicados por id)
-      let mergedQuality = quality
-      if (dateGaps.length > 0) {
-        const existingIds = new Set((quality?.gaps || []).map(g => g.id))
-        const newDateGaps = dateGaps.filter(g => !existingIds.has(g.id))
-        mergedQuality = quality
-          ? { ...quality, gaps: [...newDateGaps, ...(quality.gaps || [])], aprobado: false }
-          : { score: 5, nivel: 'Básico', aprobado: false, gaps: dateGaps }
-      }
-      setCvQuality(mergedQuality)
       if (quality) {
-        trackEvent('cv_quality_scored', { score: mergedQuality.score, nivel: mergedQuality.nivel, gap_count: mergedQuality.gaps?.length || 0 })
+        trackEvent('cv_quality_scored', { score: quality.score, nivel: quality.nivel, gap_count: quality.gaps?.length || 0 })
       }
 
-      const hasHighImpactGaps = mergedQuality?.gaps?.some(g => g.impacto === 'Alto')
-      if (!mergedQuality || mergedQuality.aprobado || !hasHighImpactGaps) {
+      const hasHighImpactGaps = quality?.gaps?.some(g => g.impacto === 'Alto')
+      if (!quality || quality.aprobado || !hasHighImpactGaps) {
         setCvFinalData(cv)
         setCvStage('done')
         setCvPreviewHtml(buildCvHtml(cv, profilePhoto, profilePhotoMime, cvTemplate))
         setShowCvPreview(true)
         saveToHistorial('cv', cv, cv.nombre || 'CV generado', null)
       } else {
-        trackEvent('cv_gap_form_shown', { gap_count: mergedQuality.gaps?.length || 0 })
+        trackEvent('cv_gap_form_shown', { gap_count: quality.gaps?.length || 0 })
         setCvStage('gap_form')
       }
     } catch (err) {
@@ -2095,7 +1962,7 @@ JSON:
     setCvStage('regenerating')
     trackEvent('cv_gap_form_submitted', { answered_count: Object.keys(gapAnswers).length })
 
-    let userPrompt = buildCvPromptBase(cvContacto, cvPreAnswers)
+    let userPrompt = buildCvPromptBase(cvContacto)
     const gapLines = (cvQuality?.gaps || [])
       .filter(g => gapAnswers[g.id]?.trim())
       .map(g => `- ${g.campo}: ${gapAnswers[g.id].trim()}`)
@@ -4252,11 +4119,9 @@ JSON:
               )}
 
               {/* Loading states — pipeline progress bar */}
-              {(cvStage === 'pre_loading' || cvStage === 'drafting' || cvStage === 'scoring' || cvStage === 'regenerating') && (() => {
+              {(cvStage === 'drafting' || cvStage === 'regenerating') && (() => {
                 const cvPipeline = [
-                  { label: 'Analizando', stage: 'pre_loading', sub: 'Identificando qué información potencia tu CV' },
-                  { label: 'Generando', stage: 'drafting', sub: 'Extrayendo experiencia real del perfil' },
-                  { label: 'Revisando', stage: 'scoring', sub: 'Evaluando calidad, logros y compatibilidad ATS' },
+                  { label: 'Generando', stage: 'drafting', sub: 'Creando y revisando tu CV con criterio de headhunter' },
                   { label: 'Mejorando', stage: 'regenerating', sub: 'Integrando la información que nos diste' },
                 ]
                 const activeIdx = cvPipeline.findIndex(s => s.stage === cvStage)
@@ -4290,76 +4155,6 @@ JSON:
                   </div>
                 )
               })()}
-
-              {/* Pre-questions — enriquecer antes de generar */}
-              {cvStage === 'pre_questions' && cvPreQuestions.length > 0 && (
-                <div className="rounded-2xl overflow-hidden"
-                  style={{ border: '1px solid rgba(0,119,181,0.20)', boxShadow: '0 2px 12px rgba(0,0,0,0.06)' }}>
-                  <div className="px-5 pt-5 pb-4"
-                    style={{ background: 'linear-gradient(135deg,rgba(0,119,181,0.06),rgba(14,165,233,0.04))', borderBottom: '1px solid rgba(0,119,181,0.10)' }}>
-                    <div className="flex items-start gap-3">
-                      <span className="text-xl shrink-0 mt-0.5">✦</span>
-                      <div>
-                        <p className="text-sm font-bold text-slate-900 leading-snug">
-                          Antes de generar tu CV, respondé estas preguntas
-                        </p>
-                        <p className="text-xs text-slate-500 mt-1 leading-relaxed">
-                          Identificamos {cvPreQuestions.length} oportunidad{cvPreQuestions.length > 1 ? 'es' : ''} para enriquecer tu CV con datos reales que hacen diferencia. Cada respuesta se integra directamente en los bullets.
-                        </p>
-                      </div>
-                    </div>
-                  </div>
-                  <div className="px-5 py-5 space-y-5 bg-white">
-                    {cvPreQuestions.map((q, i) => (
-                      <div key={q.id} className="space-y-2">
-                        <div className="flex items-start gap-2.5">
-                          <span className="w-5 h-5 rounded-full flex items-center justify-center text-[11px] font-bold text-white shrink-0 mt-0.5"
-                            style={{ background: LI_GRADIENT }}>{i + 1}</span>
-                          <div className="flex-1 min-w-0">
-                            {q.contexto && (
-                              <p className="text-[10px] font-semibold uppercase tracking-wide mb-0.5" style={{ color: '#64748b' }}>{q.contexto}</p>
-                            )}
-                            <p className="text-sm font-medium text-slate-800 leading-snug">{q.pregunta}</p>
-                          </div>
-                        </div>
-                        <input
-                          type="text"
-                          value={cvPreAnswers[q.id] || ''}
-                          onChange={e => setCvPreAnswers(prev => ({ ...prev, [q.id]: e.target.value }))}
-                          placeholder={q.placeholder || 'Tu respuesta...'}
-                          className="w-full rounded-xl px-4 py-2.5 text-sm outline-none transition-all"
-                          style={{
-                            ...INPUT_ALT_STYLE,
-                            border: `1px solid ${cvPreAnswers[q.id]?.trim() ? 'rgba(0,119,181,0.40)' : 'rgba(0,119,181,0.15)'}`,
-                          }}
-                        />
-                      </div>
-                    ))}
-                    {cvError && <p className="text-xs text-red-500">{cvError}</p>}
-                    <div className="space-y-2 pt-1">
-                      <button
-                        onClick={() => {
-                          trackEvent('cv_pre_questions_submitted', { answered: Object.values(cvPreAnswers).filter(v => v?.trim()).length, total: cvPreQuestions.length })
-                          callGenerateCV(cvContacto, cvPreAnswers)
-                        }}
-                        className="btn-glow w-full font-semibold py-3.5 rounded-2xl text-white text-sm"
-                        style={{ background: LI_GRADIENT }}
-                      >
-                        Crear mi CV →
-                      </button>
-                      <button
-                        onClick={() => {
-                          trackEvent('cv_pre_questions_skipped')
-                          callGenerateCV(cvContacto, {})
-                        }}
-                        className="w-full py-2.5 rounded-2xl text-xs text-slate-400 hover:text-slate-600 transition-colors"
-                      >
-                        Generar con los datos actuales
-                      </button>
-                    </div>
-                  </div>
-                </div>
-              )}
 
               {/* Gap Form — calidad insuficiente, pedir más info */}
               {cvStage === 'gap_form' && cvQuality && (
@@ -6634,7 +6429,7 @@ JSON:
                   if (!contactEmail.trim()) return
                   const contacto = { email: contactEmail.trim(), telefono: contactTelefono.trim(), linkedinUrl: contactLinkedin.trim() }
                   setShowCvModal(false)
-                  callGenerateCvPreQuestions(contacto)
+                  callGenerateCV(contacto)
                 }}
                 disabled={!contactEmail.trim()}
                 className="w-full py-3.5 rounded-xl text-sm font-semibold transition-opacity"

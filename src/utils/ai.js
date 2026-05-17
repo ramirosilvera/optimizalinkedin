@@ -14,6 +14,10 @@ export const AI_DEFAULTS = {
     riesgo_ats: 'Medio', fortalezas: [], gaps: [],
   },
   cv_pre_questions: { preguntas: [] },
+  generate_cv_full: {
+    cv: { nombreCompleto: '', titular: '', resumen: '', experiencias: [], educacion: [], habilidades: [], experiencias_anteriores: [] },
+    quality: { score: 0, nivel: 'Básico', aprobado: false, nota_consultor: '', riesgo_ats: 'Medio', fortalezas: [], gaps: [] },
+  },
   interview_feedback: {
     puntaje_entrevista: 0, feedback_general: '', puntos_fuertes: [],
     areas_de_mejora: [], recomendaciones: [],
