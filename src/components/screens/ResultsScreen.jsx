@@ -54,8 +54,6 @@ export default function ResultsScreen({
   cvOptimizeApplied,
   setCvOptimizeApplied,
   cvBeforeOptimize,
-  gapAnswers,
-  setGapAnswers,
   rateLimitEvento,
   rateLimitSecs,
   waitlistEmail,

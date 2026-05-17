@@ -2547,8 +2547,6 @@ Generá el feedback en este JSON exacto:
             setCvOptimizeApplied={setCvOptimizeApplied}
             cvBeforeOptimize={cvBeforeOptimize}
             setCvBeforeOptimize={setCvBeforeOptimize}
-            gapAnswers={gapAnswers}
-            setGapAnswers={setGapAnswers}
             rateLimitEvento={rateLimitEvento}
             rateLimitSecs={rateLimitSecs}
             waitlistEmail={waitlistEmail}
