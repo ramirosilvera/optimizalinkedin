@@ -2860,103 +2860,17 @@ Generá el feedback en este JSON exacto:
 
         {/* ── QUESTIONS ── */}
         {step === STEPS.QUESTIONS && (
-          <div className="step-transition space-y-7">
-            <Logo />
-
-            {/* Stepper de puntos */}
-            <div className="flex items-center gap-1.5">
-              {STATIC_QUESTIONS.map((_, i) => {
-                const done = i < qaHistory.length
-                const active = i === qaHistory.length
-                return (
-                  <div key={i} className="h-1.5 rounded-full transition-all duration-500 flex-1"
-                    style={{
-                      background: done
-                        ? 'linear-gradient(90deg,#0077B5,#0ea5e9)'
-                        : active
-                          ? 'rgba(0,119,181,0.5)'
-                          : 'rgba(0,119,181,0.12)',
-                    }} />
-                )
-              })}
-            </div>
-            <p className="text-xs text-slate-500 -mt-4">
-              Paso {qNum} de {STATIC_QUESTIONS.length}
-              {currentQ.id && <span className="ml-2 opacity-60">· {currentQ.id.replace(/_/g,' ')}</span>}
-            </p>
-
-            {/* Question */}
-            <div>
-              <h2 className="text-2xl sm:text-3xl font-bold text-slate-900 leading-snug" style={{ letterSpacing: '-0.01em' }}>
-                {currentQ.question}
-              </h2>
-              {currentQ.type === 'text' && currentQ.hint && (
-                <p className="text-slate-500 text-sm mt-2 leading-relaxed">{currentQ.hint}</p>
-              )}
-            </div>
-
-            {/* Multiple choice */}
-            {currentQ.type !== 'text' && (
-              <div className="space-y-2.5">
-                {currentQ.options.map(opt => (
-                  <OptionButton
-                    key={opt}
-                    label={opt}
-                    selected={selectedOption === opt}
-                    onClick={() => { setSelectedOption(opt); handleAnswer(opt) }}
-                  />
-                ))}
-              </div>
-            )}
-
-            {/* Texto libre — opcional */}
-            {currentQ.type === 'text' && (
-              <div className="space-y-3">
-                <div className="relative">
-                  <textarea
-                    value={textAnswer}
-                    onChange={e => setTextAnswer(e.target.value)}
-                    placeholder={currentQ.placeholder}
-                    rows={4}
-                    maxLength={600}
-                    className="w-full rounded-2xl px-4 py-3 text-sm resize-none outline-none transition-all duration-200"
-                    style={{
-                      background: '#f8fafc',
-                      border: textAnswer.trim() ? '1px solid rgba(0,119,181,0.5)' : '1px solid rgba(0,119,181,0.15)',
-                      color: '#0d2137',
-                    }}
-                  />
-                  <span className="absolute bottom-2.5 right-3 text-xs pointer-events-none"
-                    style={{ color: textAnswer.length > 550 ? '#f59e0b' : '#334155' }}>
-                    {textAnswer.length}/600
-                  </span>
-                </div>
-                <div className="flex gap-3">
-                  <button
-                    onClick={() => handleAnswer('')}
-                    className="flex-1 font-medium py-3 rounded-2xl text-sm transition-colors"
-                    style={{ border: '1px solid rgba(0,119,181,0.15)', color: '#475569', background: '#f8fafc' }}
-                  >
-                    Omitir
-                  </button>
-                  <button
-                    onClick={() => handleAnswer(textAnswer.trim())}
-                    className="btn-glow flex-[2] font-semibold py-3 rounded-2xl text-white text-sm"
-                    style={{ background: LI_GRADIENT }}
-                  >
-                    Continuar →
-                  </button>
-                </div>
-              </div>
-            )}
-
-            {/* Back */}
-            <button onClick={handleBack} className="text-slate-600 text-sm hover:text-slate-400 transition-colors py-3 px-3 min-h-[44px]">
-              ← {qaHistory.length === 0 ? 'Volver al inicio' : 'Anterior'}
-            </button>
-          </div>
+          <QuestionnaireScreen
+            qaHistory={qaHistory}
+            currentQ={currentQ}
+            selectedOption={selectedOption}
+            setSelectedOption={setSelectedOption}
+            textAnswer={textAnswer}
+            setTextAnswer={setTextAnswer}
+            handleAnswer={handleAnswer}
+            handleBack={handleBack}
+          />
         )}
-
         {/* ── PROFILE INPUT ── */}
         {step === STEPS.PROFILE_INPUT && (
           <div className="step-transition space-y-5">
@@ -3478,43 +3392,13 @@ Generá el feedback en este JSON exacto:
 
         {/* ── LOADING ── */}
         {step === STEPS.LOADING && (
-          <div className="step-transition flex flex-col items-center justify-center min-h-[60vh] space-y-8 text-center">
-            <div className="relative w-28 h-28">
-              {/* outer glow halo */}
-              <div className="absolute inset-0 rounded-full"
-                style={{ boxShadow: '0 0 50px rgba(0,119,181,0.25), 0 0 80px rgba(14,165,233,0.1)' }} />
-              {/* track */}
-              <div className="absolute inset-3 rounded-full"
-                style={{ border: '2px solid rgba(0,119,181,0.08)' }} />
-              {/* spinner */}
-              <div className="absolute inset-3 rounded-full border-2 animate-spin"
-                style={{ borderColor: 'rgba(0,119,181,0.25)', borderTopColor: '#0ea5e9' }} />
-              {/* inner icon */}
-              <div className="absolute inset-0 flex items-center justify-center"
-                style={{ color: '#0077B5', filter: 'drop-shadow(0 0 6px rgba(0,119,181,0.4))' }}>
-                <LinkedInIcon className="w-9 h-9" />
-              </div>
-            </div>
-            <div className="space-y-3 max-w-xs">
-              <h2 className="text-2xl font-bold text-slate-900" style={{ letterSpacing: '-0.02em' }}>Analizando tu perfil...</h2>
-              <p className="text-slate-500 text-sm leading-relaxed transition-all duration-700">
-                {loadingMsgs[loadingMsgIdx % loadingMsgs.length]}
-              </p>
-            </div>
-            <div className="flex gap-2">
-              {[0, 1, 2].map(i => (
-                <div key={i} className="w-1.5 h-1.5 rounded-full animate-bounce"
-                  style={{ backgroundColor: '#0ea5e9', animationDelay: `${i * 0.15}s` }} />
-              ))}
-            </div>
-            <button
-              onClick={() => { analysisAbortRef.current?.abort(); setAnalyzing(false); setStep(STEPS.PROFILE_INPUT) }}
-              className="text-slate-500 text-xs hover:text-slate-700 transition-colors py-2 px-4 rounded-xl"
-              style={{ border: '1px solid rgba(0,119,181,0.12)', background: '#f8fafc' }}
-            >
-              Cancelar análisis
-            </button>
-          </div>
+          <LoadingScreen
+            loadingMsgs={loadingMsgs}
+            loadingMsgIdx={loadingMsgIdx}
+            analysisAbortRef={analysisAbortRef}
+            setAnalyzing={setAnalyzing}
+            setStep={setStep}
+          />
         )}
 
         {/* ── RESULTS ── */}
@@ -4667,75 +4551,13 @@ Generá el feedback en este JSON exacto:
 
         {/* ── INTERVIEW INTRO ── */}
         {step === STEPS.INTERVIEW_INTRO && (
-          <div className="step-transition text-center space-y-8">
-            <Logo />
-            <div className="space-y-5">
-              <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full text-xs font-semibold tracking-wide"
-                style={{ border: '1px solid rgba(99,102,241,0.4)', color: '#6366f1', background: 'rgba(99,102,241,0.07)' }}>
-                🎙️ &nbsp;Entrevistador IA
-              </div>
-              <h2 className="text-3xl sm:text-4xl font-bold text-slate-900 leading-tight" style={{ letterSpacing: '-0.02em' }}>
-                Simulación de<br />
-                <span style={{ background: 'linear-gradient(135deg,#6366f1,#8b5cf6)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent' }}>
-                  entrevista inicial
-                </span>
-              </h2>
-              <p className="text-slate-600 text-base max-w-sm mx-auto leading-relaxed">
-                {interviewJobContext
-                  ? `Preguntas adaptadas al puesto de ${interviewJobContext.puesto} en ${interviewJobContext.empresa}.`
-                  : '5 preguntas típicas de selección. Al final recibís feedback personalizado basado en tu perfil y tus respuestas.'}
-              </p>
-            </div>
-
-            {/* Job context badge from Kanban */}
-            {interviewJobContext && (
-              <div className="flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl mx-auto w-fit"
-                style={{ background: 'rgba(99,102,241,0.07)', border: '1px solid rgba(99,102,241,0.22)' }}>
-                <span className="text-sm">📍</span>
-                <div className="text-left">
-                  <p className="text-xs font-bold" style={{ color: '#6366f1' }}>{interviewJobContext.empresa}</p>
-                  <p className="text-xs text-slate-500">{interviewJobContext.puesto}</p>
-                </div>
-                <button onClick={() => setInterviewJobContext(null)} className="text-slate-300 hover:text-slate-500 ml-1">×</button>
-              </div>
-            )}
-
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-              {[
-                { icon: '❓', label: interviewJobContext ? 'Personalizadas' : '5 preguntas', text: interviewJobContext ? `Para ${interviewJobContext.puesto}` : 'Pre-armadas por RRHH', accent: '#6366f1' },
-                { icon: '🧠', label: 'Feedback IA', text: 'Análisis de cada respuesta', accent: '#8b5cf6' },
-                { icon: '🎯', label: 'Criterio real', text: 'Estándares de headhunter', accent: '#a855f7' },
-              ].map(item => (
-                <div key={item.label} className="rounded-2xl p-4 text-center"
-                  style={{ background: 'white', border: '1px solid rgba(0,119,181,0.15)', boxShadow: '0 2px 12px rgba(0,0,0,0.06)' }}>
-                  <div className="text-2xl mb-2">{item.icon}</div>
-                  <p className="text-xs font-semibold mb-1" style={{ color: item.accent }}>{item.label}</p>
-                  <p className="text-slate-500 text-xs leading-snug">{item.text}</p>
-                </div>
-              ))}
-            </div>
-
-            <div className="space-y-3">
-              <button
-                onClick={() => {
-                  trackEvent('entrevista_iniciada')
-                  generatePersonalizedInterviewQs()
-                  setStep(STEPS.INTERVIEW)
-                }}
-                className="btn-glow w-full text-white font-semibold py-4 rounded-2xl text-base"
-                style={{ background: 'linear-gradient(135deg,#6366f1,#8b5cf6)' }}
-              >
-                Empezar entrevista →
-              </button>
-              <button
-                onClick={() => result ? setStep(STEPS.RESULTS) : setStep(STEPS.MODE_SELECT)}
-                className="w-full font-medium py-3 rounded-2xl text-sm transition-all"
-                style={BTN_BACK_STYLE}
-              >
-                {result ? '← Volver a mis resultados' : '← Volver al menú'}
-              </button>
-            </div>
-          </div>
+          <InterviewIntroScreen
+            interviewJobContext={interviewJobContext}
+            setInterviewJobContext={setInterviewJobContext}
+            generatePersonalizedInterviewQs={generatePersonalizedInterviewQs}
+            setStep={setStep}
+            result={result}
+          />
         )}
 
         {/* ── INTERVIEW ── */}
