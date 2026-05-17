@@ -68,7 +68,7 @@ export default function App() {
     return () => window.removeEventListener('message', handleYTMessage)
   }, [])
   const [isDragging, setIsDragging] = useState(false)
-  const [inputMode, setInputMode] = useState('pdf') // 'pdf' | 'form' | 'sinperfil' | 'linkedin'
+  const [inputMode, setInputMode] = useState('pdf') // 'pdf' | 'form' | 'sinperfil'
   const [linkedinUrl, setLinkedinUrl] = useState('')
   const [urlLoading, setUrlLoading] = useState(false)
   const [urlAttempted, setUrlAttempted] = useState(false)
@@ -97,6 +97,8 @@ export default function App() {
   const [interviewError, setInterviewError] = useState('')
   const [dynamicInterviewQs, setDynamicInterviewQs] = useState(null)
   const [interviewQsLoading, setInterviewQsLoading] = useState(false)
+  const [interviewJobContext, setInterviewJobContext] = useState(null) // { empresa, puesto } from Kanban
+  const [kanbanListMode, setKanbanListMode] = useState(false)
 
   // Contacto con Ramiro
   const [leadSaving, setLeadSaving] = useState(false)
@@ -1089,7 +1091,7 @@ export default function App() {
         if (data.headline) setFormTitular(data.headline)
         if (data.summary) setFormResumen(data.summary)
         setLinkedinAuthLoading(false)
-        setInputMode('linkedin')
+        setInputMode('pdf')
         setUrlAttempted(true)
         setStep(STEPS.PROFILE_INPUT)
       })
@@ -1171,6 +1173,7 @@ export default function App() {
     setInterviewError('')
     setDynamicInterviewQs(null)
     setInterviewQsLoading(false)
+    setInterviewJobContext(null)
     setLeadSaving(false)
     setLeadSent(false)
     setShowLeadModal(false)
@@ -1185,11 +1188,12 @@ export default function App() {
     if (!profesion || !WORKER_URL) return
     setInterviewQsLoading(true)
     try {
+      const jobCtx = interviewJobContext ? ` · Empresa: ${interviewJobContext.empresa} · Puesto: ${interviewJobContext.puesto}` : ''
       const prompt = `Sos un headhunter experto generando preguntas de entrevista laboral personalizadas.
 
-Candidato: ${profesion}${industria ? ` · Industria: ${industria}` : ''}${seniority ? ` · Nivel: ${seniority}` : ''}
+Candidato: ${profesion}${industria ? ` · Industria: ${industria}` : ''}${seniority ? ` · Nivel: ${seniority}` : ''}${jobCtx}
 
-Generá exactamente 5 preguntas de entrevista adaptadas a este perfil. Deben ser relevantes para su profesión y nivel, no genéricas.
+Generá exactamente 5 preguntas de entrevista adaptadas a este perfil.${interviewJobContext ? ` Las preguntas deben ser específicas para el puesto de "${interviewJobContext.puesto}" en "${interviewJobContext.empresa}".` : ' Deben ser relevantes para su profesión y nivel, no genéricas.'}
 Formato JSON exacto: [{"pregunta": "...", "hint": "..."}]
 
 Devolvé solo el array JSON, sin markdown ni explicación.`
@@ -2839,7 +2843,7 @@ JSON:
           <div className="w-full max-w-lg rounded-3xl p-6 space-y-4 max-h-[85vh] overflow-y-auto"
             style={{ background: 'white', boxShadow: '0 25px 60px rgba(0,0,0,0.2)' }}>
             <div className="flex items-center justify-between">
-              <h2 className="text-slate-900 font-bold text-lg">Mi historial</h2>
+              <h2 className="text-slate-900 font-bold text-lg">Mis resultados</h2>
               <button onClick={() => { setShowHistorial(false); setDeletingHistorialId(null) }}
                 className="text-slate-400 hover:text-slate-600 text-2xl leading-none w-8 h-8 flex items-center justify-center">×</button>
             </div>
@@ -3146,7 +3150,7 @@ JSON:
               <button onClick={() => { loadHistorial(); setShowHistorial(true) }}
                 className="text-xs font-medium px-3 py-1.5 rounded-full"
                 style={BTN_GHOST_STYLE}>
-                📋 Historial
+                📊 Mis resultados
               </button>
             )}
             {user.es_premium && (
@@ -3179,6 +3183,36 @@ JSON:
 
       <div className="w-full max-w-xl">
 
+        {/* ── Journey progress indicator ── */}
+        {step > STEPS.WELCOME && step !== STEPS.MODE_SELECT && (() => {
+          const journeySteps = [
+            { label: 'Perfil', active: step >= STEPS.QUESTIONS && step <= STEPS.LOADING, done: !!result || step > STEPS.LOADING },
+            { label: 'Análisis', active: step === STEPS.RESULTS, done: !!result && step > STEPS.RESULTS },
+            { label: 'CV', active: false, done: !!cvFinalData },
+            { label: 'Entrevista', active: step === STEPS.INTERVIEW_INTRO || step === STEPS.INTERVIEW || step === STEPS.INTERVIEW_FEEDBACK, done: !!interviewFeedback },
+          ]
+          const hasProgress = journeySteps.some(s => s.active || s.done)
+          if (!hasProgress) return null
+          return (
+            <div className="flex items-center gap-1 mb-3 px-1">
+              {journeySteps.map((s, i) => (
+                <div key={s.label} className="flex items-center gap-1 flex-1 min-w-0">
+                  <div className="flex flex-col items-center gap-0.5 flex-1 min-w-0">
+                    <div className={`w-full h-1 rounded-full transition-all duration-500`}
+                      style={{
+                        background: s.done ? '#059669' : s.active ? LI_GRADIENT : 'rgba(0,119,181,0.12)',
+                      }} />
+                    <span className="text-[9px] font-medium truncate"
+                      style={{ color: s.done ? '#059669' : s.active ? '#0077B5' : '#cbd5e1' }}>
+                      {s.done ? '✓ ' : ''}{s.label}
+                    </span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )
+        })()}
+
         {/* ── WELCOME ── */}
         {step === STEPS.WELCOME && (
           <div className="step-transition text-center space-y-8">
@@ -3186,25 +3220,25 @@ JSON:
             <div className="space-y-5">
               <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full text-xs font-semibold tracking-wide badge-shimmer"
                 style={{ border: '1px solid rgba(0,119,181,0.4)', color: '#0077B5' }}>
-                ✦ &nbsp;Optimiza LK · Con criterio de headhunter
+                ✦ &nbsp;Centro de carrera inteligente · 100% gratis
               </div>
               <h1 className="text-4xl sm:text-5xl font-bold leading-tight tracking-tight" style={{ letterSpacing: '-0.02em' }}>
-                <span className="text-slate-900">Que los reclutadores</span><br />
+                <span className="text-slate-900">Tu próximo trabajo</span><br />
                 <span style={{ background: 'linear-gradient(135deg, #0ea5e9 0%, #6366f1 100%)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent' }}>
-                  te encuentren en LinkedIn
+                  empieza acá
                 </span>
               </h1>
               <p className="text-slate-600 text-base max-w-sm mx-auto leading-relaxed">
-                <strong className="text-slate-700">Optimiza LK</strong> analiza tu perfil con ojo de headhunter: para que aparezcas en las búsquedas correctas, pases los filtros ATS y tengas un CV moderno listo para enviar. Todo gratis.
+                Perfil LinkedIn optimizado, CV listo en segundos, simulador de entrevistas y seguimiento de postulaciones — todo con criterio de headhunter. Sin registro. Sin costo.
               </p>
             </div>
 
             <div className="grid grid-cols-2 gap-3">
               {[
-                { icon: '📬', label: 'Que te contacten', text: 'Aparecer en búsquedas de reclutadores que buscan tu perfil exacto', accent: '#0ea5e9' },
-                { icon: '✅', label: 'Pasá los filtros', text: 'ATS-compatible: que tu postulación no quede fuera por un algoritmo', accent: '#6366f1' },
-                { icon: '📄', label: 'CV listo hoy',     text: 'Un CV moderno de 1 página, listo para enviar en cualquier proceso', accent: '#0d9488' },
-                { icon: '📝', label: 'CV para cada aviso', text: 'Adaptá tu CV a cada búsqueda y generá la carta de presentación', accent: '#8b5cf6' },
+                { icon: '🎯', label: 'Diagnóstico LinkedIn', text: 'Análisis con ojo de headhunter: qué funciona y qué mejorar en tu perfil', accent: '#0ea5e9' },
+                { icon: '📄', label: 'CV en 1 página',    text: 'ATS-compatible, con foto, listo para enviar. Generado en segundos', accent: '#0d9488' },
+                { icon: '🎙️', label: 'Simulá entrevistas', text: '5 preguntas reales con feedback de IA personalizado a tu perfil', accent: '#6366f1' },
+                { icon: '📝', label: 'Adaptá para cada aviso', text: 'Pegá el aviso y la IA ajusta tu CV + genera la carta de presentación', accent: '#8b5cf6' },
               ].map(item => (
                 <div key={item.label} className="rounded-2xl p-4 text-center relative overflow-hidden"
                   style={{ background: 'white', border: '1px solid rgba(0,119,181,0.15)', boxShadow: '0 2px 12px rgba(0,0,0,0.06)' }}>
@@ -3668,7 +3702,6 @@ JSON:
                     { id: 'pdf',       label: '📄  PDF' },
                     { id: 'form',      label: '✏️  Manual' },
                     { id: 'sinperfil', label: '💡  Sin perfil' },
-                    { id: 'linkedin',  label: '🔗  LinkedIn' },
                   ].map(tab => (
                     <button
                       key={tab.id}
@@ -3684,239 +3717,6 @@ JSON:
                   ))}
                 </div>
 
-                {/* ── MODO LINKEDIN ── */}
-                {inputMode === 'linkedin' && (
-                  <div className="space-y-4">
-                    {linkedinAuthLoading && (
-                      <div className="rounded-2xl p-6 text-center space-y-2"
-                        style={{ background: 'rgba(0,119,181,0.05)', border: '1px solid rgba(0,119,181,0.15)' }}>
-                        <div className="text-2xl">⏳</div>
-                        <p className="text-slate-600 text-sm">Verificando tu cuenta de LinkedIn...</p>
-                      </div>
-                    )}
-
-                    {!linkedinAuthLoading && !linkedinOAuth && (
-                      <div className="space-y-4">
-                        <div className="rounded-2xl p-5 space-y-3"
-                          style={{ background: 'rgba(0,119,181,0.04)', border: '1px solid rgba(0,119,181,0.15)' }}>
-                          <p className="text-xs font-semibold uppercase tracking-wide" style={{ color: '#0077B5' }}>¿Por qué iniciar sesión?</p>
-                          <ul className="space-y-1.5">
-                            {[
-                              'Importa tu nombre, cargo y resumen automáticamente',
-                              'Foto de perfil incluida en el CV generado',
-                              'Sin copiar y pegar — más rápido y preciso',
-                            ].map(t => (
-                              <li key={t} className="flex items-start gap-2 text-xs text-slate-600">
-                                <span className="text-emerald-500 shrink-0 mt-0.5">✓</span>{t}
-                              </li>
-                            ))}
-                          </ul>
-                        </div>
-
-                        {linkedinAuthError && (
-                          <p className="text-red-500 text-xs rounded-xl px-4 py-2"
-                            style={{ background: 'rgba(239,68,68,0.06)', border: '1px solid rgba(239,68,68,0.2)' }}>
-                            {linkedinAuthError}
-                          </p>
-                        )}
-
-                        <button
-                          onClick={handleLinkedinLogin}
-                          className="w-full py-3.5 rounded-2xl font-semibold text-white flex items-center justify-center gap-3 transition-all btn-glow"
-                          style={{ background: '#0077B5' }}
-                        >
-                          <svg width="18" height="18" viewBox="0 0 24 24" fill="white">
-                            <path d="M20.447 20.452h-3.554v-5.569c0-1.328-.027-3.037-1.852-3.037-1.853 0-2.136 1.445-2.136 2.939v5.667H9.351V9h3.414v1.561h.046c.477-.9 1.637-1.85 3.37-1.85 3.601 0 4.267 2.37 4.267 5.455v6.286zM5.337 7.433c-1.144 0-2.063-.926-2.063-2.065 0-1.138.92-2.063 2.063-2.063 1.14 0 2.064.925 2.064 2.063 0 1.139-.925 2.065-2.064 2.065zm1.782 13.019H3.555V9h3.564v11.452zM22.225 0H1.771C.792 0 0 .774 0 1.729v20.542C0 23.227.792 24 1.771 24h20.451C23.2 24 24 23.227 24 22.271V1.729C24 .774 23.2 0 22.222 0h.003z"/>
-                          </svg>
-                          Iniciar sesión con LinkedIn
-                        </button>
-                      </div>
-                    )}
-
-                    {!linkedinAuthLoading && linkedinOAuth && (
-                      <div className="space-y-5">
-                        {/* Lo que obtuvimos */}
-                        <div className="rounded-2xl p-4 space-y-3"
-                          style={{ background: 'rgba(5,150,105,0.06)', border: '1px solid rgba(5,150,105,0.2)' }}>
-                          <div className="flex items-center gap-3">
-                            {linkedinOAuth.picture && (
-                              <img src={linkedinOAuth.picture} alt="Foto" className="w-12 h-12 rounded-full object-cover shrink-0"
-                                style={{ border: '2px solid #0077B5' }} />
-                            )}
-                            <div className="flex-1 min-w-0">
-                              <p className="font-semibold text-slate-900 text-sm truncate">{linkedinOAuth.name}</p>
-                              <p className="text-slate-500 text-xs truncate">{linkedinOAuth.email}</p>
-                            </div>
-                            <span className="text-emerald-500 shrink-0">✓ Conectado</span>
-                          </div>
-                          <div>
-                            <p className="text-xs font-semibold uppercase tracking-wide mb-2" style={{ color: '#059669' }}>
-                              Datos importados de LinkedIn
-                            </p>
-                            <div className="grid grid-cols-2 gap-1">
-                              {[
-                                ['Nombre', !!linkedinOAuth.name],
-                                ['Email', !!linkedinOAuth.email],
-                                ['Foto de perfil', !!linkedinOAuth.picture],
-                                ['Titular', !!linkedinOAuth.headline],
-                                ['Resumen / About', !!linkedinOAuth.summary],
-                              ].map(([label, ok]) => (
-                                <div key={label} className="flex items-center gap-1.5 text-xs">
-                                  <span style={{ color: ok ? '#059669' : '#94a3b8' }}>{ok ? '✓' : '○'}</span>
-                                  <span className={ok ? 'text-slate-700' : 'text-slate-400 line-through'}>{label}</span>
-                                </div>
-                              ))}
-                            </div>
-                          </div>
-                        </div>
-
-                        {/* Por qué falta lo demás */}
-                        <div className="rounded-2xl p-4"
-                          style={{ background: 'rgba(245,158,11,0.06)', border: '1px solid rgba(245,158,11,0.22)' }}>
-                          <p className="text-xs font-semibold uppercase tracking-wide mb-1.5" style={{ color: '#d97706' }}>
-                            ⚠ Por qué no se importan las experiencias
-                          </p>
-                          <p className="text-xs text-slate-600 leading-relaxed">
-                            La API de LinkedIn <strong>no permite acceder a experiencias laborales, educación ni habilidades</strong> de apps externas — es su política de privacidad. Completalos abajo para un análisis más preciso.
-                          </p>
-                        </div>
-
-                        {/* Titular */}
-                        <div>
-                          <label className="text-xs font-semibold text-slate-600 uppercase tracking-wide flex items-center gap-2 mb-1.5">
-                            Titular profesional
-                            {linkedinOAuth.headline
-                              ? <span className="text-emerald-600 normal-case font-normal tracking-normal">✓ importado</span>
-                              : <span style={{ color: '#0077B5' }}>*</span>}
-                          </label>
-                          <input value={formTitular}
-                            onChange={e => { setFormTitular(e.target.value); setFormConfirmed(false) }}
-                            placeholder="Ej: Desarrollador Full Stack | React & Node | 8 años"
-                            className="w-full rounded-xl px-4 py-3 text-sm outline-none" style={INPUT_STYLE} />
-                        </div>
-
-                        {/* Resumen */}
-                        <div>
-                          <label className="text-xs font-semibold text-slate-600 uppercase tracking-wide flex items-center gap-2 mb-1.5">
-                            Resumen / About
-                            {linkedinOAuth.summary
-                              ? <span className="text-emerald-600 normal-case font-normal tracking-normal">✓ importado</span>
-                              : <span className="text-slate-400 font-normal normal-case tracking-normal">(recomendado)</span>}
-                          </label>
-                          <textarea value={formResumen}
-                            onChange={e => { setFormResumen(e.target.value); setFormConfirmed(false) }}
-                            placeholder="Tu propuesta de valor, logros clave y especialización..."
-                            rows={3} className="w-full rounded-xl px-4 py-3 text-sm resize-none outline-none" style={INPUT_STYLE} />
-                        </div>
-
-                        {/* Experiencias */}
-                        <div>
-                          <div className="flex items-center justify-between mb-2">
-                            <label className="text-xs font-semibold text-slate-600 uppercase tracking-wide flex items-center gap-2">
-                              Experiencia profesional
-                              <span className="text-amber-500 font-normal normal-case tracking-normal">⚠ no importada</span>
-                            </label>
-                            <button
-                              onClick={() => { setFormExperiencias(p => [...p, { cargo: '', empresa: '', periodo: '', descripcion: '' }]); setFormConfirmed(false) }}
-                              className="text-xs px-3 py-1 rounded-lg" style={BTN_GHOST_STYLE}>
-                              + Agregar
-                            </button>
-                          </div>
-                          {formExperiencias.map((exp, i) => (
-                            <div key={i} className="rounded-xl p-4 space-y-2 mb-3"
-                              style={{ background: 'white', border: '1px solid rgba(0,119,181,0.12)' }}>
-                              <div className="flex items-center justify-between">
-                                <span className="text-xs text-slate-500 font-semibold">Experiencia {i + 1}</span>
-                                {formExperiencias.length > 1 && (
-                                  <button onClick={() => { setFormExperiencias(p => p.filter((_, j) => j !== i)); setFormConfirmed(false) }}
-                                    className="text-xs text-slate-400 hover:text-red-400 transition-colors">✕</button>
-                                )}
-                              </div>
-                              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                                <input value={exp.cargo}
-                                  onChange={e => { setFormExperiencias(p => p.map((x, j) => j === i ? { ...x, cargo: e.target.value } : x)); setFormConfirmed(false) }}
-                                  placeholder="Cargo" className="w-full rounded-xl px-3 py-2.5 text-sm outline-none" style={INPUT_ALT_STYLE} />
-                                <input value={exp.empresa}
-                                  onChange={e => { setFormExperiencias(p => p.map((x, j) => j === i ? { ...x, empresa: e.target.value } : x)); setFormConfirmed(false) }}
-                                  placeholder="Empresa" className="w-full rounded-xl px-3 py-2.5 text-sm outline-none" style={INPUT_ALT_STYLE} />
-                              </div>
-                              <input value={exp.periodo}
-                                onChange={e => { setFormExperiencias(p => p.map((x, j) => j === i ? { ...x, periodo: e.target.value } : x)); setFormConfirmed(false) }}
-                                placeholder="Período (Ej: Mar 2021 – Presente)" className="w-full rounded-xl px-3 py-2.5 text-sm outline-none" style={INPUT_ALT_STYLE} />
-                              <textarea value={exp.descripcion}
-                                onChange={e => { setFormExperiencias(p => p.map((x, j) => j === i ? { ...x, descripcion: e.target.value } : x)); setFormConfirmed(false) }}
-                                placeholder="Responsabilidades y logros (opcional)" rows={2}
-                                className="w-full rounded-xl px-3 py-2.5 text-sm outline-none resize-none" style={INPUT_ALT_STYLE} />
-                            </div>
-                          ))}
-                        </div>
-
-                        {/* Educación */}
-                        <div>
-                          <div className="flex items-center justify-between mb-2">
-                            <label className="text-xs font-semibold text-slate-600 uppercase tracking-wide flex items-center gap-2">
-                              Educación
-                              <span className="text-amber-500 font-normal normal-case tracking-normal">⚠ no importada</span>
-                            </label>
-                            <button
-                              onClick={() => { setFormEducacion(p => [...p, { institucion: '', titulo: '', periodo: '' }]); setFormConfirmed(false) }}
-                              className="text-xs px-3 py-1 rounded-lg" style={BTN_GHOST_STYLE}>
-                              + Agregar
-                            </button>
-                          </div>
-                          {formEducacion.map((edu, i) => (
-                            <div key={i} className="rounded-xl p-4 space-y-2 mb-3"
-                              style={{ background: 'white', border: '1px solid rgba(0,119,181,0.12)' }}>
-                              <div className="flex items-center justify-between">
-                                <span className="text-xs text-slate-500 font-semibold">Educación {i + 1}</span>
-                                {formEducacion.length > 1 && (
-                                  <button onClick={() => { setFormEducacion(p => p.filter((_, j) => j !== i)); setFormConfirmed(false) }}
-                                    className="text-xs text-slate-400 hover:text-red-400 transition-colors">✕</button>
-                                )}
-                              </div>
-                              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                                <input value={edu.institucion}
-                                  onChange={e => { setFormEducacion(p => p.map((x, j) => j === i ? { ...x, institucion: e.target.value } : x)); setFormConfirmed(false) }}
-                                  placeholder="Institución" className="w-full rounded-xl px-3 py-2.5 text-sm outline-none" style={INPUT_ALT_STYLE} />
-                                <input value={edu.titulo}
-                                  onChange={e => { setFormEducacion(p => p.map((x, j) => j === i ? { ...x, titulo: e.target.value } : x)); setFormConfirmed(false) }}
-                                  placeholder="Título / Carrera" className="w-full rounded-xl px-3 py-2.5 text-sm outline-none" style={INPUT_ALT_STYLE} />
-                              </div>
-                              <input value={edu.periodo}
-                                onChange={e => { setFormEducacion(p => p.map((x, j) => j === i ? { ...x, periodo: e.target.value } : x)); setFormConfirmed(false) }}
-                                placeholder="Período (Ej: 2015 – 2019)" className="w-full rounded-xl px-3 py-2.5 text-sm outline-none" style={INPUT_ALT_STYLE} />
-                            </div>
-                          ))}
-                        </div>
-
-                        {/* Habilidades */}
-                        <div>
-                          <label className="text-xs font-semibold text-slate-600 uppercase tracking-wide flex items-center gap-2 mb-1.5">
-                            Habilidades
-                            <span className="text-amber-500 font-normal normal-case tracking-normal">⚠ no importadas</span>
-                          </label>
-                          <input value={formHabilidades}
-                            onChange={e => { setFormHabilidades(e.target.value); setFormConfirmed(false) }}
-                            placeholder="Ej: React, Gestión de equipos, Análisis de datos, Inglés avanzado"
-                            className="w-full rounded-xl px-4 py-3 text-sm outline-none" style={INPUT_STYLE} />
-                        </div>
-
-                        <button
-                          onClick={handleLinkedinConfirm}
-                          disabled={!formTitular.trim()}
-                          className="w-full py-3.5 rounded-2xl font-semibold text-white transition-all btn-glow"
-                          style={{
-                            background: formTitular.trim() ? LI_GRADIENT : 'rgba(0,119,181,0.15)',
-                            opacity: formTitular.trim() ? 1 : 0.6,
-                            cursor: formTitular.trim() ? 'pointer' : 'not-allowed',
-                          }}
-                        >
-                          {formConfirmed ? '✅ Datos listos — podés analizar tu perfil' : 'Usar estos datos →'}
-                        </button>
-                      </div>
-                    )}
-                  </div>
-                )}
 
                 {/* ── MODO PDF ── */}
                 {inputMode === 'pdf' && (
@@ -5487,8 +5287,8 @@ JSON:
               </div>
             )}
 
-            {/* ══ BLOQUE 6 — Crecer en LinkedIn ══ */}
-            <div id="crecimiento" className="rounded-2xl overflow-hidden"
+            {/* ══ BLOQUE 6 — Crecer en LinkedIn — eliminado ══ */}
+            {false && <div id="crecimiento-removed" className="rounded-2xl overflow-hidden"
               style={{ border: '1px solid rgba(99,102,241,0.20)', background: 'white' }}>
               <button
                 className="w-full flex items-center justify-between px-5 py-4 text-left transition-all"
@@ -5610,7 +5410,7 @@ JSON:
                   )}
                 </div>
               )}
-            </div>
+            </div>}
 
             {/* ══ BLOQUE 7 — Social + Premium ══ */}
             {/* Premium upsell */}
@@ -5713,13 +5513,28 @@ JSON:
                 </span>
               </h2>
               <p className="text-slate-600 text-base max-w-sm mx-auto leading-relaxed">
-                5 preguntas típicas de selección. Al final recibís feedback personalizado basado en tu perfil y tus respuestas.
+                {interviewJobContext
+                  ? `Preguntas adaptadas al puesto de ${interviewJobContext.puesto} en ${interviewJobContext.empresa}.`
+                  : '5 preguntas típicas de selección. Al final recibís feedback personalizado basado en tu perfil y tus respuestas.'}
               </p>
             </div>
 
+            {/* Job context badge from Kanban */}
+            {interviewJobContext && (
+              <div className="flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl mx-auto w-fit"
+                style={{ background: 'rgba(99,102,241,0.07)', border: '1px solid rgba(99,102,241,0.22)' }}>
+                <span className="text-sm">📍</span>
+                <div className="text-left">
+                  <p className="text-xs font-bold" style={{ color: '#6366f1' }}>{interviewJobContext.empresa}</p>
+                  <p className="text-xs text-slate-500">{interviewJobContext.puesto}</p>
+                </div>
+                <button onClick={() => setInterviewJobContext(null)} className="text-slate-300 hover:text-slate-500 ml-1">×</button>
+              </div>
+            )}
+
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
               {[
-                { icon: '❓', label: '5 preguntas', text: 'Pre-armadas por RRHH', accent: '#6366f1' },
+                { icon: '❓', label: interviewJobContext ? 'Personalizadas' : '5 preguntas', text: interviewJobContext ? `Para ${interviewJobContext.puesto}` : 'Pre-armadas por RRHH', accent: '#6366f1' },
                 { icon: '🧠', label: 'Feedback IA', text: 'Análisis de cada respuesta', accent: '#8b5cf6' },
                 { icon: '🎯', label: 'Criterio real', text: 'Estándares de headhunter', accent: '#a855f7' },
               ].map(item => (
@@ -6363,7 +6178,12 @@ JSON:
                 {/* Header */}
                 <div className="flex items-center justify-between flex-wrap gap-2">
                   <h2 className="text-lg font-bold" style={{ color: '#0d2137' }}>📍 Mis Postulaciones</h2>
-                  <div className="flex gap-2">
+                  <div className="flex gap-2 flex-wrap">
+                    <button onClick={() => setKanbanListMode(v => !v)}
+                      className="text-xs px-3 py-1.5 rounded-lg font-medium"
+                      style={kanbanListMode ? { background: LI_GRADIENT, color: 'white' } : BTN_GHOST_STYLE}>
+                      {kanbanListMode ? '⊞ Tablero' : '☰ Lista'}
+                    </button>
                     <button onClick={() => setShowAddColumna(true)}
                       className="text-xs px-3 py-1.5 rounded-lg font-medium"
                       style={BTN_GHOST_STYLE}>
@@ -6386,8 +6206,56 @@ JSON:
                     <div className="inline-block w-6 h-6 border-2 border-blue-400 border-t-transparent rounded-full animate-spin" />
                     <p className="text-xs mt-2" style={{ color: '#64748b' }}>Cargando tablero...</p>
                   </div>
+                ) : kanbanListMode ? (
+                  /* ── Lista view (mobile-friendly) ── */
+                  <div className="space-y-2">
+                    {trackingCards.length === 0 ? (
+                      <p className="text-center text-sm py-10" style={{ color: '#94a3b8' }}>No hay postulaciones cargadas aún.</p>
+                    ) : (
+                      trackingCards.map(card => {
+                        const col = trackingColumnas.find(c => c.id === card.columna_id)
+                        return (
+                          <div key={card.id} className="rounded-xl p-3 flex items-start gap-3"
+                            style={{ background: 'white', border: '1px solid rgba(0,0,0,0.08)', boxShadow: '0 1px 4px rgba(0,0,0,0.04)' }}>
+                            {col && <div className="w-2 h-full rounded-full shrink-0 mt-1" style={{ background: col.color, minHeight: 36 }} />}
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-start justify-between gap-2">
+                                <div className="min-w-0">
+                                  <p className="text-sm font-bold truncate" style={{ color: '#0d2137' }}>{card.empresa}</p>
+                                  <p className="text-xs truncate" style={{ color: '#0077B5' }}>{card.puesto}</p>
+                                </div>
+                                <div className="flex gap-1.5 shrink-0">
+                                  {card.cv_data && <span className="text-xs px-1.5 py-0.5 rounded" style={{ background: 'rgba(0,119,181,0.08)', color: '#0077B5' }}>📄</span>}
+                                  {col && <span className="text-[10px] px-1.5 py-0.5 rounded font-medium" style={{ background: col.color + '18', color: col.color }}>{col.nombre}</span>}
+                                </div>
+                              </div>
+                              {card.fecha_aplicacion && <p className="text-[10px] mt-0.5" style={{ color: '#94a3b8' }}>{card.fecha_aplicacion}</p>}
+                              <div className="flex gap-2 mt-2">
+                                <button onClick={() => setEditCard(card)}
+                                  className="text-xs px-2.5 py-1 rounded-lg font-medium"
+                                  style={BTN_GHOST_STYLE}>
+                                  Editar
+                                </button>
+                                <button
+                                  onClick={() => {
+                                    setInterviewJobContext({ empresa: card.empresa, puesto: card.puesto })
+                                    resetInterview()
+                                    trackEvent('kanban_to_interview', { empresa: card.empresa, puesto: card.puesto })
+                                    setStep(STEPS.INTERVIEW_INTRO)
+                                  }}
+                                  className="text-xs px-2.5 py-1 rounded-lg font-medium text-white"
+                                  style={{ background: 'linear-gradient(135deg,#6366f1,#8b5cf6)' }}>
+                                  🎙️ Preparar entrevista
+                                </button>
+                              </div>
+                            </div>
+                          </div>
+                        )
+                      })
+                    )}
+                  </div>
                 ) : (
-                  /* Kanban board — horizontal scroll */
+                  /* ── Kanban board — horizontal scroll ── */
                   <div className="overflow-x-auto pb-4">
                     <div className="flex gap-4" style={{ minWidth: `${Math.max(trackingColumnas.length, 1) * 260}px` }}>
                       {trackingColumnas.map(col => {
@@ -6417,20 +6285,31 @@ JSON:
                             {/* Cards */}
                             <div className="flex flex-col gap-2 p-2 flex-1 overflow-y-auto" style={{ maxHeight: 480 }}>
                               {cards.map(card => (
-                                <div key={card.id}
-                                  onClick={() => setEditCard(card)}
-                                  className="rounded-lg p-3 cursor-pointer hover:shadow-md transition-shadow space-y-1"
+                                <div key={card.id} className="rounded-lg p-3 space-y-1"
                                   style={{ background: 'white', border: '1px solid rgba(0,0,0,0.08)' }}>
-                                  <p className="text-xs font-bold truncate" style={{ color: '#0d2137' }}>{card.empresa}</p>
-                                  <p className="text-xs truncate" style={{ color: '#0077B5' }}>{card.puesto}</p>
-                                  <p className="text-xs" style={{ color: '#94a3b8' }}>{card.fecha_aplicacion}</p>
-                                  {card.cv_data && (
-                                    <span className="inline-block text-xs px-1.5 py-0.5 rounded"
-                                      style={{ background: 'rgba(0,119,181,0.08)', color: '#0077B5' }}>📄 CV</span>
-                                  )}
-                                  {card.notas && (
-                                    <p className="text-xs line-clamp-2 italic" style={{ color: '#64748b' }}>{card.notas}</p>
-                                  )}
+                                  <div className="cursor-pointer" onClick={() => setEditCard(card)}>
+                                    <p className="text-xs font-bold truncate" style={{ color: '#0d2137' }}>{card.empresa}</p>
+                                    <p className="text-xs truncate" style={{ color: '#0077B5' }}>{card.puesto}</p>
+                                    <p className="text-xs" style={{ color: '#94a3b8' }}>{card.fecha_aplicacion}</p>
+                                    {card.cv_data && (
+                                      <span className="inline-block text-xs px-1.5 py-0.5 rounded"
+                                        style={{ background: 'rgba(0,119,181,0.08)', color: '#0077B5' }}>📄 CV</span>
+                                    )}
+                                    {card.notas && (
+                                      <p className="text-xs line-clamp-2 italic" style={{ color: '#64748b' }}>{card.notas}</p>
+                                    )}
+                                  </div>
+                                  <button
+                                    onClick={() => {
+                                      setInterviewJobContext({ empresa: card.empresa, puesto: card.puesto })
+                                      resetInterview()
+                                      trackEvent('kanban_to_interview', { empresa: card.empresa, puesto: card.puesto })
+                                      setStep(STEPS.INTERVIEW_INTRO)
+                                    }}
+                                    className="w-full text-[10px] py-1 rounded-md font-medium text-white mt-1"
+                                    style={{ background: 'linear-gradient(135deg,#6366f1,#8b5cf6)' }}>
+                                    🎙️ Preparar entrevista
+                                  </button>
                                 </div>
                               ))}
                               <button onClick={() => { setNewCardForm({ empresa: '', puesto: '', link_aviso: '', fecha_aplicacion: new Date().toISOString().slice(0, 10), notas: '' }); setShowAddCard(col.id) }}
