@@ -1445,7 +1445,7 @@ Devolvé solo el array JSON, sin markdown ni explicación.`
               { text: 'Extraé todo el contenido de texto de este perfil de LinkedIn en PDF. Incluí el titular, resumen/about, toda la experiencia laboral con fechas y descripciones, educación, skills, certificaciones, voluntariado y cualquier otra sección del perfil. Devolvé solo el texto extraído, organizado claramente.' },
             ],
           }],
-          generationConfig: { maxOutputTokens: 1800 },
+          generationConfig: { maxOutputTokens: 2500 },
         }),
       })
       if (!res.ok) {
@@ -1771,6 +1771,11 @@ Generá el feedback en este JSON exacto:
     if (showCvPreview) {
       setCvPreviewHtml(buildCvHtml(newData, profilePhoto, profilePhotoMime, cvTemplate))
     }
+    saveToHistorial('cv', newData, newData.nombre || 'CV actualizado', null)
+    if (user?.es_premium) {
+      setCvSuccess('✓ CV guardado en historial')
+      setTimeout(() => setCvSuccess(''), 3000)
+    }
   }
 
   const buildCvPromptBase = (contacto, analysisResult = null, overrideProfileText = null, overrideQaHistory = null) => {
@@ -1792,10 +1797,10 @@ Generá el feedback en este JSON exacto:
       .map(h => `- ${h.question}: ${h.answer}`)
       .join('\n')
     if (qaLines) {
-      p += `\nContexto del candidato (respuestas del cuestionario — usá para enriquecer titular y resumen):\n${qaLines}\n`
+      p += `\nInformación adicional del candidato (incorporá estos datos en titular, resumen Y bullets de la experiencia correspondiente):\n${qaLines}\n`
     }
 
-    p += `\nPerfil LinkedIn:\n${pText.slice(0, r ? 3500 : 5500)}\n\n`
+    p += `\nPerfil LinkedIn:\n${pText.slice(0, r ? 7000 : 8000)}\n\n`
     return p
   }
 
@@ -1827,7 +1832,7 @@ Generá el feedback en este JSON exacto:
         body: JSON.stringify({
           action: 'ai_generate_cv_full',
           contents: [{ parts: [{ text: userPrompt }] }],
-          generationConfig: { responseMimeType: 'application/json', maxOutputTokens: 3000 },
+          generationConfig: { responseMimeType: 'application/json', maxOutputTokens: 4000 },
         }),
       })
       if (!res.ok) {
