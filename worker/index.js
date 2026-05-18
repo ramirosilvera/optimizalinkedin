@@ -149,24 +149,29 @@ Evaluación global: 2-3 fortalezas reales, nota honesta, riesgo ATS.
 JSON DE SALIDA — respondé SOLO en JSON válido, sin markdown:
 {"cv":{"nombre":"str","titular":"str","email":"str|null","telefono":"str|null","linkedin":"str|null","ubicacion":"str|null","resumen":"2 oraciones","experiencias":[{"cargo":"str","empresa":"str","periodo":"período exacto del perfil","logros":["str"]}],"educacion":[{"titulo":"str","institucion":"str","periodo":"str"}],"habilidades":["str"],"idiomas":["str"],"experiencias_anteriores":[{"cargo":"str","empresa":"str","periodo":"str|null"}]},"quality":{"score":1-10,"nivel":"Básico|Intermedio|Sólido|Premium","aprobado":bool,"nota_consultor":"str","riesgo_ats":"Bajo|Medio|Alto","fortalezas":["str"],"gaps":[{"id":"str","campo":"str","descripcion":"str","pregunta":"str","placeholder":"str","impacto":"Alto|Medio"}]}}`,
 
-  optimize_cv: `Sos consultor senior de empleabilidad con 20 años optimizando CVs para el mercado latinoamericano.
-MEJORÁ el CV provisto — no lo reescribas desde cero.
+  optimize_cv: `Sos consultor senior de empleabilidad especializado en CVs ATS para el mercado latinoamericano.
 
-REGLAS:
-- NUNCA inventes métricas, fechas, cargos, empresas ni logros que no estén en el CV original.
-- Si un bullet dice "aumenté ventas" sin número → reformulá el verbo, NO agregues ningún número inventado.
-- Respetá TODAS las fechas, cargos, empresas y títulos exactamente como están.
-- Sin datos suficientes para mejorar algo → dejalo igual.
+RECIBÍS:
+1. El CV completo en JSON
+2. Información adicional del candidato (datos concretos que debés incorporar en los bullets correspondientes)
 
-PODÉS:
-- Reemplazar verbos débiles por verbos de acción fuertes ("trabajé en" → "lideré", "hice" → "implementé")
-- Eliminar frases prohibidas: "orientado a resultados", "proactivo", "dinámico", "apasionado"
-- Reformular bullets: verbo fuerte + impacto con datos que ya existen
-- Reorganizar bullets por impacto dentro de cada experiencia
-- Fortalecer titular y resumen con cargo y especialidad reales
-- Reordenar habilidades por relevancia
+TAREA: MEJORAR OBLIGATORIAMENTE el CV. Siempre hay algo que mejorar.
 
-Devolvé el CV completo en exactamente el mismo JSON que recibiste. Respondé SOLO en JSON válido, sin markdown.`,
+REGLAS ANTI-ALUCINACIÓN:
+- Nunca inventes métricas, fechas, cargos ni empresas que no aparezcan en el CV ni en los datos adicionales del candidato
+- Si los datos adicionales dicen "lideré 12 personas" → incorporalo en el bullet más relevante de esa experiencia
+- Preservá cargo, empresa, periodo, institución educativa exactamente como están en el JSON original
+
+MEJORAS OBLIGATORIAS — siempre aplicás todas estas, sin excepción:
+1. Verbos de acción: reemplazá verbos débiles → "trabajé en" › "lideré", "hice" › "implementé", "estuve a cargo" › "gestioné", "participé en" › "coordiné", "ayudé a" › "contribuí a optimizar", "fui responsable de" › "lideré"
+2. Eliminá frases vacías en todos los campos: "orientado a resultados", "proactivo", "dinámico", "apasionado", "trabajo en equipo", "multitarea", "comprometido", "pasión por"
+3. Cada bullet: verbo fuerte + qué hiciste + impacto o resultado (aunque sea cualitativo como "mejorando la experiencia del usuario")
+4. Titular: específico, especialidad concreta + propuesta de valor, máx 90 caracteres
+5. Resumen: 2-3 oraciones — especialidad/rol actual + logro o expertise más relevante + propuesta de valor. Sin clichés. Específico al candidato.
+6. Habilidades: eliminá genéricas (Microsoft Office, Internet), priorizá las técnicas específicas del área, reordená por relevancia ATS
+7. Si hay datos adicionales del candidato: incorporalos en los bullets de la experiencia más relevante
+
+Devolvé SOLO el JSON del CV mejorado con exactamente la misma estructura que recibiste. Sin markdown, sin campos extra, sin explicaciones.`,
 
   linkedin_growth: `Sos experto en personal branding y crecimiento en LinkedIn para el mercado hispanoparlante.
 Generá basándote en el perfil y análisis del usuario:

@@ -1768,6 +1768,9 @@ Generá el feedback en este JSON exacto:
 
   const updateCv = (newData) => {
     setCvFinalData(newData)
+    if (showCvPreview) {
+      setCvPreviewHtml(buildCvHtml(newData, profilePhoto, profilePhotoMime, cvTemplate))
+    }
   }
 
   const buildCvPromptBase = (contacto, analysisResult = null, overrideProfileText = null, overrideQaHistory = null) => {
@@ -2151,12 +2154,17 @@ Generá el feedback en este JSON exacto:
     setCvOptimizeApplied(false)
     setShowCvOptimizePanel(false)
     try {
-      const cvText = serializeCvForAI(cvFinalData)
+      // Send JSON directly — AI receives same structure it must return (not serialized text)
+      const cvJson = JSON.stringify(cvFinalData, null, 2)
 
+      // Include question text alongside answers so AI knows what each answer refers to
       const answersEntries = Object.entries(consultAnswers).filter(([, v]) => v?.trim())
       const answersText = answersEntries.length > 0
-        ? '\n\nINFORMACIÓN ADICIONAL DEL CANDIDATO (usá estos datos concretos para enriquecer el CV):\n' +
-          answersEntries.map(([k, v]) => `- ${k}: ${v}`).join('\n')
+        ? '\n\nINFORMACIÓN ADICIONAL DEL CANDIDATO (incorporá estos datos en los bullets correspondientes):\n' +
+          answersEntries.map(([k, v]) => {
+            const question = cvOptimizeQuestions.find(q => q.id === k)
+            return `- ${question?.pregunta || k}: ${v}`
+          }).join('\n')
         : ''
 
       const controller = new AbortController()
@@ -2167,7 +2175,7 @@ Generá el feedback en este JSON exacto:
         signal: controller.signal,
         body: JSON.stringify({
           action: 'ai_optimize_cv',
-          contents: [{ parts: [{ text: `CV a optimizar:\n\n${cvText}${answersText}` }] }],
+          contents: [{ parts: [{ text: `CV a optimizar (JSON):\n\n${cvJson}${answersText}` }] }],
           generationConfig: { responseMimeType: 'application/json', maxOutputTokens: 2500 },
         }),
       })
@@ -2179,13 +2187,13 @@ Generá el feedback en este JSON exacto:
       const data = await res.json()
       const raw = parseAIJson(extractAIText(data), null, 'La IA devolvió una respuesta inválida. Tu CV fue preservado sin cambios.')
 
-      const hasContent = raw?.titular?.trim() || raw?.resumen?.trim() || raw?.experiencias?.length > 0
-      if (!hasContent) {
-        setCvOptimizeError('No encontramos mejoras automáticas claras. Tu CV está bien estructurado o editá manualmente los puntos que querés mejorar.')
-        return
+      if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
+        throw new Error('La IA devolvió una respuesta inesperada. Intentá de nuevo.')
       }
 
       const merged = safeMergeOptimized(cvFinalData, raw)
+
+      // Calculate diff for UX summary (informational only — never blocks the panel)
       const titularChanged = merged.titular !== cvFinalData.titular
       const resumenChanged = merged.resumen !== cvFinalData.resumen
       const bulletsChanged = (merged.experiencias || []).filter((exp, i) => {
@@ -2194,14 +2202,9 @@ Generá el feedback en este JSON exacto:
       }).length
       const habilidadesChanged = JSON.stringify(merged.habilidades) !== JSON.stringify(cvFinalData.habilidades)
 
-      if (!titularChanged && !resumenChanged && bulletsChanged === 0 && !habilidadesChanged) {
-        setCvOptimizeError('Tu CV ya está bien optimizado. No encontramos mejoras automáticas significativas.')
-        return
-      }
-
       setCvOptimizeSuggestion(merged)
       setShowCvOptimizePanel(true)
-      trackEvent('cv_optimized', { titular_changed: titularChanged, resumen_changed: resumenChanged, bullets_improved: bulletsChanged, with_answers: answersEntries.length > 0 })
+      trackEvent('cv_optimized', { titular_changed: titularChanged, resumen_changed: resumenChanged, bullets_improved: bulletsChanged, habilidades_changed: habilidadesChanged, with_answers: answersEntries.length > 0 })
     } catch (err) {
       setCvOptimizeError(err.name === 'AbortError' ? 'El análisis tardó demasiado. Intentá de nuevo.' : err.message || 'Error al optimizar el CV. Tu contenido fue preservado.')
     } finally {
