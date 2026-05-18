@@ -9,7 +9,7 @@ export default function WelcomeScreen({ setStep, handleModeSelectJobAdapter, job
       <div className="space-y-5">
         <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full text-xs font-semibold tracking-wide badge-shimmer"
           style={{ border: '1px solid rgba(0,119,181,0.4)', color: '#0077B5' }}>
-          ✦ &nbsp;Centro de carrera inteligente · 100% gratis
+          ✦ &nbsp;Centro de Carrera Inteligente · 100% gratis
         </div>
         <h1 className="text-4xl sm:text-5xl font-bold leading-tight tracking-tight" style={{ letterSpacing: '-0.02em' }}>
           <span className="text-slate-900">Tu próximo trabajo</span><br />
@@ -18,22 +18,24 @@ export default function WelcomeScreen({ setStep, handleModeSelectJobAdapter, job
           </span>
         </h1>
         <p className="text-slate-600 text-base max-w-sm mx-auto leading-relaxed">
-          Perfil LinkedIn optimizado, CV listo en segundos, simulador de entrevistas y seguimiento de postulaciones — todo con criterio de headhunter. Sin registro. Sin costo.
+          Un proceso guiado de 7 pasos: diagnóstico LinkedIn, CV inteligente, optimización, simulador de entrevistas y más — todo con criterio de headhunter. Sin registro. Sin costo.
         </p>
       </div>
 
       <div className="grid grid-cols-2 gap-3">
         {[
-          { icon: '🎯', label: 'Diagnóstico LinkedIn', text: 'Análisis con ojo de headhunter: qué funciona y qué mejorar en tu perfil', accent: '#0ea5e9' },
-          { icon: '📄', label: 'CV en 1 página',    text: 'ATS-compatible, con foto, listo para enviar. Generado en segundos', accent: '#0d9488' },
-          { icon: '🎙️', label: 'Simulá entrevistas', text: '5 preguntas reales con feedback de IA personalizado a tu perfil', accent: '#6366f1' },
-          { icon: '📝', label: 'Adaptá para cada aviso', text: 'Pegá el aviso y la IA ajusta tu CV + genera la carta de presentación', accent: '#8b5cf6' },
+          { icon: '🎯', label: 'Diagnóstico', step: 'Paso 1', text: 'Score de empleabilidad, keywords y gaps con ojo de headhunter', accent: '#0077B5' },
+          { icon: '📄', label: 'CV Inteligente', step: 'Paso 3', text: 'ATS-compatible, con foto, listo para enviar en 30 segundos', accent: '#059669' },
+          { icon: '📝', label: 'Adaptar por oferta', step: 'Paso 5', text: 'IA ajusta tu CV + genera la carta para cada aviso específico', accent: '#6366f1' },
+          { icon: '🎙️', label: 'Simular entrevistas', step: 'Paso 6', text: '5 preguntas reales con feedback de IA personalizado a tu perfil', accent: '#d97706' },
         ].map(item => (
-          <div key={item.label} className="rounded-2xl p-4 text-center relative overflow-hidden"
+          <div key={item.label} className="rounded-2xl p-4 text-left relative overflow-hidden"
             style={{ background: 'white', border: '1px solid rgba(0,119,181,0.15)', boxShadow: '0 2px 12px rgba(0,0,0,0.06)' }}>
-            <div className="text-2xl mb-2">{item.icon}</div>
-            <p className="text-xs font-semibold mb-1" style={{ color: item.accent }}>{item.label}</p>
-            <p className="text-slate-500 text-xs leading-snug">{item.text}</p>
+            <div className="text-xl mb-1.5">{item.icon}</div>
+            <span className="text-[9px] font-bold uppercase tracking-wide px-1.5 py-0.5 rounded-full"
+              style={{ background: `rgba(0,0,0,0.05)`, color: '#64748b' }}>{item.step}</span>
+            <p className="text-xs font-semibold mt-1 mb-0.5" style={{ color: item.accent }}>{item.label}</p>
+            <p className="text-slate-500 text-[10px] leading-snug">{item.text}</p>
           </div>
         ))}
       </div>
@@ -44,7 +46,7 @@ export default function WelcomeScreen({ setStep, handleModeSelectJobAdapter, job
           className="btn-glow w-full text-white font-semibold py-4 px-8 rounded-2xl text-base"
           style={{ background: 'linear-gradient(135deg, #0077B5 0%, #0ea5e9 100%)' }}
         >
-          Obtener mi diagnóstico gratis →
+          Ver mi hoja de ruta →
         </button>
         <button
           onClick={() => { trackEvent('click_job_adapter', { location: 'hero' }); handleModeSelectJobAdapter() }}

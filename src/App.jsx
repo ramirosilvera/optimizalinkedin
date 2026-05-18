@@ -2457,6 +2457,10 @@ Generá el feedback en este JSON exacto:
             resetInterview={resetInterview}
             setStarPhase={setStarPhase}
             cvFinalData={cvFinalData}
+            result={result}
+            cvOptimizeApplied={cvOptimizeApplied}
+            interviewFeedback={interviewFeedback}
+            callGenerateCV={callGenerateCV}
           />
         )}
 

@@ -37,6 +37,18 @@ export default function ResultsScreen({
       {result && (
         <div className="rounded-2xl overflow-hidden"
           style={{ background: 'linear-gradient(135deg,#0d2137 0%,#0a3d62 60%,#0077B5 100%)', boxShadow: '0 8px 32px rgba(0,119,181,0.30)' }}>
+          <div className="px-4 pt-3 pb-0 flex items-center justify-between">
+            <span className="text-[10px] font-bold uppercase tracking-widest px-2.5 py-0.5 rounded-full"
+              style={{ background: 'rgba(255,255,255,0.12)', color: 'rgba(255,255,255,0.75)' }}>
+              ✓ Paso 1 — Diagnóstico
+            </span>
+            <button
+              onClick={() => { trackEvent('results_go_to_roadmap'); setStep(STEPS.MODE_SELECT) }}
+              className="text-[10px] font-semibold transition-opacity hover:opacity-80"
+              style={{ color: 'rgba(255,255,255,0.55)' }}>
+              Hoja de ruta →
+            </button>
+          </div>
           <div className="px-6 pt-6 pb-5 flex flex-col items-center gap-4 text-center">
             {/* Score ring — grande y central */}
             <div className="relative">
@@ -101,59 +113,81 @@ export default function ResultsScreen({
         </div>
       )}
 
-      {/* ══ BLOQUE 3 — Acciones inmediatas ══ */}
+      {/* ══ BLOQUE 3 — Siguientes pasos del journey ══ */}
       {result && (
-        <div className="space-y-2">
-          <p className="text-xs font-bold uppercase tracking-wide px-1" style={{ color: '#475569' }}>Siguiente paso</p>
-          {/* CV — acción principal prominente */}
+        <div className="space-y-2.5">
+          {/* Journey context */}
+          <div className="flex items-center justify-between px-1">
+            <p className="text-xs font-bold uppercase tracking-wide" style={{ color: '#475569' }}>Tu proceso de carrera</p>
+            <button
+              onClick={() => { trackEvent('results_go_to_roadmap'); setStep(STEPS.MODE_SELECT) }}
+              className="text-[10px] font-semibold transition-colors"
+              style={{ color: '#0077B5' }}>
+              Ver hoja de ruta →
+            </button>
+          </div>
+
+          {/* Paso 3: CV — acción principal */}
           <button
             onClick={() => { trackEvent('cv_start_from_results', { cv_stage: cvStage }); if (cvStage === 'idle') callGenerateCV({}); setStep(STEPS.CV) }}
-            className="btn-glow w-full rounded-2xl p-5 text-left transition-all hover:shadow-lg active:scale-[0.99] flex items-center gap-4"
+            className="btn-glow w-full rounded-2xl p-5 text-left transition-all hover:shadow-lg active:scale-[0.99]"
             style={{ background: 'linear-gradient(135deg,#059669,#10b981)', boxShadow: '0 4px 16px rgba(5,150,105,0.25)' }}
           >
-            <span className="text-3xl shrink-0">📄</span>
-            <div>
-              <p className="text-base font-bold text-white leading-tight">
-                {cvStage === 'done' ? 'Ver mi CV generado →' : cvStage === 'idle' ? 'Crear mi CV con estos datos →' : 'Ver CV generándose →'}
-              </p>
-              <p className="text-[12px] text-white/80 mt-0.5">ATS-compatible · 1 página · generado en segundos</p>
+            <div className="flex items-start gap-4">
+              <span className="text-3xl shrink-0 mt-0.5">📄</span>
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-2 mb-1">
+                  <span className="text-[10px] font-bold uppercase tracking-wide px-2 py-0.5 rounded-full bg-white/20 text-white/90">Paso 3</span>
+                  {cvFinalData && <span className="text-[10px] font-bold text-white/70">✓ Generado</span>}
+                </div>
+                <p className="text-base font-bold text-white leading-tight">
+                  {cvStage === 'done' ? 'Ver mi CV generado →' : cvStage === 'idle' ? 'Generar mi CV →' : 'Ver CV generándose →'}
+                </p>
+                <p className="text-[11px] text-white/75 mt-0.5">ATS-compatible · 1 página · listo para enviar</p>
+              </div>
             </div>
           </button>
-          {/* Acciones secundarias */}
-          <div className="grid grid-cols-2 gap-2">
-            <button
-              onClick={() => document.getElementById('mejorar-perfil')?.scrollIntoView({ behavior: 'smooth', block: 'start' })}
-              className="rounded-2xl p-3.5 text-left transition-all hover:shadow-md active:scale-[0.98]"
-              style={{ background: 'linear-gradient(135deg,rgba(0,119,181,0.08),rgba(14,165,233,0.05))', border: '1px solid rgba(0,119,181,0.22)' }}
-            >
-              <p className="text-lg mb-0.5">✏️</p>
-              <p className="text-xs font-bold text-slate-800 leading-tight">Optimizá el perfil</p>
-              <p className="text-[10px] text-slate-500 mt-0.5">Titular · Resumen · SEO</p>
-            </button>
+
+          {/* Paso 2: Optimizar LinkedIn */}
+          <button
+            onClick={() => { trackEvent('results_scroll_optimize'); document.getElementById('mejorar-perfil')?.scrollIntoView({ behavior: 'smooth', block: 'start' }) }}
+            className="w-full rounded-2xl p-4 text-left transition-all hover:shadow-md active:scale-[0.99] flex items-center gap-3"
+            style={{ background: 'rgba(14,165,233,0.05)', border: '1px solid rgba(14,165,233,0.22)' }}
+          >
+            <span className="text-xl shrink-0">✏️</span>
+            <div className="flex-1 min-w-0">
+              <div className="flex items-center gap-2">
+                <span className="text-[10px] font-bold uppercase tracking-wide px-2 py-0.5 rounded-full"
+                  style={{ background: 'rgba(14,165,233,0.1)', color: '#0ea5e9' }}>Paso 2</span>
+              </div>
+              <p className="text-xs font-bold text-slate-800 mt-0.5">Optimizar perfil LinkedIn</p>
+              <p className="text-[10px] text-slate-500">Titular · Resumen · Keywords ATS · ↓ más abajo</p>
+            </div>
+          </button>
+
+          {/* Acciones adicionales: entrevista + job adapter */}
+          <div className={`grid gap-2 ${cvFinalData ? 'grid-cols-2' : 'grid-cols-1'}`}>
             <button
               onClick={() => { resetInterview(); setStep(STEPS.INTERVIEW_INTRO); trackEvent('modo_entrevista_desde_resultados') }}
               className="rounded-2xl p-3.5 text-left transition-all hover:shadow-md active:scale-[0.98]"
-              style={{ background: 'linear-gradient(135deg,rgba(245,158,11,0.08),rgba(249,115,22,0.05))', border: '1px solid rgba(245,158,11,0.25)' }}
+              style={{ background: 'rgba(217,119,6,0.06)', border: '1px solid rgba(217,119,6,0.22)' }}
             >
-              <p className="text-lg mb-0.5">🎙️</p>
-              <p className="text-xs font-bold text-slate-800 leading-tight">Practicá entrevista</p>
-              <p className="text-[10px] text-slate-500 mt-0.5">5 preguntas con IA</p>
+              <p className="text-base mb-1">🎙️</p>
+              <p className="text-xs font-bold text-slate-800 leading-tight">Simular entrevista</p>
+              <p className="text-[10px] text-slate-500 mt-0.5">5 preguntas con IA · Paso 6</p>
             </button>
+            {cvFinalData && (
+              <button
+                onClick={() => { setJobCvForAdapter(cvFinalData); setJobPosting(''); setJobResult(null); setJobError(''); setShowJobModal(true); trackEvent('job_adapter_from_results') }}
+                className="rounded-2xl p-3.5 text-left transition-all hover:shadow-md active:scale-[0.98]"
+                style={{ background: 'rgba(99,102,241,0.06)', border: '1px solid rgba(99,102,241,0.2)' }}
+              >
+                <p className="text-base mb-1">📝</p>
+                <p className="text-xs font-bold text-slate-800 leading-tight">Adaptar por oferta</p>
+                <p className="text-[10px] text-slate-500 mt-0.5">CV + carta · Paso 5</p>
+              </button>
+            )}
           </div>
-          {/* Job Adapter — aparece sólo cuando ya hay CV generado */}
-          {cvFinalData && (
-            <button
-              onClick={() => { setJobCvForAdapter(cvFinalData); setJobPosting(''); setJobResult(null); setJobError(''); setShowJobModal(true); trackEvent('job_adapter_from_results') }}
-              className="w-full rounded-2xl p-3.5 text-left transition-all hover:shadow-md active:scale-[0.98] flex items-center gap-3"
-              style={{ background: 'rgba(99,102,241,0.06)', border: '1px solid rgba(99,102,241,0.22)' }}
-            >
-              <span className="text-lg shrink-0">📝</span>
-              <div>
-                <p className="text-xs font-bold text-slate-800 leading-tight">Adaptar CV para una oferta</p>
-                <p className="text-[10px] text-slate-500 mt-0.5">Pegá el aviso · IA lo ajusta + carta de presentación</p>
-              </div>
-            </button>
-          )}
         </div>
       )}
 
@@ -165,7 +199,9 @@ export default function ResultsScreen({
           style={{ border: '1px solid rgba(0,119,181,0.18)', background: 'white' }}>
           <div className="px-5 py-4 border-b flex items-center gap-2"
             style={{ borderColor: 'rgba(0,119,181,0.10)', background: 'rgba(0,119,181,0.03)' }}>
-            <p className="text-sm font-bold text-slate-800">✏️ Mejorá tu perfil LinkedIn</p>
+            <span className="text-[10px] font-bold uppercase tracking-wide px-2 py-0.5 rounded-full shrink-0"
+              style={{ background: 'rgba(14,165,233,0.12)', color: '#0ea5e9' }}>Paso 2</span>
+            <p className="text-sm font-bold text-slate-800">Optimizar perfil LinkedIn</p>
           </div>
           <div className="px-5 py-4 space-y-5">
 
