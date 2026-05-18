@@ -35,6 +35,7 @@ import StarTrainingScreen from './components/screens/StarTrainingScreen'
 import TrackingScreen from './components/screens/TrackingScreen'
 import ProfileInputScreen from './components/screens/ProfileInputScreen'
 import ResultsScreen from './components/screens/ResultsScreen'
+import CvScreen from './components/screens/CvScreen'
 import AuthModal from './components/modals/AuthModal'
 import PremiumModal from './components/modals/PremiumModal'
 import ManageSubscriptionModal from './components/modals/ManageSubscriptionModal'
@@ -642,7 +643,7 @@ export default function App() {
         setCvPreviewHtml(html)
         setCvStage('done')
         setShowCvPreview(true)
-        setStep(STEPS.RESULTS)
+        setStep(STEPS.CV)
         break
       }
       case 'entrevista':
@@ -2408,8 +2409,8 @@ Generá el feedback en este JSON exacto:
         {step > STEPS.WELCOME && step !== STEPS.MODE_SELECT && (() => {
           const journeySteps = [
             { label: 'Perfil', active: step >= STEPS.QUESTIONS && step <= STEPS.LOADING, done: !!result || step > STEPS.LOADING },
-            { label: 'Análisis', active: step === STEPS.RESULTS, done: !!result && step > STEPS.RESULTS },
-            { label: 'CV', active: false, done: !!cvFinalData },
+            { label: 'Análisis', active: step === STEPS.RESULTS, done: !!result && (step > STEPS.RESULTS || step === STEPS.CV) },
+            { label: 'CV', active: step === STEPS.CV, done: !!cvFinalData && step !== STEPS.CV },
             { label: 'Entrevista', active: step === STEPS.INTERVIEW_INTRO || step === STEPS.INTERVIEW || step === STEPS.INTERVIEW_FEEDBACK, done: !!interviewFeedback },
           ]
           const hasProgress = journeySteps.some(s => s.active || s.done)
@@ -2549,8 +2550,40 @@ Generá el feedback en este JSON exacto:
         )}
 
         {/* ── RESULTS ── */}
-        {step === STEPS.RESULTS && (result || (cvStage === 'done' && cvFinalData)) && (
+        {step === STEPS.RESULTS && result && (
           <ResultsScreen
+            result={result}
+            cvStage={cvStage}
+            cvFinalData={cvFinalData}
+            callGenerateCV={callGenerateCV}
+            setShowLeadModal={setShowLeadModal}
+            user={user}
+            setShowPremiumModal={setShowPremiumModal}
+            subscriptionLoading={subscriptionLoading}
+            setStep={setStep}
+            resetInterview={resetInterview}
+            setJobCvForAdapter={setJobCvForAdapter}
+            setJobPosting={setJobPosting}
+            setJobResult={setJobResult}
+            setJobError={setJobError}
+            setShowJobModal={setShowJobModal}
+            showGrowthSection={showGrowthSection}
+            setShowGrowthSection={setShowGrowthSection}
+            linkedinGrowth={linkedinGrowth}
+            setLinkedinGrowth={setLinkedinGrowth}
+            seguidores={seguidores}
+            setSeguidores={setSeguidores}
+            callLinkedinGrowth={callLinkedinGrowth}
+            growthLoading={growthLoading}
+            growthError={growthError}
+            setGrowthError={setGrowthError}
+            reset={reset}
+          />
+        )}
+
+        {/* ── CV ── */}
+        {step === STEPS.CV && (
+          <CvScreen
             result={result}
             cvStage={cvStage}
             setCvStage={setCvStage}
@@ -2609,34 +2642,15 @@ Generá el feedback en este JSON exacto:
             waitlistSent={waitlistSent}
             waitlistLoading={waitlistLoading}
             handleWaitlist={handleWaitlist}
-            leadSaving={leadSaving}
-            leadSent={leadSent}
-            setShowLeadModal={setShowLeadModal}
-            user={user}
-            setShowPremiumModal={setShowPremiumModal}
-            subscriptionLoading={subscriptionLoading}
             downloadCvCanvas={downloadCvCanvas}
             saveCvPdf={saveCvPdf}
             cvCanvasLoading={cvCanvasLoading}
             setStep={setStep}
-            setShowStarModal={setShowStarModal}
-            resetInterview={resetInterview}
             setJobCvForAdapter={setJobCvForAdapter}
             setJobPosting={setJobPosting}
             setJobResult={setJobResult}
             setJobError={setJobError}
             setShowJobModal={setShowJobModal}
-            showGrowthSection={showGrowthSection}
-            setShowGrowthSection={setShowGrowthSection}
-            linkedinGrowth={linkedinGrowth}
-            setLinkedinGrowth={setLinkedinGrowth}
-            seguidores={seguidores}
-            setSeguidores={setSeguidores}
-            callLinkedinGrowth={callLinkedinGrowth}
-            growthLoading={growthLoading}
-            growthError={growthError}
-            setGrowthError={setGrowthError}
-            reset={reset}
           />
         )}
 

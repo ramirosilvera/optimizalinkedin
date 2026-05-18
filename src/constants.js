@@ -65,7 +65,7 @@ export const setGaUser = (user) => {
 export const STEPS = {
   WELCOME: 0, QUESTIONS: 1, PROFILE_INPUT: 2, LOADING: 3, RESULTS: 4,
   INTERVIEW_INTRO: 5, INTERVIEW: 6, INTERVIEW_FEEDBACK: 7, STAR_TRAINING: 8,
-  MODE_SELECT: 9, TRACKING: 10,
+  MODE_SELECT: 9, TRACKING: 10, CV: 11,
 }
 
 export const LI_GRADIENT   = 'linear-gradient(135deg,#0077B5,#0ea5e9)'
