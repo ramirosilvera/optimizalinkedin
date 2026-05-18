@@ -34,7 +34,9 @@ export default function CvScreen({
   setProfilePhotoPreview,
   handleCvPhotoUpload,
   openCvPreview,
-  saveCvPdf,
+  exportCvPdf,
+  cvExportState,
+  cvExportMsg,
   cvEditing,
   setCvEditing,
   updateCv,
@@ -584,27 +586,24 @@ export default function CvScreen({
                 <button
                   onClick={openCvPreview}
                   className="flex-1 py-3 rounded-xl text-sm font-semibold transition-all"
-                  style={{ background: 'rgba(0,119,181,0.08)', border: '1px solid rgba(0,119,181,0.25)', color: '#0077B5' }}
-                >
+                  style={{ background: 'rgba(0,119,181,0.08)', border: '1px solid rgba(0,119,181,0.25)', color: '#0077B5' }}>
                   👁 Vista previa
                 </button>
-                {/iPhone|iPad|iPod|Android/i.test(navigator.userAgent) ? (
-                  <div className="flex-1 rounded-xl py-3 text-xs text-center flex items-center justify-center"
-                    style={{ background: 'rgba(0,119,181,0.05)', border: '1px solid rgba(0,119,181,0.14)', color: '#64748b' }}>
-                    PDF en computadora
-                  </div>
-                ) : (
-                  <button
-                    onClick={saveCvPdf}
-                    className="flex-1 py-3 rounded-xl text-sm font-semibold text-white transition-all"
-                    style={{ background: 'linear-gradient(135deg,#059669,#10b981)' }}
-                  >
-                    📥 Guardar PDF
-                  </button>
-                )}
+                <button
+                  onClick={exportCvPdf}
+                  disabled={cvExportState === 'loading'}
+                  className="flex-1 py-3 rounded-xl text-sm font-semibold text-white transition-all flex items-center justify-center gap-2"
+                  style={{ background: cvExportState === 'loading' ? 'rgba(5,150,105,0.45)' : 'linear-gradient(135deg,#059669,#10b981)' }}>
+                  {cvExportState === 'loading'
+                    ? <><span className="w-3.5 h-3.5 rounded-full border-2 border-white border-t-transparent animate-spin" /><span>Preparando…</span></>
+                    : '📥 Descargar PDF'}
+                </button>
               </div>
-              {!(/iPhone|iPad|iPod|Android/i.test(navigator.userAgent)) && (
-                <p className="text-center text-xs text-slate-400">Se abre diálogo de impresión → elegí <strong>Guardar como PDF</strong></p>
+              {cvExportMsg && (
+                <p className="text-center text-xs leading-relaxed"
+                  style={{ color: cvExportState === 'error' ? '#ef4444' : '#059669' }}>
+                  {cvExportMsg}
+                </p>
               )}
               {cvSuccess && <p className="text-xs text-center" style={{ color: '#059669' }}>✓ {cvSuccess}</p>}
             </div>
