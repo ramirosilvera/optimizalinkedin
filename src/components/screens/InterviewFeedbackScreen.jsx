@@ -121,16 +121,16 @@ export default function InterviewFeedbackScreen({ interviewLoading, rateLimitEve
           )}
 
           {!user?.es_premium && (
-            <div className="rounded-2xl p-4 space-y-2.5"
-              style={{ background: 'rgba(0,119,181,0.04)', border: '1px solid rgba(0,119,181,0.15)' }}>
-              <p className="text-slate-700 text-sm font-semibold">⭐ Mejorá tus resultados con Premium</p>
-              <p className="text-slate-500 text-xs leading-snug">
-                Guardá este informe, accedé a tu historial de simulaciones y practicá sin límites. 7 días gratis, luego $3.000/mes.
-              </p>
+            <div className="rounded-2xl px-4 py-3 flex items-center justify-between gap-3"
+              style={{ background: 'rgba(99,102,241,0.05)', border: '1px solid rgba(99,102,241,0.18)' }}>
+              <div className="min-w-0">
+                <p className="text-xs font-semibold text-slate-700">Tu entrevista quedó lista</p>
+                <p className="text-[11px] text-slate-400 mt-0.5">Guardala con Premium — 7 días gratis</p>
+              </div>
               <button onClick={() => setShowPremiumModal(true)}
-                className="px-4 py-2 rounded-xl text-white text-xs font-semibold"
-                style={{ background: LI_GRADIENT }}>
-                Desbloqueá Premium
+                className="shrink-0 text-xs font-semibold px-3 py-1.5 rounded-xl text-white"
+                style={{ background: 'linear-gradient(135deg,#6366f1,#8b5cf6)' }}>
+                Guardar →
               </button>
             </div>
           )}
@@ -211,25 +211,6 @@ export default function InterviewFeedbackScreen({ interviewLoading, rateLimitEve
               )}
             </button>
           </div>
-
-          {/* Premium banner */}
-          {!user?.es_premium && (
-            <div className="rounded-2xl p-4 space-y-2.5"
-              style={{ background: 'rgba(0,119,181,0.04)', border: '1px solid rgba(0,119,181,0.15)' }}>
-              <div>
-                <p className="text-slate-700 text-sm font-semibold">💾 ¿Querés guardar esta entrevista?</p>
-                <p className="text-slate-500 text-xs mt-0.5 leading-snug">
-                  Podés seguir usando la app sin guardar nada. Si querés acceder a tu historial después, Premium incluye <strong>7 días gratis</strong> — luego $3.000/mes.
-                </p>
-              </div>
-              <button onClick={() => setShowPremiumModal(true)}
-                disabled={subscriptionLoading}
-                className="px-4 py-2 rounded-xl text-white text-xs font-semibold"
-                style={{ background: LI_GRADIENT, opacity: subscriptionLoading ? 0.7 : 1 }}>
-                {subscriptionLoading ? '...' : 'Probar 7 días gratis'}
-              </button>
-            </div>
-          )}
 
           {/* ── Sugerencia STAR ── */}
           <div className="rounded-2xl p-5 space-y-3"

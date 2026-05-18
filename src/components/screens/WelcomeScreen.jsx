@@ -2,7 +2,7 @@ import { STEPS, LI_GRADIENT, RAMIRO_LINKEDIN_URL, trackEvent, BTN_GHOST_STYLE } 
 import { Logo, LinkedInIcon } from '../ui'
 import CommentsSection from '../CommentsSection'
 
-export default function WelcomeScreen({ setStep, handleModeSelectJobAdapter, jobAdapterCheckLoading, jobAdapterNoCv, setJobAdapterNoCv }) {
+export default function WelcomeScreen({ setStep, handleModeSelectJobAdapter, jobAdapterCheckLoading, jobAdapterNoCv, setJobAdapterNoCv, result }) {
   return (
     <div className="step-transition text-center space-y-8">
       <Logo />
@@ -42,11 +42,11 @@ export default function WelcomeScreen({ setStep, handleModeSelectJobAdapter, job
 
       <div className="space-y-3">
         <button
-          onClick={() => { trackEvent('click_empezar_analisis', { location: 'hero' }); setStep(STEPS.QUESTIONS) }}
+          onClick={() => { trackEvent('click_empezar_analisis', { location: 'hero', returning: !!result }); setStep(result ? STEPS.RESULTS : STEPS.QUESTIONS) }}
           className="btn-glow w-full text-white font-semibold py-4 px-8 rounded-2xl text-base"
           style={{ background: 'linear-gradient(135deg, #0077B5 0%, #0ea5e9 100%)' }}
         >
-          Empezar mi diagnóstico gratis →
+          {result ? `Ver mi diagnóstico (${result.puntaje_general ?? '—'}/10) →` : 'Empezar mi diagnóstico gratis →'}
         </button>
         <button
           onClick={() => { trackEvent('click_job_adapter', { location: 'hero' }); handleModeSelectJobAdapter() }}

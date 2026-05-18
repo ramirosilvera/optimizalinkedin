@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import { STEPS, LI_GRADIENT, BTN_BACK_STYLE, RAMIRO_LINKEDIN_URL, COMPANY_LINKEDIN_URL, trackEvent } from '../../constants'
 import { Logo, Spinner, LinkedInIcon, ScoreRing, ResultCard, BeforeAfter, CopyButton } from '../ui'
 
@@ -29,6 +30,8 @@ export default function ResultsScreen({
   setGrowthError,
   reset,
 }) {
+  const [showFullOptimize, setShowFullOptimize] = useState(false)
+
   return (
     <div className="step-transition space-y-5">
       <Logo />
@@ -231,68 +234,83 @@ export default function ResultsScreen({
               </div>
             )}
 
-            {/* Titular antes/después */}
-            <div>
-              <p className="text-xs font-bold uppercase tracking-wide mb-2 text-slate-500">Titular propuesto</p>
-              <BeforeAfter label="Titular" before={result.titular_actual} after={result.titular_propuesto} />
-            </div>
+            {/* Accordion toggle */}
+            <button
+              onClick={() => { setShowFullOptimize(v => !v); trackEvent('results_optimize_accordion', { open: !showFullOptimize }) }}
+              className="w-full flex items-center justify-between py-2 text-left"
+            >
+              <span className="text-xs font-semibold text-slate-500">
+                {showFullOptimize ? 'Ocultar optimizaciones' : 'Ver titular · resumen · keywords · recomendaciones'}
+              </span>
+              <span className="text-slate-400 text-sm ml-2">{showFullOptimize ? '▲' : '▼'}</span>
+            </button>
 
-            {/* Resumen antes/después */}
-            <div>
-              <p className="text-xs font-bold uppercase tracking-wide mb-2 text-slate-500">Resumen / About</p>
-              <BeforeAfter label="Resumen" before={result.resumen_actual} after={result.resumen_propuesto} />
-            </div>
-
-            {/* SEO keywords */}
-            {result.palabras_clave_sugeridas?.length > 0 && (
-              <div>
-                <p className="text-xs font-bold uppercase tracking-wide mb-2 text-slate-500">Palabras clave SEO</p>
-                <div className="flex flex-wrap gap-2">
-                  {result.palabras_clave_sugeridas.map((kw, i) => (
-                    <span key={i} className="text-xs px-3 py-1 rounded-full font-medium"
-                      style={{ background: 'rgba(0,119,181,0.07)', border: '1px solid rgba(0,119,181,0.22)', color: '#0077B5' }}>
-                      {kw}
-                    </span>
-                  ))}
+            {showFullOptimize && (
+              <div className="space-y-5 pt-1">
+                {/* Titular antes/después */}
+                <div>
+                  <p className="text-xs font-bold uppercase tracking-wide mb-2 text-slate-500">Titular propuesto</p>
+                  <BeforeAfter label="Titular" before={result.titular_actual} after={result.titular_propuesto} />
                 </div>
-                <p className="text-slate-400 text-[11px] mt-2">Incluílas en tu titular, resumen y experiencias.</p>
-              </div>
-            )}
 
-            {/* Foto de perfil */}
-            {result.analisis_foto && (
-              <div>
-                <p className="text-xs font-bold uppercase tracking-wide mb-1.5 text-slate-500">📸 Foto de perfil</p>
-                <p className="text-slate-600 text-sm leading-relaxed">{result.analisis_foto}</p>
-              </div>
-            )}
+                {/* Resumen antes/después */}
+                <div>
+                  <p className="text-xs font-bold uppercase tracking-wide mb-2 text-slate-500">Resumen / About</p>
+                  <BeforeAfter label="Resumen" before={result.resumen_actual} after={result.resumen_propuesto} />
+                </div>
 
-            {/* Recomendaciones */}
-            {(result.recomendaciones || []).length > 0 && (
-              <div>
-                <p className="text-xs font-bold uppercase tracking-wide mb-3 text-slate-500">Recomendaciones</p>
-                <div className="space-y-3">
-                  {(result.recomendaciones || []).map((rec, i) => (
-                    <div key={i} className="rounded-xl p-3.5 flex gap-3 items-start"
-                      style={{ background: '#f8fafc', border: '1px solid rgba(0,119,181,0.10)' }}>
-                      <span className="w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold shrink-0 mt-0.5"
-                        style={{ background: LI_GRADIENT, color: '#fff' }}>{i + 1}</span>
-                      <div>
-                        <p className="text-slate-900 font-semibold text-sm mb-0.5">{rec.titulo}</p>
-                        <p className="text-slate-600 text-sm leading-relaxed">{rec.descripcion}</p>
-                      </div>
+                {/* SEO keywords */}
+                {result.palabras_clave_sugeridas?.length > 0 && (
+                  <div>
+                    <p className="text-xs font-bold uppercase tracking-wide mb-2 text-slate-500">Palabras clave SEO</p>
+                    <div className="flex flex-wrap gap-2">
+                      {result.palabras_clave_sugeridas.map((kw, i) => (
+                        <span key={i} className="text-xs px-3 py-1 rounded-full font-medium"
+                          style={{ background: 'rgba(0,119,181,0.07)', border: '1px solid rgba(0,119,181,0.22)', color: '#0077B5' }}>
+                          {kw}
+                        </span>
+                      ))}
                     </div>
-                  ))}
-                </div>
-              </div>
-            )}
+                    <p className="text-slate-400 text-[11px] mt-2">Incluílas en tu titular, resumen y experiencias.</p>
+                  </div>
+                )}
 
-            {/* Estrategia de contenido */}
-            {result.estrategia_contenido && (
-              <div className="rounded-xl p-4"
-                style={{ background: 'rgba(0,119,181,0.05)', border: '1px solid rgba(0,119,181,0.18)' }}>
-                <p className="text-[10px] font-bold uppercase tracking-wide mb-1.5" style={{ color: '#0077B5' }}>📣 Estrategia de contenido</p>
-                <p className="text-slate-700 text-sm leading-relaxed">{result.estrategia_contenido}</p>
+                {/* Foto de perfil */}
+                {result.analisis_foto && (
+                  <div>
+                    <p className="text-xs font-bold uppercase tracking-wide mb-1.5 text-slate-500">📸 Foto de perfil</p>
+                    <p className="text-slate-600 text-sm leading-relaxed">{result.analisis_foto}</p>
+                  </div>
+                )}
+
+                {/* Recomendaciones */}
+                {(result.recomendaciones || []).length > 0 && (
+                  <div>
+                    <p className="text-xs font-bold uppercase tracking-wide mb-3 text-slate-500">Recomendaciones</p>
+                    <div className="space-y-3">
+                      {(result.recomendaciones || []).map((rec, i) => (
+                        <div key={i} className="rounded-xl p-3.5 flex gap-3 items-start"
+                          style={{ background: '#f8fafc', border: '1px solid rgba(0,119,181,0.10)' }}>
+                          <span className="w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold shrink-0 mt-0.5"
+                            style={{ background: LI_GRADIENT, color: '#fff' }}>{i + 1}</span>
+                          <div>
+                            <p className="text-slate-900 font-semibold text-sm mb-0.5">{rec.titulo}</p>
+                            <p className="text-slate-600 text-sm leading-relaxed">{rec.descripcion}</p>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Estrategia de contenido */}
+                {result.estrategia_contenido && (
+                  <div className="rounded-xl p-4"
+                    style={{ background: 'rgba(0,119,181,0.05)', border: '1px solid rgba(0,119,181,0.18)' }}>
+                    <p className="text-[10px] font-bold uppercase tracking-wide mb-1.5" style={{ color: '#0077B5' }}>📣 Estrategia de contenido</p>
+                    <p className="text-slate-700 text-sm leading-relaxed">{result.estrategia_contenido}</p>
+                  </div>
+                )}
               </div>
             )}
           </div>

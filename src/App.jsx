@@ -2443,6 +2443,7 @@ Generá el feedback en este JSON exacto:
             jobAdapterCheckLoading={jobAdapterCheckLoading}
             jobAdapterNoCv={jobAdapterNoCv}
             setJobAdapterNoCv={setJobAdapterNoCv}
+            result={result}
           />
         )}
 
