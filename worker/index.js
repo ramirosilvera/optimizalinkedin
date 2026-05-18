@@ -242,22 +242,33 @@ async function callGeminiApi(env, geminiBody, corsHeaders, { feature = 'unknown'
   } catch (err) {
     clearTimeout(timeoutId)
     const isTimeout = err.name === 'AbortError'
-    logAiUsage(env, { feature, userId, durationMs: Date.now() - startMs, statusCode: 504, errorType: isTimeout ? 'timeout' : 'network' })
+    logAiUsage(env, { type: 'failure', feature, userId, durationMs: Date.now() - startMs, statusCode: 504, errorType: isTimeout ? 'timeout' : 'network' })
     const msg = isTimeout ? 'El servicio de IA tardó demasiado. Intentá de nuevo.' : 'Error de conexión con el servicio de IA.'
     return new Response(JSON.stringify({ error: { message: msg } }), { status: 504, headers: corsHeaders })
   }
 
   clearTimeout(timeoutId)
   const data = await res.json().catch(() => ({ error: { message: 'Respuesta inválida del servicio de IA.' } }))
-  logAiUsage(env, {
-    feature,
-    userId,
-    inputTokens: data.usageMetadata?.promptTokenCount ?? null,
-    outputTokens: data.usageMetadata?.candidatesTokenCount ?? null,
-    durationMs: Date.now() - startMs,
-    statusCode: res.status,
-    errorType: res.status !== 200 ? `http_${res.status}` : null,
-  })
+  if (res.status === 200) {
+    logAiUsage(env, {
+      type: 'success',
+      feature,
+      userId,
+      inputTokens:  data.usageMetadata?.promptTokenCount    ?? null,
+      outputTokens: data.usageMetadata?.candidatesTokenCount ?? null,
+      durationMs:   Date.now() - startMs,
+      statusCode:   200,
+    })
+  } else {
+    logAiUsage(env, {
+      type: 'failure',
+      feature,
+      userId,
+      durationMs:  Date.now() - startMs,
+      statusCode:  res.status,
+      errorType:   `http_${res.status}`,
+    })
+  }
   return new Response(JSON.stringify(data), { status: res.status, headers: corsHeaders })
 }
 
@@ -312,32 +323,33 @@ async function logAdminAction(env, adminId, action, targetType, targetId, detail
 // ── AI usage log (fire-and-forget) ───────────────────────────────────────────
 
 /**
- * HTTP response received — tokens present when Gemini includes usageMetadata
- * @typedef {{ feature: string, userId: string|null, inputTokens: number|null, outputTokens: number|null, durationMs: number, statusCode: number, errorType: string|null }} AiUsageResponseEvent
+ * HTTP 200 — Gemini responded. Tokens present if usageMetadata was included.
+ * @typedef {{ type: 'success', feature: string, userId: string|null, inputTokens: number|null, outputTokens: number|null, durationMs: number, statusCode: number }} AiUsageSuccessEvent
  */
 /**
- * Network failure / timeout / abort — request never completed, no token data exists
- * @typedef {{ feature: string, userId: string|null, durationMs: number, statusCode: number, errorType: string }} AiUsageNetworkEvent
+ * Any failure: HTTP 4xx/5xx, network error, timeout, abort.
+ * Token fields are semantically absent — the concept doesn't apply.
+ * @typedef {{ type: 'failure', feature: string, userId: string|null, durationMs: number, statusCode: number, errorType: string }} AiUsageFailureEvent
  */
 /**
- * @typedef {AiUsageResponseEvent | AiUsageNetworkEvent} AiUsageEvent
+ * @typedef {AiUsageSuccessEvent | AiUsageFailureEvent} AiUsageEvent
  */
 
 /**
  * @param {*} env
- * @param {AiUsageEvent} params
+ * @param {AiUsageEvent} event
  */
-function logAiUsage(env, { feature, userId, inputTokens, outputTokens, durationMs, statusCode, errorType }) {
+function logAiUsage(env, event) {
   if (!env.SUPABASE_SERVICE_ROLE_KEY || !env.SUPABASE_URL) return
   const row = {
-    user_id: userId ?? null,
-    feature,
+    user_id: event.userId ?? null,
+    feature: event.feature,
     model: DEFAULT_MODEL,
-    input_tokens: inputTokens ?? null,
-    output_tokens: outputTokens ?? null,
-    duration_ms: durationMs ?? null,
-    status_code: statusCode ?? null,
-    error_type: errorType ?? null,
+    input_tokens:  event.type === 'success' ? (event.inputTokens  ?? null) : null,
+    output_tokens: event.type === 'success' ? (event.outputTokens ?? null) : null,
+    duration_ms:   event.durationMs  ?? null,
+    status_code:   event.statusCode  ?? null,
+    error_type:    event.type === 'failure' ? event.errorType : null,
   }
   fetch(`${env.SUPABASE_URL}/rest/v1/ai_usage_logs`, {
     method: 'POST',
