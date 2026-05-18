@@ -147,6 +147,7 @@ export default function App() {
 
   const [cvPreviewHtml, setCvPreviewHtml] = useState('')
   const [showCvPreview, setShowCvPreview] = useState(false)
+  const [cvVariant, setCvVariant] = useState(null) // null=base | 'optimizado' | { empresa, cargo }
   const [cvExportState, setCvExportState] = useState('idle') // 'idle' | 'loading' | 'done' | 'error'
   const [cvExportMsg, setCvExportMsg] = useState('')
   const [cvOptimizing, setCvOptimizing] = useState(false)
@@ -1807,8 +1808,9 @@ Generá el feedback en este JSON exacto:
 
   // ── CV de 1 página ──────────────────────────────────────────
 
-  const updateCv = (newData) => {
+  const updateCv = (newData, variant = undefined) => {
     setCvFinalData(newData)
+    if (variant !== undefined) setCvVariant(variant)
     if (showCvPreview) {
       setCvPreviewHtml(buildCvHtml(newData, profilePhoto, profilePhotoMime, cvTemplate))
     }
@@ -1895,6 +1897,7 @@ Generá el feedback en este JSON exacto:
       const hasHighImpactGaps = quality?.gaps?.some(g => g.impacto === 'Alto')
       if (!quality || quality.aprobado || !hasHighImpactGaps) {
         setCvFinalData(cv)
+        setCvVariant(null)
         setCvStage('done')
         setCvPreviewHtml(buildCvHtml(cv, profilePhoto, profilePhotoMime, cvTemplate))
         setShowCvPreview(true)
@@ -1951,6 +1954,7 @@ Generá el feedback en este JSON exacto:
       const data = await res.json()
       const cv = parseAIJson(extractAIText(data), AI_DEFAULTS.generate_cv, 'No se pudo regenerar el CV. Intentá de nuevo.')
       setCvFinalData(cv)
+      setCvVariant(null)
       setCvStage('done')
       setCvPreviewHtml(buildCvHtml(cv, profilePhoto, profilePhotoMime, cvTemplate))
       setShowCvPreview(true)
@@ -1978,6 +1982,19 @@ Generá el feedback en este JSON exacto:
     setCvPreviewHtml(html)
     setShowCvPreview(true)
     trackEvent('cv_preview_open')
+  }
+
+  // ── Abre preview con el CV adaptado (cierra el modal del job adapter) ───────
+  const openAdaptedCvPreview = (adaptedCv, empresa, cargo) => {
+    if (!adaptedCv) return
+    setCvFinalData(adaptedCv)
+    setCvVariant({ empresa: empresa || null, cargo: cargo || null })
+    setCvPreviewHtml(buildCvHtml(adaptedCv, profilePhoto, profilePhotoMime, cvTemplate))
+    setShowCvPreview(true)
+    setShowJobModal(false)
+    setJobResult(null)
+    saveToHistorial('cv', adaptedCv, `CV adaptado${empresa ? ` — ${empresa}` : ''}`, null)
+    trackEvent('job_adapter_open_preview')
   }
 
   // ── Exportar CV: Web Share API en mobile, popup+print en desktop ────────────
@@ -2333,6 +2350,7 @@ Generá el feedback en este JSON exacto:
         jobSaveError={jobSaveError}
         setJobSaveError={setJobSaveError}
         saveAdaptedCvAsPostulacion={saveAdaptedCvAsPostulacion}
+        openAdaptedCvPreview={openAdaptedCvPreview}
         onGoToTracking={() => { setShowJobModal(false); setJobResult(null); setJobPosting(''); setJobSaved(false); setJobSavedCardId(null); loadTracking(); setStep(STEPS.TRACKING) }}
       />}
 
@@ -2796,10 +2814,22 @@ Generá el feedback en este JSON exacto:
           {/* Barra superior */}
           <div className="flex items-center justify-between px-4 py-3 shrink-0"
             style={{ background: 'linear-gradient(135deg,#0077B5,#0ea5e9)', boxShadow: '0 2px 8px rgba(0,0,0,0.15)' }}>
-            <div className="flex items-center gap-3">
-              <p className="text-white text-sm font-semibold">📄 Tu CV listo</p>
+            <div className="flex items-center gap-2 flex-wrap min-w-0">
+              <p className="text-white text-sm font-semibold shrink-0">📄 Tu CV</p>
+              {cvVariant === 'optimizado' && (
+                <span className="text-xs px-2 py-0.5 rounded-full font-semibold shrink-0"
+                  style={{ background: 'rgba(245,158,11,0.35)', color: '#fef3c7' }}>
+                  ✨ Optimizado
+                </span>
+              )}
+              {cvVariant && typeof cvVariant === 'object' && (cvVariant.empresa || cvVariant.cargo) && (
+                <span className="text-xs px-2 py-0.5 rounded-full font-semibold truncate max-w-[160px]"
+                  style={{ background: 'rgba(5,150,105,0.35)', color: '#d1fae5' }}>
+                  🎯 {[cvVariant.empresa, cvVariant.cargo].filter(Boolean).join(' — ')}
+                </span>
+              )}
               {cvQuality && (
-                <span className="text-xs px-2 py-0.5 rounded-full font-semibold"
+                <span className="text-xs px-2 py-0.5 rounded-full font-semibold shrink-0"
                   style={{ background: 'rgba(255,255,255,0.20)', color: 'white' }}>
                   {cvQuality.score}/10 · {cvQuality.nivel}
                 </span>

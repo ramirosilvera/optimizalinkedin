@@ -793,7 +793,7 @@ export default function CvScreen({
                       <button
                         onClick={() => {
                           setCvBeforeOptimize({ ...cvFinalData })
-                          updateCv(cvOptimizeSuggestion)
+                          updateCv(cvOptimizeSuggestion, 'optimizado')
                           setShowCvOptimizePanel(false)
                           setCvOptimizeSuggestion(null)
                           setCvOptimizeApplied(true)

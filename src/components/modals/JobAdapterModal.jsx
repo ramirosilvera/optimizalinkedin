@@ -1,7 +1,6 @@
 import { useState } from 'react'
 import { LI_GRADIENT, trackEvent } from '../../constants'
 import { Spinner, CopyButton } from '../ui'
-import { buildCvHtml } from '../../cv/templates'
 
 export default function JobAdapterModal({
   setShowJobModal, jobPosting, setJobPosting, callAdaptCvForJob,
@@ -9,7 +8,7 @@ export default function JobAdapterModal({
   profilePhotoPreview, setProfilePhotoPreview, profilePhoto, setProfilePhoto,
   profilePhotoMime, setProfilePhotoMime, handleCvPhotoUpload, cvTemplate,
   user, jobSaveLoading, jobSaved, setJobSaved, jobSaveError, setJobSaveError,
-  saveAdaptedCvAsPostulacion, onGoToTracking,
+  saveAdaptedCvAsPostulacion, openAdaptedCvPreview, onGoToTracking,
 }) {
   const [saveEmpresa, setSaveEmpresa] = useState('')
   const [savePuesto, setSavePuesto] = useState('')
@@ -170,15 +169,14 @@ export default function JobAdapterModal({
                     </div>
                   </div>
                   <button
-                    onClick={() => {
-                      const html = buildCvHtml(jobResult.cv_adaptado, profilePhoto, profilePhotoMime, cvTemplate)
-                      const win = window.open('', '_blank')
-                      if (win) { win.document.write(html); win.document.close(); win.focus(); setTimeout(() => { try { win.print() } catch {} }, 300) }
-                      trackEvent('job_adapter_cv_download')
-                    }}
+                    onClick={() => openAdaptedCvPreview(
+                      jobResult.cv_adaptado,
+                      jobResult.empresa_detectada,
+                      jobResult.cargo_detectado
+                    )}
                     className="w-full py-3.5 rounded-xl text-sm font-semibold text-white"
-                    style={{ background: 'linear-gradient(135deg,#059669,#10b981)', boxShadow: '0 4px 12px rgba(5,150,105,0.25)' }}>
-                    📥 Descargar CV adaptado →
+                    style={{ background: LI_GRADIENT, boxShadow: '0 4px 12px rgba(0,119,181,0.25)' }}>
+                    👁 Ver CV adaptado →
                   </button>
                 </>
               )}
