@@ -262,6 +262,10 @@ export default function App() {
   const [jobCvForAdapter, setJobCvForAdapter] = useState(null)
   const [jobAdapterNoCv, setJobAdapterNoCv] = useState(false)
   const [jobAdapterCheckLoading, setJobAdapterCheckLoading] = useState(false)
+  const [jobSaveLoading, setJobSaveLoading] = useState(false)
+  const [jobSaved, setJobSaved] = useState(false)
+  const [jobSaveError, setJobSaveError] = useState('')
+  const [jobSavedCardId, setJobSavedCardId] = useState(null)
 
   // ── Auth helpers ─────────────────────────────────────────────────────────
   const sbAuthFetch = async (path, options = {}) => {
@@ -720,6 +724,44 @@ export default function App() {
     } finally {
       clearTimeout(timeoutId)
       setJobLoading(false)
+    }
+  }
+
+  const saveAdaptedCvAsPostulacion = async (empresa, puesto) => {
+    if (!jobResult || jobSaveLoading) return
+    if (!user) { setShowAuthModal(true); return }
+    setJobSaveLoading(true)
+    setJobSaveError('')
+    try {
+      let cols = trackingColumnas
+      if (!cols || cols.length === 0) {
+        const uid = localStorage.getItem('ol_uid')
+        const at = localStorage.getItem('ol_at')
+        const colRes = await fetch(`${SUPABASE_URL}/rest/v1/kanban_columnas?user_id=eq.${uid}&order=orden.asc`, {
+          headers: { apikey: SUPABASE_KEY, Authorization: `Bearer ${at}`, 'Content-Type': 'application/json' },
+        })
+        cols = await colRes.json().catch(() => [])
+      }
+      const primeraColumna = Array.isArray(cols) && cols.length > 0 ? cols[0] : null
+      if (!primeraColumna) throw new Error('Primero abrí el tablero para inicializar las columnas')
+      const card = await createCard(primeraColumna.id, {
+        empresa: empresa || jobResult.empresa_detectada || '',
+        puesto:  puesto  || jobResult.cargo_detectado  || '',
+        fecha_aplicacion: new Date().toISOString().slice(0, 10),
+        cv_data:          jobResult.cv_adaptado || null,
+        job_description:  jobPosting || null,
+        cover_letter:     jobResult.carta_de_presentacion || null,
+        ats_keywords:     jobResult.palabras_clave_incorporadas?.join(', ') || null,
+        seniority:        jobResult.seniority_detectado || null,
+        adaptation_notes: jobResult.ajustes_principales?.join('\n') || null,
+      })
+      setJobSaved(true)
+      setJobSavedCardId(card?.id || null)
+      trackEvent('job_adapter_saved_to_kanban')
+    } catch (err) {
+      setJobSaveError(err.message || 'Error al guardar. Intentá de nuevo.')
+    } finally {
+      setJobSaveLoading(false)
     }
   }
 
@@ -2351,6 +2393,14 @@ Generá el feedback en este JSON exacto:
         setProfilePhotoMime={setProfilePhotoMime}
         handleCvPhotoUpload={handleCvPhotoUpload}
         cvTemplate={cvTemplate}
+        user={user}
+        jobSaveLoading={jobSaveLoading}
+        jobSaved={jobSaved}
+        setJobSaved={setJobSaved}
+        jobSaveError={jobSaveError}
+        setJobSaveError={setJobSaveError}
+        saveAdaptedCvAsPostulacion={saveAdaptedCvAsPostulacion}
+        onGoToTracking={() => { setShowJobModal(false); setJobResult(null); setJobPosting(''); setJobSaved(false); setJobSavedCardId(null); loadTracking(); setStep(STEPS.TRACKING) }}
       />}
 
       {/* ── Barra de usuario ── */}

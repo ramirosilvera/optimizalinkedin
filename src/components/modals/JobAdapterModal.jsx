@@ -1,12 +1,53 @@
+import { useState } from 'react'
 import { LI_GRADIENT, trackEvent } from '../../constants'
 import { Spinner, CopyButton } from '../ui'
 import { buildCvHtml } from '../../cv/templates'
 
-export default function JobAdapterModal({ setShowJobModal, jobPosting, setJobPosting, callAdaptCvForJob, jobLoading, jobResult, setJobResult, jobError, setJobError, profilePhotoPreview, setProfilePhotoPreview, profilePhoto, setProfilePhoto, profilePhotoMime, setProfilePhotoMime, handleCvPhotoUpload, cvTemplate }) {
+export default function JobAdapterModal({
+  setShowJobModal, jobPosting, setJobPosting, callAdaptCvForJob,
+  jobLoading, jobResult, setJobResult, jobError, setJobError,
+  profilePhotoPreview, setProfilePhotoPreview, profilePhoto, setProfilePhoto,
+  profilePhotoMime, setProfilePhotoMime, handleCvPhotoUpload, cvTemplate,
+  user, jobSaveLoading, jobSaved, setJobSaved, jobSaveError, setJobSaveError,
+  saveAdaptedCvAsPostulacion, onGoToTracking,
+}) {
+  const [saveEmpresa, setSaveEmpresa] = useState('')
+  const [savePuesto, setSavePuesto] = useState('')
+  const [saveFormOpen, setSaveFormOpen] = useState(false)
+
+  const handleClose = () => {
+    setShowJobModal(false)
+    setJobResult(null)
+    setJobError('')
+    setJobSaved(false)
+    setJobSaveError('')
+  }
+
+  const handleBackToForm = () => {
+    setJobResult(null)
+    setJobPosting('')
+    setJobError('')
+    setJobSaved(false)
+    setJobSaveError('')
+    setSaveEmpresa('')
+    setSavePuesto('')
+    setSaveFormOpen(false)
+  }
+
+  const handleOpenSaveForm = () => {
+    setSaveEmpresa(jobResult?.empresa_detectada || '')
+    setSavePuesto(jobResult?.cargo_detectado || '')
+    setSaveFormOpen(true)
+  }
+
+  const handleSave = () => {
+    saveAdaptedCvAsPostulacion(saveEmpresa.trim(), savePuesto.trim())
+  }
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4"
       style={{ background: 'rgba(0,0,0,0.60)', backdropFilter: 'blur(4px)' }}
-      onClick={e => { if (e.target === e.currentTarget) { setShowJobModal(false); setJobResult(null); setJobError('') } }}>
+      onClick={e => { if (e.target === e.currentTarget) handleClose() }}>
       <div className="w-full max-w-lg rounded-3xl overflow-hidden flex flex-col max-h-[90vh]"
         style={{ background: 'white', boxShadow: '0 25px 60px rgba(0,0,0,0.25)' }}>
 
@@ -15,7 +56,7 @@ export default function JobAdapterModal({ setShowJobModal, jobPosting, setJobPos
             <h2 className="text-slate-900 font-bold text-base">Adaptar CV para un aviso</h2>
             <p className="text-slate-500 text-xs mt-0.5">Gemini ajusta tu CV y genera la carta de presentación</p>
           </div>
-          <button onClick={() => { setShowJobModal(false); setJobResult(null); setJobError('') }}
+          <button onClick={handleClose}
             className="text-slate-400 hover:text-slate-600 text-2xl leading-none w-8 h-8 flex items-center justify-center shrink-0">×</button>
         </div>
 
@@ -47,6 +88,30 @@ export default function JobAdapterModal({ setShowJobModal, jobPosting, setJobPos
             </>
           ) : (
             <div className="space-y-5">
+              {/* Metadata chips */}
+              {(jobResult.empresa_detectada || jobResult.cargo_detectado || jobResult.seniority_detectado) && (
+                <div className="flex flex-wrap gap-2">
+                  {jobResult.empresa_detectada && (
+                    <span className="text-xs px-2.5 py-1 rounded-full font-medium"
+                      style={{ background: 'rgba(0,119,181,0.08)', border: '1px solid rgba(0,119,181,0.2)', color: '#0077B5' }}>
+                      🏢 {jobResult.empresa_detectada}
+                    </span>
+                  )}
+                  {jobResult.cargo_detectado && (
+                    <span className="text-xs px-2.5 py-1 rounded-full font-medium"
+                      style={{ background: 'rgba(0,119,181,0.08)', border: '1px solid rgba(0,119,181,0.2)', color: '#0077B5' }}>
+                      💼 {jobResult.cargo_detectado}
+                    </span>
+                  )}
+                  {jobResult.seniority_detectado && jobResult.seniority_detectado !== 'No especificado' && (
+                    <span className="text-xs px-2.5 py-1 rounded-full font-medium"
+                      style={{ background: 'rgba(99,102,241,0.08)', border: '1px solid rgba(99,102,241,0.2)', color: '#6366f1' }}>
+                      {jobResult.seniority_detectado}
+                    </span>
+                  )}
+                </div>
+              )}
+
               {jobResult.ajustes_principales?.length > 0 && (
                 <div className="rounded-2xl p-4 space-y-2"
                   style={{ background: 'rgba(0,119,181,0.04)', border: '1px solid rgba(0,119,181,0.15)' }}>
@@ -132,8 +197,69 @@ export default function JobAdapterModal({ setShowJobModal, jobPosting, setJobPos
                 </div>
               )}
 
+              {/* ── Guardar en tablero ── */}
+              {jobSaved ? (
+                <div className="rounded-2xl p-4 text-center space-y-3"
+                  style={{ background: 'rgba(5,150,105,0.06)', border: '1px solid rgba(5,150,105,0.25)' }}>
+                  <p className="text-sm font-semibold text-emerald-700">✓ Guardada en tu tablero de postulaciones</p>
+                  <button
+                    onClick={onGoToTracking}
+                    className="text-xs font-semibold px-4 py-2 rounded-lg transition-all"
+                    style={{ background: 'rgba(5,150,105,0.12)', color: '#059669', border: '1px solid rgba(5,150,105,0.25)' }}>
+                    Ver tablero →
+                  </button>
+                </div>
+              ) : !saveFormOpen ? (
+                <button
+                  onClick={user ? handleOpenSaveForm : () => { setShowJobModal(false) }}
+                  className="w-full py-3 rounded-xl text-sm font-semibold transition-all"
+                  style={{ background: 'rgba(0,119,181,0.07)', color: '#0077B5', border: '1px solid rgba(0,119,181,0.2)' }}>
+                  📌 Guardar como postulación en tablero
+                </button>
+              ) : (
+                <div className="rounded-2xl p-4 space-y-3"
+                  style={{ background: 'rgba(0,119,181,0.04)', border: '1px solid rgba(0,119,181,0.18)' }}>
+                  <p className="text-xs font-semibold uppercase tracking-wide text-slate-600">Guardar en tablero</p>
+                  <div className="space-y-2">
+                    <input
+                      type="text"
+                      value={saveEmpresa}
+                      onChange={e => setSaveEmpresa(e.target.value)}
+                      placeholder="Empresa"
+                      className="w-full rounded-xl px-3 py-2 text-sm outline-none"
+                      style={{ background: '#f8fafc', border: '1px solid rgba(0,119,181,0.18)', color: '#0d2137' }}
+                    />
+                    <input
+                      type="text"
+                      value={savePuesto}
+                      onChange={e => setSavePuesto(e.target.value)}
+                      placeholder="Puesto"
+                      className="w-full rounded-xl px-3 py-2 text-sm outline-none"
+                      style={{ background: '#f8fafc', border: '1px solid rgba(0,119,181,0.18)', color: '#0d2137' }}
+                    />
+                  </div>
+                  {jobSaveError && <p className="text-xs text-center" style={{ color: '#ef4444' }}>{jobSaveError}</p>}
+                  <div className="flex gap-2">
+                    <button
+                      onClick={() => { setSaveFormOpen(false); setJobSaveError('') }}
+                      className="flex-1 py-2 rounded-xl text-xs text-slate-400 hover:text-slate-600 transition-colors">
+                      Cancelar
+                    </button>
+                    <button
+                      onClick={handleSave}
+                      disabled={jobSaveLoading || !savePuesto.trim()}
+                      className="flex-1 py-2 rounded-xl text-sm font-semibold text-white transition-all"
+                      style={{ background: LI_GRADIENT, opacity: (jobSaveLoading || !savePuesto.trim()) ? 0.5 : 1 }}>
+                      {jobSaveLoading ? (
+                        <span className="flex items-center justify-center gap-2"><Spinner size={4} /><span>Guardando...</span></span>
+                      ) : 'Guardar postulación →'}
+                    </button>
+                  </div>
+                </div>
+              )}
+
               <button
-                onClick={() => { setJobResult(null); setJobPosting(''); setJobError('') }}
+                onClick={handleBackToForm}
                 className="w-full py-2.5 rounded-xl text-sm text-slate-400 hover:text-slate-600 transition-colors">
                 ← Adaptar para otro aviso
               </button>

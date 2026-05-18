@@ -31,6 +31,7 @@ export const AI_DEFAULTS = {
     sugerencia_clave: '',
   },
   job_adapter: {
+    empresa_detectada: null, cargo_detectado: null, seniority_detectado: null,
     cv_adaptado: null, carta_de_presentacion: '',
     palabras_clave_incorporadas: [], ajustes_principales: [],
   },

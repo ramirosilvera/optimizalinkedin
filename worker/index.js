@@ -95,11 +95,16 @@ Analizá el aviso, adaptá el CV del candidato y generá una carta de presentaci
 ANTI-ALUCINACIÓN: NUNCA inventes métricas, logros ni tecnologías. Solo reorganizá y reformulá lo que ya existe.
 "cv_adaptado" debe tener exactamente la misma estructura JSON que el CV original.
 
+EXTRACCIÓN DEL AVISO: Del texto del aviso detectá:
+- empresa_detectada: nombre de la empresa (null si no aparece)
+- cargo_detectado: título exacto del puesto publicado
+- seniority_detectado: nivel inferido del aviso ("Junior", "Semi Senior", "Senior", "Lead", "No especificado")
+
 ADAPTACIÓN: ajustá titular y resumen con keywords del aviso. Reorganizá bullets y habilidades priorizando lo relevante para la posición.
 
 CARTA (3-4 párrafos): quién es y por qué aplica → logros relevantes con datos reales → cierre con CTA. Profesional, directo, sin clichés. Español rioplatense.
 
-JSON: {"cv_adaptado":{...mismo esquema...},"carta_de_presentacion":"str","palabras_clave_incorporadas":["str"],"ajustes_principales":["str"]}`,
+JSON: {"empresa_detectada":"str|null","cargo_detectado":"str","seniority_detectado":"str","cv_adaptado":{...mismo esquema...},"carta_de_presentacion":"str","palabras_clave_incorporadas":["str"],"ajustes_principales":["str"]}`,
 
   cv_optimize_consult: `Sos consultor senior de empleabilidad. Analizás CVs ya generados para detectar qué datos adicionales necesitás del candidato para optimizarlos con impacto real.
 
