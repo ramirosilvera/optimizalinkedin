@@ -1935,8 +1935,11 @@ Generá el feedback en este JSON exacto:
   const saveCvPdf = () => {
     if (!cvFinalData) return
     trackEvent('cv_save_desktop')
-    const html = buildCvHtml(cvFinalData, profilePhoto, profilePhotoMime, cvTemplate)
-    const win = window.open('', '_blank')
+    // forExport=true: sin autofit script para que el layout no interfiera con el print
+    const baseHtml = buildCvHtml(cvFinalData, profilePhoto, profilePhotoMime, cvTemplate, { forExport: true })
+    // Inyectar auto-print directamente en el HTML para evitar race condition
+    const html = baseHtml.replace('</body>', `<script>window.onload=function(){setTimeout(function(){window.print()},350)}<\/script></body>`)
+    const win = window.open('', '_blank', 'width=900,height=750')
     if (!win) {
       // Popup bloqueado: descarga el HTML para imprimir manualmente
       const blob = new Blob([html], { type: 'text/html; charset=utf-8' })
@@ -1950,11 +1953,10 @@ Generá el feedback en este JSON exacto:
     win.document.open()
     win.document.write(html)
     win.document.close()
-    setTimeout(() => { try { win.focus(); win.print() } catch {} }, 800)
   }
 
   const downloadCvCanvas = useCallback(async () => {
-    if (!cvPreviewHtml || cvCanvasLoading) return
+    if (!cvFinalData || cvCanvasLoading) return
     setCvCanvasLoading(true)
     setCvCanvasError('')
     setCvCanvasSuccess(false)
@@ -1963,27 +1965,28 @@ Generá el feedback en este JSON exacto:
     let wrap = null
     try {
       const { default: html2canvas } = await import('html2canvas')
+      // Build a fresh export HTML (no autofit script, clean layout for canvas)
+      const exportHtml = buildCvHtml(cvFinalData, profilePhoto, profilePhotoMime, cvTemplate, { forExport: true })
       const parser = new DOMParser()
-      const doc = parser.parseFromString(cvPreviewHtml, 'text/html')
-      // Extract only <style> tags — scripts intentionally excluded so autofit doesn't fire
+      const doc = parser.parseFromString(exportHtml, 'text/html')
       const styles = Array.from(doc.querySelectorAll('style')).map(s => s.textContent).join('\n')
 
       wrap = document.createElement('div')
-      // Visible to html2canvas but outside viewport — no z-index tricks that break rendering
-      wrap.style.cssText = 'position:fixed;left:-9999px;top:0;width:794px;height:auto;background:#fff;overflow:visible;visibility:hidden;'
+      // position:absolute offscreen — NOT visibility:hidden (html2canvas can't render hidden elements)
+      wrap.style.cssText = 'position:absolute;left:-9999px;top:0;width:794px;height:auto;background:#fff;overflow:visible;'
       const styleEl = document.createElement('style')
       styleEl.textContent = styles
       wrap.appendChild(styleEl)
       const content = document.createElement('div')
       content.style.cssText = 'width:794px;background:#fff;'
       content.innerHTML = doc.body.innerHTML
-      // Remove any inline script tags from injected HTML (won't execute via innerHTML anyway but clean up)
       content.querySelectorAll('script').forEach(s => s.remove())
       wrap.appendChild(content)
       document.body.appendChild(wrap)
 
-      // Give browser time to apply styles (fonts, layout)
-      await new Promise(r => setTimeout(r, 700))
+      // Wait for fonts and layout to settle
+      await document.fonts.ready
+      await new Promise(r => setTimeout(r, 300))
 
       const canvas = await html2canvas(content, {
         scale: 2,
@@ -2048,7 +2051,7 @@ Generá el feedback en este JSON exacto:
     } finally {
       setCvCanvasLoading(false)
     }
-  }, [cvPreviewHtml, cvFinalData, cvCanvasLoading])
+  }, [cvFinalData, profilePhoto, profilePhotoMime, cvTemplate, cvCanvasLoading])
 
 
   // ── Merge seguro: solo aplica campos con contenido real, nunca sobreescribe con vacíos ──

@@ -66,7 +66,8 @@ export const CV_AUTOFIT_SCRIPT = `<script>
 <\/script>`
 
 // ── CV template: Minimal ─────────────────────────────────────────────────────
-export function buildCvHtmlMinimal(cv, photoBase64 = null, photoMime = 'image/jpeg') {
+export function buildCvHtmlMinimal(cv, photoBase64 = null, photoMime = 'image/jpeg', opts = {}) {
+  const { forExport = false } = opts
   cv = sanitizeCv(cv)
   const e = escapeHtml
   const nameParts = (cv.nombre || '').trim().split(/\s+/)
@@ -176,12 +177,13 @@ export function buildCvHtmlMinimal(cv, photoBase64 = null, photoMime = 'image/jp
   ${eduHtml ? `<div class="section"><div class="section-title">Educación</div>${eduHtml}</div>` : ''}
   ${idiomasText ? `<div class="section"><div class="section-title">Idiomas</div><p class="skills-text">${e(idiomasText)}</p></div>` : ''}
 </div>
-${CV_AUTOFIT_SCRIPT}
+${forExport ? '' : CV_AUTOFIT_SCRIPT}
 </body></html>`
 }
 
 // ── CV template: Ejecutivo ───────────────────────────────────────────────────
-export function buildCvHtmlEjecutivo(cv, photoBase64 = null, photoMime = 'image/jpeg') {
+export function buildCvHtmlEjecutivo(cv, photoBase64 = null, photoMime = 'image/jpeg', opts = {}) {
+  const { forExport = false } = opts
   cv = sanitizeCv(cv)
   const e = escapeHtml
   const nameParts = (cv.nombre || '').trim().split(/\s+/)
@@ -299,15 +301,16 @@ export function buildCvHtmlEjecutivo(cv, photoBase64 = null, photoMime = 'image/
     </div>
   </div>
 </div>
-${CV_AUTOFIT_SCRIPT}
+${forExport ? '' : CV_AUTOFIT_SCRIPT}
 </body></html>`
 }
 
-export function buildCvHtml(cv, photoBase64 = null, photoMime = 'image/jpeg', template = 'clasico') {
+export function buildCvHtml(cv, photoBase64 = null, photoMime = 'image/jpeg', template = 'clasico', opts = {}) {
+  const { forExport = false } = opts
   cv = sanitizeCv(cv)
   const e = escapeHtml
-  if (template === 'minimal')   return buildCvHtmlMinimal(cv, photoBase64, photoMime)
-  if (template === 'ejecutivo') return buildCvHtmlEjecutivo(cv, photoBase64, photoMime)
+  if (template === 'minimal')   return buildCvHtmlMinimal(cv, photoBase64, photoMime, opts)
+  if (template === 'ejecutivo') return buildCvHtmlEjecutivo(cv, photoBase64, photoMime, opts)
 
   // Template-specific color scheme
   const sidebarBg    = template === 'tech' ? '#134e4a' : template === 'creativo' ? 'linear-gradient(160deg,#7c3aed,#4338ca)' : '#0d2137'
@@ -592,8 +595,7 @@ export function buildCvHtml(cv, photoBase64 = null, photoMime = 'image/jpeg', te
     }
     .cv-wrap {
       width: 210mm !important;
-      min-height: unset !important;
-      /* Resetear zoom inline puesto por el script de autofit */
+      min-height: 297mm !important;
       zoom: 1 !important;
       transform: none !important;
       break-inside: avoid;
@@ -653,6 +655,6 @@ export function buildCvHtml(cv, photoBase64 = null, photoMime = 'image/jpeg', te
   </div>
 
 </div>
-${CV_AUTOFIT_SCRIPT}
+${forExport ? '' : CV_AUTOFIT_SCRIPT}
 </body></html>`
 }
