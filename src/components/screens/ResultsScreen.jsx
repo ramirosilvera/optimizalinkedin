@@ -29,6 +29,7 @@ export default function ResultsScreen({
   growthError,
   setGrowthError,
   reset,
+  setShowScoreShare,
 }) {
   const [showFullOptimize, setShowFullOptimize] = useState(false)
 
@@ -81,6 +82,14 @@ export default function ResultsScreen({
                 style={{ color: 'rgba(226,232,240,0.55)', border: '1px solid rgba(99,102,241,0.30)', borderRadius: '10px', padding: '8px 12px', background: 'rgba(99,102,241,0.08)' }}>
                 💡 Diagnóstico base con tus respuestas · Subí tu PDF de LinkedIn para el puntaje real
               </p>
+            )}
+            {result.puntaje_general !== null && result.puntaje_general !== undefined && setShowScoreShare && (
+              <button
+                onClick={() => { trackEvent('score_share_open', { score: result.puntaje_general }); setShowScoreShare(true) }}
+                className="text-[10px] font-semibold px-3 py-1.5 rounded-full transition-all hover:opacity-90"
+                style={{ background: 'rgba(255,255,255,0.12)', color: 'rgba(255,255,255,0.80)', border: '1px solid rgba(255,255,255,0.18)' }}>
+                Compartir score →
+              </button>
             )}
           </div>
         </div>

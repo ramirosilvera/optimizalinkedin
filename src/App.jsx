@@ -36,6 +36,8 @@ import TrackingScreen from './components/screens/TrackingScreen'
 import ProfileInputScreen from './components/screens/ProfileInputScreen'
 import ResultsScreen from './components/screens/ResultsScreen'
 import CvScreen from './components/screens/CvScreen'
+import OnboardingScreen from './components/screens/OnboardingScreen'
+import ScoreShareModal from './components/modals/ScoreShareModal'
 import AuthModal from './components/modals/AuthModal'
 import PremiumModal from './components/modals/PremiumModal'
 import ManageSubscriptionModal from './components/modals/ManageSubscriptionModal'
@@ -220,6 +222,7 @@ export default function App() {
   const [historialLoading, setHistorialLoading] = useState(false)
   const [deletingHistorialId, setDeletingHistorialId] = useState(null)
   const [deleteHistorialLoading, setDeleteHistorialLoading] = useState(false)
+  const [showScoreShare, setShowScoreShare] = useState(false)
   const [subscriptionLoading, setSubscriptionLoading] = useState(false)
   const [checkingPremium, setCheckingPremium] = useState(false)
   const [showManageModal, setShowManageModal] = useState(false)
@@ -1584,7 +1587,7 @@ JSON:
       const parsed = parseAIJson(extractAIText(data), AI_DEFAULTS.analyze_linkedin, 'Error al procesar la respuesta. Intentá de nuevo.')
       setResult(parsed)
       trackTiming('analysis_completed', _tAnalysis, { puntaje: parsed.puntaje_general, nivel_seo: parsed.nivel_seo, mode: sinPerfilMode ? 'sin_perfil' : 'con_perfil' })
-      setStep(STEPS.RESULTS)
+      setStep(STEPS.ONBOARDING)
       saveToHistorial('analisis', { ...parsed, fortalezas: parsed.fortalezas||[], areas_de_mejora: parsed.areas_de_mejora||[], palabras_clave_sugeridas: parsed.palabras_clave_sugeridas||[] }, parsed.nombre_titular || 'Análisis LinkedIn', parsed.puntaje_general ?? null)
     } catch (err) {
       trackError('analysis', err.isRateLimit ? 'rate_limit' : err.name === 'AbortError' ? 'timeout' : 'api_error')
@@ -2254,9 +2257,12 @@ Generá el feedback en este JSON exacto:
         setAuthPassword={setAuthPassword}
         authLoading={authLoading}
         authLogin={authLogin}
+        authRegister={authRegister}
         authLogout={authLogout}
         handleLinkedinAuthViaSupabase={handleLinkedinAuthViaSupabase}
       />}
+
+      {showScoreShare && result && <ScoreShareModal result={result} setShowScoreShare={setShowScoreShare} />}
 
       {/* ── Premium Modal ── */}
       {showPremiumModal && <PremiumModal
@@ -2409,7 +2415,7 @@ Generá el feedback en este JSON exacto:
         {step > STEPS.WELCOME && step !== STEPS.MODE_SELECT && (() => {
           const journeySteps = [
             { label: 'Perfil', active: step >= STEPS.QUESTIONS && step <= STEPS.LOADING, done: !!result || step > STEPS.LOADING },
-            { label: 'Análisis', active: step === STEPS.RESULTS, done: !!result && (step > STEPS.RESULTS || step === STEPS.CV) },
+            { label: 'Análisis', active: step === STEPS.RESULTS || step === STEPS.ONBOARDING, done: !!result && (step > STEPS.RESULTS || step === STEPS.CV) && step !== STEPS.ONBOARDING },
             { label: 'CV', active: step === STEPS.CV, done: !!cvFinalData && step !== STEPS.CV },
             { label: 'Entrevista', active: step === STEPS.INTERVIEW_INTRO || step === STEPS.INTERVIEW || step === STEPS.INTERVIEW_FEEDBACK, done: !!interviewFeedback },
           ]
@@ -2583,7 +2589,13 @@ Generá el feedback en este JSON exacto:
             growthError={growthError}
             setGrowthError={setGrowthError}
             reset={reset}
+            setShowScoreShare={setShowScoreShare}
           />
+        )}
+
+        {/* ── ONBOARDING ── */}
+        {step === STEPS.ONBOARDING && result && (
+          <OnboardingScreen result={result} setStep={setStep} />
         )}
 
         {/* ── CV ── */}
