@@ -171,14 +171,14 @@ export default function WelcomeScreen({ setStep, handleModeSelectJobAdapter, job
           <h2 className="text-xl font-bold text-slate-900 mb-4">Cómo funciona</h2>
           <div className="space-y-3">
             {[
-              { num: '1', title: 'Respondés 10 preguntas rápidas', desc: 'Sobre tu profesión, objetivo y logros. Tarda unos 3 minutos.' },
-              { num: '2', title: 'Subís tu perfil de LinkedIn', desc: 'En PDF, por URL o completando un formulario — elegís cómo.' },
-              { num: '3', title: 'Recibís tu análisis completo', desc: 'En menos de 60 segundos, con sugerencias listas para implementar.' },
+              { num: '1', title: 'Diagnóstico LinkedIn', desc: 'Respondés 10 preguntas y subís tu perfil. En 60 segundos tenés tu score de empleabilidad, gaps y sugerencias.', color: '#0077B5' },
+              { num: '2', title: 'Optimizás y generás tu CV', desc: 'Aplicás las mejoras al perfil y generás un CV ATS-compatible de 1 página con tu información optimizada.', color: '#059669' },
+              { num: '3', title: 'Practicás y adaptás para cada oferta', desc: 'Simulás entrevistas con IA, adaptás tu CV por aviso y usás el método STAR para respuestas de impacto.', color: '#6366f1' },
             ].map(stepItem => (
               <div key={stepItem.num} className="flex items-start gap-4 rounded-2xl p-4"
                 style={{ background: 'white', border: '1px solid rgba(0,119,181,0.10)' }}>
                 <div className="w-8 h-8 rounded-full flex items-center justify-center text-white text-sm font-bold shrink-0"
-                  style={{ background: LI_GRADIENT }}>{stepItem.num}</div>
+                  style={{ background: stepItem.color }}>{stepItem.num}</div>
                 <div>
                   <p className="text-slate-800 text-sm font-semibold">{stepItem.title}</p>
                   <p className="text-slate-500 text-xs mt-0.5 leading-relaxed">{stepItem.desc}</p>

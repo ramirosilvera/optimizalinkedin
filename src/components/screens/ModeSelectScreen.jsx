@@ -330,6 +330,26 @@ export default function ModeSelectScreen({
         })}
       </div>
 
+      {/* Mi Actividad */}
+      <div className="rounded-2xl overflow-hidden" style={{ border: '1px solid rgba(0,0,0,0.07)' }}>
+        <div className="px-4 py-3 border-b flex items-center gap-2" style={{ background: '#fafafa', borderColor: 'rgba(0,0,0,0.06)' }}>
+          <p className="text-xs font-bold uppercase tracking-wide text-slate-500">Mi Actividad</p>
+        </div>
+        <div className="divide-y divide-slate-100">
+          <button
+            onClick={() => { trackEvent('roadmap_tracking'); setStep(STEPS.TRACKING) }}
+            className="w-full flex items-center gap-3 px-4 py-3.5 text-left hover:bg-slate-50 transition-colors"
+          >
+            <span className="text-base shrink-0">📍</span>
+            <div className="flex-1 min-w-0">
+              <p className="text-sm font-semibold text-slate-800">Mis postulaciones</p>
+              <p className="text-xs text-slate-400">Tablero kanban · vincular CV · estado de cada proceso</p>
+            </div>
+            <span className="text-slate-300 text-lg shrink-0">›</span>
+          </button>
+        </div>
+      </div>
+
       <button
         onClick={() => setStep(STEPS.WELCOME)}
         className="w-full py-3 rounded-2xl text-sm font-medium text-slate-400 hover:text-slate-600 transition-colors"

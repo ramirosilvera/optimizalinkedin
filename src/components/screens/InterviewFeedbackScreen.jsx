@@ -252,7 +252,7 @@ export default function InterviewFeedbackScreen({ interviewLoading, rateLimitEve
             className="w-full font-semibold py-4 rounded-2xl text-sm"
             style={BTN_BACK_STYLE}
           >
-            {result ? '← Volver a mi análisis' : '← Volver al menú'}
+            {result ? '← Volver a mi análisis' : '← Mi hoja de ruta'}
           </button>
         </>
       )}

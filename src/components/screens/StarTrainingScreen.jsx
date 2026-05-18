@@ -55,7 +55,7 @@ export default function StarTrainingScreen({ starPhase, setStarPhase, starQuesti
           </button>
           <button onClick={() => { trackEvent('star_back', { from: 'theory' }); interviewFeedback ? setStep(STEPS.INTERVIEW_FEEDBACK) : setStep(STEPS.MODE_SELECT) }}
             className="w-full py-3 rounded-2xl text-sm font-semibold" style={BTN_BACK_STYLE}>
-            {interviewFeedback ? '← Volver al feedback' : '← Menú'}
+            {interviewFeedback ? '← Volver al feedback' : '← Mi hoja de ruta'}
           </button>
         </>
       )}
@@ -230,7 +230,7 @@ export default function StarTrainingScreen({ starPhase, setStarPhase, starQuesti
 
           <button onClick={() => { trackEvent('star_back', { from: 'practice' }); result ? setStep(STEPS.RESULTS) : setStep(STEPS.MODE_SELECT) }}
             className="w-full py-3 rounded-2xl text-sm font-semibold" style={BTN_BACK_STYLE}>
-            {result ? '← Volver a mi análisis' : '← Volver al menú'}
+            {result ? '← Volver a mi análisis' : '← Mi hoja de ruta'}
           </button>
         </>
       )}

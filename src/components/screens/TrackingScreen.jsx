@@ -20,7 +20,7 @@ export default function TrackingScreen({ user, setShowPremiumModal, setStep, kan
             </button>
             <button onClick={() => setStep(STEPS.MODE_SELECT)}
               className="block mx-auto text-xs mt-2" style={{ color: '#94a3b8' }}>
-              Volver al menú
+              Mi hoja de ruta
             </button>
           </div>
         ) : (
@@ -42,7 +42,7 @@ export default function TrackingScreen({ user, setShowPremiumModal, setStep, kan
                 <button onClick={() => setStep(STEPS.MODE_SELECT)}
                   className="text-xs px-3 py-1.5 rounded-lg font-medium"
                   style={BTN_BACK_STYLE}>
-                  ← Menú
+                  ← Hoja de ruta
                 </button>
               </div>
             </div>

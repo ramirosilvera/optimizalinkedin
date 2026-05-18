@@ -76,19 +76,27 @@ export default function CvScreen({
   return (
     <div className="step-transition space-y-4">
       {/* Header */}
-      <div className="flex items-center gap-3">
+      <div className="flex items-center justify-between gap-2">
         <button
           onClick={() => setStep(STEPS.RESULTS)}
-          className="text-sm font-medium transition-all"
+          className="text-sm font-medium transition-all shrink-0"
           style={BTN_BACK_STYLE}
         >
-          ← Volver al diagnóstico
+          ← Diagnóstico
         </button>
+        <div className="flex items-center gap-1.5">
+          <span className="text-[10px] font-bold uppercase tracking-wide px-2 py-0.5 rounded-full"
+            style={{ background: 'rgba(5,150,105,0.1)', color: '#059669' }}>Paso 3</span>
+          {cvStage === 'done' && (
+            <span className="text-[10px] font-bold uppercase tracking-wide px-2 py-0.5 rounded-full"
+              style={{ background: 'rgba(124,58,237,0.08)', color: '#7c3aed' }}>→ Paso 4</span>
+          )}
+        </div>
       </div>
       <div className="flex items-center justify-between gap-3">
         <div>
           <h1 className="text-xl font-bold text-slate-800">CV Inteligente</h1>
-          <p className="text-xs text-slate-500 mt-0.5">Construido desde tu análisis profesional</p>
+          <p className="text-xs text-slate-500 mt-0.5">Paso 3 del proceso · Construido desde tu análisis</p>
         </div>
         {cvQuality && (
           <div className="shrink-0 flex flex-col items-center justify-center w-12 h-12 rounded-full font-black"
@@ -832,15 +840,15 @@ export default function CvScreen({
             className="flex-1 font-medium py-3.5 rounded-2xl text-sm transition-all"
             style={BTN_BACK_STYLE}
           >
-            ← Ver mi diagnóstico
+            ← Diagnóstico
           </button>
         )}
         <button
-          onClick={() => setStep(STEPS.MODE_SELECT)}
+          onClick={() => { trackEvent('cv_go_to_roadmap'); setStep(STEPS.MODE_SELECT) }}
           className="flex-1 font-medium py-3.5 rounded-2xl text-sm transition-all"
           style={BTN_BACK_STYLE}
         >
-          Menú principal
+          Mi hoja de ruta
         </button>
       </div>
     </div>

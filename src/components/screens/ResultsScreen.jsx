@@ -474,11 +474,11 @@ export default function ResultsScreen({
       {/* Nav */}
       <div className="flex gap-2">
         <button
-          onClick={() => setStep(STEPS.MODE_SELECT)}
+          onClick={() => { trackEvent('results_go_to_roadmap'); setStep(STEPS.MODE_SELECT) }}
           className="flex-1 font-medium py-3.5 rounded-2xl text-sm transition-all"
           style={BTN_BACK_STYLE}
         >
-          ← Menú
+          ← Mi hoja de ruta
         </button>
         <button
           onClick={() => { trackEvent('click_analizar_otro', { location: 'post_analisis' }); reset() }}
