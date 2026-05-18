@@ -832,6 +832,23 @@ export default function CvScreen({
         {cvError && cvStage === 'idle' && !rateLimitEvento && <p className="text-xs text-red-500 text-center">{cvError}</p>}
       </div>
 
+      {/* ── Post-CV save prompt (free users) ── */}
+      {cvStage === 'done' && cvFinalData && !user && (
+        <div className="rounded-2xl px-4 py-3 flex items-center justify-between gap-3"
+          style={{ background: 'rgba(5,150,105,0.05)', border: '1px solid rgba(5,150,105,0.20)' }}>
+          <div className="min-w-0">
+            <p className="text-xs font-semibold text-slate-700">Tu CV está listo</p>
+            <p className="text-[11px] text-slate-400 mt-0.5">Guardalo antes de cerrar el browser — 7 días gratis</p>
+          </div>
+          <button
+            onClick={() => setShowPremiumModal(true)}
+            className="shrink-0 text-xs font-semibold px-3 py-1.5 rounded-xl text-white"
+            style={{ background: 'linear-gradient(135deg,#059669,#10b981)' }}>
+            Guardar →
+          </button>
+        </div>
+      )}
+
       {/* Footer nav */}
       <div className="flex gap-2 pt-2">
         {result && (

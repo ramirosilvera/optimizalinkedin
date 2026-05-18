@@ -42,11 +42,11 @@ export default function WelcomeScreen({ setStep, handleModeSelectJobAdapter, job
 
       <div className="space-y-3">
         <button
-          onClick={() => { trackEvent('click_empezar_analisis', { location: 'hero' }); setStep(STEPS.MODE_SELECT) }}
+          onClick={() => { trackEvent('click_empezar_analisis', { location: 'hero' }); setStep(STEPS.QUESTIONS) }}
           className="btn-glow w-full text-white font-semibold py-4 px-8 rounded-2xl text-base"
           style={{ background: 'linear-gradient(135deg, #0077B5 0%, #0ea5e9 100%)' }}
         >
-          Ver mi hoja de ruta →
+          Empezar mi diagnóstico gratis →
         </button>
         <button
           onClick={() => { trackEvent('click_job_adapter', { location: 'hero' }); handleModeSelectJobAdapter() }}

@@ -83,6 +83,23 @@ export default function ResultsScreen({
         </div>
       )}
 
+      {/* ── Post-diagnosis save prompt (free users) ── */}
+      {result && !user && (
+        <div className="rounded-2xl px-4 py-3 flex items-center justify-between gap-3"
+          style={{ background: 'rgba(99,102,241,0.05)', border: '1px solid rgba(99,102,241,0.18)' }}>
+          <div className="min-w-0">
+            <p className="text-xs font-semibold text-slate-700">Tu diagnóstico quedó listo</p>
+            <p className="text-[11px] text-slate-400 mt-0.5">Guardalo con Premium — 7 días gratis</p>
+          </div>
+          <button
+            onClick={() => setShowPremiumModal(true)}
+            className="shrink-0 text-xs font-semibold px-3 py-1.5 rounded-xl text-white"
+            style={{ background: 'linear-gradient(135deg,#6366f1,#8b5cf6)' }}>
+            Guardar →
+          </button>
+        </div>
+      )}
+
       {/* ══ BLOQUE 2 — Diagnóstico estratégico ══ */}
       {result && (result.fortalezas?.length > 0 || result.areas_de_mejora?.length > 0) && (
         <div className="rounded-2xl overflow-hidden"
