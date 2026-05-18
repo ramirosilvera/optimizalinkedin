@@ -310,17 +310,34 @@ async function logAdminAction(env, adminId, action, targetType, targetId, detail
 }
 
 // ── AI usage log (fire-and-forget) ───────────────────────────────────────────
+
+/**
+ * HTTP response received — tokens present when Gemini includes usageMetadata
+ * @typedef {{ feature: string, userId: string|null, inputTokens: number|null, outputTokens: number|null, durationMs: number, statusCode: number, errorType: string|null }} AiUsageResponseEvent
+ */
+/**
+ * Network failure / timeout / abort — request never completed, no token data exists
+ * @typedef {{ feature: string, userId: string|null, durationMs: number, statusCode: number, errorType: string }} AiUsageNetworkEvent
+ */
+/**
+ * @typedef {AiUsageResponseEvent | AiUsageNetworkEvent} AiUsageEvent
+ */
+
+/**
+ * @param {*} env
+ * @param {AiUsageEvent} params
+ */
 function logAiUsage(env, { feature, userId, inputTokens, outputTokens, durationMs, statusCode, errorType }) {
   if (!env.SUPABASE_SERVICE_ROLE_KEY || !env.SUPABASE_URL) return
   const row = {
-    user_id: userId || null,
+    user_id: userId ?? null,
     feature,
     model: DEFAULT_MODEL,
     input_tokens: inputTokens ?? null,
     output_tokens: outputTokens ?? null,
     duration_ms: durationMs ?? null,
     status_code: statusCode ?? null,
-    error_type: errorType || null,
+    error_type: errorType ?? null,
   }
   fetch(`${env.SUPABASE_URL}/rest/v1/ai_usage_logs`, {
     method: 'POST',
