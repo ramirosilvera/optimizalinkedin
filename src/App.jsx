@@ -1814,9 +1814,27 @@ Generá el feedback en este JSON exacto:
     if (showCvPreview) {
       setCvPreviewHtml(buildCvHtml(newData, profilePhoto, profilePhotoMime, cvTemplate))
     }
-    saveToHistorial('cv', newData, newData.nombre || 'CV actualizado', null)
+    // Solo guardar historial en snapshots intencionales (cuando variant está presente).
+    // Ediciones manuales (sin variant) NO crean registros — evita explosión de versiones.
+    if (variant !== undefined) {
+      const titulo = variant === 'optimizado'
+        ? `CV optimizado — ${newData.nombre || 'CV'}`
+        : newData.nombre || 'CV'
+      saveToHistorial('cv', newData, titulo, null)
+      if (user?.es_premium) {
+        setCvSuccess('✓ Versión guardada en historial')
+        setTimeout(() => setCvSuccess(''), 3000)
+      }
+    }
+  }
+
+  // Snapshot manual explícito (botón "Guardar versión")
+  const saveCvSnapshot = () => {
+    if (!cvFinalData) return
+    const titulo = cvFinalData.nombre || 'CV guardado'
+    saveToHistorial('cv', cvFinalData, titulo, null)
     if (user?.es_premium) {
-      setCvSuccess('✓ CV guardado en historial')
+      setCvSuccess('✓ Versión guardada')
       setTimeout(() => setCvSuccess(''), 3000)
     }
   }
@@ -2836,6 +2854,14 @@ Generá el feedback en este JSON exacto:
               )}
             </div>
             <div className="flex items-center gap-2">
+              {user?.es_premium && (
+                <button
+                  onClick={saveCvSnapshot}
+                  className="text-white text-xs px-3 py-1.5 rounded-lg font-semibold"
+                  style={{ background: 'rgba(255,255,255,0.15)', border: '1px solid rgba(255,255,255,0.25)' }}>
+                  💾
+                </button>
+              )}
               <button
                 onClick={exportCvPdf}
                 disabled={cvExportState === 'loading'}

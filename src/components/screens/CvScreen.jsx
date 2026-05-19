@@ -848,7 +848,7 @@ export default function CvScreen({
       </div>
 
       {/* ── Post-CV save prompt (free users) ── */}
-      {cvStage === 'done' && cvFinalData && !user && (
+      {cvStage === 'done' && cvFinalData && !user && !localStorage.getItem('ol_at') && (
         <div className="rounded-2xl px-4 py-3 flex items-center justify-between gap-3"
           style={{ background: 'rgba(5,150,105,0.05)', border: '1px solid rgba(5,150,105,0.20)' }}>
           <div className="min-w-0">
