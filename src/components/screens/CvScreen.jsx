@@ -36,7 +36,6 @@ export default function CvScreen({
   openCvPreview,
   exportCvPdf,
   cvExportState,
-  cvExportMsg,
   cvEditing,
   setCvEditing,
   updateCv,
@@ -596,15 +595,9 @@ export default function CvScreen({
                   style={{ background: cvExportState === 'loading' ? 'rgba(5,150,105,0.45)' : 'linear-gradient(135deg,#059669,#10b981)' }}>
                   {cvExportState === 'loading'
                     ? <><span className="w-3.5 h-3.5 rounded-full border-2 border-white border-t-transparent animate-spin" /><span>Preparando…</span></>
-                    : '📥 Descargar PDF'}
+                    : '📥 Exportar CV'}
                 </button>
               </div>
-              {cvExportMsg && (
-                <p className="text-center text-xs leading-relaxed"
-                  style={{ color: cvExportState === 'error' ? '#ef4444' : '#059669' }}>
-                  {cvExportMsg}
-                </p>
-              )}
               {cvSuccess && <p className="text-xs text-center" style={{ color: '#059669' }}>✓ {cvSuccess}</p>}
             </div>
             {/* ── Optimizar CV con IA — 2 fases ── */}

@@ -19,7 +19,7 @@ import { buildCvHtml, sanitizeCv } from './cv/templates'
 import RateLimitUI from './components/RateLimitUI'
 import {
   LinkedInIcon, Logo, Spinner, OptionButton, CopyButton,
-  TagInput, ScoreRing, ResultCard, BeforeAfter,
+  TagInput, ScoreRing, ResultCard, BeforeAfter, ToastContainer,
 } from './components/ui'
 import CommentsSection from './components/CommentsSection'
 import AdminPanel from './admin/AdminPanel'
@@ -148,8 +148,9 @@ export default function App() {
   const [cvPreviewHtml, setCvPreviewHtml] = useState('')
   const [showCvPreview, setShowCvPreview] = useState(false)
   const [cvVariant, setCvVariant] = useState(null) // null=base | 'optimizado' | { empresa, cargo }
-  const [cvExportState, setCvExportState] = useState('idle') // 'idle' | 'loading' | 'done' | 'error'
-  const [cvExportMsg, setCvExportMsg] = useState('')
+  const [cvExportState, setCvExportState] = useState('idle') // 'idle' | 'loading'
+  const [toasts, setToasts] = useState([])
+  const toastIdRef = useRef(0)
   const [cvOptimizing, setCvOptimizing] = useState(false)
   const [cvOptimizeError, setCvOptimizeError] = useState('')
   const [cvOptimizeSuggestion, setCvOptimizeSuggestion] = useState(null)
@@ -557,6 +558,15 @@ export default function App() {
       })
     } catch { /* silencioso */ }
   }
+
+  const addToast = (msg, type = 'success', duration = 4000) => {
+    const id = ++toastIdRef.current
+    setToasts(prev => [...prev, { id, msg, type }])
+    if (duration > 0) setTimeout(() => setToasts(prev => prev.filter(t => t.id !== id)), duration)
+    return id
+  }
+
+  const dismissToast = (id) => setToasts(prev => prev.filter(t => t.id !== id))
 
   const loadHistorial = async () => {
     const token = localStorage.getItem('ol_at')
@@ -2011,22 +2021,25 @@ Generá el feedback en este JSON exacto:
     setShowCvPreview(true)
     setShowJobModal(false)
     setJobResult(null)
-    saveToHistorial('cv', adaptedCv, `CV adaptado${empresa ? ` — ${empresa}` : ''}`, null)
     trackEvent('job_adapter_open_preview')
   }
 
-  // ── Exportar CV: Web Share API en mobile, popup+print en desktop ────────────
+  // ── Exportar CV: guarda snapshot + Web Share API en mobile, popup+print en desktop ──
   const exportCvPdf = async () => {
     if (!cvFinalData || cvExportState === 'loading') return
     setCvExportState('loading')
-    setCvExportMsg('')
     trackEvent('cv_export_start')
 
-    const showMsg = (msg, isError = false) => {
-      setCvExportState(isError ? 'error' : 'done')
-      setCvExportMsg(msg)
-      setTimeout(() => { setCvExportState('idle'); setCvExportMsg('') }, 5000)
-    }
+    // Guardar snapshot en historial (fire-and-forget, no bloquea la exportación)
+    const snapshotTitulo = (() => {
+      if (!cvVariant) return cvFinalData.nombre || 'CV base'
+      if (cvVariant === 'optimizado') return `${cvFinalData.nombre || 'CV'} — optimizado`
+      if (typeof cvVariant === 'object' && cvVariant.empresa) return `CV adaptado — ${cvVariant.empresa}`
+      return cvFinalData.nombre || 'CV'
+    })()
+    saveToHistorial('cv', cvFinalData, snapshotTitulo, null)
+
+    const loadingId = addToast('Preparando tu CV…', 'loading', 0)
 
     try {
       const html = buildCvHtml(cvFinalData, profilePhoto, profilePhotoMime, cvTemplate, { forExport: true })
@@ -2035,11 +2048,12 @@ Generá el feedback en este JSON exacto:
       const htmlFile = new File([htmlBlob], `${filename}.html`, { type: 'text/html' })
 
       // Web Share API Level 2 — iOS 14.5+, Android Chrome 89+
-      // El usuario recibe el share sheet nativo: Files, AirDrop, Mail, etc.
       if (navigator.canShare && navigator.canShare({ files: [htmlFile] })) {
         await navigator.share({ files: [htmlFile], title: `CV - ${cvFinalData?.nombre || 'Mi CV'}` })
-        showMsg('CV compartido ✓')
+        dismissToast(loadingId)
+        addToast('CV exportado · Versión guardada en historial', 'success')
         trackEvent('cv_export_share')
+        setCvExportState('idle')
         return
       }
 
@@ -2048,7 +2062,8 @@ Generá el feedback en este JSON exacto:
       const win = window.open('', '_blank', 'width=900,height=750')
       if (win) {
         win.document.open(); win.document.write(printHtml); win.document.close()
-        setCvExportState('idle')
+        dismissToast(loadingId)
+        addToast('CV exportado · Versión guardada en historial', 'success')
         trackEvent('cv_export_print')
       } else {
         // Popup bloqueado: descarga HTML con instrucción
@@ -2057,17 +2072,20 @@ Generá el feedback en este JSON exacto:
         a.download = `${filename}.html`
         document.body.appendChild(a); a.click(); document.body.removeChild(a)
         setTimeout(() => URL.revokeObjectURL(a.href), 2000)
-        showMsg('Abrí el archivo descargado en Chrome → Ctrl+P → Guardar como PDF')
+        dismissToast(loadingId)
+        addToast('Abrí el archivo en Chrome → Ctrl+P → Guardar como PDF', 'success', 8000)
         trackEvent('cv_export_html_download')
       }
     } catch (err) {
+      dismissToast(loadingId)
       if (err.name === 'AbortError') {
-        // Usuario canceló el share → no es un error
-        setCvExportState('idle')
+        trackEvent('cv_export_aborted')
       } else {
-        showMsg(err.message || 'No se pudo exportar. Intentá de nuevo.', true)
+        addToast(err.message || 'No se pudo exportar. Intentá de nuevo.', 'error')
         trackEvent('cv_export_error', { reason: err.message })
       }
+    } finally {
+      setCvExportState('idle')
     }
   }
 
@@ -2694,7 +2712,6 @@ Generá el feedback en este JSON exacto:
             handleWaitlist={handleWaitlist}
             exportCvPdf={exportCvPdf}
             cvExportState={cvExportState}
-            cvExportMsg={cvExportMsg}
             setStep={setStep}
             setJobCvForAdapter={setJobCvForAdapter}
             setJobPosting={setJobPosting}
@@ -2867,14 +2884,6 @@ Generá el feedback en este JSON exacto:
             </div>
             {/* Right: actions — siempre en una línea */}
             <div className="flex items-center gap-1.5 shrink-0">
-              {user?.es_premium && (
-                <button
-                  onClick={saveCvSnapshot}
-                  className="text-white text-sm w-9 h-9 rounded-lg font-semibold flex items-center justify-center"
-                  style={{ background: 'rgba(255,255,255,0.15)', border: '1px solid rgba(255,255,255,0.25)' }}>
-                  💾
-                </button>
-              )}
               <button
                 onClick={exportCvPdf}
                 disabled={cvExportState === 'loading'}
@@ -2882,7 +2891,7 @@ Generá el feedback en este JSON exacto:
                 style={{ background: 'rgba(255,255,255,0.25)', border: '1px solid rgba(255,255,255,0.35)', opacity: cvExportState === 'loading' ? 0.6 : 1 }}>
                 {cvExportState === 'loading'
                   ? <span className="w-3.5 h-3.5 rounded-full border-2 border-white border-t-transparent animate-spin inline-block" />
-                  : <><span>📥</span><span className="hidden sm:inline"> Descargar PDF</span></>}
+                  : <><span>📥</span><span className="hidden sm:inline"> Exportar CV</span></>}
               </button>
               <button
                 onClick={() => setShowCvPreview(false)}
@@ -2892,15 +2901,6 @@ Generá el feedback en este JSON exacto:
               </button>
             </div>
           </div>
-          {/* Mensaje de estado post-export */}
-          {cvExportMsg && (
-            <div className="px-4 py-2 shrink-0 text-center"
-              style={{ background: cvExportState === 'error' ? '#fef2f2' : '#f0fdf4', borderBottom: '1px solid rgba(0,0,0,0.06)' }}>
-              <p className="text-xs font-medium" style={{ color: cvExportState === 'error' ? '#dc2626' : '#15803d' }}>
-                {cvExportMsg}
-              </p>
-            </div>
-          )}
           {/* iframe ocupa el resto — paddingBottom para home indicator de iPhone */}
           <div className="cv-iframe-wrapper flex-1 overflow-hidden" style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}>
             <iframe
@@ -2949,6 +2949,8 @@ Generá el feedback en este JSON exacto:
         setLeadApellido={setLeadApellido}
         saveAndConnectRamiro={saveAndConnectRamiro}
       />}
+
+      <ToastContainer toasts={toasts} dismissToast={dismissToast} />
     </main>
   )
 }

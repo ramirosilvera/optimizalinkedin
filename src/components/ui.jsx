@@ -123,6 +123,36 @@ export function ResultCard({ title, children, accent = '#0077B5' }) {
   )
 }
 
+export function ToastContainer({ toasts, dismissToast }) {
+  if (!toasts.length) return null
+  return (
+    <div className="fixed bottom-0 left-0 right-0 flex flex-col items-center gap-2 z-[9999] pointer-events-none"
+      style={{ paddingBottom: 'max(1.5rem, env(safe-area-inset-bottom))' }}>
+      {toasts.map(t => (
+        <div key={t.id}
+          className="animate-toast-in pointer-events-auto flex items-center gap-2.5 px-4 py-3 rounded-2xl text-sm font-semibold"
+          style={{
+            maxWidth: '24rem',
+            width: 'calc(100% - 2rem)',
+            background: t.type === 'error' ? '#fff1f2' : t.type === 'loading' ? 'white' : '#065f46',
+            color: t.type === 'error' ? '#dc2626' : t.type === 'loading' ? '#0077B5' : 'white',
+            border: t.type === 'success' ? 'none' : `1px solid ${t.type === 'error' ? 'rgba(220,38,38,0.25)' : 'rgba(0,119,181,0.20)'}`,
+            boxShadow: '0 4px 24px rgba(0,0,0,0.18)',
+          }}>
+          {t.type === 'loading' && (
+            <span className="w-4 h-4 rounded-full border-2 border-current border-t-transparent animate-spin shrink-0" />
+          )}
+          <span className="flex-1">{t.msg}</span>
+          <button onClick={() => dismissToast(t.id)}
+            className="shrink-0 opacity-50 hover:opacity-100 transition-opacity text-xl leading-none ml-1">
+            ×
+          </button>
+        </div>
+      ))}
+    </div>
+  )
+}
+
 export function BeforeAfter({ label, before, after }) {
   return (
     <div className="space-y-2">
