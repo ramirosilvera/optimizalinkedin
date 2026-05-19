@@ -41,6 +41,8 @@ export const CV_AUTOFIT_SCRIPT = `<script>
     var vw = window.innerWidth || document.documentElement.clientWidth || A4W;
     if (vw > 0 && vw < A4W) {
       wrap.style.zoom = (vw / A4W).toFixed(4);
+      document.body.style.width = vw + 'px';
+      document.body.style.minHeight = Math.round(A4H * (vw / A4W)) + 'px';
       document.documentElement.style.overflowX = 'hidden';
       document.body.style.overflowX = 'hidden';
       return;
@@ -121,42 +123,42 @@ export function buildCvHtmlMinimal(cv, photoBase64 = null, photoMime = 'image/jp
 <html lang="es">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=210mm, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1">
 <title>${e(pdfTitle)}</title>
 <style>
   @page { size: A4; margin: 0; }
   * { box-sizing: border-box; margin: 0; padding: 0; }
-  body { font-family: 'Helvetica Neue', Arial, sans-serif; font-size: 9.5pt; color: #111827; line-height: 1.5; width: 210mm; min-height: 297mm; background: white; padding: 18mm 16mm 16mm; }
-  .cv-wrap { width: 100%; min-height: 100%; }
-  .cv-header { display: flex; align-items: flex-start; justify-content: space-between; padding-bottom: 10px; border-bottom: 2px solid #111827; margin-bottom: 10px; gap: 12px; }
-  .header-left { flex: 1; }
-  .cv-name { font-size: 22pt; font-weight: 800; letter-spacing: -0.5px; line-height: 1.1; }
-  .cv-title { font-size: 9pt; color: #6B7280; margin-top: 4px; line-height: 1.4; }
-  .cv-photo-min { width: 60px; height: 60px; border-radius: 50%; object-fit: cover; border: 2px solid #e5e7eb; flex-shrink: 0; }
-  .contact-bar { display: flex; flex-wrap: wrap; gap: 4px 16px; font-size: 7.5pt; color: #6B7280; margin-bottom: 14px; }
-  .section { margin-bottom: 13px; }
-  .section-title { font-size: 6pt; font-weight: 700; letter-spacing: 1.6px; text-transform: uppercase; color: #374151; padding-bottom: 4px; margin-bottom: 8px; border-bottom: 1px solid #E5E7EB; }
-  .resumen-text { font-size: 9pt; color: #374151; line-height: 1.6; }
-  .exp-item { margin-bottom: 11px; }
+  body { font-family: 'Helvetica Neue', Arial, sans-serif; font-size: 9.5pt; color: #111827; line-height: 1.5; width: 210mm; min-height: 297mm; background: white; }
+  .cv-wrap { width: 100%; min-height: 100%; padding: 16mm 14mm 14mm; }
+  .cv-header { display: flex; align-items: flex-start; justify-content: space-between; padding-bottom: 11px; border-bottom: 2px solid #111827; margin-bottom: 11px; gap: 14px; }
+  .header-left { flex: 1; min-width: 0; }
+  .cv-name { font-size: 20pt; font-weight: 800; letter-spacing: -0.5px; line-height: 1.1; word-break: break-word; overflow-wrap: break-word; }
+  .cv-title { font-size: 9.5pt; color: #6B7280; margin-top: 5px; line-height: 1.45; overflow-wrap: break-word; }
+  .cv-photo-min { width: 68px; height: 68px; border-radius: 50%; object-fit: cover; border: 2px solid #e5e7eb; flex-shrink: 0; }
+  .contact-bar { display: flex; flex-wrap: wrap; gap: 3px 16px; font-size: 8pt; color: #6B7280; margin-bottom: 16px; overflow-wrap: break-word; }
+  .section { margin-bottom: 14px; }
+  .section-title { font-size: 7.5pt; font-weight: 700; letter-spacing: 1.8px; text-transform: uppercase; color: #374151; padding-bottom: 5px; margin-bottom: 9px; border-bottom: 1px solid #E5E7EB; }
+  .resumen-text { font-size: 9pt; color: #374151; line-height: 1.62; overflow-wrap: break-word; }
+  .exp-item { margin-bottom: 12px; }
   .exp-item:last-child { margin-bottom: 0; }
   .exp-row { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
-  .exp-role { font-size: 9.5pt; font-weight: 700; color: #111827; flex: 1; }
+  .exp-role { font-size: 9.5pt; font-weight: 700; color: #111827; flex: 1; min-width: 0; overflow-wrap: break-word; }
   .exp-period { font-size: 7.5pt; color: #9CA3AF; white-space: nowrap; flex-shrink: 0; }
-  .exp-company { font-size: 8pt; color: #6B7280; font-style: italic; margin: 1.5px 0 4px; }
-  .exp-bullets { margin: 0 0 0 12px; padding: 0; }
-  .exp-bullets li { font-size: 8.5pt; color: #374151; margin-bottom: 2px; line-height: 1.45; }
-  .prev-jobs { margin-top: 8px; display: flex; flex-wrap: wrap; gap: 2px 10px; }
-  .prev-job { font-size: 7.5pt; color: #9CA3AF; }
-  .edu-item { margin-bottom: 7px; }
+  .exp-company { font-size: 8.5pt; color: #6B7280; font-style: italic; margin: 2px 0 5px; overflow-wrap: break-word; }
+  .exp-bullets { margin: 0 0 0 13px; padding: 0; }
+  .exp-bullets li { font-size: 8.5pt; color: #374151; margin-bottom: 3px; line-height: 1.48; overflow-wrap: break-word; }
+  .prev-jobs { margin-top: 9px; padding-top: 7px; border-top: 0.5px solid #E5E7EB; display: flex; flex-wrap: wrap; gap: 2px 10px; }
+  .prev-job { font-size: 7.5pt; color: #9CA3AF; overflow-wrap: break-word; }
+  .edu-item { margin-bottom: 8px; }
   .edu-row { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
-  .edu-title { font-size: 8.5pt; font-weight: 600; color: #111827; flex: 1; }
+  .edu-title { font-size: 9pt; font-weight: 600; color: #111827; flex: 1; min-width: 0; overflow-wrap: break-word; }
   .edu-period { font-size: 7.5pt; color: #9CA3AF; white-space: nowrap; flex-shrink: 0; }
-  .edu-inst { font-size: 8pt; color: #6B7280; margin-top: 1px; }
-  .skills-text { font-size: 8.5pt; color: #374151; line-height: 1.7; }
+  .edu-inst { font-size: 8.5pt; color: #6B7280; margin-top: 2px; overflow-wrap: break-word; }
+  .skills-text { font-size: 8.5pt; color: #374151; line-height: 1.7; overflow-wrap: break-word; }
   @media print {
     @page { size: A4 portrait; margin: 0; }
     * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
-    html, body { margin: 0 !important; padding: 18mm 16mm !important; width: 210mm !important; }
+    html, body { margin: 0 !important; padding: 0 !important; width: 210mm !important; }
     .cv-wrap { zoom: 1 !important; transform: none !important; }
   }
 </style>
