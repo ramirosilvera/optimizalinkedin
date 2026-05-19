@@ -47,7 +47,7 @@ export default function JobAdapterModal({
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4"
       style={{ background: 'rgba(0,0,0,0.60)', backdropFilter: 'blur(4px)' }}
       onClick={e => { if (e.target === e.currentTarget) handleClose() }}>
-      <div className="w-full max-w-lg rounded-3xl overflow-hidden flex flex-col max-h-[90vh]"
+      <div className="w-full max-w-lg rounded-3xl overflow-hidden flex flex-col max-h-[90dvh]"
         style={{ background: 'white', boxShadow: '0 25px 60px rgba(0,0,0,0.25)' }}>
 
         <div className="flex items-center justify-between p-5 border-b shrink-0" style={{ borderColor: 'rgba(0,119,181,0.12)' }}>

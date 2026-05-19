@@ -4,7 +4,7 @@ export default function HistorialDrawer({ historial, historialLoading, setShowHi
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4"
       style={{ background: 'rgba(0,0,0,0.55)', backdropFilter: 'blur(4px)' }}>
-      <div className="w-full max-w-lg rounded-3xl p-6 space-y-4 max-h-[85vh] overflow-y-auto"
+      <div className="w-full max-w-lg rounded-3xl p-6 space-y-4 max-h-[85dvh] overflow-y-auto"
         style={{ background: 'white', boxShadow: '0 25px 60px rgba(0,0,0,0.2)' }}>
         <div className="flex items-center justify-between">
           <h2 className="text-slate-900 font-bold text-lg">Mis resultados</h2>

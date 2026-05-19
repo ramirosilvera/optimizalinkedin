@@ -2256,7 +2256,10 @@ Generá el feedback en este JSON exacto:
   // ── Render ─────────────────────────────────────────────────
 
   return (
-    <main className="min-h-dvh flex flex-col items-center px-4 py-8 sm:py-14">
+    <main
+      className="min-h-dvh flex flex-col items-center px-4 py-8 sm:py-14"
+      style={{ paddingBottom: 'max(2rem, env(safe-area-inset-bottom))' }}
+    >
 
       {/* ── Admin Panel ── */}
       {showAdminPanel && authToken && (
@@ -2373,60 +2376,60 @@ Generá el feedback en este JSON exacto:
       />}
 
       {/* ── Barra de usuario ── */}
-      <div className="w-full max-w-xl mb-2 flex justify-end items-center gap-2 flex-wrap">
+      <div className="w-full max-w-xl mb-2 flex justify-end items-center gap-1.5 flex-wrap">
         {checkingPremium && (
-          <span className="text-xs font-medium px-3 py-1 rounded-full animate-pulse"
+          <span className="text-xs font-medium px-2.5 py-1 rounded-full animate-pulse"
             style={{ background: 'rgba(0,119,181,0.10)', color: '#0077B5' }}>
-            ⏳ Verificando suscripción...
+            ⏳ Verificando...
           </span>
         )}
         {user ? (
           <>
             {user.es_premium && (() => {
               const hasta = user.premium_hasta ? new Date(user.premium_hasta) : null
-              const label = hasta
-                ? `✦ Premium hasta ${hasta.toLocaleDateString('es-AR', { day: 'numeric', month: 'short' })}`
-                : '✦ Premium'
               return (
                 <button onClick={() => { setCancelConfirm(false); setCancelDone(false); setShowManageModal(true) }}
                   className="text-xs font-bold px-2.5 py-1 rounded-full transition-opacity hover:opacity-80"
                   style={{ background: LI_GRADIENT, color: 'white' }}
-                  title="Gestionar suscripción">
-                  {label}
+                  title={hasta ? `Premium hasta ${hasta.toLocaleDateString('es-AR', { day: 'numeric', month: 'short' })}` : 'Gestionar suscripción'}>
+                  <span>✦ Premium</span>
+                  {hasta && <span className="hidden sm:inline"> hasta {hasta.toLocaleDateString('es-AR', { day: 'numeric', month: 'short' })}</span>}
                 </button>
               )
             })()}
-            <span className="text-sm text-slate-500 font-medium">{user.nombre || user.email}</span>
+            <span className="hidden sm:inline text-sm text-slate-500 font-medium">{user.nombre || user.email}</span>
             {!user.es_premium && (
               <button onClick={() => setShowPremiumModal(true)} disabled={subscriptionLoading}
-                className="text-xs font-semibold px-3 py-1.5 rounded-full"
+                className="text-xs font-semibold px-2.5 py-1.5 rounded-full"
                 style={{ background: LI_GRADIENT, color: 'white', opacity: subscriptionLoading ? 0.7 : 1 }}>
-                {subscriptionLoading ? '...' : '⬆ Activar Premium'}
+                {subscriptionLoading ? '...' : '⬆ Premium'}
               </button>
             )}
             {user.es_premium && (
               <button onClick={() => { loadHistorial(); setShowHistorial(true) }}
-                className="text-xs font-medium px-3 py-1.5 rounded-full"
-                style={BTN_GHOST_STYLE}>
-                📊 Mis resultados
+                className="text-xs font-medium px-2.5 py-1.5 rounded-full"
+                style={BTN_GHOST_STYLE}
+                title="Mis resultados">
+                <span>📊</span><span className="hidden sm:inline"> Mis resultados</span>
               </button>
             )}
             {user.es_premium && (
               <button onClick={() => { loadTracking(); setStep(STEPS.TRACKING) }}
-                className="text-xs font-medium px-3 py-1.5 rounded-full"
-                style={BTN_GHOST_STYLE}>
-                📍 Postulaciones
+                className="text-xs font-medium px-2.5 py-1.5 rounded-full"
+                style={BTN_GHOST_STYLE}
+                title="Postulaciones">
+                <span>📍</span><span className="hidden sm:inline"> Postulaciones</span>
               </button>
             )}
             {isAdmin && (
               <button onClick={() => setShowAdminPanel(true)}
-                className="text-xs font-bold px-3 py-1.5 rounded-full transition-all"
+                className="text-xs font-bold px-2.5 py-1.5 rounded-full transition-all"
                 style={{ background: 'linear-gradient(135deg,#1e1b4b,#4338ca)', color: 'white' }}
                 title="Panel de administración">
-                ⚙ Admin
+                ⚙
               </button>
             )}
-            <button onClick={authLogout} className="text-xs text-slate-400 hover:text-slate-600 transition-colors px-1">
+            <button onClick={authLogout} className="text-xs text-slate-400 hover:text-slate-600 transition-colors px-1 py-1.5">
               Salir
             </button>
           </>
@@ -2829,35 +2832,45 @@ Generá el feedback en este JSON exacto:
       {/* ── Preview CV — overlay unificado (mobile + desktop) ── */}
       {showCvPreview && cvPreviewHtml && (
         <div className="cv-print-overlay fixed inset-0 z-50 flex flex-col" style={{ background: '#fff' }}>
-          {/* Barra superior */}
-          <div className="flex items-center justify-between px-4 py-3 shrink-0"
-            style={{ background: 'linear-gradient(135deg,#0077B5,#0ea5e9)', boxShadow: '0 2px 8px rgba(0,0,0,0.15)' }}>
-            <div className="flex items-center gap-2 flex-wrap min-w-0">
+          {/* Barra superior — con safe area top para iPhone notch */}
+          <div
+            className="flex items-center justify-between shrink-0"
+            style={{
+              background: 'linear-gradient(135deg,#0077B5,#0ea5e9)',
+              boxShadow: '0 2px 8px rgba(0,0,0,0.15)',
+              paddingTop: 'max(0.75rem, env(safe-area-inset-top))',
+              paddingBottom: '0.75rem',
+              paddingLeft: 'max(1rem, env(safe-area-inset-left))',
+              paddingRight: 'max(1rem, env(safe-area-inset-right))',
+            }}>
+            {/* Left: title + variant badges — flex-wrap para mobile */}
+            <div className="flex items-center gap-1.5 flex-wrap min-w-0 flex-1 mr-2">
               <p className="text-white text-sm font-semibold shrink-0">📄 Tu CV</p>
               {cvVariant === 'optimizado' && (
                 <span className="text-xs px-2 py-0.5 rounded-full font-semibold shrink-0"
                   style={{ background: 'rgba(245,158,11,0.35)', color: '#fef3c7' }}>
-                  ✨ Optimizado
+                  ✨ Opt.
                 </span>
               )}
               {cvVariant && typeof cvVariant === 'object' && (cvVariant.empresa || cvVariant.cargo) && (
-                <span className="text-xs px-2 py-0.5 rounded-full font-semibold truncate max-w-[160px]"
+                <span className="text-xs px-2 py-0.5 rounded-full font-semibold truncate max-w-[120px] sm:max-w-[200px]"
                   style={{ background: 'rgba(5,150,105,0.35)', color: '#d1fae5' }}>
-                  🎯 {[cvVariant.empresa, cvVariant.cargo].filter(Boolean).join(' — ')}
+                  🎯 {cvVariant.cargo || cvVariant.empresa}
                 </span>
               )}
               {cvQuality && (
-                <span className="text-xs px-2 py-0.5 rounded-full font-semibold shrink-0"
+                <span className="hidden sm:inline text-xs px-2 py-0.5 rounded-full font-semibold"
                   style={{ background: 'rgba(255,255,255,0.20)', color: 'white' }}>
                   {cvQuality.score}/10 · {cvQuality.nivel}
                 </span>
               )}
             </div>
-            <div className="flex items-center gap-2">
+            {/* Right: actions — siempre en una línea */}
+            <div className="flex items-center gap-1.5 shrink-0">
               {user?.es_premium && (
                 <button
                   onClick={saveCvSnapshot}
-                  className="text-white text-xs px-3 py-1.5 rounded-lg font-semibold"
+                  className="text-white text-sm w-9 h-9 rounded-lg font-semibold flex items-center justify-center"
                   style={{ background: 'rgba(255,255,255,0.15)', border: '1px solid rgba(255,255,255,0.25)' }}>
                   💾
                 </button>
@@ -2865,15 +2878,15 @@ Generá el feedback en este JSON exacto:
               <button
                 onClick={exportCvPdf}
                 disabled={cvExportState === 'loading'}
-                className="text-white text-xs px-3 py-1.5 rounded-lg font-semibold flex items-center gap-1.5"
+                className="text-white text-xs px-2.5 py-2 rounded-lg font-semibold flex items-center gap-1"
                 style={{ background: 'rgba(255,255,255,0.25)', border: '1px solid rgba(255,255,255,0.35)', opacity: cvExportState === 'loading' ? 0.6 : 1 }}>
                 {cvExportState === 'loading'
-                  ? <><span className="w-3 h-3 rounded-full border-2 border-white border-t-transparent animate-spin inline-block" /><span>Preparando…</span></>
-                  : '📥 Descargar PDF'}
+                  ? <span className="w-3.5 h-3.5 rounded-full border-2 border-white border-t-transparent animate-spin inline-block" />
+                  : <><span>📥</span><span className="hidden sm:inline"> Descargar PDF</span></>}
               </button>
               <button
                 onClick={() => setShowCvPreview(false)}
-                className="text-white text-xs px-3 py-1.5 rounded-lg"
+                className="text-white text-sm w-9 h-9 rounded-lg flex items-center justify-center"
                 style={{ background: 'rgba(255,255,255,0.15)' }}>
                 ✕
               </button>
@@ -2888,13 +2901,16 @@ Generá el feedback en este JSON exacto:
               </p>
             </div>
           )}
-          <iframe
-            id="cv-preview-iframe"
-            srcDoc={cvPreviewHtml}
-            title="Vista previa de tu CV"
-            className="flex-1 w-full border-0"
-            sandbox="allow-same-origin allow-scripts allow-modals"
-          />
+          {/* iframe ocupa el resto — paddingBottom para home indicator de iPhone */}
+          <div className="cv-iframe-wrapper flex-1 overflow-hidden" style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}>
+            <iframe
+              id="cv-preview-iframe"
+              srcDoc={cvPreviewHtml}
+              title="Vista previa de tu CV"
+              className="w-full h-full border-0"
+              sandbox="allow-same-origin allow-scripts allow-modals"
+            />
+          </div>
         </div>
       )}
 

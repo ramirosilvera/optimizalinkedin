@@ -12,12 +12,33 @@
 
 * { box-sizing: border-box; }
 
+/* ── Prevenir scroll horizontal global ── */
+html {
+  overflow-x: hidden;
+  width: 100%;
+}
+
 body {
   margin: 0;
   background-color: var(--li-bg);
   color: #0d2137;
   font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
   -webkit-font-smoothing: antialiased;
+  overflow-x: hidden;
+  width: 100%;
+  /* iOS: permitir momentum scrolling */
+  -webkit-overflow-scrolling: touch;
+}
+
+/* ── iOS Safari: prevenir zoom automático al enfocar inputs ──
+   Safari hace zoom cuando font-size < 16px — forzamos mínimo 16px en mobile.
+   max(16px, 1em) respeta font-size heredado si es mayor a 16px. */
+@media (max-width: 768px) {
+  input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="file"]),
+  textarea,
+  select {
+    font-size: max(16px, 1em) !important;
+  }
 }
 
 /* Gradient blobs sutiles para fondo claro */
@@ -98,11 +119,20 @@ body::before {
     background: white !important;
     flex-direction: column !important;
   }
-  .cv-print-overlay > *:not(iframe) { display: none !important; }
+  /* Ocultar todo salvo el wrapper del iframe */
+  .cv-print-overlay > *:not(.cv-iframe-wrapper) { display: none !important; }
+  /* El wrapper del iframe ocupa todo el espacio y no tiene padding extra */
+  .cv-print-overlay .cv-iframe-wrapper {
+    display: flex !important;
+    flex: 1 !important;
+    padding: 0 !important;
+    overflow: visible !important;
+  }
   .cv-print-overlay iframe {
     display: block !important;
     flex: 1 !important;
     width: 100% !important;
+    height: 100% !important;
     border: 0 !important;
   }
 }
@@ -128,4 +158,56 @@ body::before {
   );
   background-size: 200% auto;
   animation: shimmer 3s linear infinite;
+}
+
+/* ── iOS smooth scroll en contenedores scrollables ── */
+.overflow-y-auto,
+.overflow-auto,
+.overflow-y-scroll {
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior: contain;
+}
+
+/* ── Safe areas para iPhone con notch y home indicator ──
+   Aplicado directamente vía inline styles en App.jsx para el main element
+   y vía estas clases utilitarias para overlays/modales */
+.safe-top    { padding-top:    max(0.75rem, env(safe-area-inset-top));    }
+.safe-bottom { padding-bottom: max(2rem,    env(safe-area-inset-bottom)); }
+.safe-x {
+  padding-left:  max(1rem, env(safe-area-inset-left));
+  padding-right: max(1rem, env(safe-area-inset-right));
+}
+
+/* ── Modal body scroll lock ── */
+body.modal-open {
+  overflow: hidden;
+  /* iOS workaround — también previene el bounce */
+  position: fixed;
+  width: 100%;
+}
+
+/* ── Prevenir scroll bleed del fondo a través de overlays de modal ── */
+.fixed.inset-0 {
+  overscroll-behavior: contain;
+}
+
+/* ── Touch targets mínimos 44px para botones small ── */
+/* Se aplica solo a botones con clase size-explícita pequeña */
+@media (max-width: 768px) {
+  .touch-target {
+    min-height: 44px;
+    min-width: 44px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+  }
+}
+
+/* ── Mejorar legibilidad en pantallas pequeñas ── */
+@media (max-width: 380px) {
+  /* iPhone SE (375px) y similares: reducir padding extremo */
+  .sm-compact {
+    padding-left: 0.75rem !important;
+    padding-right: 0.75rem !important;
+  }
 }
