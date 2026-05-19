@@ -249,14 +249,27 @@ export default function CvScreen({
             {/* Template picker */}
             <div className="rounded-2xl p-3 space-y-2"
               style={{ background: 'rgba(0,119,181,0.04)', border: '1px solid rgba(0,119,181,0.14)' }}>
-              <p className="text-xs font-semibold text-slate-700">Diseño del CV</p>
+              <div className="flex items-center justify-between mb-2">
+                <p className="text-xs font-semibold text-slate-700">Diseño del CV</p>
+                {cvTemplate && (
+                  <span className="text-[10px] text-slate-400">
+                    {{
+                      clasico:   'Corporativo · ATS',
+                      minimal:   'ATS puro · Limpio',
+                      ejecutivo: 'Liderazgo · Senior',
+                      tech:      'IT · Startups',
+                      creativo:  'Diseño · Marketing',
+                    }[cvTemplate]}
+                  </span>
+                )}
+              </div>
               <div className="grid grid-cols-5 gap-1.5">
                 {[
-                  { id: 'clasico',   label: 'Clásico',   color: '#0d2137' },
-                  { id: 'minimal',   label: 'Minimal',   color: '#374151' },
-                  { id: 'ejecutivo', label: 'Ejecutivo', color: '#1e293b' },
-                  { id: 'tech',      label: 'Tech',      color: '#134e4a' },
-                  { id: 'creativo',  label: 'Creativo',  color: '#7c3aed' },
+                  { id: 'clasico',   label: 'Clásico',   color: '#0d2137', sub: 'Corporativo' },
+                  { id: 'minimal',   label: 'Minimal',   color: '#374151', sub: 'ATS puro' },
+                  { id: 'ejecutivo', label: 'Ejecutivo', color: '#1e293b', sub: 'Liderazgo' },
+                  { id: 'tech',      label: 'Tech',      color: '#134e4a', sub: 'IT / Dev' },
+                  { id: 'creativo',  label: 'Creativo',  color: '#7c3aed', sub: 'Diseño' },
                 ].map(t => (
                   <button
                     key={t.id}

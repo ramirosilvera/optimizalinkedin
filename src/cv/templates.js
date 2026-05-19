@@ -29,6 +29,22 @@ export function sanitizeCv(cv) {
   return { ...cv, experiencias: featured, experiencias_anteriores: anteriores, habilidades }
 }
 
+// ── Shared design tokens (all templates) ────────────────────────────────────
+// Typography scale (pt — calibrated for A4 print + iframe preview)
+// name:    20–22pt  |  title: 9.5pt  |  section-heading: 7–7.5pt
+// body:     9–9.5pt |  small: 7.5–8pt |  meta: 7pt
+//
+// Spacing rhythm: section-gap 13–18px, item-gap 8–12px
+// All text containers: overflow-wrap: break-word + min-width: 0 on flex children
+//
+// Print rules shared — included in every template via CV_PRINT_CSS
+export const CV_PRINT_CSS = `@media print {
+  @page { size: A4 portrait; margin: 0; }
+  * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
+  html, body { margin: 0 !important; padding: 0 !important; width: 210mm !important; }
+  .cv-wrap { zoom: 1 !important; transform: none !important; }
+}`
+
 // ── CV autofit script (shared across all templates) ─────────────────────────
 export const CV_AUTOFIT_SCRIPT = `<script>
 (function () {
@@ -233,7 +249,7 @@ export function buildCvHtmlEjecutivo(cv, photoBase64 = null, photoMime = 'image/
 <html lang="es">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=210mm, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1">
 <title>${e(pdfTitle)}</title>
 <style>
   @page { size: A4; margin: 0; }
@@ -241,36 +257,36 @@ export function buildCvHtmlEjecutivo(cv, photoBase64 = null, photoMime = 'image/
   body { font-family: 'Helvetica Neue', Arial, sans-serif; font-size: 9.5pt; color: #1e293b; line-height: 1.48; width: 210mm; min-height: 297mm; background: white; }
   .cv-wrap { display: flex; flex-direction: column; width: 210mm; min-height: 297mm; }
   .cv-header { background: #1e293b; color: white; padding: 20px 26px; display: flex; align-items: center; gap: 16px; }
-  .header-text { flex: 1; }
-  .cv-name { font-size: 20pt; font-weight: 800; color: white; letter-spacing: -0.3px; line-height: 1.1; }
-  .cv-title { font-size: 9pt; color: rgba(255,255,255,0.60); margin-top: 4px; line-height: 1.4; }
-  .cv-photo-exec { width: 64px; height: 64px; border-radius: 50%; object-fit: cover; border: 2px solid rgba(255,255,255,0.25); flex-shrink: 0; }
+  .header-text { flex: 1; min-width: 0; }
+  .cv-name { font-size: 20pt; font-weight: 800; color: white; letter-spacing: -0.3px; line-height: 1.1; word-break: break-word; overflow-wrap: break-word; }
+  .cv-title { font-size: 9.5pt; color: rgba(255,255,255,0.60); margin-top: 4px; line-height: 1.4; overflow-wrap: break-word; }
+  .cv-photo-exec { width: 68px; height: 68px; border-radius: 50%; object-fit: cover; border: 2px solid rgba(255,255,255,0.25); flex-shrink: 0; }
   .cv-body { display: flex; flex: 1; }
   .col-left { width: 58mm; background: #f8fafc; border-right: 1px solid #e2e8f0; padding: 16px 14px; flex-shrink: 0; }
   .col-right { flex: 1; padding: 16px 20px; background: white; min-width: 0; }
   .cl-section { margin-bottom: 14px; }
-  .cl-section-title { font-size: 6pt; font-weight: 700; letter-spacing: 1.3px; text-transform: uppercase; color: #b45309; padding-bottom: 4px; margin-bottom: 7px; border-bottom: 1px solid #fde68a; }
-  .cl-item { font-size: 7.5pt; color: #475569; margin-bottom: 4px; word-break: break-all; line-height: 1.35; }
-  .cl-skill { font-size: 8pt; color: #334155; padding: 2.5px 0; border-bottom: 0.5px solid #e2e8f0; line-height: 1.35; }
+  .cl-section-title { font-size: 7pt; font-weight: 700; letter-spacing: 1.3px; text-transform: uppercase; color: #b45309; padding-bottom: 4px; margin-bottom: 7px; border-bottom: 1px solid #fde68a; }
+  .cl-item { font-size: 7.5pt; color: #475569; margin-bottom: 4px; overflow-wrap: break-word; line-height: 1.35; }
+  .cl-skill { font-size: 8pt; color: #334155; padding: 2.5px 0; border-bottom: 0.5px solid #e2e8f0; line-height: 1.35; overflow-wrap: break-word; }
   .cl-skill:last-child { border-bottom: none; }
   .cl-edu { margin-bottom: 8px; }
-  .cl-edu-title { font-size: 8pt; font-weight: 600; color: #1e293b; line-height: 1.3; }
-  .cl-edu-inst { font-size: 7.5pt; color: #64748b; font-style: italic; margin-top: 1px; }
+  .cl-edu-title { font-size: 8pt; font-weight: 600; color: #1e293b; line-height: 1.3; overflow-wrap: break-word; }
+  .cl-edu-inst { font-size: 7.5pt; color: #64748b; font-style: italic; margin-top: 1px; overflow-wrap: break-word; }
   .cl-edu-period { font-size: 7pt; color: #94a3b8; margin-top: 1.5px; }
-  .cl-idioma { font-size: 8pt; color: #475569; margin-bottom: 3px; }
+  .cl-idioma { font-size: 8pt; color: #475569; margin-bottom: 3px; overflow-wrap: break-word; }
   .cr-section { margin-bottom: 14px; }
-  .cr-section-title { font-size: 6.5pt; font-weight: 700; text-transform: uppercase; letter-spacing: 0.9px; color: #1e293b; padding-bottom: 4px; margin-bottom: 10px; border-bottom: 1.5px solid #cbd5e1; }
-  .resumen-text { font-size: 9pt; color: #374151; line-height: 1.62; }
+  .cr-section-title { font-size: 7.5pt; font-weight: 700; text-transform: uppercase; letter-spacing: 0.9px; color: #1e293b; padding-bottom: 4px; margin-bottom: 10px; border-bottom: 1.5px solid #cbd5e1; }
+  .resumen-text { font-size: 9pt; color: #374151; line-height: 1.62; overflow-wrap: break-word; }
   .exp-item { margin-bottom: 12px; }
   .exp-item:last-child { margin-bottom: 0; }
   .exp-header { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
-  .exp-role { font-size: 10pt; font-weight: 700; color: #0f172a; flex: 1; line-height: 1.25; }
+  .exp-role { font-size: 10pt; font-weight: 700; color: #0f172a; flex: 1; min-width: 0; line-height: 1.25; overflow-wrap: break-word; }
   .exp-period { font-size: 7.5pt; color: #94a3b8; white-space: nowrap; flex-shrink: 0; }
-  .exp-company { font-size: 8.5pt; color: #b45309; font-weight: 600; margin: 2px 0 4px; }
+  .exp-company { font-size: 8.5pt; color: #b45309; font-weight: 600; margin: 2px 0 4px; overflow-wrap: break-word; }
   .exp-bullets { margin: 0 0 0 13px; padding: 0; }
-  .exp-bullets li { font-size: 8.5pt; color: #374151; margin-bottom: 2.5px; line-height: 1.48; }
+  .exp-bullets li { font-size: 8.5pt; color: #374151; margin-bottom: 2.5px; line-height: 1.48; overflow-wrap: break-word; }
   .prev-wrap { margin-top: 9px; padding-top: 7px; border-top: 0.5px solid #e2e8f0; }
-  .prev-item { font-size: 8pt; color: #64748b; margin-bottom: 3px; }
+  .prev-item { font-size: 8pt; color: #64748b; margin-bottom: 3px; overflow-wrap: break-word; }
   .prev-role { font-weight: 600; color: #475569; }
   .prev-co { font-style: italic; }
   @media print {
@@ -382,7 +398,7 @@ export function buildCvHtml(cv, photoBase64 = null, photoMime = 'image/jpeg', te
 <html lang="es">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=210mm, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1">
 <title>${e(pdfTitle)}</title>
 <style>
   @page { size: A4; margin: 0; }
@@ -469,7 +485,7 @@ export function buildCvHtml(cv, photoBase64 = null, photoMime = 'image/jpeg', te
     font-size: 7.5pt;
     color: rgba(255,255,255,0.78);
     margin-bottom: 5px;
-    word-break: break-all;
+    overflow-wrap: break-word;
     line-height: 1.38;
   }
 
@@ -483,8 +499,8 @@ export function buildCvHtml(cv, photoBase64 = null, photoMime = 'image/jpeg', te
   .sb-skill:last-child { border-bottom: none; }
 
   .sb-edu-item { margin-bottom: 10px; }
-  .sb-edu-title  { font-size: 8pt; font-weight: 600; color: white; line-height: 1.3; }
-  .sb-edu-inst   { font-size: 7.5pt; color: rgba(255,255,255,0.60); font-style: italic; margin-top: 1.5px; }
+  .sb-edu-title  { font-size: 8pt; font-weight: 600; color: white; line-height: 1.3; overflow-wrap: break-word; }
+  .sb-edu-inst   { font-size: 7.5pt; color: rgba(255,255,255,0.60); font-style: italic; margin-top: 1.5px; overflow-wrap: break-word; }
   .sb-edu-period { font-size: 7pt; color: rgba(255,255,255,0.44); margin-top: 2px; }
 
   .sb-idioma {
@@ -492,6 +508,7 @@ export function buildCvHtml(cv, photoBase64 = null, photoMime = 'image/jpeg', te
     color: rgba(255,255,255,0.80);
     margin-bottom: 4px;
     line-height: 1.32;
+    overflow-wrap: break-word;
   }
 
   /* ── Tech: skill tags ── */
@@ -523,6 +540,7 @@ export function buildCvHtml(cv, photoBase64 = null, photoMime = 'image/jpeg', te
     font-size: 9pt;
     color: #374151;
     line-height: 1.62;
+    overflow-wrap: break-word;
   }
 
   .exp-item { margin-bottom: 13px; }
@@ -556,6 +574,7 @@ export function buildCvHtml(cv, photoBase64 = null, photoMime = 'image/jpeg', te
     color: ${companyColor};
     font-weight: 600;
     margin: 2.5px 0 5px;
+    overflow-wrap: break-word;
   }
 
   .exp-bullets { margin: 0 0 0 13px; padding: 0; }
@@ -564,6 +583,7 @@ export function buildCvHtml(cv, photoBase64 = null, photoMime = 'image/jpeg', te
     color: #374151;
     margin-bottom: 3px;
     line-height: 1.50;
+    overflow-wrap: break-word;
   }
 
   /* ── Experiencia anterior (compact) ── */
@@ -576,6 +596,7 @@ export function buildCvHtml(cv, photoBase64 = null, photoMime = 'image/jpeg', te
     font-size: 8pt;
     color: #64748b;
     margin-bottom: 3.5px;
+    overflow-wrap: break-word;
     line-height: 1.35;
   }
   .exp-prev-role { font-weight: 600; color: #475569; }
