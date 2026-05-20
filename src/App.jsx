@@ -814,7 +814,7 @@ export default function App() {
             nombre: prev.nombre || prev.email || emailToUse,
             premium_hasta: data.premium_hasta || '',
           })
-          return { ...prev, es_premium: true, premium_hasta: data.premium_hasta || null }
+          return { ...prev, es_premium: true, premium_hasta: data.premium_hasta || null, premium_source: 'promo_code' }
         })
         trackEvent('premium_coupon_applied')
         setTimeout(() => {
@@ -887,7 +887,7 @@ export default function App() {
                     : '',
                 })
               }
-              return { ...prev, es_premium: true, premium_hasta: data.premium_hasta }
+              return { ...prev, es_premium: true, premium_hasta: data.premium_hasta, premium_source: data.premium_source || prev.premium_source || null }
             })
             trackEvent('premium_activated')
             return
@@ -956,6 +956,7 @@ export default function App() {
           nombre: perfil?.nombre || (data.user?.email || '').split('@')[0],
           es_premium: perfil?.es_premium || false,
           premium_hasta: perfil?.premium_hasta || null,
+          premium_source: perfil?.premium_source || null,
         }
         applySession(data.access_token, data.refresh_token, userData)
         checkAdminStatus(data.access_token)
@@ -995,6 +996,7 @@ export default function App() {
           nombre: perfil?.nombre || name,
           es_premium: perfil?.es_premium || false,
           premium_hasta: perfil?.premium_hasta || null,
+          premium_source: perfil?.premium_source || null,
         }
         if (userObj.es_premium) {
           applySession(accessToken, refreshToken || '', userObj)
@@ -2997,6 +2999,7 @@ Generá el feedback en este JSON exacto:
             setInterviewJobContext={setInterviewJobContext}
             resetInterview={resetInterview}
             cvFinalData={cvFinalData}
+            loadTracking={loadTracking}
           />
         )}
 

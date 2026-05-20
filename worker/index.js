@@ -621,7 +621,7 @@ async function persistSubscription(env, { userId, subId, status, nextPayment, ev
         es_premium: true,
         premium_hasta: premiumHasta,
         mp_subscription_id: subId,
-        premium_origen: 'mp',
+        premium_source: 'mercadopago',
         updated_at: new Date().toISOString(),
       }),
     })
@@ -728,7 +728,7 @@ export default {
         return new Response(JSON.stringify({ error: { message: 'Falta user_id' } }), { status: 400, headers: corsHeaders })
       }
       try {
-        const res = await supabaseServiceFetch(env, `perfiles?id=eq.${userId}&select=es_premium,premium_hasta,mp_subscription_id`)
+        const res = await supabaseServiceFetch(env, `perfiles?id=eq.${userId}&select=es_premium,premium_hasta,mp_subscription_id,premium_source`)
         const rows = await res.json()
         const perfil = rows?.[0]
         const ahora = new Date()
@@ -738,6 +738,7 @@ export default {
           es_premium: esPremiumReal || false,
           premium_hasta: perfil?.premium_hasta || null,
           mp_subscription_id: perfil?.mp_subscription_id || null,
+          premium_source: perfil?.premium_source || null,
         }), { status: 200, headers: corsHeaders })
       } catch {
         return new Response(JSON.stringify({ es_premium: false }), { status: 200, headers: corsHeaders })
@@ -875,7 +876,7 @@ export default {
         const premiumHasta = new Date(Date.now() + promo.duration_days * 24 * 60 * 60 * 1000).toISOString()
         await supabaseServiceFetch(env, 'perfiles', {
           method: 'POST',
-          body: JSON.stringify({ id: userId, es_premium: true, premium_hasta: premiumHasta, updated_at: new Date().toISOString() }),
+          body: JSON.stringify({ id: userId, es_premium: true, premium_hasta: premiumHasta, premium_source: 'promo_code', updated_at: new Date().toISOString() }),
           headers: { Prefer: 'resolution=merge-duplicates' },
         })
         await supabaseServiceFetch(env, `promo_codes?id=eq.${promo.id}`, {
@@ -931,7 +932,7 @@ export default {
 
       if (body.action === 'admin_users') {
         const { search = '', offset = 0, limit = 20, premium_only } = body
-        let qs = `perfiles?select=id,nombre,email,es_premium,premium_hasta,created_at&order=created_at.desc&offset=${offset}&limit=${limit}`
+        let qs = `perfiles?select=id,nombre,email,es_premium,premium_hasta,premium_source,created_at&order=created_at.desc&offset=${offset}&limit=${limit}`
         if (search) qs += `&or=(email.ilike.*${encodeURIComponent(search)}*,nombre.ilike.*${encodeURIComponent(search)}*)`
         if (premium_only) qs += '&es_premium=eq.true'
         try {
@@ -1079,7 +1080,7 @@ export default {
         const premiumHasta = new Date(Date.now() + days * 24 * 60 * 60 * 1000).toISOString()
         await supabaseServiceFetch(env, 'perfiles', {
           method: 'POST',
-          body: JSON.stringify({ id: user_id, es_premium: true, premium_hasta: premiumHasta, updated_at: new Date().toISOString() }),
+          body: JSON.stringify({ id: user_id, es_premium: true, premium_hasta: premiumHasta, premium_source: 'admin_grant', updated_at: new Date().toISOString() }),
           headers: { Prefer: 'resolution=merge-duplicates' },
         })
         await logAdminAction(env, admin.userId, 'grant_premium', 'user', user_id, { days, premium_hasta: premiumHasta })
@@ -1646,7 +1647,7 @@ export default {
       const premiumHasta = new Date(Date.now() + (months || 1) * 30 * 24 * 60 * 60 * 1000).toISOString()
       await supabaseServiceFetch(env, 'perfiles', {
         method: 'POST',
-        body: JSON.stringify({ id: userId, es_premium: true, premium_hasta: premiumHasta, updated_at: new Date().toISOString() }),
+        body: JSON.stringify({ id: userId, es_premium: true, premium_hasta: premiumHasta, premium_source: 'legacy', updated_at: new Date().toISOString() }),
       })
       return new Response(JSON.stringify({ ok: true, user_id: userId, premium_hasta: premiumHasta }), { status: 200, headers: corsHeaders })
     }
@@ -1658,7 +1659,7 @@ export default {
         return new Response(JSON.stringify({ error: 'Falta user_id' }), { status: 400, headers: corsHeaders })
       }
       try {
-        const res = await supabaseServiceFetch(env, `perfiles?id=eq.${user_id}&select=es_premium,premium_hasta,mp_subscription_id`)
+        const res = await supabaseServiceFetch(env, `perfiles?id=eq.${user_id}&select=es_premium,premium_hasta,mp_subscription_id,premium_source`)
         const rows = await res.json()
         const perfil = rows?.[0]
         // Si premium_hasta ya venció, considerar no-premium aunque el flag diga true
@@ -1669,6 +1670,7 @@ export default {
           es_premium: esPremiumReal || false,
           premium_hasta: perfil?.premium_hasta || null,
           mp_subscription_id: perfil?.mp_subscription_id || null,
+          premium_source: perfil?.premium_source || null,
         }), { status: 200, headers: corsHeaders })
       } catch {
         return new Response(JSON.stringify({ es_premium: false }), { status: 200, headers: corsHeaders })

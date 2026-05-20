@@ -53,10 +53,24 @@ function Td({ children, s }) {
   return <td style={{ padding:'10px 12px', fontSize:13, borderTop:'1px solid #f1f5f9', verticalAlign:'middle', ...s }}>{children}</td>
 }
 
-function Badge({ premium, hasta }) {
+const SOURCE_TAG = { mercadopago:'MP', promo_code:'Promo', admin_grant:'Admin', internal:'Int', legacy:'Legacy' }
+
+function Badge({ premium, hasta, source }) {
   if (!premium) return <span style={{ background:'#f1f5f9', color:'#64748b', borderRadius:99, padding:'2px 9px', fontWeight:600, fontSize:11 }}>Free</span>
-  const label = hasta ? `Premium · ${new Date(hasta).toLocaleDateString('es-AR',{day:'numeric',month:'short'})}` : 'Premium'
-  return <span style={{ background:LI_GRADIENT, color:'white', borderRadius:99, padding:'2px 9px', fontWeight:700, fontSize:11 }}>{label}</span>
+  const dateLabel = hasta ? ` · ${new Date(hasta).toLocaleDateString('es-AR',{day:'numeric',month:'short'})}` : ''
+  const srcTag = SOURCE_TAG[source]
+  return (
+    <span style={{ display:'inline-flex', alignItems:'center', gap:4 }}>
+      <span style={{ background:LI_GRADIENT, color:'white', borderRadius:99, padding:'2px 9px', fontWeight:700, fontSize:11 }}>
+        Premium{dateLabel}
+      </span>
+      {srcTag && (
+        <span style={{ background:'#e0f2fe', color:'#0369a1', borderRadius:99, padding:'2px 7px', fontWeight:600, fontSize:10 }}>
+          {srcTag}
+        </span>
+      )}
+    </span>
+  )
 }
 
 // ── adminFetch hook — timeout 15s, catch uniforme ─────────────────────────
@@ -172,7 +186,7 @@ function UserDetail({ user, adminFetch, onBack, onUpdated }) {
       <div style={{ fontWeight:700, fontSize:16, marginBottom:4 }}>{user.nombre || user.email}</div>
       <div style={{ fontSize:12, color:'#64748b', marginBottom:16, display:'flex', gap:8, flexWrap:'wrap', alignItems:'center' }}>
         <span>{user.email}</span>
-        <Badge premium={user.es_premium} hasta={user.premium_hasta} />
+        <Badge premium={user.es_premium} hasta={user.premium_hasta} source={user.premium_source} />
       </div>
 
       {loading ? <div style={{ textAlign:'center', padding:20 }}><Spin /></div>
@@ -573,8 +587,15 @@ function CrmUsersTab({ adminFetch, defaultPremiumStatus = 'all' }) {
                     <div onClick={() => setSelected(u)} style={{ fontSize:11, color:'#94a3b8', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{u.email}</div>
                   </Td>
                   <Td s={{ onClick:() => setSelected(u) }}>
-                    <span style={{ background:PS_COLORS[ps]+'22', color:PS_COLORS[ps], borderRadius:99, padding:'2px 8px', fontSize:11, fontWeight:700, whiteSpace:'nowrap' }}>
-                      {ps === 'free' ? 'Free' : ps === 'active' ? '★ Premium' : '⚠ Vencido'}
+                    <span style={{ display:'inline-flex', alignItems:'center', gap:3 }}>
+                      <span style={{ background:PS_COLORS[ps]+'22', color:PS_COLORS[ps], borderRadius:99, padding:'2px 8px', fontSize:11, fontWeight:700, whiteSpace:'nowrap' }}>
+                        {ps === 'free' ? 'Free' : ps === 'active' ? '★ Premium' : '⚠ Vencido'}
+                      </span>
+                      {ps === 'active' && SOURCE_TAG[u.premium_source] && (
+                        <span style={{ background:'#e0f2fe', color:'#0369a1', borderRadius:99, padding:'1px 6px', fontSize:10, fontWeight:600 }}>
+                          {SOURCE_TAG[u.premium_source]}
+                        </span>
+                      )}
                     </span>
                   </Td>
                   <Td s={{ fontSize:12, color:'#64748b', whiteSpace:'nowrap', onClick:() => setSelected(u) }}>{fmtActivity(u)}</Td>
