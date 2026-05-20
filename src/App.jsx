@@ -662,8 +662,8 @@ export default function App() {
         else setResult(null)
         setCvFinalData(item.datos)
         setCvDraft(item.datos)
-        const html = buildCvHtml(item.datos, null, 'image/jpeg', 'clasico')
-        setCvPreviewHtml(html)
+        // Use current photo + template state (not hardcoded nulls)
+        setCvPreviewHtml(buildCvHtml(item.datos, profilePhoto, profilePhotoMime, cvTemplate || 'clasico'))
         setCvStage('done')
         setShowCvPreview(true)
         setStep(STEPS.CV)
@@ -1121,6 +1121,13 @@ export default function App() {
     }
   }, [step]) // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Rebuild CV preview whenever photo changes — covers all async paths:
+  // upload on ProfileInput screen, auto-load from Storage on login, selection from photo history.
+  useEffect(() => {
+    if (!cvFinalData || cvStage !== 'done') return
+    setCvPreviewHtml(buildCvHtml(cvFinalData, profilePhoto, profilePhotoMime, cvTemplate))
+  }, [profilePhoto, profilePhotoMime]) // eslint-disable-line react-hooks/exhaustive-deps
+
   // Revocar object URL de foto al cambiar o desmontar (evita memory leak)
   useEffect(() => {
     return () => { if (profilePhotoPreview) URL.revokeObjectURL(profilePhotoPreview) }
@@ -1538,11 +1545,8 @@ Devolvé solo el array JSON, sin markdown ni explicación.`
           const previewUrl = URL.createObjectURL(blob)
           setProfilePhotoMime(mime)
           setProfilePhotoPreview(previewUrl)
-          setProfilePhoto(base64)
+          setProfilePhoto(base64)    // triggers reactive useEffect → rebuilds cvPreviewHtml
           setProfilePhotoId(photo.id)
-          if (cvFinalData && cvStage === 'done') {
-            setCvPreviewHtml(buildCvHtml(cvFinalData, base64, mime, cvTemplate))
-          }
           resolve()
         }
         reader.readAsDataURL(blob)
@@ -1563,13 +1567,10 @@ Devolvé solo el array JSON, sin markdown ni explicación.`
       const data = await res.json()
       if (!data.ok) throw new Error(data.error || 'Error al eliminar')
       if (profilePhotoId === photoId) {
-        setProfilePhoto(null)
+        setProfilePhoto(null)          // triggers reactive useEffect → rebuilds preview without photo
         setProfilePhotoMime('image/jpeg')
         setProfilePhotoPreview(null)
         setProfilePhotoId(null)
-        if (cvFinalData && cvStage === 'done') {
-          setCvPreviewHtml(buildCvHtml(cvFinalData, null, 'image/jpeg', cvTemplate))
-        }
       }
     } catch (err) {
       addToast(err.message || 'No se pudo eliminar la foto.', 'error')
