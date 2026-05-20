@@ -218,7 +218,7 @@ async function checkRateLimit(env, ip, actionKey) {
 }
 
 // ── Gemini API helper ─────────────────────────────────────────────────────────
-async function callGeminiApi(env, geminiBody, corsHeaders, { feature = 'unknown', userId = null } = {}) {
+async function callGeminiApi(env, ctx, geminiBody, corsHeaders, { feature = 'unknown', userId = null } = {}) {
   const startMs = Date.now()
   const controller = new AbortController()
   const timeoutId = setTimeout(() => controller.abort(), GEMINI_TIMEOUT_MS)
@@ -247,7 +247,7 @@ async function callGeminiApi(env, geminiBody, corsHeaders, { feature = 'unknown'
   } catch (err) {
     clearTimeout(timeoutId)
     const isTimeout = err.name === 'AbortError'
-    logAiUsage(env, { type: 'failure', feature, userId, durationMs: Date.now() - startMs, statusCode: 504, errorType: isTimeout ? 'timeout' : 'network' })
+    logAiUsage(env, ctx, { type: 'failure', feature, userId, durationMs: Date.now() - startMs, statusCode: 504, errorType: isTimeout ? 'timeout' : 'network' })
     const msg = isTimeout ? 'El servicio de IA tardó demasiado. Intentá de nuevo.' : 'Error de conexión con el servicio de IA.'
     return new Response(JSON.stringify({ error: { message: msg } }), { status: 504, headers: corsHeaders })
   }
@@ -255,7 +255,7 @@ async function callGeminiApi(env, geminiBody, corsHeaders, { feature = 'unknown'
   clearTimeout(timeoutId)
   const data = await res.json().catch(() => ({ error: { message: 'Respuesta inválida del servicio de IA.' } }))
   if (res.status === 200) {
-    logAiUsage(env, {
+    logAiUsage(env, ctx, {
       type: 'success',
       feature,
       userId,
@@ -265,7 +265,7 @@ async function callGeminiApi(env, geminiBody, corsHeaders, { feature = 'unknown'
       statusCode:   200,
     })
   } else {
-    logAiUsage(env, {
+    logAiUsage(env, ctx, {
       type: 'failure',
       feature,
       userId,
@@ -344,7 +344,7 @@ async function logAdminAction(env, adminId, action, targetType, targetId, detail
  * @param {*} env
  * @param {AiUsageEvent} event
  */
-function logAiUsage(env, event) {
+function logAiUsage(env, ctx, event) {
   if (!env.SUPABASE_SERVICE_ROLE_KEY || !env.SUPABASE_URL) return
   const row = {
     user_id: event.userId ?? null,
@@ -356,7 +356,7 @@ function logAiUsage(env, event) {
     status_code:   event.statusCode  ?? null,
     error_type:    event.type === 'failure' ? event.errorType : null,
   }
-  fetch(`${env.SUPABASE_URL}/rest/v1/ai_usage_logs`, {
+  const logFetch = fetch(`${env.SUPABASE_URL}/rest/v1/ai_usage_logs`, {
     method: 'POST',
     headers: {
       apikey: env.SUPABASE_SERVICE_ROLE_KEY,
@@ -366,6 +366,8 @@ function logAiUsage(env, event) {
     },
     body: JSON.stringify(row),
   }).catch(() => {})
+  // waitUntil keeps the Worker alive until the log write completes
+  if (ctx?.waitUntil) ctx.waitUntil(logFetch)
 }
 
 // ── Extract userId from Supabase JWT (best-effort, for analytics only) ────────
@@ -683,7 +685,7 @@ async function persistSubscription(env, { userId, subId, status, nextPayment, ev
 }
 
 export default {
-  async fetch(request, env) {
+  async fetch(request, env, ctx) {
     const url = new URL(request.url)
     const reqOrigin = request.headers.get('origin') || ''
     const origin = ALLOWED_ORIGINS.has(reqOrigin) ? reqOrigin : 'https://optimizalinkedin.com'
@@ -1459,7 +1461,28 @@ export default {
       if (!photo_base64) return new Response(JSON.stringify({ error: 'Falta photo_base64' }), { status: 400, headers: corsHeaders })
       const user = await verifyUserJwt(env, request)
       if (!user) return new Response(JSON.stringify({ error: 'No autorizado' }), { status: 401, headers: corsHeaders })
+
+      // Enforce 10-photo limit per user
+      const countRes = await supabaseServiceFetch(env, `profile_photos?user_id=eq.${user.id}&select=id`)
+      const existingPhotos = await countRes.json()
+      if (Array.isArray(existingPhotos) && existingPhotos.length >= 10) {
+        return new Response(JSON.stringify({ error: 'Límite de 10 fotos alcanzado. Eliminá una para subir una nueva.' }), { status: 400, headers: corsHeaders })
+      }
+
       try {
+        // Deduplication: hash the first 8KB of base64 as a fast content fingerprint
+        const hashInput = new TextEncoder().encode(photo_base64.slice(0, 8192))
+        const hashBuf = await crypto.subtle.digest('SHA-256', hashInput)
+        const contentHash = Array.from(new Uint8Array(hashBuf)).map(b => b.toString(16).padStart(2, '0')).join('')
+
+        // Check for existing photo with same hash for this user
+        const dupRes = await supabaseServiceFetch(env, `profile_photos?user_id=eq.${user.id}&content_hash=eq.${contentHash}&select=id,storage_path`)
+        const dupRows = await dupRes.json()
+        if (dupRows?.[0]) {
+          const signedUrl = await storageSignedUrl(env, 'profile-photos', dupRows[0].storage_path, 86400)
+          return new Response(JSON.stringify({ ok: true, photo_id: dupRows[0].id, storage_path: dupRows[0].storage_path, signed_url: signedUrl, deduplicated: true }), { status: 200, headers: corsHeaders })
+        }
+
         const photoId = crypto.randomUUID()
         const ext = mime_type === 'image/png' ? 'png' : mime_type === 'image/webp' ? 'webp' : 'jpg'
         const storagePath = `${user.id}/${photoId}.${ext}`
@@ -1470,13 +1493,11 @@ export default {
           console.error('[upload_photo] storage error:', err)
           return new Response(JSON.stringify({ error: 'Error al subir la imagen' }), { status: 500, headers: corsHeaders })
         }
-        // Save metadata to DB
         await supabaseServiceFetch(env, 'profile_photos', {
           method: 'POST',
-          body: JSON.stringify({ id: photoId, user_id: user.id, storage_path: storagePath, mime_type, es_default: false }),
+          body: JSON.stringify({ id: photoId, user_id: user.id, storage_path: storagePath, mime_type, content_hash: contentHash, es_default: false }),
           headers: { Prefer: 'return=minimal' },
         })
-        // Generate 24h signed URL
         const signedUrl = await storageSignedUrl(env, 'profile-photos', storagePath, 86400)
         return new Response(JSON.stringify({ ok: true, photo_id: photoId, storage_path: storagePath, signed_url: signedUrl }), { status: 200, headers: corsHeaders })
       } catch (e) {
@@ -1758,7 +1779,7 @@ export default {
         return new Response(JSON.stringify({ error: { message: `Límite de uso alcanzado (${rl.limit} por hora). Volvé a intentarlo en 60 minutos.` } }), { status: 429, headers: corsHeaders })
       }
       const userId = getUserIdFromToken(request)
-      return callGeminiApi(env, {
+      return callGeminiApi(env, ctx, {
         system_instruction: { parts: [{ text: systemPrompt }] },
         contents: body.contents,
         generationConfig: body.generationConfig,
@@ -1776,6 +1797,6 @@ export default {
     }
 
     const { model: modelField, ...geminiBody } = body
-    return callGeminiApi(env, geminiBody, corsHeaders)
+    return callGeminiApi(env, ctx, geminiBody, corsHeaders)
   },
 }

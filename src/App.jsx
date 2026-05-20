@@ -153,6 +153,8 @@ export default function App() {
   const [cvExportState, setCvExportState] = useState('idle') // 'idle' | 'loading'
   const [toasts, setToasts] = useState([])
   const toastIdRef = useRef(0)
+  const lastSavedCvHashRef = useRef(null)  // guards duplicate historial saves
+  const starSessionRef = useRef([])        // accumulates STAR answers for session-level save
   const [cvOptimizing, setCvOptimizing] = useState(false)
   const [cvOptimizeError, setCvOptimizeError] = useState('')
   const [cvOptimizeSuggestion, setCvOptimizeSuggestion] = useState(null)
@@ -559,6 +561,14 @@ export default function App() {
         body: JSON.stringify({ user_id: uid, tipo, titulo, datos, puntaje }),
       })
     } catch { /* silencioso */ }
+  }
+
+  // Saves a CV version only if content changed since last save (prevents export duplicates)
+  const saveCvToHistorial = (cv, titulo) => {
+    const hash = cv ? JSON.stringify(cv).slice(0, 400) : null
+    if (!hash || hash === lastSavedCvHashRef.current) return
+    lastSavedCvHashRef.current = hash
+    saveToHistorial('cv', cv, titulo, null)
   }
 
   const addToast = (msg, type = 'success', duration = 4000) => {
@@ -1099,6 +1109,18 @@ export default function App() {
     return () => window.removeEventListener('beforeunload', handler)
   }, [step])
 
+  // Flush STAR session to historial when user leaves the STAR screen
+  useEffect(() => {
+    if (step === STEPS.STAR_TRAINING) {
+      starSessionRef.current = [] // reset on enter
+    } else if (starSessionRef.current.length > 0) {
+      const session = starSessionRef.current
+      starSessionRef.current = []
+      const avgPuntaje = Math.round(session.reduce((s, r) => s + (r.puntaje || 0), 0) / session.length)
+      saveToHistorial('star', { preguntas: session }, 'Sesión STAR', avgPuntaje || null)
+    }
+  }, [step]) // eslint-disable-line react-hooks/exhaustive-deps
+
   // Revocar object URL de foto al cambiar o desmontar (evita memory leak)
   useEffect(() => {
     return () => { if (profilePhotoPreview) URL.revokeObjectURL(profilePhotoPreview) }
@@ -1441,9 +1463,10 @@ Devolvé solo el array JSON, sin markdown ni explicación.`
       })
       const data = await res.json()
       if (data.ok && data.photo_id) {
-        addToast('Foto guardada en tu cuenta', 'success', 3000)
+        if (!data.deduplicated) addToast('Foto guardada en tu cuenta', 'success', 3000)
         return { photoId: data.photo_id, signedUrl: data.signed_url }
       }
+      if (data.error) addToast(data.error, 'error')
     } catch {}
     return null
   }
@@ -1924,7 +1947,8 @@ Generá el feedback en este JSON exacto:
       const parsed = parseAIJson(extractAIText(data), AI_DEFAULTS.star_feedback, 'La IA devolvió una respuesta inesperada. Intentá de nuevo.')
       setStarFeedback(parsed)
       trackTiming('star_feedback_received', _tStar, { puntaje: parsed.puntaje, question_idx: starQuestionIdx })
-      saveToHistorial('star', { pregunta, respuesta: starAnswer, feedback_star: parsed }, 'Práctica STAR', parsed?.puntaje ?? null)
+      // Accumulate in session buffer — save consolidated at session end (see step-change useEffect)
+      starSessionRef.current = [...starSessionRef.current, { pregunta, respuesta: starAnswer, feedback_star: parsed, puntaje: parsed?.puntaje ?? null }]
     } catch (err) {
       trackError('star', err.isRateLimit ? 'rate_limit' : err.name === 'AbortError' ? 'timeout' : 'api_error')
       if (!err.isRateLimit) setStarError(err.name === 'AbortError' ? 'El pedido tardó demasiado. Intentá de nuevo.' : err.message || 'No se pudo obtener el feedback.')
@@ -1948,7 +1972,7 @@ Generá el feedback en este JSON exacto:
       const titulo = variant === 'optimizado'
         ? `CV optimizado — ${newData.nombre || 'CV'}`
         : newData.nombre || 'CV'
-      saveToHistorial('cv', newData, titulo, null)
+      saveCvToHistorial(newData, titulo)
       if (user?.es_premium) {
         setCvSuccess('✓ Versión guardada en historial')
         setTimeout(() => setCvSuccess(''), 3000)
@@ -1995,6 +2019,7 @@ Generá el feedback en este JSON exacto:
 
   const callGenerateCV = async (contacto = {}, analysisResult = null, overrideProfileText = null, overrideQaHistory = null) => {
     if (cvLoading) return
+    lastSavedCvHashRef.current = null  // reset so new CV generation can always be saved
     setCvLoading(true)
     setCvError('')
     setCvSuccess('')
@@ -2047,7 +2072,7 @@ Generá el feedback en este JSON exacto:
         setCvStage('done')
         setCvPreviewHtml(buildCvHtml(cv, profilePhoto, profilePhotoMime, cvTemplate))
         setShowCvPreview(true)
-        saveToHistorial('cv', cv, cv.nombre || 'CV generado', null)
+        // Not saving here — export action is the canonical save point
       } else {
         trackEvent('cv_gap_form_shown', { gap_count: quality.gaps?.length || 0 })
         setCvStage('gap_form')
@@ -2105,7 +2130,7 @@ Generá el feedback en este JSON exacto:
       setCvPreviewHtml(buildCvHtml(cv, profilePhoto, profilePhotoMime, cvTemplate))
       setShowCvPreview(true)
       trackEvent('cv_regenerated', { answered_count: Object.keys(gapAnswers).length })
-      saveToHistorial('cv', cv, cv.nombre || 'CV generado', null)
+      // Not saving here — export action is the canonical save point
     } catch (err) {
       if (!err.isRateLimit) {
         setCvStage('gap_form')
@@ -2148,14 +2173,14 @@ Generá el feedback en este JSON exacto:
     setCvExportState('loading')
     trackEvent('cv_export_start')
 
-    // Guardar snapshot en historial (fire-and-forget, no bloquea la exportación)
+    // Guardar snapshot en historial solo si el contenido cambió (evita duplicados por exports múltiples)
     const snapshotTitulo = (() => {
       if (!cvVariant) return cvFinalData.nombre || 'CV base'
       if (cvVariant === 'optimizado') return `${cvFinalData.nombre || 'CV'} — optimizado`
       if (typeof cvVariant === 'object' && cvVariant.empresa) return `CV adaptado — ${cvVariant.empresa}`
       return cvFinalData.nombre || 'CV'
     })()
-    saveToHistorial('cv', cvFinalData, snapshotTitulo, null)
+    saveCvToHistorial(cvFinalData, snapshotTitulo)
 
     const loadingId = addToast('Preparando tu CV…', 'loading', 0)
 
