@@ -155,6 +155,12 @@ export default function App() {
   const toastIdRef = useRef(0)
   const lastSavedCvHashRef = useRef(null)  // guards duplicate historial saves
   const starSessionRef = useRef([])        // accumulates STAR answers for session-level save
+  // Refs to latest photo state — lets event handlers (restoreFromHistorial, etc.) always
+  // read the current photo without relying on closure capture timing.
+  const profilePhotoRef = useRef(null)
+  const profilePhotoMimeRef = useRef('image/jpeg')
+  profilePhotoRef.current = profilePhoto
+  profilePhotoMimeRef.current = profilePhotoMime
   const [cvOptimizing, setCvOptimizing] = useState(false)
   const [cvOptimizeError, setCvOptimizeError] = useState('')
   const [cvOptimizeSuggestion, setCvOptimizeSuggestion] = useState(null)
@@ -662,8 +668,9 @@ export default function App() {
         else setResult(null)
         setCvFinalData(item.datos)
         setCvDraft(item.datos)
-        // Use current photo + template state (not hardcoded nulls)
-        setCvPreviewHtml(buildCvHtml(item.datos, profilePhoto, profilePhotoMime, cvTemplate || 'clasico'))
+        // Use refs (always-current) so photo is never stale even if closure timing is off.
+        // The reactive useEffect will also re-run when cvFinalData/profilePhoto settle.
+        setCvPreviewHtml(buildCvHtml(item.datos, profilePhotoRef.current, profilePhotoMimeRef.current, cvTemplate || 'clasico'))
         setCvStage('done')
         setShowCvPreview(true)
         setStep(STEPS.CV)
@@ -1121,12 +1128,12 @@ export default function App() {
     }
   }, [step]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Rebuild CV preview whenever photo changes — covers all async paths:
-  // upload on ProfileInput screen, auto-load from Storage on login, selection from photo history.
+  // Single source of truth: rebuild CV preview whenever photo, CV data, stage, or template changes.
+  // Covers all async paths: upload, storage auto-load, historial restore, template switch.
   useEffect(() => {
     if (!cvFinalData || cvStage !== 'done') return
     setCvPreviewHtml(buildCvHtml(cvFinalData, profilePhoto, profilePhotoMime, cvTemplate))
-  }, [profilePhoto, profilePhotoMime]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [cvFinalData, cvStage, profilePhoto, profilePhotoMime, cvTemplate])
 
   // Revocar object URL de foto al cambiar o desmontar (evita memory leak)
   useEffect(() => {
@@ -1965,7 +1972,7 @@ Generá el feedback en este JSON exacto:
     setCvFinalData(newData)
     if (variant !== undefined) setCvVariant(variant)
     if (showCvPreview) {
-      setCvPreviewHtml(buildCvHtml(newData, profilePhoto, profilePhotoMime, cvTemplate))
+      setCvPreviewHtml(buildCvHtml(newData, profilePhotoRef.current, profilePhotoMimeRef.current, cvTemplate))
     }
     // Solo guardar historial en snapshots intencionales (cuando variant está presente).
     // Ediciones manuales (sin variant) NO crean registros — evita explosión de versiones.
@@ -2071,7 +2078,7 @@ Generá el feedback en este JSON exacto:
         setCvFinalData(cv)
         setCvVariant(null)
         setCvStage('done')
-        setCvPreviewHtml(buildCvHtml(cv, profilePhoto, profilePhotoMime, cvTemplate))
+        setCvPreviewHtml(buildCvHtml(cv, profilePhotoRef.current, profilePhotoMimeRef.current, cvTemplate))
         setShowCvPreview(true)
         // Not saving here — export action is the canonical save point
       } else {
@@ -2128,7 +2135,7 @@ Generá el feedback en este JSON exacto:
       setCvFinalData(cv)
       setCvVariant(null)
       setCvStage('done')
-      setCvPreviewHtml(buildCvHtml(cv, profilePhoto, profilePhotoMime, cvTemplate))
+      setCvPreviewHtml(buildCvHtml(cv, profilePhotoRef.current, profilePhotoMimeRef.current, cvTemplate))
       setShowCvPreview(true)
       trackEvent('cv_regenerated', { answered_count: Object.keys(gapAnswers).length })
       // Not saving here — export action is the canonical save point
@@ -2150,7 +2157,7 @@ Generá el feedback en este JSON exacto:
   // ── Mostrar overlay de preview (acción explícita del usuario) ──────────────
   const openCvPreview = () => {
     if (!cvFinalData) return
-    const html = buildCvHtml(cvFinalData, profilePhoto, profilePhotoMime, cvTemplate)
+    const html = buildCvHtml(cvFinalData, profilePhotoRef.current, profilePhotoMimeRef.current, cvTemplate)
     setCvPreviewHtml(html)
     setShowCvPreview(true)
     trackEvent('cv_preview_open')
@@ -2161,7 +2168,7 @@ Generá el feedback en este JSON exacto:
     if (!adaptedCv) return
     setCvFinalData(adaptedCv)
     setCvVariant({ empresa: empresa || null, cargo: cargo || null })
-    setCvPreviewHtml(buildCvHtml(adaptedCv, profilePhoto, profilePhotoMime, cvTemplate))
+    setCvPreviewHtml(buildCvHtml(adaptedCv, profilePhotoRef.current, profilePhotoMimeRef.current, cvTemplate))
     setShowCvPreview(true)
     setShowJobModal(false)
     setJobResult(null)
@@ -2186,7 +2193,7 @@ Generá el feedback en este JSON exacto:
     const loadingId = addToast('Preparando tu CV…', 'loading', 0)
 
     try {
-      const html = buildCvHtml(cvFinalData, profilePhoto, profilePhotoMime, cvTemplate, { forExport: true })
+      const html = buildCvHtml(cvFinalData, profilePhotoRef.current, profilePhotoMimeRef.current, cvTemplate, { forExport: true })
       const filename = `CV-${_cvFileName()}`
       const htmlBlob = new Blob([html], { type: 'text/html; charset=utf-8' })
       const htmlFile = new File([htmlBlob], `${filename}.html`, { type: 'text/html' })
