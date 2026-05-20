@@ -1,4 +1,4 @@
-import { useEffect } from 'react'
+import { useEffect, useState } from 'react'
 import { buildCvHtml } from '../../cv/templates'
 import { STEPS, LI_GRADIENT, BTN_BACK_STYLE, BTN_GHOST_STYLE, trackEvent } from '../../constants'
 import { Logo, Spinner, TagInput } from '../ui'
@@ -32,7 +32,13 @@ export default function CvScreen({
   setProfilePhotoMime,
   profilePhotoPreview,
   setProfilePhotoPreview,
+  profilePhotoId,
+  setProfilePhotoId,
   handleCvPhotoUpload,
+  loadSavedPhotos,
+  selectSavedPhoto,
+  deleteSavedPhoto,
+  setDefaultPhoto,
   openCvPreview,
   exportCvPdf,
   cvExportState,
@@ -74,6 +80,42 @@ export default function CvScreen({
   setShowPremiumModal,
   setStep,
 }) {
+  const [showPhotosPanel, setShowPhotosPanel] = useState(false)
+  const [savedPhotos, setSavedPhotos] = useState([])
+  const [photosLoading, setPhotosLoading] = useState(false)
+  const [deletingId, setDeletingId] = useState(null)
+  const [settingDefaultId, setSettingDefaultId] = useState(null)
+
+  const openPhotosPanel = async () => {
+    if (showPhotosPanel) { setShowPhotosPanel(false); return }
+    setShowPhotosPanel(true)
+    setPhotosLoading(true)
+    const photos = await loadSavedPhotos()
+    setSavedPhotos(photos)
+    setPhotosLoading(false)
+  }
+
+  const handleSelectPhoto = async (photo) => {
+    await selectSavedPhoto(photo)
+    setShowPhotosPanel(false)
+  }
+
+  const handleDeletePhoto = async (e, photoId) => {
+    e.stopPropagation()
+    setDeletingId(photoId)
+    await deleteSavedPhoto(photoId)
+    setSavedPhotos(prev => prev.filter(p => p.id !== photoId))
+    setDeletingId(null)
+  }
+
+  const handleSetDefault = async (e, photoId) => {
+    e.stopPropagation()
+    setSettingDefaultId(photoId)
+    await setDefaultPhoto(photoId)
+    setSavedPhotos(prev => prev.map(p => ({ ...p, es_default: p.id === photoId })))
+    setSettingDefaultId(null)
+  }
+
   return (
     <div className="step-transition space-y-4">
       {/* Header */}
@@ -347,16 +389,16 @@ export default function CvScreen({
                 )}
               </div>
             )}
-            {/* Foto de perfil — prompt cuando se restaura desde historial */}
+            {/* Foto de perfil */}
             <div className="rounded-2xl p-4 space-y-3"
               style={{ background: profilePhotoPreview ? 'rgba(5,150,105,0.05)' : 'rgba(0,119,181,0.05)', border: `1px solid ${profilePhotoPreview ? 'rgba(5,150,105,0.2)' : 'rgba(0,119,181,0.18)'}` }}>
               <p className="text-xs font-semibold text-slate-700">
                 {profilePhotoPreview ? '📸 Foto de perfil cargada' : '📸 ¿Querés agregar tu foto de perfil al CV?'}
               </p>
-              {!profilePhotoPreview && (
+              {!profilePhotoPreview && !user && (
                 <p className="text-xs text-slate-500">Las fotos no se guardan en el historial. Podés cargarla ahora o continuar sin ella.</p>
               )}
-              <div className="flex items-center gap-3">
+              <div className="flex items-center gap-3 flex-wrap">
                 {profilePhotoPreview && (
                   <div className="w-10 h-10 rounded-full overflow-hidden shrink-0 relative"
                     style={{ border: '2px solid rgba(5,150,105,0.4)' }}>
@@ -368,13 +410,74 @@ export default function CvScreen({
                   {profilePhotoPreview ? 'Cambiar foto' : 'Cargar foto'}
                 </label>
                 <input id="cv-done-photo" type="file" accept="image/*" className="hidden" onChange={handleCvPhotoUpload} />
+                {user && (
+                  <button onClick={openPhotosPanel}
+                    className="px-3 py-1.5 rounded-lg text-xs font-semibold transition-all"
+                    style={{ background: showPhotosPanel ? 'rgba(0,119,181,0.18)' : 'rgba(0,119,181,0.07)', color: '#0077B5', border: '1px solid rgba(0,119,181,0.20)' }}>
+                    Mis fotos guardadas
+                  </button>
+                )}
                 {profilePhotoPreview && (
-                  <button onClick={() => { setProfilePhotoPreview(null); setProfilePhoto(null); setProfilePhotoMime('image/jpeg'); if (cvFinalData && showCvPreview) setCvPreviewHtml(buildCvHtml(cvFinalData, null, 'image/jpeg', cvTemplate)) }}
+                  <button onClick={() => { setProfilePhotoPreview(null); setProfilePhoto(null); setProfilePhotoMime('image/jpeg'); setProfilePhotoId?.(null); if (cvFinalData && showCvPreview) setCvPreviewHtml(buildCvHtml(cvFinalData, null, 'image/jpeg', cvTemplate)) }}
                     className="text-xs transition-colors" style={{ color: '#94a3b8' }}>
                     ✕ Quitar
                   </button>
                 )}
               </div>
+
+              {/* Saved photos grid */}
+              {showPhotosPanel && user && (
+                <div className="pt-2 border-t" style={{ borderColor: 'rgba(0,119,181,0.15)' }}>
+                  {photosLoading ? (
+                    <p className="text-xs text-slate-400 text-center py-3">Cargando fotos…</p>
+                  ) : savedPhotos.length === 0 ? (
+                    <p className="text-xs text-slate-400 text-center py-3">No tenés fotos guardadas aún.</p>
+                  ) : (
+                    <div className="grid grid-cols-4 gap-2">
+                      {savedPhotos.map(photo => (
+                        <div key={photo.id}
+                          onClick={() => handleSelectPhoto(photo)}
+                          className="relative cursor-pointer group"
+                          style={{ aspectRatio: '1' }}>
+                          <div className="w-full h-full rounded-xl overflow-hidden"
+                            style={{ border: profilePhotoId === photo.id ? '2px solid #059669' : photo.es_default ? '2px solid #0077B5' : '1px solid rgba(0,0,0,0.10)' }}>
+                            <img src={photo.signed_url} alt="Foto guardada"
+                              className="w-full h-full object-cover" />
+                          </div>
+                          {photo.es_default && (
+                            <span className="absolute top-0.5 left-0.5 text-[9px] font-bold px-1 rounded"
+                              style={{ background: '#0077B5', color: 'white' }}>★</span>
+                          )}
+                          {profilePhotoId === photo.id && (
+                            <span className="absolute top-0.5 right-0.5 text-[9px] font-bold px-1 rounded"
+                              style={{ background: '#059669', color: 'white' }}>✓</span>
+                          )}
+                          {/* Actions overlay */}
+                          <div className="absolute inset-0 rounded-xl flex flex-col items-center justify-end pb-1 gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity"
+                            style={{ background: 'rgba(0,0,0,0.45)' }}>
+                            {!photo.es_default && (
+                              <button
+                                onClick={(e) => handleSetDefault(e, photo.id)}
+                                disabled={settingDefaultId === photo.id}
+                                className="text-[9px] font-semibold px-1.5 py-0.5 rounded"
+                                style={{ background: 'rgba(255,255,255,0.85)', color: '#0077B5' }}>
+                                {settingDefaultId === photo.id ? '…' : '★ Predeterminar'}
+                              </button>
+                            )}
+                            <button
+                              onClick={(e) => handleDeletePhoto(e, photo.id)}
+                              disabled={deletingId === photo.id}
+                              className="text-[9px] font-semibold px-1.5 py-0.5 rounded"
+                              style={{ background: 'rgba(255,255,255,0.85)', color: '#dc2626' }}>
+                              {deletingId === photo.id ? '…' : '✕ Eliminar'}
+                            </button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
 
             {/* ── CV Editor ── */}

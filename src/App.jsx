@@ -15,6 +15,7 @@ import {
   LOADING_MESSAGES_BY_SITUACION, LOADING_MESSAGES_DEFAULT,
 } from './data'
 import { AI_DEFAULTS, extractAIText, parseAIJson } from './utils/ai'
+import { compressImage } from './utils/image'
 import { buildCvHtml, sanitizeCv } from './cv/templates'
 import RateLimitUI from './components/RateLimitUI'
 import {
@@ -99,6 +100,7 @@ export default function App() {
   const [profilePhoto, setProfilePhoto] = useState(null)
   const [profilePhotoMime, setProfilePhotoMime] = useState('image/jpeg')
   const [profilePhotoPreview, setProfilePhotoPreview] = useState(null)
+  const [profilePhotoId, setProfilePhotoId] = useState(null)
   const [formTitular, setFormTitular] = useState('')
   const [formResumen, setFormResumen] = useState('')
   const [formHabilidades, setFormHabilidades] = useState('')
@@ -1202,6 +1204,7 @@ Devolvé solo el array JSON, sin markdown ni explicación.`
     setProfilePhoto(null)
     setProfilePhotoMime('image/jpeg')
     setProfilePhotoPreview(null)
+    setProfilePhotoId(null)
     setFormTitular('')
     setFormResumen('')
     setFormHabilidades('')
@@ -1428,34 +1431,155 @@ Devolvé solo el array JSON, sin markdown ni explicación.`
   }
 
   // ── Upload profile photo for form mode ──
-  const handlePhotoUpload = (e) => {
+  const uploadPhotoToStorage = async (base64, mime) => {
+    if (!user || !authToken) return null
+    try {
+      const res = await fetch(WORKER_URL, {
+        method: 'POST',
+        headers: { ...WORKER_HEADERS, Authorization: `Bearer ${authToken}` },
+        body: JSON.stringify({ action: 'upload_profile_photo', photo_base64: base64, mime_type: mime }),
+      })
+      const data = await res.json()
+      if (data.ok && data.photo_id) {
+        addToast('Foto guardada en tu cuenta', 'success', 3000)
+        return { photoId: data.photo_id, signedUrl: data.signed_url }
+      }
+    } catch {}
+    return null
+  }
+
+  const handlePhotoUpload = async (e) => {
     const file = e.target.files?.[0]
-    if (!file || !file.type.startsWith('image/') || file.size > 5 * 1024 * 1024) return
-    setProfilePhotoMime(file.type)
-    setProfilePhotoPreview(URL.createObjectURL(file))
-    const reader = new FileReader()
-    reader.onload = () => setProfilePhoto(reader.result.split(',')[1])
-    reader.readAsDataURL(file)
-    setFormConfirmed(false)
-    setProfileText('')
+    e.target.value = ''
+    if (!file) return
+    try {
+      const { base64, mime, previewUrl } = await compressImage(file)
+      setProfilePhotoMime(mime)
+      setProfilePhotoPreview(previewUrl)
+      setProfilePhoto(base64)
+      setFormConfirmed(false)
+      setProfileText('')
+      const stored = await uploadPhotoToStorage(base64, mime)
+      if (stored) setProfilePhotoId(stored.photoId)
+    } catch (err) {
+      addToast(err.message || 'Error al cargar la foto.', 'error')
+    }
   }
 
   // Solo actualiza la foto sin borrar el profileText (para el modal de CV)
-  const handleCvPhotoUpload = (e) => {
+  const handleCvPhotoUpload = async (e) => {
     const file = e.target.files?.[0]
-    if (!file || !file.type.startsWith('image/') || file.size > 5 * 1024 * 1024) return
-    setProfilePhotoMime(file.type)
-    setProfilePhotoPreview(URL.createObjectURL(file))
-    const reader = new FileReader()
-    reader.onload = () => {
-      const base64 = reader.result.split(',')[1]
+    e.target.value = ''
+    if (!file) return
+    try {
+      const { base64, mime, previewUrl } = await compressImage(file)
+      setProfilePhotoMime(mime)
+      setProfilePhotoPreview(previewUrl)
       setProfilePhoto(base64)
       if (cvFinalData && cvStage === 'done') {
-        setCvPreviewHtml(buildCvHtml(cvFinalData, base64, file.type, cvTemplate))
+        setCvPreviewHtml(buildCvHtml(cvFinalData, base64, mime, cvTemplate))
       }
+      const stored = await uploadPhotoToStorage(base64, mime)
+      if (stored) setProfilePhotoId(stored.photoId)
+    } catch (err) {
+      addToast(err.message || 'Error al cargar la foto.', 'error')
     }
-    reader.readAsDataURL(file)
   }
+
+  // ── Saved photo management ─────────────────────────────────────────────────
+
+  const loadSavedPhotos = async () => {
+    if (!user || !authToken) return []
+    try {
+      const res = await fetch(WORKER_URL, {
+        method: 'POST',
+        headers: { ...WORKER_HEADERS, Authorization: `Bearer ${authToken}` },
+        body: JSON.stringify({ action: 'get_profile_photos' }),
+      })
+      const data = await res.json()
+      return Array.isArray(data.photos) ? data.photos : []
+    } catch { return [] }
+  }
+
+  const selectSavedPhoto = async (photo) => {
+    if (!photo.signed_url) return
+    try {
+      const res = await fetch(photo.signed_url)
+      if (!res.ok) throw new Error('No se pudo cargar la foto')
+      const blob = await res.blob()
+      const reader = new FileReader()
+      return new Promise((resolve) => {
+        reader.onload = () => {
+          const base64 = reader.result.split(',')[1]
+          const mime = photo.mime_type || 'image/jpeg'
+          const previewUrl = URL.createObjectURL(blob)
+          setProfilePhotoMime(mime)
+          setProfilePhotoPreview(previewUrl)
+          setProfilePhoto(base64)
+          setProfilePhotoId(photo.id)
+          if (cvFinalData && cvStage === 'done') {
+            setCvPreviewHtml(buildCvHtml(cvFinalData, base64, mime, cvTemplate))
+          }
+          resolve()
+        }
+        reader.readAsDataURL(blob)
+      })
+    } catch (err) {
+      addToast(err.message || 'No se pudo cargar la foto guardada.', 'error')
+    }
+  }
+
+  const deleteSavedPhoto = async (photoId) => {
+    if (!user || !authToken) return
+    try {
+      const res = await fetch(WORKER_URL, {
+        method: 'POST',
+        headers: { ...WORKER_HEADERS, Authorization: `Bearer ${authToken}` },
+        body: JSON.stringify({ action: 'delete_profile_photo', photo_id: photoId }),
+      })
+      const data = await res.json()
+      if (!data.ok) throw new Error(data.error || 'Error al eliminar')
+      if (profilePhotoId === photoId) {
+        setProfilePhoto(null)
+        setProfilePhotoMime('image/jpeg')
+        setProfilePhotoPreview(null)
+        setProfilePhotoId(null)
+        if (cvFinalData && cvStage === 'done') {
+          setCvPreviewHtml(buildCvHtml(cvFinalData, null, 'image/jpeg', cvTemplate))
+        }
+      }
+    } catch (err) {
+      addToast(err.message || 'No se pudo eliminar la foto.', 'error')
+    }
+  }
+
+  const setDefaultPhoto = async (photoId) => {
+    if (!user || !authToken) return
+    try {
+      const res = await fetch(WORKER_URL, {
+        method: 'POST',
+        headers: { ...WORKER_HEADERS, Authorization: `Bearer ${authToken}` },
+        body: JSON.stringify({ action: 'set_default_photo', photo_id: photoId }),
+      })
+      const data = await res.json()
+      if (!data.ok) throw new Error(data.error || 'Error al guardar')
+    } catch (err) {
+      addToast(err.message || 'No se pudo establecer la foto por defecto.', 'error')
+    }
+  }
+
+  // Auto-load default saved photo when user logs in (only if no photo already loaded)
+  useEffect(() => {
+    if (!user || !authToken || profilePhoto) return
+    let cancelled = false
+    ;(async () => {
+      const photos = await loadSavedPhotos()
+      if (cancelled) return
+      const def = photos.find(p => p.es_default) || photos[0]
+      if (def) await selectSavedPhoto(def)
+    })()
+    return () => { cancelled = true }
+  }, [user?.id]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Upload and extract PDF ──
   const processPdfFile = useCallback(async (file) => {
@@ -2673,7 +2797,13 @@ Generá el feedback en este JSON exacto:
             setProfilePhotoMime={setProfilePhotoMime}
             profilePhotoPreview={profilePhotoPreview}
             setProfilePhotoPreview={setProfilePhotoPreview}
+            profilePhotoId={profilePhotoId}
+            setProfilePhotoId={setProfilePhotoId}
             handleCvPhotoUpload={handleCvPhotoUpload}
+            loadSavedPhotos={loadSavedPhotos}
+            selectSavedPhoto={selectSavedPhoto}
+            deleteSavedPhoto={deleteSavedPhoto}
+            setDefaultPhoto={setDefaultPhoto}
             openCvPreview={openCvPreview}
             cvEditing={cvEditing}
             setCvEditing={setCvEditing}

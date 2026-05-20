@@ -508,6 +508,65 @@ async function supabaseServiceFetch(env, table, options = {}) {
   return res
 }
 
+// ── Storage helpers ───────────────────────────────────────────────────────────
+
+function base64ToUint8Array(b64) {
+  const bin = atob(b64)
+  const out = new Uint8Array(bin.length)
+  for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i)
+  return out
+}
+
+async function storageUpload(env, bucket, path, uint8Array, contentType) {
+  return fetch(`${env.SUPABASE_URL}/storage/v1/object/${bucket}/${path}`, {
+    method: 'POST',
+    headers: {
+      apikey: env.SUPABASE_SERVICE_ROLE_KEY,
+      Authorization: `Bearer ${env.SUPABASE_SERVICE_ROLE_KEY}`,
+      'Content-Type': contentType,
+      'x-upsert': 'true',
+    },
+    body: uint8Array,
+  })
+}
+
+async function storageDelete(env, bucket, path) {
+  return fetch(`${env.SUPABASE_URL}/storage/v1/object/${bucket}/${path}`, {
+    method: 'DELETE',
+    headers: {
+      apikey: env.SUPABASE_SERVICE_ROLE_KEY,
+      Authorization: `Bearer ${env.SUPABASE_SERVICE_ROLE_KEY}`,
+    },
+  })
+}
+
+async function storageSignedUrl(env, bucket, path, expiresIn = 86400) {
+  const res = await fetch(`${env.SUPABASE_URL}/storage/v1/object/sign/${bucket}/${path}`, {
+    method: 'POST',
+    headers: {
+      apikey: env.SUPABASE_SERVICE_ROLE_KEY,
+      Authorization: `Bearer ${env.SUPABASE_SERVICE_ROLE_KEY}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ expiresIn }),
+  })
+  const data = await res.json()
+  return data?.signedURL
+    ? `${env.SUPABASE_URL}/storage/v1${data.signedURL}`
+    : null
+}
+
+async function verifyUserJwt(env, request) {
+  const token = (request.headers.get('Authorization') || '').replace('Bearer ', '').trim()
+  if (!token) return null
+  const res = await fetch(`${env.SUPABASE_URL}/auth/v1/user`, {
+    headers: { apikey: env.SUPABASE_SERVICE_ROLE_KEY, Authorization: `Bearer ${token}` },
+  })
+  if (!res.ok) return null
+  const user = await res.json()
+  return user?.id ? user : null
+}
+
 // ── Mercado Pago helper ───────────────────────────────────────────────────────
 async function mpFetch(env, path, options = {}) {
   const res = await fetch(`https://api.mercadopago.com${path}`, {
@@ -1392,6 +1451,97 @@ export default {
         token_prefix: (env.MP_ACCESS_TOKEN || '').slice(0, 10) + '...',
         plan: planData,
       }), { status: 200, headers: corsHeaders })
+    }
+
+    // ── Profile photo: upload ─────────────────────────────────────────────────
+    if (body.action === 'upload_profile_photo') {
+      const { photo_base64, mime_type = 'image/jpeg' } = body
+      if (!photo_base64) return new Response(JSON.stringify({ error: 'Falta photo_base64' }), { status: 400, headers: corsHeaders })
+      const user = await verifyUserJwt(env, request)
+      if (!user) return new Response(JSON.stringify({ error: 'No autorizado' }), { status: 401, headers: corsHeaders })
+      try {
+        const photoId = crypto.randomUUID()
+        const ext = mime_type === 'image/png' ? 'png' : mime_type === 'image/webp' ? 'webp' : 'jpg'
+        const storagePath = `${user.id}/${photoId}.${ext}`
+        const bytes = base64ToUint8Array(photo_base64)
+        const uploadRes = await storageUpload(env, 'profile-photos', storagePath, bytes, mime_type)
+        if (!uploadRes.ok) {
+          const err = await uploadRes.text()
+          console.error('[upload_photo] storage error:', err)
+          return new Response(JSON.stringify({ error: 'Error al subir la imagen' }), { status: 500, headers: corsHeaders })
+        }
+        // Save metadata to DB
+        await supabaseServiceFetch(env, 'profile_photos', {
+          method: 'POST',
+          body: JSON.stringify({ id: photoId, user_id: user.id, storage_path: storagePath, mime_type, es_default: false }),
+          headers: { Prefer: 'return=minimal' },
+        })
+        // Generate 24h signed URL
+        const signedUrl = await storageSignedUrl(env, 'profile-photos', storagePath, 86400)
+        return new Response(JSON.stringify({ ok: true, photo_id: photoId, storage_path: storagePath, signed_url: signedUrl }), { status: 200, headers: corsHeaders })
+      } catch (e) {
+        return new Response(JSON.stringify({ error: e.message }), { status: 500, headers: corsHeaders })
+      }
+    }
+
+    // ── Profile photo: list ───────────────────────────────────────────────────
+    if (body.action === 'get_profile_photos') {
+      const user = await verifyUserJwt(env, request)
+      if (!user) return new Response(JSON.stringify({ error: 'No autorizado' }), { status: 401, headers: corsHeaders })
+      try {
+        const res = await supabaseServiceFetch(env, `profile_photos?user_id=eq.${user.id}&order=created_at.desc&select=id,storage_path,mime_type,es_default,ai_score,ai_feedback,created_at`)
+        const rows = await res.json()
+        if (!Array.isArray(rows)) return new Response(JSON.stringify({ ok: true, photos: [] }), { status: 200, headers: corsHeaders })
+        const photos = await Promise.all(rows.map(async (row) => ({
+          ...row,
+          signed_url: await storageSignedUrl(env, 'profile-photos', row.storage_path, 86400),
+        })))
+        return new Response(JSON.stringify({ ok: true, photos }), { status: 200, headers: corsHeaders })
+      } catch (e) {
+        return new Response(JSON.stringify({ error: e.message }), { status: 500, headers: corsHeaders })
+      }
+    }
+
+    // ── Profile photo: delete ─────────────────────────────────────────────────
+    if (body.action === 'delete_profile_photo') {
+      const { photo_id } = body
+      if (!photo_id) return new Response(JSON.stringify({ error: 'Falta photo_id' }), { status: 400, headers: corsHeaders })
+      const user = await verifyUserJwt(env, request)
+      if (!user) return new Response(JSON.stringify({ error: 'No autorizado' }), { status: 401, headers: corsHeaders })
+      try {
+        const res = await supabaseServiceFetch(env, `profile_photos?id=eq.${photo_id}&user_id=eq.${user.id}&select=storage_path`)
+        const rows = await res.json()
+        if (!rows?.[0]) return new Response(JSON.stringify({ error: 'Foto no encontrada' }), { status: 404, headers: corsHeaders })
+        await storageDelete(env, 'profile-photos', rows[0].storage_path)
+        await supabaseServiceFetch(env, `profile_photos?id=eq.${photo_id}&user_id=eq.${user.id}`, { method: 'DELETE' })
+        return new Response(JSON.stringify({ ok: true }), { status: 200, headers: corsHeaders })
+      } catch (e) {
+        return new Response(JSON.stringify({ error: e.message }), { status: 500, headers: corsHeaders })
+      }
+    }
+
+    // ── Profile photo: set default ────────────────────────────────────────────
+    if (body.action === 'set_default_photo') {
+      const { photo_id } = body
+      if (!photo_id) return new Response(JSON.stringify({ error: 'Falta photo_id' }), { status: 400, headers: corsHeaders })
+      const user = await verifyUserJwt(env, request)
+      if (!user) return new Response(JSON.stringify({ error: 'No autorizado' }), { status: 401, headers: corsHeaders })
+      try {
+        // Clear existing default, then set new one
+        await supabaseServiceFetch(env, `profile_photos?user_id=eq.${user.id}&es_default=eq.true`, {
+          method: 'PATCH',
+          body: JSON.stringify({ es_default: false }),
+          headers: { Prefer: 'return=minimal' },
+        })
+        await supabaseServiceFetch(env, `profile_photos?id=eq.${photo_id}&user_id=eq.${user.id}`, {
+          method: 'PATCH',
+          body: JSON.stringify({ es_default: true }),
+          headers: { Prefer: 'return=minimal' },
+        })
+        return new Response(JSON.stringify({ ok: true }), { status: 200, headers: corsHeaders })
+      } catch (e) {
+        return new Response(JSON.stringify({ error: e.message }), { status: 500, headers: corsHeaders })
+      }
     }
 
     // ── Create subscription ───────────────────────────────────────────────────
