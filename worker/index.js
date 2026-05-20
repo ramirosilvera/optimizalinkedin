@@ -11,7 +11,7 @@ const ALLOWED_ORIGINS = new Set([
   'http://localhost:4173',
 ])
 const WORKER_NOTIFICATION_URL = 'https://linkedin-optimizer-proxy.raa1990-rs.workers.dev/mp-webhook'
-const BACK_URL = 'https://ramirosilvera.github.io/optimizalinkedin/?premium=ok'
+const BACK_URL = 'https://optimizalinkedin.com/?premium=ok'
 
 // ── AI system prompts (stored here, never sent to clients) ───────────────────
 const AI_SYSTEM_PROMPTS = {

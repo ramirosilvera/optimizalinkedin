@@ -606,7 +606,6 @@ export default function App() {
   const startSubscription = async (emailOverride) => {
     const emailToUse = emailOverride || user?.email || premiumEmail
     if (!emailToUse) return
-    // Si tiene sesión usamos su user_id; si no, lo asignará el webhook cuando cree la cuenta
     const userId = user?.id || 'pending'
     setSubscriptionLoading(true)
     setShowPremiumModal(false)
@@ -620,22 +619,17 @@ export default function App() {
       const data = await res.json()
       if (data.init_point) {
         trackEvent('premium_checkout_opened')
-        const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent)
-        if (isMobile) {
-          // Intentar abrir la app nativa de MP; si falla o no está instalada, redirigir a la web
-          const mpDeepLink = data.init_point.replace('https://www.mercadopago.com.ar', 'mercadopago://')
-          const fallbackTimer = setTimeout(() => { window.location.href = data.init_point }, 1500)
-          window.location.href = mpDeepLink
-          // Si la app abrió, el timer se cancela porque la página pierde foco
-          window.addEventListener('blur', () => clearTimeout(fallbackTimer), { once: true })
-        } else {
-          window.location.href = data.init_point
-        }
+        // init_point de MP es una Universal Link (iOS) / App Link (Android).
+        // Usar window.location.href directamente — la app MP intercepta la URL
+        // con el preapproval_id completo y navega al checkout correcto.
+        // El scheme mercadopago:// NO funciona: abre el home de la app sin contexto.
+        addToast('Redirigiendo a Mercado Pago…', 'loading', 0)
+        window.location.href = data.init_point
       } else {
-        alert(`Error al iniciar el pago: ${data.error || 'respuesta inesperada de Mercado Pago'}`)
+        addToast(data.error || 'No se pudo iniciar el pago. Intentá de nuevo.', 'error')
       }
     } catch (err) {
-      alert(`Error de conexión: ${err.message || 'no se pudo contactar al servidor'}`)
+      addToast('Error de conexión. Revisá tu internet e intentá de nuevo.', 'error')
     }
     setSubscriptionLoading(false)
   }
