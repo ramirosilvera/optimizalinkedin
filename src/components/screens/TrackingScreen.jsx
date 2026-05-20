@@ -1,7 +1,14 @@
+import { useEffect } from 'react'
 import { STEPS, LI_GRADIENT, BTN_BACK_STYLE, BTN_GHOST_STYLE, INPUT_STYLE, INPUT_ALT_STYLE, trackEvent } from '../../constants'
 import { Spinner } from '../ui'
 
-export default function TrackingScreen({ user, setShowPremiumModal, setStep, kanbanListMode, setKanbanListMode, trackingColumnas, trackingCards, trackingLoading, trackingError, showAddCard, setShowAddCard, newCardForm, setNewCardForm, editCard, setEditCard, showAddColumna, setShowAddColumna, newColumnaName, setNewColumnaName, newColumnaColor, setNewColumnaColor, renameColumna, setRenameColumna, createCard, updateCard, deleteCard, createColumna, updateColumna, deleteColumna, moveCard, setInterviewJobContext, resetInterview, cvFinalData }) {
+export default function TrackingScreen({ user, setShowPremiumModal, setStep, kanbanListMode, setKanbanListMode, trackingColumnas, trackingCards, trackingLoading, trackingError, showAddCard, setShowAddCard, newCardForm, setNewCardForm, editCard, setEditCard, showAddColumna, setShowAddColumna, newColumnaName, setNewColumnaName, newColumnaColor, setNewColumnaColor, renameColumna, setRenameColumna, createCard, updateCard, deleteCard, createColumna, updateColumna, deleteColumna, moveCard, setInterviewJobContext, resetInterview, cvFinalData, loadTracking }) {
+  useEffect(() => {
+    if (user?.es_premium && typeof loadTracking === 'function') {
+      loadTracking()
+    }
+  }, [])
+
   return (
     <>
       <div className="step-transition w-full" style={{ minHeight: '70vh' }}>

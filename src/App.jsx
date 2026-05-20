@@ -2997,6 +2997,7 @@ Generá el feedback en este JSON exacto:
             setInterviewJobContext={setInterviewJobContext}
             resetInterview={resetInterview}
             cvFinalData={cvFinalData}
+            loadTracking={loadTracking}
           />
         )}
 
