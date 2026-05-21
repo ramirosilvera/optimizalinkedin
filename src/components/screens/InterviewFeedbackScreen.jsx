@@ -43,7 +43,7 @@ export default function InterviewFeedbackScreen({ interviewLoading, rateLimitEve
           <button onClick={() => { setInterviewError(''); callInterviewFeedback(interviewAnswers) }}
             className="btn-glow w-full font-semibold py-4 rounded-2xl text-white text-sm"
             style={{ background: 'linear-gradient(135deg,#6366f1,#8b5cf6)' }}>
-            Reintentar
+            Nueva sesión →
           </button>
         </div>
       ) : !interviewFeedback ? (
@@ -58,7 +58,7 @@ export default function InterviewFeedbackScreen({ interviewLoading, rateLimitEve
       ) : (
         <>
           {/* Score */}
-          <ResultCard title="Resultado de la entrevista" accent="#6366f1">
+          <ResultCard title="Análisis de tu sesión" accent="#6366f1">
             <div className="flex flex-col sm:flex-row items-center sm:items-start gap-6">
               <ScoreRing score={interviewFeedback.puntaje_entrevista} />
               <p className="text-slate-600 text-sm leading-relaxed sm:pt-4">{interviewFeedback.evaluacion_general}</p>
@@ -179,39 +179,6 @@ export default function InterviewFeedbackScreen({ interviewLoading, rateLimitEve
             </div>
           </div>
 
-          {/* Card Ramiro — asesoramiento personalizado */}
-          <div className="rounded-2xl p-5"
-            style={{ background: 'rgba(0,119,181,0.05)', border: '1px solid rgba(0,119,181,0.18)' }}>
-            <p className="text-xs font-semibold uppercase tracking-wide mb-2" style={{ color: '#0077B5' }}>
-              🎯 ¿Querés asesoramiento personalizado?
-            </p>
-            <p className="text-slate-600 text-sm leading-relaxed mb-3">
-              Podemos revisar tu perfil en vivo, reescribir tu titular y prepararte para entrevistas reales. Escribime por privado en LinkedIn.
-            </p>
-            <button
-              onClick={() => {
-                trackEvent('lead_modal_open', { ubicacion: 'interview_feedback' })
-                !leadSaving && !leadSent && setShowLeadModal(true)
-              }}
-              disabled={leadSaving || leadSent}
-              className={`inline-flex items-center gap-2 px-5 py-2.5 rounded-xl text-white font-semibold text-sm ${!leadSent ? 'btn-glow' : ''}`}
-              style={{
-                background: leadSent ? 'rgba(34,197,94,0.15)' : LI_GRADIENT,
-                border: leadSent ? '1px solid rgba(34,197,94,0.4)' : 'none',
-                color: leadSent ? '#4ade80' : '#fff',
-                cursor: leadSaving || leadSent ? 'default' : 'pointer',
-              }}
-            >
-              {leadSaving ? (
-                <><Spinner size={4} /> Enviando...</>
-              ) : leadSent ? (
-                '✓ Mensaje enviado'
-              ) : (
-                <><LinkedInIcon className="w-4 h-4" /> Escribirle a Ramiro</>
-              )}
-            </button>
-          </div>
-
           {/* ── Sugerencia STAR ── */}
           <div className="rounded-2xl p-5 space-y-3"
             style={{ background: 'rgba(99,102,241,0.06)', border: '1px solid rgba(99,102,241,0.22)' }}>
@@ -224,7 +191,7 @@ export default function InterviewFeedbackScreen({ interviewLoading, rateLimitEve
               className="w-full py-3 rounded-xl text-white text-sm font-semibold transition-all"
               style={{ background: 'linear-gradient(135deg,#6366f1,#8b5cf6)' }}
             >
-              Entrenar metodología STAR →
+              Entrenar con STAR →
             </button>
           </div>
 
@@ -233,7 +200,7 @@ export default function InterviewFeedbackScreen({ interviewLoading, rateLimitEve
             className="w-full font-semibold py-4 rounded-2xl text-sm"
             style={BTN_BACK_STYLE}
           >
-            {result ? '← Volver a mi análisis' : '← Mi hoja de ruta'}
+            {result ? '← Mi preparación' : '← Mi hoja de ruta'}
           </button>
         </>
       )}

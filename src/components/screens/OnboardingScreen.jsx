@@ -20,7 +20,7 @@ export default function OnboardingScreen({ result, setStep }) {
         <ScoreRing score={score ?? 0} size={110} />
         {score !== null && score !== undefined && (
           <p className="text-sm font-bold" style={{ color: scoreColor }}>
-            {score >= 8 ? 'Perfil muy sólido' : score >= 6 ? 'Buen perfil, con margen de mejora' : 'Hay oportunidades claras para crecer'}
+            {score >= 8 ? 'Perfil altamente competitivo' : score >= 6 ? 'Perfil competitivo con margen de mejora' : 'Oportunidad clara de diferenciación'}
           </p>
         )}
       </div>
@@ -64,13 +64,13 @@ export default function OnboardingScreen({ result, setStep }) {
           className="btn-glow w-full py-4 rounded-2xl text-white font-semibold text-sm"
           style={{ background: LI_GRADIENT }}
         >
-          Ver mi diagnóstico completo →
+          Ver mi diagnóstico →
         </button>
         <button
           onClick={() => { trackEvent('onboarding_to_roadmap'); setStep(STEPS.MODE_SELECT) }}
           className="w-full py-2.5 text-xs font-medium text-slate-400 transition-colors hover:text-slate-600"
         >
-          Ver hoja de ruta completa
+          Ver mi preparación →
         </button>
       </div>
     </div>

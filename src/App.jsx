@@ -2424,6 +2424,27 @@ Generá el feedback en este JSON exacto:
   const qNum = qaHistory.length + 1
   const qProgress = Math.round((qaHistory.length / STATIC_QUESTIONS.length) * 100)
 
+  // ── Readiness Index ────────────────────────────────────────
+  // Weighted average of all available scores (0-10 scale)
+  // Weights: interview 30%, linkedin 25%, cv 25%, star 20%
+  const readinessIndex = (() => {
+    const scores = []
+    const linkedinScore = result?.puntaje_general
+    const cvScore = cvQuality?.score
+    const interviewScore = interviewFeedback?.puntaje_entrevista
+    const starScore = starFeedback?.puntaje
+
+    if (linkedinScore != null) scores.push({ value: linkedinScore, weight: 0.25 })
+    if (cvScore != null) scores.push({ value: cvScore, weight: 0.25 })
+    if (interviewScore != null) scores.push({ value: interviewScore, weight: 0.30 })
+    if (starScore != null) scores.push({ value: starScore, weight: 0.20 })
+
+    if (scores.length === 0) return null
+    const totalWeight = scores.reduce((acc, s) => acc + s.weight, 0)
+    const weighted = scores.reduce((acc, s) => acc + s.value * s.weight, 0)
+    return Math.round((weighted / totalWeight) * 10) / 10
+  })()
+
   // ── Render ─────────────────────────────────────────────────
 
   return (
@@ -2672,6 +2693,7 @@ Generá el feedback en este JSON exacto:
             cvOptimizeApplied={cvOptimizeApplied}
             interviewFeedback={interviewFeedback}
             callGenerateCV={callGenerateCV}
+            readinessIndex={readinessIndex}
           />
         )}
 
