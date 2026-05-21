@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from 'react'
+import { useState, useEffect, useCallback, useRef, lazy, Suspense } from 'react'
 import './index.css'
 
 import {
@@ -23,32 +23,36 @@ import {
   TagInput, ScoreRing, ResultCard, BeforeAfter, ToastContainer,
 } from './components/ui'
 import CommentsSection from './components/CommentsSection'
-import AdminPanel from './admin/AdminPanel'
 import { useTracking } from './hooks/useTracking'
 import WelcomeScreen from './components/screens/WelcomeScreen'
 import ModeSelectScreen from './components/screens/ModeSelectScreen'
-import QuestionnaireScreen from './components/screens/QuestionnaireScreen'
-import LoadingScreen from './components/screens/LoadingScreen'
-import InterviewIntroScreen from './components/screens/InterviewIntroScreen'
-import InterviewScreen from './components/screens/InterviewScreen'
-import InterviewFeedbackScreen from './components/screens/InterviewFeedbackScreen'
-import StarTrainingScreen from './components/screens/StarTrainingScreen'
-import TrackingScreen from './components/screens/TrackingScreen'
-import ProfileInputScreen from './components/screens/ProfileInputScreen'
-import ResultsScreen from './components/screens/ResultsScreen'
-import CvScreen from './components/screens/CvScreen'
-import OnboardingScreen from './components/screens/OnboardingScreen'
-import ReporteScreen from './components/screens/ReporteScreen'
-import ScoreShareModal from './components/modals/ScoreShareModal'
-import AuthModal from './components/modals/AuthModal'
-import PremiumModal from './components/modals/PremiumModal'
-import ManageSubscriptionModal from './components/modals/ManageSubscriptionModal'
-import HistorialDrawer from './components/modals/HistorialDrawer'
-import PostPaymentModal from './components/modals/PostPaymentModal'
-import JobAdapterModal from './components/modals/JobAdapterModal'
-import StarModal from './components/modals/StarModal'
-import CvModal from './components/modals/CvModal'
-import LeadModal from './components/modals/LeadModal'
+
+// Lazy-loaded screens (not needed on first render)
+const AdminPanel             = lazy(() => import('./admin/AdminPanel'))
+const QuestionnaireScreen    = lazy(() => import('./components/screens/QuestionnaireScreen'))
+const LoadingScreen          = lazy(() => import('./components/screens/LoadingScreen'))
+const ProfileInputScreen     = lazy(() => import('./components/screens/ProfileInputScreen'))
+const ResultsScreen          = lazy(() => import('./components/screens/ResultsScreen'))
+const OnboardingScreen       = lazy(() => import('./components/screens/OnboardingScreen'))
+const CvScreen               = lazy(() => import('./components/screens/CvScreen'))
+const InterviewIntroScreen   = lazy(() => import('./components/screens/InterviewIntroScreen'))
+const InterviewScreen        = lazy(() => import('./components/screens/InterviewScreen'))
+const InterviewFeedbackScreen= lazy(() => import('./components/screens/InterviewFeedbackScreen'))
+const StarTrainingScreen     = lazy(() => import('./components/screens/StarTrainingScreen'))
+const TrackingScreen         = lazy(() => import('./components/screens/TrackingScreen'))
+const ReporteScreen          = lazy(() => import('./components/screens/ReporteScreen'))
+
+// Lazy-loaded modals
+const ScoreShareModal        = lazy(() => import('./components/modals/ScoreShareModal'))
+const AuthModal              = lazy(() => import('./components/modals/AuthModal'))
+const PremiumModal           = lazy(() => import('./components/modals/PremiumModal'))
+const ManageSubscriptionModal= lazy(() => import('./components/modals/ManageSubscriptionModal'))
+const HistorialDrawer        = lazy(() => import('./components/modals/HistorialDrawer'))
+const PostPaymentModal       = lazy(() => import('./components/modals/PostPaymentModal'))
+const JobAdapterModal        = lazy(() => import('./components/modals/JobAdapterModal'))
+const StarModal              = lazy(() => import('./components/modals/StarModal'))
+const CvModal                = lazy(() => import('./components/modals/CvModal'))
+const LeadModal              = lazy(() => import('./components/modals/LeadModal'))
 
 // ── Main App ───────────────────────────────────────────────────
 
@@ -2456,6 +2460,7 @@ Generá el feedback en este JSON exacto:
   // ── Render ─────────────────────────────────────────────────
 
   return (
+    <Suspense fallback={null}>
     <main
       className="min-h-dvh flex flex-col items-center px-4 py-8 sm:py-14"
       style={{ paddingBottom: 'max(2rem, env(safe-area-inset-bottom))' }}
@@ -2463,7 +2468,9 @@ Generá el feedback en este JSON exacto:
 
       {/* ── Admin Panel ── */}
       {showAdminPanel && authToken && (
-        <AdminPanel authToken={authToken} onClose={() => setShowAdminPanel(false)} />
+        <Suspense fallback={null}>
+          <AdminPanel authToken={authToken} onClose={() => setShowAdminPanel(false)} />
+        </Suspense>
       )}
 
       {/* ── Auth Modal ── */}
@@ -3174,5 +3181,6 @@ Generá el feedback en este JSON exacto:
 
       <ToastContainer toasts={toasts} dismissToast={dismissToast} />
     </main>
+    </Suspense>
   )
 }
