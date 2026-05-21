@@ -229,7 +229,7 @@ export default function WelcomeScreen({ setStep, handleModeSelectJobAdapter, job
           <h2 className="text-xl font-bold text-slate-900 mb-4">Cómo funciona</h2>
           <div className="space-y-3">
             {[
-              { num: '1', title: 'Diagnóstico LinkedIn', desc: 'Respondés 10 preguntas y subís tu perfil. En 60 segundos tenés tu score de empleabilidad, gaps y sugerencias.', color: '#0077B5' },
+              { num: '1', title: 'Diagnóstico LinkedIn', desc: 'Respondés 7 preguntas (o 3 en modo express) y subís tu perfil. En 60 segundos tenés tu score de empleabilidad, gaps y sugerencias.', color: '#0077B5' },
               { num: '2', title: 'Optimizás y generás tu CV', desc: 'Aplicás las mejoras al perfil y generás un CV ATS-compatible de 1 página con tu información optimizada.', color: '#059669' },
               { num: '3', title: 'Practicás y adaptás para cada oferta', desc: 'Simulás entrevistas con IA, adaptás tu CV por aviso y usás el método STAR para respuestas de impacto.', color: '#6366f1' },
             ].map(stepItem => (
@@ -277,7 +277,7 @@ export default function WelcomeScreen({ setStep, handleModeSelectJobAdapter, job
               { q: '¿Qué es Optimiza LK?', a: 'Optimiza LK es un sistema gratuito de preparación profesional creado por Ramiro Silvera (Gerente de RRHH y Headhunter) que diagnostica tu competitividad en el mercado laboral. También construís tu CV, entrenás entrevistas con IA y adaptás tu CV a cada oferta — todo sin costo y sin registro.' },
               { q: '¿Es realmente gratis?', a: 'Sí, 100% gratis y sin registro. No necesitás crear una cuenta ni dejar tu email para recibir el análisis.' },
               { q: '¿Qué pasa con mi CV o perfil?', a: 'Tu información se usa para generar el análisis. Solo se guarda si vos lo autorizás — por ejemplo, al solicitar contacto con Ramiro o generar tu CV, para poder brindarte un servicio más personalizado. En ningún caso se comparte con terceros.' },
-              { q: '¿Cuánto tarda el análisis?', a: 'Menos de 60 segundos una vez que subís tu perfil. El cuestionario previo tarda unos 3 minutos.' },
+              { q: '¿Cuánto tarda el análisis?', a: 'Menos de 60 segundos una vez que subís tu perfil. El cuestionario previo tarda 1-3 minutos (podés usar el modo express de 3 preguntas para empezar más rápido).' },
               { q: '¿Sirve si vivo fuera de Argentina?', a: 'Sí. El análisis se adapta a tu mercado y objetivo declarado en el cuestionario.' },
               { q: '¿Qué es el simulador de entrevista?', a: 'Una entrevista inicial simulada con IA donde respondés 5 preguntas reales de RRHH y recibís feedback detallado sobre cada respuesta.' },
               { q: '¿Necesito tener el PDF de LinkedIn?', a: 'No es obligatorio. Podés subir el PDF, pegar la URL de tu perfil o completar un formulario directamente en la app.' },

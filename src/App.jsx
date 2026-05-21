@@ -2531,6 +2531,7 @@ Generá el feedback en este JSON exacto:
         deleteHistorialLoading={deleteHistorialLoading}
         deleteHistorialItem={deleteHistorialItem}
         restoreFromHistorial={restoreFromHistorial}
+        user={user}
       />}
 
       {/* ── Post-Payment Modal ── */}

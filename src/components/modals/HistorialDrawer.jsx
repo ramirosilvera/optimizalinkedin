@@ -1,6 +1,6 @@
 import { Spinner } from '../ui'
 
-export default function HistorialDrawer({ historial, historialLoading, setShowHistorial, deletingHistorialId, setDeletingHistorialId, deleteHistorialLoading, deleteHistorialItem, restoreFromHistorial }) {
+export default function HistorialDrawer({ historial, historialLoading, setShowHistorial, deletingHistorialId, setDeletingHistorialId, deleteHistorialLoading, deleteHistorialItem, restoreFromHistorial, user }) {
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4"
       style={{ background: 'rgba(0,0,0,0.55)', backdropFilter: 'blur(4px)' }}>
@@ -30,7 +30,7 @@ export default function HistorialDrawer({ historial, historialLoading, setShowHi
                 star:     { background: '#fef3c7', color: '#b45309' },
               }
               const isRestorable = item.tipo === 'analisis' || item.tipo === 'cv' || item.tipo === 'entrevista'
-              const isPremium = localStorage.getItem('ol_premium') === '1'
+              const isPremium = user?.es_premium || false
               const isConfirming = deletingHistorialId === item.id
 
               if (isConfirming) {
