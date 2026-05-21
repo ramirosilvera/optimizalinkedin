@@ -145,60 +145,23 @@ export const STAR_QUESTIONS = [
   'Contame sobre una vez que tuviste que influir o convencer a alguien sin tener autoridad directa.',
 ]
 
+const CAREER_READINESS_MESSAGES = [
+  'Calibrando tu perfil con criterio de headhunter...',
+  'Evaluando tu posicionamiento profesional...',
+  'Identificando gaps y ventajas competitivas...',
+  'Analizando keywords ATS de tu industria...',
+  'Construyendo tu diagnóstico de competitividad...',
+  'Generando recomendaciones estratégicas...',
+  'Preparando tu análisis personalizado...',
+  'Validando tu propuesta de valor profesional...',
+]
+
 export const LOADING_MESSAGES_BY_SITUACION = {
-  'Empleado/a buscando un nuevo trabajo': [
-    'Los reclutadores pasan apenas 6 segundos en el primer vistazo de un perfil...',
-    'El 87% de los reclutadores usa LinkedIn para encontrar candidatos activamente...',
-    'Un titular optimizado puede triplicar tus apariciones en búsquedas de reclutadores...',
-    'Los perfiles con foto reciben 21× más visitas que los que no la tienen...',
-    'El resumen es tu única oportunidad de hablarle directamente al reclutador que te busca...',
-    'Las habilidades validadas por colegas aumentan 17× tu visibilidad ante empresas...',
-    'Perfiles con logros concretos y métricas generan 40% más entrevistas...',
-  ],
-  'Freelancer o consultor/a buscando más clientes': [
-    'El 80% de los clientes B2B revisa LinkedIn antes de contratar a un consultor...',
-    'Un perfil con propuesta de valor específica duplica las consultas entrantes...',
-    'Tu titular es tu pitch de ventas — tiene 3 segundos para convencer a un cliente potencial...',
-    'Los freelancers con recomendaciones visibles generan más confianza que los que no las tienen...',
-    'Los perfiles con foto profesional reciben 21× más visitas...',
-    'Un resumen orientado a resultados convierte más visitas en consultas reales...',
-    'Las palabras clave correctas hacen que tus clientes ideales te encuentren a vos...',
-  ],
-  'Emprendedor/a o dueño/a de negocio buscando visibilidad': [
-    'Los fundadores con perfil activo en LinkedIn generan más partnerships y oportunidades...',
-    'Tu perfil es tu carta de presentación ante inversores, socios y clientes potenciales...',
-    'El 60% de las decisiones de negocio B2B involucra una búsqueda en LinkedIn...',
-    'Los emprendedores que publican contenido son 3× más visibles en su industria...',
-    'Un titular que comunica tu visión atrae a las personas correctas...',
-    'La sección Acerca de es tu oportunidad de contar por qué tu empresa existe...',
-    'Los perfiles con foto reciben 21× más visitas que los que no la tienen...',
-  ],
-  'Profesional buscando crecer o ascender en mi empresa': [
-    'Los profesionales con perfil optimizado son 40% más considerados para ascensos internos...',
-    'Tu visibilidad en LinkedIn influye en cómo te perciben dentro y fuera de tu empresa...',
-    'Un perfil que muestra logros concretos refuerza tu reputación ante líderes de área...',
-    'Las habilidades validadas por colegas aumentan tu credibilidad ante decisores...',
-    'El resumen es tu oportunidad de comunicar tu propuesta de valor hacia adentro...',
-    'Publicar contenido de tu industria posiciona tu expertise frente a quienes toman decisiones...',
-    'Los perfiles con foto profesional proyectan más confianza y seriedad...',
-  ],
-  'En transición de carrera o reingresando al mercado': [
-    'Los perfiles que narran bien una transición generan más confianza en reclutadores...',
-    'Tu experiencia previa es un activo — la clave está en cómo la reencuadrás...',
-    'Un titular que comunica hacia dónde vas (no solo de dónde venís) abre más puertas...',
-    'El resumen es el lugar ideal para contar tu historia de transición con claridad...',
-    'Las habilidades transferibles bien documentadas acortan el tiempo de búsqueda...',
-    'Más del 70% de los empleos se consiguen por red de contactos — LinkedIn es esa red...',
-    'Los perfiles con foto reciben 21× más visitas que los que no la tienen...',
-  ],
+  'Empleado/a buscando un nuevo trabajo': CAREER_READINESS_MESSAGES,
+  'Freelancer o consultor/a buscando más clientes': CAREER_READINESS_MESSAGES,
+  'Emprendedor/a o dueño/a de negocio buscando visibilidad': CAREER_READINESS_MESSAGES,
+  'Profesional buscando crecer o ascender en mi empresa': CAREER_READINESS_MESSAGES,
+  'En transición de carrera o reingresando al mercado': CAREER_READINESS_MESSAGES,
 }
 
-export const LOADING_MESSAGES_DEFAULT = [
-  'Los reclutadores pasan apenas 6 segundos en el primer vistazo de un perfil...',
-  'El 87% de los reclutadores usa LinkedIn para encontrar candidatos activamente...',
-  'Los perfiles con foto reciben 21× más visitas que los que no la tienen...',
-  'Un titular optimizado puede triplicar tus apariciones en búsquedas...',
-  'El resumen es el único espacio donde podés hablarle directamente a tu audiencia ideal...',
-  'Los perfiles con habilidades validadas tienen 17× más chances de ser vistos...',
-  'Perfiles con logros concretos y métricas generan 40% más solicitudes de conexión...',
-]
+export const LOADING_MESSAGES_DEFAULT = CAREER_READINESS_MESSAGES

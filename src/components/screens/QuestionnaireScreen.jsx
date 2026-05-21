@@ -25,7 +25,7 @@ export default function QuestionnaireScreen({ qaHistory, currentQ, selectedOptio
         })}
       </div>
       <p className="text-xs text-slate-500 -mt-4">
-        Paso {qaHistory.length + 1} de {STATIC_QUESTIONS.length}
+        Evaluación {qaHistory.length + 1} de {STATIC_QUESTIONS.length}
         {currentQ.id && <span className="ml-2 opacity-60">· {currentQ.id.replace(/_/g,' ')}</span>}
       </p>
 
@@ -81,7 +81,7 @@ export default function QuestionnaireScreen({ qaHistory, currentQ, selectedOptio
               className="flex-1 font-medium py-3 rounded-2xl text-sm transition-colors"
               style={{ border: '1px solid rgba(0,119,181,0.15)', color: '#475569', background: '#f8fafc' }}
             >
-              Omitir
+              Omitir por ahora
             </button>
             <button
               onClick={() => handleAnswer(textAnswer.trim())}

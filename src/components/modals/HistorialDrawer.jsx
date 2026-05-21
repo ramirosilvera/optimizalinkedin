@@ -7,7 +7,7 @@ export default function HistorialDrawer({ historial, historialLoading, setShowHi
       <div className="w-full max-w-lg rounded-3xl p-6 space-y-4 max-h-[85dvh] overflow-y-auto"
         style={{ background: 'white', boxShadow: '0 25px 60px rgba(0,0,0,0.2)' }}>
         <div className="flex items-center justify-between">
-          <h2 className="text-slate-900 font-bold text-lg">Mis resultados</h2>
+          <h2 className="text-slate-900 font-bold text-lg">Historial de preparación</h2>
           <button onClick={() => { setShowHistorial(false); setDeletingHistorialId(null) }}
             className="text-slate-400 hover:text-slate-600 text-2xl leading-none w-8 h-8 flex items-center justify-center">×</button>
         </div>
@@ -15,14 +15,14 @@ export default function HistorialDrawer({ historial, historialLoading, setShowHi
           <div className="flex justify-center py-10"><Spinner size={8} /></div>
         ) : historial.length === 0 ? (
           <p className="text-center text-slate-500 text-sm py-10 leading-relaxed">
-            Todavía no hay items guardados.<br />
-            Los análisis, CVs y entrevistas se guardan automáticamente.
+            Sin sesiones registradas<br />
+            Completá tu primer módulo de preparación para ver tu historial acá.
           </p>
         ) : (
           <div className="space-y-2">
             {historial.map(item => {
-              const icons = { analisis: '📊', cv: '📄', entrevista: '🎙️', star: '⭐' }
-              const labels = { analisis: 'Análisis', cv: 'CV', entrevista: 'Entrevista', star: 'STAR' }
+              const icons = { analisis: '🎯', cv: '📄', entrevista: '🎙️', star: '⭐' }
+              const labels = { analisis: 'Diagnóstico', cv: 'CV de Combate', entrevista: 'Sesión de Entrenamiento', star: 'STAR' }
               const colors = {
                 analisis: { background: '#dbeafe', color: '#1d4ed8' },
                 cv:       { background: '#dcfce7', color: '#15803d' },
@@ -71,7 +71,7 @@ export default function HistorialDrawer({ historial, historialLoading, setShowHi
                   </div>
                   <div className="flex items-center gap-2 shrink-0">
                     <span className="text-xs text-slate-400">
-                      {new Date(item.created_at).toLocaleDateString('es-AR', { day: 'numeric', month: 'short', year: '2-digit' })}
+                      Sesión · {new Date(item.created_at).toLocaleDateString('es-AR', { day: 'numeric', month: 'short', year: '2-digit' })}
                     </span>
                     {isPremium && (
                       <button

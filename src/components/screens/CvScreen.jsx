@@ -125,7 +125,7 @@ export default function CvScreen({
           className="text-sm font-medium transition-all shrink-0"
           style={BTN_BACK_STYLE}
         >
-          ← Diagnóstico
+          ← Mi diagnóstico
         </button>
         <div className="flex items-center gap-1.5">
           <span className="text-[10px] font-bold uppercase tracking-wide px-2 py-0.5 rounded-full"
@@ -138,8 +138,8 @@ export default function CvScreen({
       </div>
       <div className="flex items-center justify-between gap-3">
         <div>
-          <h1 className="text-xl font-bold text-slate-800">CV Inteligente</h1>
-          <p className="text-xs text-slate-500 mt-0.5">Paso 3 del proceso · Construido desde tu análisis</p>
+          <h1 className="text-xl font-bold text-slate-800">CV de Combate</h1>
+          <p className="text-xs text-slate-500 mt-0.5">Construido desde tu diagnóstico · ATS-optimizado · Listo para competir</p>
         </div>
         {cvQuality && (
           <div className="shrink-0 flex flex-col items-center justify-center w-12 h-12 rounded-full font-black"
@@ -161,10 +161,10 @@ export default function CvScreen({
               className="w-full font-semibold py-4 rounded-xl transition-all duration-200 text-white text-sm"
               style={{ background: 'linear-gradient(135deg,#059669,#10b981)' }}
             >
-              📄 Generá tu CV moderno de 1 página
+              📄 Construir mi CV de 1 página
             </button>
             <p className="text-center text-xs text-slate-500">
-              Gratis · ATS-compatible · Con foto · Listo para imprimir
+              ATS-compatible · Con foto · Listo para postular
             </p>
           </div>
         )}
@@ -173,7 +173,7 @@ export default function CvScreen({
         {(cvStage === 'drafting' || cvStage === 'regenerating') && (() => {
           const cvPipeline = [
             { label: 'Generando', stage: 'drafting', sub: 'Creando y revisando tu CV con criterio de headhunter' },
-            { label: 'Mejorando', stage: 'regenerating', sub: 'Integrando la información que nos diste' },
+            { label: 'Mejorando', stage: 'regenerating', sub: 'Calibrando con tu información de perfil' },
           ]
           const activeIdx = cvPipeline.findIndex(s => s.stage === cvStage)
           const active = cvPipeline[activeIdx]
@@ -981,7 +981,7 @@ export default function CvScreen({
             className="flex-1 font-medium py-3.5 rounded-2xl text-sm transition-all"
             style={BTN_BACK_STYLE}
           >
-            ← Diagnóstico
+            ← Mi diagnóstico
           </button>
         )}
         <button

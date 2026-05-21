@@ -11,11 +11,11 @@ const C = {
 }
 
 const TABS = [
-  { id:'overview',  label:'Overview',  icon:'📊' },
-  { id:'clientes',  label:'Clientes',  icon:'👥' },
-  { id:'revenue',   label:'Revenue',   icon:'💰' },
-  { id:'producto',  label:'Producto',  icon:'🧠' },
-  { id:'sistema',   label:'Sistema',   icon:'⚙️'  },
+  { id:'overview',  label:'Intelligence Center',  icon:'📊' },
+  { id:'clientes',  label:'Talent Map',            icon:'👥' },
+  { id:'revenue',   label:'Revenue Ops',           icon:'💰' },
+  { id:'producto',  label:'Analytics',             icon:'🧠' },
+  { id:'sistema',   label:'Sistema',               icon:'⚙️'  },
 ]
 
 // Gemini 2.5 Flash Lite pricing (USD per token)
@@ -2613,7 +2613,7 @@ export default function AdminPanel({ authToken, onClose }) {
         <div className="adm-header">
           <div style={{ fontWeight:800, fontSize:15, color:'#0d2137', flex:1 }}>
             {cur?.icon} {cur?.label}
-            <span style={{ fontSize:11, fontWeight:500, color:'#94a3b8', marginLeft:8 }}>Admin</span>
+            <span style={{ fontSize:11, fontWeight:500, color:'#94a3b8', marginLeft:8 }}>Operations Room</span>
           </div>
           <button
             onClick={onClose}

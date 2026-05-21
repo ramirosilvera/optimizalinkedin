@@ -50,7 +50,7 @@ export default function ResultsScreen({
               onClick={() => { trackEvent('results_go_to_roadmap'); setStep(STEPS.MODE_SELECT) }}
               className="text-[10px] font-semibold transition-opacity hover:opacity-80"
               style={{ color: 'rgba(255,255,255,0.55)' }}>
-              Hoja de ruta →
+              Mi preparación →
             </button>
           </div>
           <div className="px-6 pt-6 pb-5 flex flex-col items-center gap-4 text-center">
@@ -121,7 +121,7 @@ export default function ResultsScreen({
           </div>
           <div className="grid sm:grid-cols-2 gap-0 divide-y sm:divide-y-0 sm:divide-x divide-slate-100">
             <div className="px-5 py-4 space-y-2">
-              <p className="text-[10px] font-bold uppercase tracking-wide mb-2" style={{ color: '#16a34a' }}>✅ Fortalezas</p>
+              <p className="text-[10px] font-bold uppercase tracking-wide mb-2" style={{ color: '#16a34a' }}>✅ Ventajas competitivas</p>
               {(result.fortalezas || []).map((f, i) => (
                 <div key={i} className="flex items-start gap-2">
                   <span className="mt-1 w-1.5 h-1.5 rounded-full shrink-0" style={{ background: '#16a34a' }} />
@@ -130,7 +130,7 @@ export default function ResultsScreen({
               ))}
             </div>
             <div className="px-5 py-4 space-y-2">
-              <p className="text-[10px] font-bold uppercase tracking-wide mb-2" style={{ color: '#d97706' }}>⚠️ Áreas de mejora</p>
+              <p className="text-[10px] font-bold uppercase tracking-wide mb-2" style={{ color: '#d97706' }}>⚠️ Brechas a cerrar</p>
               {(result.areas_de_mejora || []).map((a, i) => (
                 <div key={i} className="flex items-start gap-2">
                   <span className="mt-1 w-1.5 h-1.5 rounded-full shrink-0" style={{ background: '#d97706' }} />
@@ -170,7 +170,7 @@ export default function ResultsScreen({
                   {cvFinalData && <span className="text-[10px] font-bold text-white/70">✓ Generado</span>}
                 </div>
                 <p className="text-base font-bold text-white leading-tight">
-                  {cvStage === 'done' ? 'Ver mi CV generado →' : cvStage === 'idle' ? 'Generar mi CV →' : 'Ver CV generándose →'}
+                  {cvStage === 'done' ? 'Ver mi CV generado →' : cvStage === 'idle' ? 'Construir mi CV →' : 'Ver CV generándose →'}
                 </p>
                 <p className="text-[11px] text-white/75 mt-0.5">ATS-compatible · 1 página · listo para enviar</p>
               </div>
@@ -202,7 +202,7 @@ export default function ResultsScreen({
               style={{ background: 'rgba(217,119,6,0.06)', border: '1px solid rgba(217,119,6,0.22)' }}
             >
               <p className="text-base mb-1">🎙️</p>
-              <p className="text-xs font-bold text-slate-800 leading-tight">Simular entrevista</p>
+              <p className="text-xs font-bold text-slate-800 leading-tight">Entrenar entrevista</p>
               <p className="text-[10px] text-slate-500 mt-0.5">5 preguntas con IA · Paso 6</p>
             </button>
             {cvFinalData && (
@@ -258,7 +258,7 @@ export default function ResultsScreen({
               <div className="space-y-5 pt-1">
                 {/* Titular antes/después */}
                 <div>
-                  <p className="text-xs font-bold uppercase tracking-wide mb-2 text-slate-500">Titular propuesto</p>
+                  <p className="text-xs font-bold uppercase tracking-wide mb-2 text-slate-500">Propuesta de valor</p>
                   <BeforeAfter label="Titular" before={result.titular_actual} after={result.titular_propuesto} />
                 </div>
 
@@ -271,7 +271,7 @@ export default function ResultsScreen({
                 {/* SEO keywords */}
                 {result.palabras_clave_sugeridas?.length > 0 && (
                   <div>
-                    <p className="text-xs font-bold uppercase tracking-wide mb-2 text-slate-500">Palabras clave SEO</p>
+                    <p className="text-xs font-bold uppercase tracking-wide mb-2 text-slate-500">Palabras clave ATS</p>
                     <div className="flex flex-wrap gap-2">
                       {result.palabras_clave_sugeridas.map((kw, i) => (
                         <span key={i} className="text-xs px-3 py-1 rounded-full font-medium"

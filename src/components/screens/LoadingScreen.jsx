@@ -21,7 +21,7 @@ export default function LoadingScreen({ loadingMsgs, loadingMsgIdx, analysisAbor
         </div>
       </div>
       <div className="space-y-3 max-w-xs">
-        <h2 className="text-2xl font-bold text-slate-900" style={{ letterSpacing: '-0.02em' }}>Analizando tu perfil...</h2>
+        <h2 className="text-2xl font-bold text-slate-900" style={{ letterSpacing: '-0.02em' }}>Analizando tu perfil competitivo...</h2>
         <p className="text-slate-500 text-sm leading-relaxed transition-all duration-700">
           {loadingMsgs[loadingMsgIdx % loadingMsgs.length]}
         </p>

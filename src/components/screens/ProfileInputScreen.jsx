@@ -30,7 +30,7 @@ export default function ProfileInputScreen({
       <Logo />
       <div>
         <p className="text-slate-500 text-sm mb-1">Último paso</p>
-        <h2 className="text-2xl sm:text-3xl font-bold text-slate-900">Cargá tu perfil de LinkedIn</h2>
+        <h2 className="text-2xl sm:text-3xl font-bold text-slate-900">Cargá tu perfil profesional</h2>
       </div>
 
       {/* Rate limit banner */}
@@ -47,7 +47,7 @@ export default function ProfileInputScreen({
             {[
               { id: 'pdf',       label: '📄  PDF' },
               { id: 'form',      label: '✏️  Manual' },
-              { id: 'sinperfil', label: '💡  Sin perfil' },
+              { id: 'sinperfil', label: '💡  Sin PDF' },
             ].map(tab => (
               <button
                 key={tab.id}
@@ -220,7 +220,7 @@ export default function ProfileInputScreen({
                   ) : (
                     <><span className="text-3xl">{isDragging ? '📂' : '📄'}</span>
                       <div className="text-center">
-                        <p className="text-slate-900 font-semibold text-sm">{isDragging ? 'Soltá el PDF acá' : 'Subir PDF de LinkedIn'}</p>
+                        <p className="text-slate-900 font-semibold text-sm">{isDragging ? 'Soltá tu PDF de LinkedIn acá' : 'Subir PDF de LinkedIn'}</p>
                         <p className="text-slate-500 text-xs mt-1">Arrastrá o hacé clic · Máx. 15 MB</p>
                       </div></>
                   )}
@@ -239,7 +239,7 @@ export default function ProfileInputScreen({
           {inputMode === 'form' && (
             <div className="space-y-4">
               <p className="text-slate-500 text-sm leading-relaxed">
-                Copiá cada campo directamente desde tu perfil de LinkedIn.
+                Completá la información manualmente para tu evaluación inicial. Podés agregar el PDF más adelante para el análisis completo.
               </p>
 
               {/* Banner AutoFill */}
@@ -247,7 +247,7 @@ export default function ProfileInputScreen({
                 style={{ background: 'rgba(0,119,181,0.05)', border: '1px solid rgba(0,119,181,0.18)' }}>
                 <span className="text-lg shrink-0">⚡</span>
                 <div className="flex-1 min-w-0">
-                  <p className="text-xs font-semibold text-slate-700">Autocompletar desde LinkedIn</p>
+                  <p className="text-xs font-semibold text-slate-700">Completar desde LinkedIn</p>
                   <p className="text-xs text-slate-500">Completá los campos con un clic</p>
                 </div>
                 {liAutofillDone
@@ -450,10 +450,10 @@ export default function ProfileInputScreen({
               <div className="rounded-2xl p-5 space-y-3"
                 style={{ background: 'rgba(99,102,241,0.05)', border: '1px solid rgba(99,102,241,0.18)' }}>
                 <p className="text-xs font-semibold uppercase tracking-wide" style={{ color: '#6366f1' }}>
-                  ¿No tenés perfil de LinkedIn todavía?
+                  ¿No tenés el PDF a mano?
                 </p>
                 <p className="text-slate-600 text-sm leading-relaxed">
-                  Generamos un diagnóstico de cómo posicionarte y te damos titular, resumen y palabras clave para construir tu perfil desde cero.
+                  Realizá la evaluación inicial con las respuestas del cuestionario. El diagnóstico completo requiere el PDF.
                 </p>
                 <ul className="space-y-1.5">
                   {['Titular propuesto con keywords de tu sector', 'Resumen con propuesta de valor clara', 'Palabras clave para aparecer en búsquedas'].map(t => (
