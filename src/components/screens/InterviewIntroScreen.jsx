@@ -1,7 +1,24 @@
+import { useState } from 'react'
 import { STEPS, trackEvent, BTN_BACK_STYLE } from '../../constants'
 import { Logo } from '../ui'
 
 export default function InterviewIntroScreen({ interviewJobContext, setInterviewJobContext, generatePersonalizedInterviewQs, setStep, result }) {
+  const [customTarget, setCustomTarget] = useState('')
+
+  const handleStart = () => {
+    trackEvent('entrevista_iniciada', { has_job_context: !!(interviewJobContext || customTarget.trim()) })
+    if (customTarget.trim() && !interviewJobContext) {
+      const parts = customTarget.trim().split(/\s+en\s+/i)
+      const contextOverride = parts.length >= 2
+        ? { puesto: parts[0].trim(), empresa: parts.slice(1).join(' en ').trim() }
+        : { puesto: customTarget.trim(), empresa: '' }
+      generatePersonalizedInterviewQs(contextOverride)
+    } else {
+      generatePersonalizedInterviewQs()
+    }
+    setStep(STEPS.INTERVIEW)
+  }
+
   return (
     <div className="step-transition text-center space-y-8">
       <Logo />
@@ -18,7 +35,7 @@ export default function InterviewIntroScreen({ interviewJobContext, setInterview
         </h2>
         <p className="text-slate-600 text-base max-w-sm mx-auto leading-relaxed">
           {interviewJobContext
-            ? `Entrenamiento calibrado para el puesto de ${interviewJobContext.puesto} en ${interviewJobContext.empresa}.`
+            ? `Entrenamiento calibrado para el puesto de ${interviewJobContext.puesto}${interviewJobContext.empresa ? ` en ${interviewJobContext.empresa}` : ''}.`
             : '5 preguntas personalizadas a tu perfil. Al final recibís análisis detallado de cada respuesta con criterio de selección real.'}
         </p>
       </div>
@@ -36,11 +53,39 @@ export default function InterviewIntroScreen({ interviewJobContext, setInterview
         </div>
       )}
 
+      {/* Custom job target input — only if no Kanban context */}
+      {!interviewJobContext && (
+        <div className="w-full max-w-sm mx-auto text-left space-y-1.5">
+          <label className="text-xs font-semibold text-slate-500">
+            ¿Para qué puesto querés entrenar? <span className="font-normal">(opcional)</span>
+          </label>
+          <input
+            type="text"
+            value={customTarget}
+            onChange={e => setCustomTarget(e.target.value)}
+            onKeyDown={e => e.key === 'Enter' && customTarget.trim() && handleStart()}
+            placeholder='Ej: "Product Manager en Banco Ciudad"'
+            maxLength={120}
+            className="w-full rounded-2xl px-4 py-3 text-sm outline-none transition-all"
+            style={{
+              background: '#f8fafc',
+              border: customTarget.trim() ? '1px solid rgba(99,102,241,0.5)' : '1px solid rgba(0,119,181,0.15)',
+              color: '#0d2137',
+            }}
+          />
+          {customTarget.trim() && (
+            <p className="text-[10px] text-indigo-500 px-1">
+              ✦ Preguntas calibradas para este puesto
+            </p>
+          )}
+        </div>
+      )}
+
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
         {[
-          { icon: '❓', label: interviewJobContext ? 'Personalizadas' : '5 preguntas', text: interviewJobContext ? `Para ${interviewJobContext.puesto}` : 'Pre-armadas por RRHH', accent: '#6366f1' },
+          { icon: '❓', label: interviewJobContext || customTarget.trim() ? 'Personalizadas' : '5 preguntas', text: interviewJobContext ? `Para ${interviewJobContext.puesto}` : customTarget.trim() ? 'Para el puesto ingresado' : 'Pre-armadas por RRHH', accent: '#6366f1' },
           { icon: '🧠', label: 'Feedback IA', text: 'Análisis técnico de cada respuesta', accent: '#8b5cf6' },
-          { icon: '🎯', label: 'Estándar real', text: 'Estándares de headhunter', accent: '#a855f7' },
+          { icon: '🎯', label: 'Estándar real', text: 'Criterio de headhunter', accent: '#a855f7' },
         ].map(item => (
           <div key={item.label} className="rounded-2xl p-4 text-center"
             style={{ background: 'white', border: '1px solid rgba(0,119,181,0.15)', boxShadow: '0 2px 12px rgba(0,0,0,0.06)' }}>
@@ -53,22 +98,18 @@ export default function InterviewIntroScreen({ interviewJobContext, setInterview
 
       <div className="space-y-3">
         <button
-          onClick={() => {
-            trackEvent('entrevista_iniciada')
-            generatePersonalizedInterviewQs()
-            setStep(STEPS.INTERVIEW)
-          }}
+          onClick={handleStart}
           className="btn-glow w-full text-white font-semibold py-4 rounded-2xl text-base"
           style={{ background: 'linear-gradient(135deg,#6366f1,#8b5cf6)' }}
         >
           Comenzar sesión →
         </button>
         <button
-          onClick={() => result ? setStep(STEPS.RESULTS) : setStep(STEPS.MODE_SELECT)}
+          onClick={() => setStep(STEPS.MODE_SELECT)}
           className="w-full font-medium py-3 rounded-2xl text-sm transition-all"
           style={BTN_BACK_STYLE}
         >
-          {result ? '← Mi preparación' : '← Mi preparación'}
+          ← Mi preparación
         </button>
       </div>
     </div>

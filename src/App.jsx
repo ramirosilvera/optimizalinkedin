@@ -1170,19 +1170,21 @@ export default function App() {
     setLeadApellido('')
   }
 
-  const generatePersonalizedInterviewQs = async () => {
+  const generatePersonalizedInterviewQs = async (contextOverride = null) => {
     const profesion = qaHistory.find(h => h.questionId === 'profesion')?.answer || qaHistory[0]?.answer || ''
     const industria = qaHistory.find(h => h.questionId === 'industria')?.answer || ''
     const seniority = qaHistory.find(h => h.questionId === 'seniority')?.answer || ''
     if (!profesion || !WORKER_URL) return
+    const activeJobContext = contextOverride || interviewJobContext
+    if (contextOverride) setInterviewJobContext(contextOverride)
     setInterviewQsLoading(true)
     try {
-      const jobCtx = interviewJobContext ? ` · Empresa: ${interviewJobContext.empresa} · Puesto: ${interviewJobContext.puesto}` : ''
+      const jobCtx = activeJobContext ? ` · ${activeJobContext.empresa ? `Empresa: ${activeJobContext.empresa} · ` : ''}Puesto: ${activeJobContext.puesto}` : ''
       const prompt = `Sos un headhunter experto generando preguntas de entrevista laboral personalizadas.
 
 Candidato: ${profesion}${industria ? ` · Industria: ${industria}` : ''}${seniority ? ` · Nivel: ${seniority}` : ''}${jobCtx}
 
-Generá exactamente 5 preguntas de entrevista adaptadas a este perfil.${interviewJobContext ? ` Las preguntas deben ser específicas para el puesto de "${interviewJobContext.puesto}" en "${interviewJobContext.empresa}".` : ' Deben ser relevantes para su profesión y nivel, no genéricas.'}
+Generá exactamente 5 preguntas de entrevista adaptadas a este perfil.${activeJobContext ? ` Las preguntas deben ser específicas para el puesto de "${activeJobContext.puesto}"${activeJobContext.empresa ? ` en "${activeJobContext.empresa}"` : ''}.` : ' Deben ser relevantes para su profesión y nivel, no genéricas.'}
 Formato JSON exacto: [{"pregunta": "...", "hint": "..."}]
 
 Devolvé solo el array JSON, sin markdown ni explicación.`
