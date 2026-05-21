@@ -38,6 +38,7 @@ import ProfileInputScreen from './components/screens/ProfileInputScreen'
 import ResultsScreen from './components/screens/ResultsScreen'
 import CvScreen from './components/screens/CvScreen'
 import OnboardingScreen from './components/screens/OnboardingScreen'
+import ReporteScreen from './components/screens/ReporteScreen'
 import ScoreShareModal from './components/modals/ScoreShareModal'
 import AuthModal from './components/modals/AuthModal'
 import PremiumModal from './components/modals/PremiumModal'
@@ -59,6 +60,7 @@ export default function App() {
   const [currentQ, setCurrentQ] = useState(STATIC_QUESTIONS[0])
   const [selectedOption, setSelectedOption] = useState(null)
   const [textAnswer, setTextAnswer] = useState('')
+  const [fastTrack, setFastTrack] = useState(false)
 
   // Profile input
   const [profileText, setProfileText] = useState('')
@@ -1228,6 +1230,7 @@ Devolvé solo el array JSON, sin markdown ni explicación.`
     setCurrentQ(STATIC_QUESTIONS[0])
     setSelectedOption(null)
     setTextAnswer('')
+    setFastTrack(false)
     setProfileText('')
     setPdfFileName('')
     setPdfLoading(false)
@@ -1279,11 +1282,12 @@ Devolvé solo el array JSON, sin markdown ni explicación.`
     setSelectedOption(null)
     setTextAnswer('')
     const nextIndex = newHistory.length
-    trackEvent('paso_completado', { paso: nextIndex, id: currentQ.id })
-    if (nextIndex < STATIC_QUESTIONS.length) {
+    const totalQs = fastTrack ? 3 : STATIC_QUESTIONS.length
+    trackEvent('paso_completado', { paso: nextIndex, id: currentQ.id, fast_track: fastTrack })
+    if (nextIndex < totalQs) {
       setCurrentQ(STATIC_QUESTIONS[nextIndex])
     } else {
-      trackEvent('cuestionario_completado')
+      trackEvent('cuestionario_completado', { fast_track: fastTrack })
       setStep(STEPS.PROFILE_INPUT)
     }
   }
@@ -2639,7 +2643,7 @@ Generá el feedback en este JSON exacto:
       <div className="w-full max-w-xl">
 
         {/* ── Journey progress indicator ── */}
-        {step > STEPS.WELCOME && step !== STEPS.MODE_SELECT && (() => {
+        {step > STEPS.WELCOME && step !== STEPS.MODE_SELECT && step !== STEPS.REPORT && (() => {
           const journeySteps = [
             { label: 'Perfil', active: step >= STEPS.QUESTIONS && step <= STEPS.LOADING, done: !!result || step > STEPS.LOADING },
             { label: 'Análisis', active: step === STEPS.RESULTS || step === STEPS.ONBOARDING, done: !!result && (step > STEPS.RESULTS || step === STEPS.CV) && step !== STEPS.ONBOARDING },
@@ -2677,6 +2681,13 @@ Generá el feedback en este JSON exacto:
             jobAdapterNoCv={jobAdapterNoCv}
             setJobAdapterNoCv={setJobAdapterNoCv}
             result={result}
+            onStartFastTrack={() => {
+              trackEvent('click_fast_track')
+              setFastTrack(true)
+              setQaHistory([])
+              setCurrentQ(STATIC_QUESTIONS[0])
+              setStep(STEPS.QUESTIONS)
+            }}
           />
         )}
 
@@ -2696,6 +2707,8 @@ Generá el feedback en este JSON exacto:
             interviewFeedback={interviewFeedback}
             callGenerateCV={callGenerateCV}
             readinessIndex={readinessIndex}
+            cvQuality={cvQuality}
+            starFeedback={starFeedback}
           />
         )}
 
@@ -2710,6 +2723,7 @@ Generá el feedback en este JSON exacto:
             setTextAnswer={setTextAnswer}
             handleAnswer={handleAnswer}
             handleBack={handleBack}
+            fastTrack={fastTrack}
           />
         )}
         {/* ── PROFILE INPUT ── */}
@@ -3032,6 +3046,19 @@ Generá el feedback en este JSON exacto:
             resetInterview={resetInterview}
             cvFinalData={cvFinalData}
             loadTracking={loadTracking}
+          />
+        )}
+
+        {/* ── REPORT ── */}
+        {step === STEPS.REPORT && (
+          <ReporteScreen
+            setStep={setStep}
+            readinessIndex={readinessIndex}
+            result={result}
+            cvQuality={cvQuality}
+            interviewFeedback={interviewFeedback}
+            starFeedback={starFeedback}
+            user={user}
           />
         )}
 

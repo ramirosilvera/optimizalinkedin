@@ -2,14 +2,23 @@ import { STATIC_QUESTIONS, LOADING_MESSAGES_BY_SITUACION, LOADING_MESSAGES_DEFAU
 import { LI_GRADIENT } from '../../constants'
 import { Logo, OptionButton } from '../ui'
 
-export default function QuestionnaireScreen({ qaHistory, currentQ, selectedOption, setSelectedOption, textAnswer, setTextAnswer, handleAnswer, handleBack }) {
+export default function QuestionnaireScreen({ qaHistory, currentQ, selectedOption, setSelectedOption, textAnswer, setTextAnswer, handleAnswer, handleBack, fastTrack }) {
+  const totalQs = fastTrack ? 3 : STATIC_QUESTIONS.length
+  const activeQs = STATIC_QUESTIONS.slice(0, totalQs)
   return (
     <div className="step-transition space-y-7">
       <Logo />
 
+      {fastTrack && (
+        <div className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-full w-fit"
+          style={{ background: 'rgba(0,119,181,0.07)', color: '#0077B5', border: '1px solid rgba(0,119,181,0.18)' }}>
+          ⚡ Modo express — {totalQs} preguntas
+        </div>
+      )}
+
       {/* Stepper de puntos */}
       <div className="flex items-center gap-1.5">
-        {STATIC_QUESTIONS.map((_, i) => {
+        {activeQs.map((_, i) => {
           const done = i < qaHistory.length
           const active = i === qaHistory.length
           return (
@@ -25,7 +34,7 @@ export default function QuestionnaireScreen({ qaHistory, currentQ, selectedOptio
         })}
       </div>
       <p className="text-xs text-slate-500 -mt-4">
-        Evaluación {qaHistory.length + 1} de {STATIC_QUESTIONS.length}
+        Evaluación {qaHistory.length + 1} de {totalQs}
         {currentQ.id && <span className="ml-2 opacity-60">· {currentQ.id.replace(/_/g,' ')}</span>}
       </p>
 

@@ -16,6 +16,8 @@ export default function ModeSelectScreen({
   interviewFeedback,
   callGenerateCV,
   readinessIndex,
+  cvQuality,
+  starFeedback,
 }) {
   const [streak, setStreak] = useState(0)
   useEffect(() => {
@@ -412,6 +414,27 @@ export default function ModeSelectScreen({
             </div>
             <span className="text-slate-300 text-lg shrink-0">›</span>
           </button>
+          {(result || cvQuality || interviewFeedback || starFeedback) && (
+            <button
+              onClick={() => { trackEvent('roadmap_reporte'); setStep(STEPS.REPORT) }}
+              className="w-full flex items-center gap-3 px-4 py-3.5 text-left hover:bg-slate-50 transition-colors"
+            >
+              <span className="text-base shrink-0">📊</span>
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-2">
+                  <p className="text-sm font-semibold text-slate-800">Informe de preparación</p>
+                  {readinessIndex != null && (
+                    <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full"
+                      style={{ background: 'rgba(0,119,181,0.1)', color: '#0077B5' }}>
+                      {readinessIndex.toFixed(1)}/10
+                    </span>
+                  )}
+                </div>
+                <p className="text-xs text-slate-400">Resumen consolidado de todos tus módulos · Descargable como PDF</p>
+              </div>
+              <span className="text-slate-300 text-lg shrink-0">›</span>
+            </button>
+          )}
         </div>
       </div>
 

@@ -2,7 +2,7 @@ import { STEPS, LI_GRADIENT, RAMIRO_LINKEDIN_URL, trackEvent, BTN_GHOST_STYLE } 
 import { Logo, LinkedInIcon } from '../ui'
 import CommentsSection from '../CommentsSection'
 
-export default function WelcomeScreen({ setStep, handleModeSelectJobAdapter, jobAdapterCheckLoading, jobAdapterNoCv, setJobAdapterNoCv, result }) {
+export default function WelcomeScreen({ setStep, handleModeSelectJobAdapter, jobAdapterCheckLoading, jobAdapterNoCv, setJobAdapterNoCv, result, onStartFastTrack }) {
   return (
     <div className="step-transition text-center space-y-8">
       <Logo />
@@ -63,6 +63,15 @@ export default function WelcomeScreen({ setStep, handleModeSelectJobAdapter, job
               Empezar ahora
             </button>
           </p>
+        )}
+        {!result && onStartFastTrack && (
+          <button
+            onClick={onStartFastTrack}
+            className="w-full font-medium py-2.5 px-8 rounded-2xl text-xs transition-all"
+            style={{ border: '1px solid rgba(0,119,181,0.18)', color: '#64748b', background: 'rgba(0,119,181,0.03)' }}
+          >
+            ⚡ Diagnóstico express — 3 preguntas (inicio rápido)
+          </button>
         )}
         <p className="text-slate-500 text-xs">Sin registro · Resultado en minutos · 100% gratis</p>
       </div>
