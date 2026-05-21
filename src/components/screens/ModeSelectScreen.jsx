@@ -1,5 +1,6 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import { STEPS, trackEvent } from '../../constants'
+import { STAR_QUESTIONS } from '../../data'
 import { Logo, Spinner } from '../ui'
 
 export default function ModeSelectScreen({
@@ -34,6 +35,12 @@ export default function ModeSelectScreen({
       localStorage.setItem('ol_streak', String(newStreak))
       setStreak(newStreak)
     }
+  }, [])
+
+  // Daily STAR challenge — rotates by day-of-year
+  const dailyStarQuestion = useMemo(() => {
+    const dayOfYear = Math.floor((Date.now() - new Date(new Date().getFullYear(), 0, 0)) / 86400000)
+    return STAR_QUESTIONS[dayOfYear % STAR_QUESTIONS.length]
   }, [])
 
   const firstName = result?.nombre_titular?.split(' ')[0] || null
@@ -396,6 +403,36 @@ export default function ModeSelectScreen({
           )
         })}
       </div>
+
+      {/* Daily STAR challenge */}
+      {dailyStarQuestion && (
+        <div className="rounded-2xl p-4 space-y-3"
+          style={{ background: 'linear-gradient(135deg,rgba(13,148,136,0.06),rgba(5,150,105,0.04))', border: '1px solid rgba(13,148,136,0.2)' }}>
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <span className="text-xs font-bold uppercase tracking-widest px-2 py-0.5 rounded-full"
+                style={{ background: 'rgba(13,148,136,0.12)', color: '#0d9488' }}>
+                ⭐ Desafío del día
+              </span>
+            </div>
+            {streak > 1 && (
+              <span className="text-[10px] font-semibold text-orange-500">🔥 {streak}d</span>
+            )}
+          </div>
+          <p className="text-sm font-semibold text-slate-800 leading-snug">"{dailyStarQuestion}"</p>
+          <button
+            onClick={() => {
+              trackEvent('daily_star_challenge_start', { streak })
+              setStarPhase('practice')
+              setStep(STEPS.STAR_TRAINING)
+            }}
+            className="text-xs font-semibold px-4 py-2 rounded-xl transition-all"
+            style={{ background: 'rgba(13,148,136,0.1)', color: '#0d9488', border: '1px solid rgba(13,148,136,0.25)' }}
+          >
+            Responder con STAR →
+          </button>
+        </div>
+      )}
 
       {/* Mi Actividad */}
       <div className="rounded-2xl overflow-hidden" style={{ border: '1px solid rgba(0,0,0,0.07)' }}>

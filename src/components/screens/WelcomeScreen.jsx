@@ -41,13 +41,32 @@ export default function WelcomeScreen({ setStep, handleModeSelectJobAdapter, job
       </div>
 
       <div className="space-y-3">
-        <button
-          onClick={() => { trackEvent('click_empezar_analisis', { location: 'hero', returning: !!result }); setStep(result ? STEPS.RESULTS : STEPS.QUESTIONS) }}
-          className="btn-glow w-full text-white font-semibold py-4 px-8 rounded-2xl text-base"
-          style={{ background: 'linear-gradient(135deg, #0077B5 0%, #0ea5e9 100%)' }}
-        >
-          {result ? `Ver mi diagnóstico (${result.puntaje_general ?? '—'}/10) →` : 'Iniciar diagnóstico →'}
-        </button>
+        {result ? (
+          <>
+            <button
+              onClick={() => { trackEvent('click_retomar_preparacion', { location: 'hero' }); setStep(STEPS.MODE_SELECT) }}
+              className="btn-glow w-full text-white font-semibold py-4 px-8 rounded-2xl text-base"
+              style={{ background: 'linear-gradient(135deg, #0d2137 0%, #0077B5 100%)' }}
+            >
+              Retomar mi preparación →
+            </button>
+            <button
+              onClick={() => { trackEvent('click_ver_diagnostico', { location: 'hero' }); setStep(STEPS.RESULTS) }}
+              className="w-full font-semibold py-3 px-8 rounded-2xl text-sm transition-all"
+              style={{ border: '1.5px solid rgba(0,119,181,0.3)', color: '#0077B5', background: 'rgba(0,119,181,0.05)' }}
+            >
+              Ver diagnóstico ({result.puntaje_general ?? '—'}/10) →
+            </button>
+          </>
+        ) : (
+          <button
+            onClick={() => { trackEvent('click_empezar_analisis', { location: 'hero' }); setStep(STEPS.QUESTIONS) }}
+            className="btn-glow w-full text-white font-semibold py-4 px-8 rounded-2xl text-base"
+            style={{ background: 'linear-gradient(135deg, #0077B5 0%, #0ea5e9 100%)' }}
+          >
+            Iniciar diagnóstico →
+          </button>
+        )}
         <button
           onClick={() => { trackEvent('click_job_adapter', { location: 'hero' }); handleModeSelectJobAdapter() }}
           disabled={jobAdapterCheckLoading}
