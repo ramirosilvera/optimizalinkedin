@@ -80,7 +80,7 @@ export default function ResultsScreen({
             {result.puntaje_general === null && (
               <p className="text-[11px] leading-relaxed max-w-xs"
                 style={{ color: 'rgba(226,232,240,0.55)', border: '1px solid rgba(99,102,241,0.30)', borderRadius: '10px', padding: '8px 12px', background: 'rgba(99,102,241,0.08)' }}>
-                💡 Diagnóstico base con tus respuestas · Subí tu PDF de LinkedIn para el puntaje real
+                💡 Diagnóstico inicial con tus respuestas · Subí tu PDF de LinkedIn para el análisis completo
               </p>
             )}
             {result.puntaje_general !== null && result.puntaje_general !== undefined && setShowScoreShare && (
@@ -152,7 +152,7 @@ export default function ResultsScreen({
               onClick={() => { trackEvent('results_go_to_roadmap'); setStep(STEPS.MODE_SELECT) }}
               className="text-[10px] font-semibold transition-colors"
               style={{ color: '#0077B5' }}>
-              Ver hoja de ruta →
+              Ver mi preparación →
             </button>
           </div>
 
@@ -522,7 +522,7 @@ export default function ResultsScreen({
           className="flex-1 font-medium py-3.5 rounded-2xl text-sm transition-all"
           style={BTN_BACK_STYLE}
         >
-          ← Mi hoja de ruta
+          ← Mi preparación
         </button>
         <button
           onClick={() => { trackEvent('click_analizar_otro', { location: 'post_analisis' }); reset() }}

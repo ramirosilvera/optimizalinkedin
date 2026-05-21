@@ -11,9 +11,9 @@ export default function StarTrainingScreen({ starPhase, setStarPhase, starQuesti
       {starPhase === 'theory' && (
         <>
           <div className="text-center space-y-2">
-            <h2 className="text-2xl font-bold text-slate-900">Metodología STAR</h2>
+            <h2 className="text-2xl font-bold text-slate-900">Alto Rendimiento STAR</h2>
             <p className="text-slate-500 text-sm leading-relaxed max-w-sm mx-auto">
-              Un framework simple para dar respuestas claras, estructuradas y memorables en cualquier entrevista.
+              El método que usan los mejores candidatos del mundo para responder cualquier pregunta conductual.
             </p>
           </div>
 
@@ -51,7 +51,7 @@ export default function StarTrainingScreen({ starPhase, setStarPhase, starQuesti
             className="w-full py-4 rounded-2xl text-white text-sm font-semibold transition-all btn-glow"
             style={{ background: 'linear-gradient(135deg,#6366f1,#8b5cf6)' }}
           >
-            Practicar ahora →
+            Comenzar entrenamiento →
           </button>
           <button onClick={() => { trackEvent('star_back', { from: 'theory' }); interviewFeedback ? setStep(STEPS.INTERVIEW_FEEDBACK) : setStep(STEPS.MODE_SELECT) }}
             className="w-full py-3 rounded-2xl text-sm font-semibold" style={BTN_BACK_STYLE}>
@@ -133,7 +133,7 @@ export default function StarTrainingScreen({ starPhase, setStarPhase, starQuesti
                 <div>
                   <p className="text-sm font-semibold text-slate-800">Puntaje STAR</p>
                   <p className="text-xs text-slate-500">
-                    {starFeedback.puntaje >= 8 ? '¡Excelente estructura!' : starFeedback.puntaje >= 6 ? 'Buena base, hay margen de mejora.' : 'Seguí practicando — vas a mejorar rápido.'}
+                    {starFeedback.puntaje >= 8 ? 'Respuesta de alto rendimiento.' : starFeedback.puntaje >= 6 ? 'Buena base. Afinar los detalles hace la diferencia.' : 'Más práctica. Cada iteración te acerca al nivel elite.'}
                   </p>
                 </div>
               </div>
@@ -222,7 +222,7 @@ export default function StarTrainingScreen({ starPhase, setStarPhase, starQuesti
                   className="w-full py-2.5 rounded-xl text-white text-xs font-semibold"
                   style={{ background: 'linear-gradient(135deg,#6366f1,#8b5cf6)' }}
                 >
-                  Simulá una entrevista →
+                  Entrenar entrevista →
                 </button>
               </div>
             </>

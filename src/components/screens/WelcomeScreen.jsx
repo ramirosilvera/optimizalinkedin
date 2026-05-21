@@ -9,16 +9,16 @@ export default function WelcomeScreen({ setStep, handleModeSelectJobAdapter, job
       <div className="space-y-5">
         <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full text-xs font-semibold tracking-wide badge-shimmer"
           style={{ border: '1px solid rgba(0,119,181,0.4)', color: '#0077B5' }}>
-          ✦ &nbsp;Centro de Carrera Inteligente · 100% gratis
+          ✦ &nbsp;Sistema de Preparación Profesional · 100% gratis
         </div>
         <h1 className="text-4xl sm:text-5xl font-bold leading-tight tracking-tight" style={{ letterSpacing: '-0.02em' }}>
-          <span className="text-slate-900">Tu próximo trabajo</span><br />
+          <span className="text-slate-900">Preparate para competir</span><br />
           <span style={{ background: 'linear-gradient(135deg, #0ea5e9 0%, #6366f1 100%)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent' }}>
-            empieza acá
+            en el mercado laboral.
           </span>
         </h1>
         <p className="text-slate-600 text-base max-w-sm mx-auto leading-relaxed">
-          Un proceso guiado de 7 pasos: diagnóstico LinkedIn, CV inteligente, optimización, simulador de entrevistas y más — todo con criterio de headhunter. Sin registro. Sin costo.
+          Diagnóstico de competitividad, CV profesional, entrenamiento de entrevistas y seguimiento activo — todo calibrado a tu perfil. Sin registro. Sin costo.
         </p>
       </div>
 
@@ -46,7 +46,7 @@ export default function WelcomeScreen({ setStep, handleModeSelectJobAdapter, job
           className="btn-glow w-full text-white font-semibold py-4 px-8 rounded-2xl text-base"
           style={{ background: 'linear-gradient(135deg, #0077B5 0%, #0ea5e9 100%)' }}
         >
-          {result ? `Ver mi diagnóstico (${result.puntaje_general ?? '—'}/10) →` : 'Empezar mi diagnóstico gratis →'}
+          {result ? `Ver mi diagnóstico (${result.puntaje_general ?? '—'}/10) →` : 'Iniciar diagnóstico →'}
         </button>
         <button
           onClick={() => { trackEvent('click_job_adapter', { location: 'hero' }); handleModeSelectJobAdapter() }}
@@ -64,7 +64,7 @@ export default function WelcomeScreen({ setStep, handleModeSelectJobAdapter, job
             </button>
           </p>
         )}
-        <p className="text-slate-500 text-xs">Sin registro · Resultado en 2 minutos · 100% gratis</p>
+        <p className="text-slate-500 text-xs">Sin registro · Resultado en minutos · 100% gratis</p>
       </div>
 
       <CommentsSection />
