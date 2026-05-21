@@ -2,7 +2,7 @@ import { STEPS, LI_GRADIENT, RAMIRO_LINKEDIN_URL, trackEvent, BTN_GHOST_STYLE } 
 import { Logo, LinkedInIcon } from '../ui'
 import CommentsSection from '../CommentsSection'
 
-export default function WelcomeScreen({ setStep, handleModeSelectJobAdapter, jobAdapterCheckLoading, jobAdapterNoCv, setJobAdapterNoCv, result }) {
+export default function WelcomeScreen({ setStep, handleModeSelectJobAdapter, jobAdapterCheckLoading, jobAdapterNoCv, setJobAdapterNoCv, result, onStartFastTrack }) {
   return (
     <div className="step-transition text-center space-y-8">
       <Logo />
@@ -18,26 +18,8 @@ export default function WelcomeScreen({ setStep, handleModeSelectJobAdapter, job
           </span>
         </h1>
         <p className="text-slate-600 text-base max-w-sm mx-auto leading-relaxed">
-          Un proceso guiado de 7 pasos: diagnóstico LinkedIn, CV inteligente, optimización, simulador de entrevistas y más — todo con criterio de headhunter. Sin registro. Sin costo.
+          Sistema de preparación profesional con criterio de headhunter. Diagnóstico, CV, entrevista y estrategia — sin registro, sin costo.
         </p>
-      </div>
-
-      <div className="grid grid-cols-2 gap-3">
-        {[
-          { icon: '🎯', label: 'Diagnóstico', step: 'Paso 1', text: 'Score de empleabilidad, keywords y gaps con ojo de headhunter', accent: '#0077B5' },
-          { icon: '📄', label: 'CV Profesional', step: 'Módulo 3', text: 'ATS-compatible, con foto, calibrado a tu perfil profesional', accent: '#059669' },
-          { icon: '📝', label: 'Adaptación Táctica', step: 'Módulo 4', text: 'IA calibra tu CV + genera la carta para cada oferta específica', accent: '#6366f1' },
-          { icon: '🎙️', label: 'Sesión de Entrenamiento', step: 'Módulo 5', text: '5 preguntas reales con feedback IA personalizado a tu industria', accent: '#d97706' },
-        ].map(item => (
-          <div key={item.label} className="rounded-2xl p-4 text-left relative overflow-hidden"
-            style={{ background: 'white', border: '1px solid rgba(0,119,181,0.15)', boxShadow: '0 2px 12px rgba(0,0,0,0.06)' }}>
-            <div className="text-xl mb-1.5">{item.icon}</div>
-            <span className="text-[9px] font-bold uppercase tracking-wide px-1.5 py-0.5 rounded-full"
-              style={{ background: `rgba(0,0,0,0.05)`, color: '#64748b' }}>{item.step}</span>
-            <p className="text-xs font-semibold mt-1 mb-0.5" style={{ color: item.accent }}>{item.label}</p>
-            <p className="text-slate-500 text-[10px] leading-snug">{item.text}</p>
-          </div>
-        ))}
       </div>
 
       <div className="space-y-3">
@@ -74,28 +56,6 @@ export default function WelcomeScreen({ setStep, handleModeSelectJobAdapter, job
           </button>
         )}
         <p className="text-slate-500 text-xs">Sin registro · Resultado en minutos · 100% gratis</p>
-      </div>
-
-      {/* Training Pillars */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 10, marginTop: 28, width: '100%', maxWidth: 380, margin: '0 auto' }}>
-        {[
-          { icon: '🎯', title: 'Diagnóstico', desc: 'Posición competitiva real en tu mercado' },
-          { icon: '⚡', title: 'Entrenamiento', desc: 'Sesiones de práctica con feedback IA' },
-          { icon: '📍', title: 'Ejecución', desc: 'Seguimiento activo de cada proceso' },
-        ].map(p => (
-          <div key={p.title} style={{
-            background: 'white',
-            borderRadius: 14,
-            padding: '14px 10px',
-            textAlign: 'center',
-            border: '1px solid rgba(0,0,0,0.07)',
-            boxShadow: '0 2px 8px rgba(0,0,0,0.05)',
-          }}>
-            <div style={{ fontSize: 22, marginBottom: 6 }}>{p.icon}</div>
-            <p style={{ fontSize: 12, fontWeight: 700, color: '#0d2137', marginBottom: 3 }}>{p.title}</p>
-            <p style={{ fontSize: 10, color: '#64748b', lineHeight: 1.4 }}>{p.desc}</p>
-          </div>
-        ))}
       </div>
 
       {/* Module strip */}

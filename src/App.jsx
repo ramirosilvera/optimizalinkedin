@@ -38,6 +38,7 @@ import ProfileInputScreen from './components/screens/ProfileInputScreen'
 import ResultsScreen from './components/screens/ResultsScreen'
 import CvScreen from './components/screens/CvScreen'
 import OnboardingScreen from './components/screens/OnboardingScreen'
+import ReporteScreen from './components/screens/ReporteScreen'
 import ScoreShareModal from './components/modals/ScoreShareModal'
 import AuthModal from './components/modals/AuthModal'
 import PremiumModal from './components/modals/PremiumModal'
@@ -2616,7 +2617,7 @@ Generá el feedback en este JSON exacto:
       <div className="w-full max-w-xl">
 
         {/* ── Journey progress indicator ── */}
-        {step > STEPS.WELCOME && step !== STEPS.MODE_SELECT && (() => {
+        {step > STEPS.WELCOME && step !== STEPS.MODE_SELECT && step !== STEPS.REPORT && (() => {
           const journeySteps = [
             { label: 'Perfil', active: step >= STEPS.QUESTIONS && step <= STEPS.LOADING, done: !!result || step > STEPS.LOADING },
             { label: 'Análisis', active: step === STEPS.RESULTS || step === STEPS.ONBOARDING, done: !!result && (step > STEPS.RESULTS || step === STEPS.CV) && step !== STEPS.ONBOARDING },
@@ -2672,6 +2673,8 @@ Generá el feedback en este JSON exacto:
             cvOptimizeApplied={cvOptimizeApplied}
             interviewFeedback={interviewFeedback}
             callGenerateCV={callGenerateCV}
+            cvQuality={cvQuality}
+            starFeedback={starFeedback}
           />
         )}
 
@@ -2960,6 +2963,29 @@ Generá el feedback en este JSON exacto:
             result={result}
             setStep={setStep}
             setShowPremiumModal={setShowPremiumModal}
+          />
+        )}
+
+        {/* ── REPORT ── */}
+        {step === STEPS.REPORT && (
+          <ReporteScreen
+            setStep={setStep}
+            result={result}
+            cvQuality={cvQuality}
+            interviewFeedback={interviewFeedback}
+            starFeedback={starFeedback}
+            user={user}
+            readinessIndex={(() => {
+              const scores = [
+                result?.puntaje_general != null ? { score: result.puntaje_general, weight: 0.25 } : null,
+                cvQuality?.score != null ? { score: cvQuality.score, weight: 0.25 } : null,
+                interviewFeedback?.puntaje_general != null ? { score: interviewFeedback.puntaje_general, weight: 0.30 } : null,
+                starFeedback?.puntaje_general != null ? { score: starFeedback.puntaje_general, weight: 0.20 } : null,
+              ].filter(Boolean)
+              if (!scores.length) return null
+              const totalWeight = scores.reduce((a, b) => a + b.weight, 0)
+              return Math.round(scores.reduce((a, b) => a + b.score * b.weight, 0) / totalWeight * 10) / 10
+            })()}
           />
         )}
 

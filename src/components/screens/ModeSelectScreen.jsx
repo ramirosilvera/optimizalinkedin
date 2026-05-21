@@ -1,4 +1,6 @@
+import { useMemo } from 'react'
 import { STEPS, trackEvent } from '../../constants'
+import { STAR_QUESTIONS } from '../../data'
 import { Logo, Spinner } from '../ui'
 
 export default function ModeSelectScreen({
@@ -14,6 +16,8 @@ export default function ModeSelectScreen({
   cvOptimizeApplied,
   interviewFeedback,
   callGenerateCV,
+  cvQuality,
+  starFeedback,
 }) {
   const firstName = result?.nombre_titular?.split(' ')[0] || null
 
@@ -164,6 +168,11 @@ export default function ModeSelectScreen({
       },
     },
   ]
+
+  const dailyStarQuestion = useMemo(() => {
+    const dayOfYear = Math.floor((Date.now() - new Date(new Date().getFullYear(), 0, 0)) / 86400000)
+    return STAR_QUESTIONS[dayOfYear % STAR_QUESTIONS.length]
+  }, [])
 
   return (
     <div className="step-transition space-y-4">
@@ -330,6 +339,27 @@ export default function ModeSelectScreen({
         })}
       </div>
 
+      {/* Daily STAR Challenge */}
+      <div className="rounded-2xl overflow-hidden" style={{ border: '1px solid rgba(13,148,136,0.2)', background: 'rgba(13,148,136,0.03)' }}>
+        <div className="px-4 py-3 border-b flex items-center justify-between" style={{ borderColor: 'rgba(13,148,136,0.15)' }}>
+          <div className="flex items-center gap-2">
+            <span className="text-sm">⭐</span>
+            <p className="text-xs font-bold uppercase tracking-wide" style={{ color: '#0d9488' }}>Desafío del día</p>
+          </div>
+          <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full" style={{ background: 'rgba(13,148,136,0.1)', color: '#0d9488' }}>STAR</span>
+        </div>
+        <div className="p-4">
+          <p className="text-sm text-slate-700 leading-relaxed mb-3">"{dailyStarQuestion || 'Contame de una situación donde tuviste que resolver un problema complejo.'}"</p>
+          <button
+            onClick={() => { trackEvent('daily_star_challenge'); setStarPhase('practice'); setStep(STEPS.STAR_TRAINING) }}
+            className="w-full py-2.5 rounded-xl text-xs font-semibold transition-all"
+            style={{ background: 'rgba(13,148,136,0.1)', color: '#0d9488', border: '1px solid rgba(13,148,136,0.2)' }}
+          >
+            Responder con STAR →
+          </button>
+        </div>
+      </div>
+
       {/* Mi Actividad */}
       <div className="rounded-2xl overflow-hidden" style={{ border: '1px solid rgba(0,0,0,0.07)' }}>
         <div className="px-4 py-3 border-b flex items-center gap-2" style={{ background: '#fafafa', borderColor: 'rgba(0,0,0,0.06)' }}>
@@ -347,6 +377,19 @@ export default function ModeSelectScreen({
             </div>
             <span className="text-slate-300 text-lg shrink-0">›</span>
           </button>
+          {(result || cvFinalData || interviewFeedback || starFeedback) && (
+            <button
+              onClick={() => { trackEvent('roadmap_report'); setStep(STEPS.REPORT) }}
+              className="w-full flex items-center gap-3 px-4 py-3.5 text-left hover:bg-slate-50 transition-colors"
+            >
+              <span className="text-base shrink-0">📊</span>
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-semibold text-slate-800">Informe de preparación</p>
+                <p className="text-xs text-slate-400">Resumen visual de tu avance · Readiness Index · PDF</p>
+              </div>
+              <span className="text-slate-300 text-lg shrink-0">›</span>
+            </button>
+          )}
         </div>
       </div>
 
