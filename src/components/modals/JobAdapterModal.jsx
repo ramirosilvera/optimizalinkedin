@@ -187,7 +187,25 @@ export default function JobAdapterModal({
                   <div className="flex items-center justify-between px-4 py-3"
                     style={{ background: 'rgba(99,102,241,0.06)' }}>
                     <p className="text-sm font-semibold text-slate-800">✉ Carta de presentación</p>
-                    <CopyButton text={jobResult.carta_de_presentacion} />
+                    <div className="flex items-center gap-2">
+                      <CopyButton text={jobResult.carta_de_presentacion} />
+                      <button
+                        onClick={() => {
+                          const blob = new Blob([jobResult.carta_de_presentacion], { type: 'text/plain' })
+                          const url = URL.createObjectURL(blob)
+                          const a = document.createElement('a')
+                          a.href = url
+                          a.download = 'Carta-de-Presentacion.txt'
+                          a.click()
+                          URL.revokeObjectURL(url)
+                          trackEvent('cover_letter_download')
+                        }}
+                        className="text-xs px-3 py-1.5 rounded-lg border transition-all duration-200 shrink-0 whitespace-nowrap"
+                        style={{ borderColor: 'rgba(0,119,181,0.2)', color: '#3d5a73', background: '#f8fafc' }}
+                      >
+                        Descargar .txt
+                      </button>
+                    </div>
                   </div>
                   <div className="px-4 py-4 bg-white">
                     <p className="text-sm text-slate-700 leading-relaxed whitespace-pre-wrap">{jobResult.carta_de_presentacion}</p>

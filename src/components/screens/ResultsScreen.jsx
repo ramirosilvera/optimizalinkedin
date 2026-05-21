@@ -95,6 +95,42 @@ export default function ResultsScreen({
         </div>
       )}
 
+      {/* ══ CTA — Estrategia de visibilidad LinkedIn ══ */}
+      {result && !linkedinGrowth && (
+        <button
+          onClick={() => {
+            trackEvent('growth_cta_click')
+            setShowGrowthSection(true)
+            setTimeout(() => document.getElementById('crecer-linkedin')?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 80)
+            if (!linkedinGrowth && !growthLoading) callLinkedinGrowth()
+          }}
+          disabled={growthLoading}
+          className="btn-glow w-full rounded-2xl p-4 text-left transition-all hover:shadow-lg active:scale-[0.99] flex items-center gap-3"
+          style={{ background: 'linear-gradient(135deg,#4f46e5,#7c3aed)', boxShadow: '0 4px 18px rgba(99,102,241,0.30)', opacity: growthLoading ? 0.8 : 1 }}
+        >
+          <span className="text-2xl shrink-0">📈</span>
+          <div className="flex-1 min-w-0">
+            <p className="text-base font-bold text-white leading-tight">
+              {growthLoading ? <span className="flex items-center gap-2"><Spinner size={3} />Generando estrategia…</span> : 'Generar estrategia de visibilidad LinkedIn →'}
+            </p>
+            <p className="text-[11px] text-white/75 mt-0.5">Plan de crecimiento · Banner personalizado · Networking 90 días</p>
+          </div>
+        </button>
+      )}
+      {result && linkedinGrowth && (
+        <button
+          onClick={() => document.getElementById('crecer-linkedin')?.scrollIntoView({ behavior: 'smooth', block: 'start' })}
+          className="w-full rounded-2xl p-3.5 text-left transition-all hover:shadow-md active:scale-[0.99] flex items-center gap-3"
+          style={{ background: 'rgba(99,102,241,0.07)', border: '1px solid rgba(99,102,241,0.28)' }}
+        >
+          <span className="text-xl shrink-0">📈</span>
+          <div className="flex-1 min-w-0">
+            <p className="text-xs font-bold text-slate-800">Estrategia de visibilidad LinkedIn</p>
+            <p className="text-[10px] text-slate-500">✓ Generada · Ver resultados ↓</p>
+          </div>
+        </button>
+      )}
+
       {/* ── Post-diagnosis save prompt (free users) ── */}
       {result && !user && (
         <div className="rounded-2xl px-4 py-3 flex items-center justify-between gap-3"
@@ -326,25 +362,30 @@ export default function ResultsScreen({
         </div>
       )}
 
-      {/* ══ BLOQUE 6 — Crecer en LinkedIn — eliminado ══ */}
-      {false && <div id="crecimiento-removed" className="rounded-2xl overflow-hidden"
-        style={{ border: '1px solid rgba(99,102,241,0.20)', background: 'white' }}>
-        <button
-          className="w-full flex items-center justify-between px-5 py-4 text-left transition-all"
-          style={{ background: showGrowthSection ? 'rgba(99,102,241,0.06)' : 'rgba(99,102,241,0.03)' }}
-          onClick={() => setShowGrowthSection(v => !v)}
-        >
-          <div>
-            <p className="text-sm font-bold text-slate-800">🚀 Crecer en LinkedIn</p>
-            <p className="text-xs text-slate-500 mt-0.5">Ideas de banner + plan de networking 90 días</p>
+      {/* ══ BLOQUE 6 — Crecer en LinkedIn ══ */}
+      {result && (showGrowthSection || linkedinGrowth) && (
+        <div id="crecer-linkedin" className="rounded-2xl overflow-hidden"
+          style={{ border: '1px solid rgba(99,102,241,0.22)', background: 'white' }}>
+          {/* Header */}
+          <div className="px-5 py-4 border-b flex items-center gap-2"
+            style={{ borderColor: 'rgba(99,102,241,0.12)', background: 'rgba(99,102,241,0.04)' }}>
+            <span className="text-[10px] font-bold uppercase tracking-wide px-2 py-0.5 rounded-full shrink-0"
+              style={{ background: 'rgba(99,102,241,0.14)', color: '#6366f1' }}>Crecimiento</span>
+            <p className="text-sm font-bold text-slate-800">📈 Estrategia de visibilidad LinkedIn</p>
           </div>
-          <span className="text-slate-400 text-sm ml-3">{showGrowthSection ? '▲' : '▼'}</span>
-        </button>
 
-        {showGrowthSection && (
-          <div className="px-5 pb-5 pt-3 space-y-4">
-            {!linkedinGrowth && (
+          <div className="px-5 pb-5 pt-4 space-y-4">
+            {/* Loading / pre-generate state */}
+            {growthLoading && (
+              <div className="flex items-center gap-3 py-4 justify-center">
+                <Spinner size={4} />
+                <p className="text-sm text-slate-500">Generando tu estrategia personalizada…</p>
+              </div>
+            )}
+
+            {!linkedinGrowth && !growthLoading && (
               <div className="space-y-3">
+                <p className="text-xs text-slate-500 leading-relaxed">La IA genera 3 ideas de banner personalizadas + un plan de acción semanal para los próximos 90 días.</p>
                 <div className="flex gap-2">
                   <input
                     className="flex-1 px-3 py-2 rounded-xl text-sm border focus:outline-none"
@@ -358,59 +399,85 @@ export default function ResultsScreen({
                     onClick={callLinkedinGrowth}
                     disabled={growthLoading}
                     className="px-4 py-2 rounded-xl text-sm font-semibold text-white transition-all"
-                    style={{ background: growthLoading ? '#94a3b8' : 'linear-gradient(135deg,#6366f1,#8b5cf6)', minWidth: '90px' }}
+                    style={{ background: 'linear-gradient(135deg,#6366f1,#8b5cf6)', minWidth: '100px' }}
                   >
-                    {growthLoading ? <span className="flex items-center gap-1.5"><Spinner size={3} />Generando…</span> : 'Generar →'}
+                    Generar →
                   </button>
                 </div>
                 {growthError && <p className="text-xs text-red-500">{growthError}</p>}
-                <p className="text-xs text-slate-400">La IA genera 3 ideas de banner personalizadas + un plan de acción semanal para los próximos 90 días.</p>
               </div>
             )}
 
-            {linkedinGrowth && (
-              <div className="space-y-5">
+            {/* Results */}
+            {linkedinGrowth && !growthLoading && (
+              <div className="space-y-6">
+                {/* Banner ideas */}
                 {(linkedinGrowth.banner_ideas || []).length > 0 && (
                   <div className="space-y-3">
-                    <p className="text-xs font-semibold uppercase tracking-wide" style={{ color: '#6366f1' }}>🖼 Ideas de banner</p>
+                    <p className="text-[10px] font-bold uppercase tracking-wide" style={{ color: '#6366f1' }}>🖼 Ideas de banner personalizadas</p>
                     {(linkedinGrowth.banner_ideas || []).map((idea, i) => (
-                      <div key={i} className="rounded-xl p-4 space-y-2.5" style={{ border: '1px solid rgba(0,0,0,0.08)', background: '#fafafa' }}>
-                        <div className="flex items-center justify-between gap-2">
-                          <p className="text-sm font-bold text-slate-800">{idea.titulo}</p>
-                          <span className="text-[10px] px-2 py-0.5 rounded-full font-semibold shrink-0"
-                            style={{ background: 'rgba(99,102,241,0.10)', color: '#6366f1' }}>{idea.estilo}</span>
+                      <div key={i} className="rounded-xl overflow-hidden"
+                        style={{ border: '1px solid rgba(99,102,241,0.14)', background: '#fafafa' }}>
+                        {/* Card header */}
+                        <div className="px-4 pt-3 pb-2 flex items-center justify-between gap-2"
+                          style={{ borderBottom: '1px solid rgba(99,102,241,0.08)' }}>
+                          <div className="flex items-center gap-2">
+                            <span className="w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold shrink-0"
+                              style={{ background: 'linear-gradient(135deg,#6366f1,#8b5cf6)', color: '#fff' }}>{i + 1}</span>
+                            <p className="text-sm font-bold text-slate-800">{idea.titulo}</p>
+                          </div>
+                          {idea.estilo && (
+                            <span className="text-[10px] px-2 py-0.5 rounded-full font-semibold shrink-0"
+                              style={{ background: 'rgba(99,102,241,0.10)', color: '#6366f1' }}>{idea.estilo}</span>
+                          )}
                         </div>
+                        {/* Palette swatches */}
                         {(idea.paleta || []).length > 0 && (
-                          <div className="flex gap-1.5 items-center">
+                          <div className="px-4 py-2 flex gap-1.5 items-center"
+                            style={{ borderBottom: '1px solid rgba(99,102,241,0.06)' }}>
                             {idea.paleta.map((color, ci) => (
-                              <div key={ci} className="w-6 h-6 rounded-full border-2 border-white shadow-sm" style={{ background: color }} title={color} />
+                              <div key={ci} className="w-5 h-5 rounded-full border-2 border-white shadow-sm" style={{ background: color }} title={color} />
                             ))}
                             <span className="text-[10px] text-slate-400 ml-1">{idea.paleta.join(' · ')}</span>
                           </div>
                         )}
-                        <div className="rounded-lg p-3 space-y-1" style={{ background: (idea.paleta || [])[0] || '#0d2137', minHeight: '52px' }}>
-                          <p className="font-bold leading-tight" style={{ color: (idea.paleta || [])[2] || 'white', fontSize: '13px' }}>{idea.copy_principal}</p>
-                          {idea.copy_secundario && <p style={{ color: (idea.paleta || [])[2] ? (idea.paleta[2] + 'cc') : 'rgba(255,255,255,0.7)', fontSize: '10px' }}>{idea.copy_secundario}</p>}
+                        {/* Mock banner preview */}
+                        <div className="mx-4 my-3 rounded-lg p-3 space-y-1"
+                          style={{ background: (idea.paleta || [])[0] || '#0d2137', minHeight: '56px' }}>
+                          <p className="font-bold leading-tight"
+                            style={{ color: (idea.paleta || [])[2] || 'white', fontSize: '13px' }}>{idea.copy_principal}</p>
+                          {idea.copy_secundario && (
+                            <p style={{ color: (idea.paleta || [])[2] ? (idea.paleta[2] + 'cc') : 'rgba(255,255,255,0.70)', fontSize: '10px' }}>{idea.copy_secundario}</p>
+                          )}
                         </div>
-                        <p className="text-xs text-slate-500 leading-snug">{idea.concepto}</p>
+                        {/* Concept description */}
+                        {idea.concepto && (
+                          <p className="px-4 pb-3 text-xs text-slate-500 leading-snug">{idea.concepto}</p>
+                        )}
                       </div>
                     ))}
                   </div>
                 )}
 
+                {/* Networking plan */}
                 {linkedinGrowth.plan_networking && (
                   <div className="space-y-3">
-                    <p className="text-xs font-semibold uppercase tracking-wide" style={{ color: '#6366f1' }}>📅 Plan de networking (90 días)</p>
+                    <p className="text-[10px] font-bold uppercase tracking-wide" style={{ color: '#6366f1' }}>📅 Plan de networking (90 días)</p>
                     {linkedinGrowth.plan_networking.objetivo_resumido && (
-                      <p className="text-sm text-slate-700 leading-relaxed italic">"{linkedinGrowth.plan_networking.objetivo_resumido}"</p>
+                      <div className="rounded-xl px-4 py-3"
+                        style={{ background: 'rgba(99,102,241,0.05)', border: '1px solid rgba(99,102,241,0.14)' }}>
+                        <p className="text-sm text-slate-700 leading-relaxed italic">"{linkedinGrowth.plan_networking.objetivo_resumido}"</p>
+                      </div>
                     )}
                     {(linkedinGrowth.plan_networking.acciones_semanales || []).length > 0 && (
                       <div className="space-y-2">
                         <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">Acciones concretas</p>
                         {linkedinGrowth.plan_networking.acciones_semanales.map((a, i) => (
-                          <div key={i} className="rounded-xl p-3 space-y-1" style={{ background: 'rgba(99,102,241,0.04)', border: '1px solid rgba(99,102,241,0.12)' }}>
+                          <div key={i} className="rounded-xl p-3 space-y-1"
+                            style={{ background: '#f8fafc', border: '1px solid rgba(99,102,241,0.10)' }}>
                             <div className="flex items-center gap-2">
-                              <span className="text-[10px] px-2 py-0.5 rounded-full font-semibold" style={{ background: 'rgba(99,102,241,0.12)', color: '#6366f1' }}>{a.frecuencia}</span>
+                              <span className="text-[10px] px-2 py-0.5 rounded-full font-semibold shrink-0"
+                                style={{ background: 'rgba(99,102,241,0.12)', color: '#6366f1' }}>{a.frecuencia}</span>
                               <p className="text-xs font-semibold text-slate-700">{a.accion}</p>
                             </div>
                             {a.ejemplo && <p className="text-[11px] text-slate-500 pl-1 leading-snug">↳ {a.ejemplo}</p>}
@@ -422,18 +489,21 @@ export default function ResultsScreen({
                       <div className="space-y-2">
                         <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">Contenido a publicar</p>
                         {linkedinGrowth.plan_networking.contenido_sugerido.map((c, i) => (
-                          <div key={i} className="flex items-start gap-2.5 py-1.5">
-                            <span className="text-[10px] px-1.5 py-0.5 rounded font-semibold shrink-0" style={{ background: 'rgba(99,102,241,0.10)', color: '#6366f1' }}>{c.formato}</span>
+                          <div key={i} className="rounded-xl p-3 flex items-start gap-3"
+                            style={{ background: '#f8fafc', border: '1px solid rgba(99,102,241,0.08)' }}>
+                            <span className="text-[10px] px-1.5 py-0.5 rounded font-semibold shrink-0"
+                              style={{ background: 'rgba(99,102,241,0.10)', color: '#6366f1' }}>{c.formato}</span>
                             <div className="flex-1 min-w-0">
-                              <p className="text-xs text-slate-700">{c.tema}</p>
-                              <p className="text-[10px] text-slate-400">{c.frecuencia}</p>
+                              <p className="text-xs font-semibold text-slate-700">{c.tema}</p>
+                              <p className="text-[10px] text-slate-400 mt-0.5">{c.frecuencia}</p>
                             </div>
                           </div>
                         ))}
                       </div>
                     )}
                     {linkedinGrowth.plan_networking.metrica_90dias && (
-                      <div className="rounded-xl p-3" style={{ background: 'rgba(34,197,94,0.08)', border: '1px solid rgba(34,197,94,0.25)' }}>
+                      <div className="rounded-xl p-3.5"
+                        style={{ background: 'rgba(34,197,94,0.08)', border: '1px solid rgba(34,197,94,0.25)' }}>
                         <p className="text-[10px] font-semibold uppercase tracking-wide text-emerald-600 mb-1">🎯 Meta a 90 días</p>
                         <p className="text-sm text-slate-700">{linkedinGrowth.plan_networking.metrica_90dias}</p>
                       </div>
@@ -442,14 +512,14 @@ export default function ResultsScreen({
                 )}
 
                 <button
-                  onClick={() => { setLinkedinGrowth(null); setGrowthError('') }}
-                  className="text-xs text-slate-400 underline underline-offset-2"
-                >Regenerar</button>
+                  onClick={() => { setLinkedinGrowth(null); setGrowthError(''); trackEvent('growth_regenerate') }}
+                  className="text-xs text-slate-400 underline underline-offset-2 hover:text-slate-600 transition-colors"
+                >↺ Regenerar estrategia</button>
               </div>
             )}
           </div>
-        )}
-      </div>}
+        </div>
+      )}
 
       {/* ══ BLOQUE 7 — Social + Premium ══ */}
       {/* Premium upsell */}
