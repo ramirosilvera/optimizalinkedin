@@ -2,6 +2,23 @@ import { STEPS, trackEvent, BTN_BACK_STYLE, LI_GRADIENT, RAMIRO_LINKEDIN_URL, CO
 import { Logo, Spinner, LinkedInIcon, ResultCard, ScoreRing } from '../ui'
 import RateLimitUI from '../RateLimitUI'
 
+function ScoreDot({ score }) {
+  const color = score >= 7 ? '#16a34a' : score >= 5 ? '#d97706' : '#dc2626'
+  const bg = score >= 7 ? 'rgba(22,163,74,0.12)' : score >= 5 ? 'rgba(217,119,6,0.12)' : 'rgba(220,38,38,0.12)'
+  const pct = Math.round((score / 10) * 100)
+  return (
+    <div className="flex items-center gap-2">
+      <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: color }} />
+      <div className="flex items-center gap-1.5">
+        <span className="text-xs font-bold" style={{ color }}>{score}/10</span>
+        <div className="w-16 h-1.5 rounded-full overflow-hidden" style={{ backgroundColor: bg }}>
+          <div className="h-full rounded-full transition-all" style={{ width: `${pct}%`, backgroundColor: color }} />
+        </div>
+      </div>
+    </div>
+  )
+}
+
 export default function InterviewFeedbackScreen({ interviewLoading, rateLimitEvento, rateLimitSecs, waitlistEmail, setWaitlistEmail, waitlistSent, waitlistLoading, handleWaitlist, interviewError, setInterviewError, callInterviewFeedback, interviewAnswers, interviewFeedback, user, leadSaving, leadSent, setShowLeadModal, setShowPremiumModal, subscriptionLoading, setShowStarModal, result, setStep }) {
   return (
     <div className="step-transition space-y-6">
@@ -80,9 +97,13 @@ export default function InterviewFeedbackScreen({ interviewLoading, rateLimitEve
               <div className="space-y-2">
                 <p className="text-xs font-semibold uppercase tracking-wide mb-3" style={{ color: '#d97706' }}>⚠️ Áreas de mejora</p>
                 {(interviewFeedback.areas_de_mejora_entrevista || []).map((a, i) => (
-                  <div key={i} className="flex items-start gap-2">
-                    <span className="mt-0.5 shrink-0" style={{ color: '#d97706' }}>•</span>
-                    <p className="text-slate-600 text-sm">{a}</p>
+                  <div key={i} className="flex items-start gap-2.5 rounded-xl p-2.5"
+                    style={{ background: 'rgba(217,119,6,0.06)', border: '1px solid rgba(217,119,6,0.15)' }}>
+                    <span className="shrink-0 w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold text-white mt-0.5"
+                      style={{ background: 'linear-gradient(135deg,#d97706,#f59e0b)', minWidth: '1.25rem' }}>
+                      {i + 1}
+                    </span>
+                    <p className="text-slate-600 text-sm leading-relaxed">{a}</p>
                   </div>
                 ))}
               </div>
@@ -93,20 +114,44 @@ export default function InterviewFeedbackScreen({ interviewLoading, rateLimitEve
           {(interviewFeedback.feedback_por_respuesta || []).length > 0 && (
             <ResultCard title="Feedback por respuesta" accent="#6366f1">
               <div className="space-y-4">
-                {(interviewFeedback.feedback_por_respuesta || []).map((fb, i) => (
-                  <div key={i} className="rounded-xl p-4"
-                    style={{ background: '#f8fafc', border: '1px solid rgba(99,102,241,0.12)' }}>
-                    <p className="text-xs font-semibold uppercase tracking-wide mb-2" style={{ color: '#6366f1' }}>
-                      Pregunta {fb.numero}
-                    </p>
-                    {fb.aspecto_positivo && (
-                      <p className="text-sm text-slate-600 mb-1">✅ {fb.aspecto_positivo}</p>
-                    )}
-                    {fb.sugerencia && (
-                      <p className="text-sm text-slate-600">💡 {fb.sugerencia}</p>
-                    )}
-                  </div>
-                ))}
+                {(interviewFeedback.feedback_por_respuesta || []).map((fb, i) => {
+                  const answer = interviewAnswers?.[i]
+                  return (
+                    <div key={i} className="rounded-xl p-4"
+                      style={{ background: '#f8fafc', border: '1px solid rgba(99,102,241,0.12)' }}>
+                      {/* Header: question number + score indicator */}
+                      <div className="flex items-center justify-between gap-2 mb-2">
+                        <p className="text-xs font-semibold uppercase tracking-wide" style={{ color: '#6366f1' }}>
+                          Pregunta {fb.numero}
+                        </p>
+                        {fb.puntaje != null && <ScoreDot score={fb.puntaje} />}
+                      </div>
+
+                      {/* Original question */}
+                      {answer?.pregunta && (
+                        <p className="text-xs text-slate-500 italic mb-1 leading-relaxed">
+                          "{answer.pregunta}"
+                        </p>
+                      )}
+
+                      {/* User's answer */}
+                      {answer?.respuesta && (
+                        <div className="rounded-lg px-3 py-2 mb-2.5"
+                          style={{ background: 'rgba(99,102,241,0.05)', border: '1px solid rgba(99,102,241,0.10)' }}>
+                          <p className="text-[11px] font-semibold uppercase tracking-wide mb-0.5" style={{ color: '#6366f1' }}>Tu respuesta</p>
+                          <p className="text-xs text-slate-600 leading-relaxed line-clamp-3">{answer.respuesta}</p>
+                        </div>
+                      )}
+
+                      {fb.aspecto_positivo && (
+                        <p className="text-sm text-slate-600 mb-1">✅ {fb.aspecto_positivo}</p>
+                      )}
+                      {fb.sugerencia && (
+                        <p className="text-sm text-slate-600">💡 {fb.sugerencia}</p>
+                      )}
+                    </div>
+                  )
+                })}
               </div>
             </ResultCard>
           )}

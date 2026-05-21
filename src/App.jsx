@@ -1886,11 +1886,11 @@ Generá el feedback en este JSON exacto:
   "fortalezas_entrevista": ["fortaleza 1", "fortaleza 2", "fortaleza 3"],
   "areas_de_mejora_entrevista": ["area 1", "area 2", "area 3"],
   "feedback_por_respuesta": [
-    { "numero": 1, "aspecto_positivo": "qué estuvo bien", "sugerencia": "cómo mejorar esta respuesta concretamente" },
-    { "numero": 2, "aspecto_positivo": "...", "sugerencia": "..." },
-    { "numero": 3, "aspecto_positivo": "...", "sugerencia": "..." },
-    { "numero": 4, "aspecto_positivo": "...", "sugerencia": "..." },
-    { "numero": 5, "aspecto_positivo": "...", "sugerencia": "..." }
+    { "numero": 1, "puntaje": número del 1 al 10, "aspecto_positivo": "qué estuvo bien", "sugerencia": "cómo mejorar esta respuesta concretamente" },
+    { "numero": 2, "puntaje": número del 1 al 10, "aspecto_positivo": "...", "sugerencia": "..." },
+    { "numero": 3, "puntaje": número del 1 al 10, "aspecto_positivo": "...", "sugerencia": "..." },
+    { "numero": 4, "puntaje": número del 1 al 10, "aspecto_positivo": "...", "sugerencia": "..." },
+    { "numero": 5, "puntaje": número del 1 al 10, "aspecto_positivo": "...", "sugerencia": "..." }
   ],
   "recomendacion_final": "el consejo más importante para su próxima entrevista real, en 1-2 oraciones concretas"
 }`

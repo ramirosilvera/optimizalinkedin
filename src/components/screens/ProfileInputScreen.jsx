@@ -321,6 +321,12 @@ export default function ProfileInputScreen({
                   rows={4} maxLength={2600}
                   className="w-full rounded-xl px-4 py-3 text-sm outline-none resize-none"
                   style={INPUT_STYLE} />
+                {formResumen.length < 50 && (
+                  <div className="mt-2 rounded-lg px-3 py-2.5 text-xs leading-relaxed"
+                    style={{ backgroundColor: 'rgba(14,165,233,0.08)', border: '1px solid rgba(14,165,233,0.2)', color: '#0369a1' }}>
+                    💡 Copiá el texto completo de tu perfil LinkedIn: titular, resumen (About), experiencia y habilidades
+                  </div>
+                )}
               </div>
 
               {/* Experiencias */}
@@ -514,6 +520,13 @@ export default function ProfileInputScreen({
           >
             ↺ Reintentar análisis
           </button>
+        </div>
+      )}
+
+      {profileText && profileText !== 'SIN_PERFIL' && profileText.length < 100 && (
+        <div className="rounded-lg px-3 py-2.5 text-xs leading-relaxed"
+          style={{ backgroundColor: 'rgba(245,158,11,0.08)', border: '1px solid rgba(245,158,11,0.3)', color: '#92400e' }}>
+          ⚠️ Agregá más detalles para un análisis más preciso
         </div>
       )}
 
