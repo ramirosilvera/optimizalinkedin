@@ -21,8 +21,8 @@ export default function HistorialDrawer({ historial, historialLoading, setShowHi
         ) : (
           <div className="space-y-2">
             {historial.map(item => {
-              const icons = { analisis: '📊', cv: '📄', entrevista: '🎙️', star: '⭐' }
-              const labels = { analisis: 'Análisis', cv: 'CV', entrevista: 'Entrevista', star: 'STAR' }
+              const icons = { analisis: '🎯', cv: '📄', entrevista: '🎙️', star: '⭐' }
+              const labels = { analisis: 'Diagnóstico', cv: 'CV Profesional', entrevista: 'Sesión de Entrenamiento', star: 'STAR' }
               const colors = {
                 analisis: { background: '#dbeafe', color: '#1d4ed8' },
                 cv:       { background: '#dcfce7', color: '#15803d' },
