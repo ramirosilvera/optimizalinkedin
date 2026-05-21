@@ -2916,17 +2916,25 @@ Generá el feedback en este JSON exacto:
         )}
 
         {/* ── INTERVIEW ── */}
-        {step === STEPS.INTERVIEW && (
-          <InterviewScreen
-            interviewQsLoading={interviewQsLoading}
-            dynamicInterviewQs={dynamicInterviewQs}
-            interviewIdx={interviewIdx}
-            interviewAnswer={interviewAnswer}
-            setInterviewAnswer={setInterviewAnswer}
-            handleInterviewNext={handleInterviewNext}
-            handleInterviewBack={handleInterviewBack}
-          />
-        )}
+        {step === STEPS.INTERVIEW && (() => {
+          const interviewIndustria = qaHistory.find(h => h.questionId === 'industria')?.answer
+          const interviewIndustryQs = !dynamicInterviewQs && interviewIndustria
+            ? INTERVIEW_QUESTIONS_BY_INDUSTRY[interviewIndustria]
+            : null
+          return (
+            <InterviewScreen
+              interviewQsLoading={interviewQsLoading}
+              dynamicInterviewQs={dynamicInterviewQs}
+              industryQs={interviewIndustryQs}
+              industryLabel={interviewIndustria}
+              interviewIdx={interviewIdx}
+              interviewAnswer={interviewAnswer}
+              setInterviewAnswer={setInterviewAnswer}
+              handleInterviewNext={handleInterviewNext}
+              handleInterviewBack={handleInterviewBack}
+            />
+          )
+        })()}
 
         {/* ── INTERVIEW FEEDBACK ── */}
         {step === STEPS.INTERVIEW_FEEDBACK && (

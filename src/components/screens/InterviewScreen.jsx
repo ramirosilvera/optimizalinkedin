@@ -1,12 +1,15 @@
 import { INTERVIEW_QUESTIONS } from '../../data'
 import { Logo, Spinner } from '../ui'
 
-export default function InterviewScreen({ interviewQsLoading, dynamicInterviewQs, interviewIdx, interviewAnswer, setInterviewAnswer, handleInterviewNext, handleInterviewBack }) {
+export default function InterviewScreen({ interviewQsLoading, dynamicInterviewQs, industryQs, industryLabel, interviewIdx, interviewAnswer, setInterviewAnswer, handleInterviewNext, handleInterviewBack }) {
+  const activeQs = dynamicInterviewQs || industryQs || INTERVIEW_QUESTIONS
+  const isIndustryPersonalized = !dynamicInterviewQs && !!industryQs
+
   return (
     <div className="step-transition space-y-7">
       <Logo />
 
-      {/* Personalized questions loading badge */}
+      {/* Personalization badge */}
       {interviewQsLoading && (
         <div className="flex items-center gap-2 text-xs px-3 py-1.5 rounded-full w-fit"
           style={{ background: 'rgba(99,102,241,0.08)', color: '#6366f1' }}>
@@ -16,42 +19,41 @@ export default function InterviewScreen({ interviewQsLoading, dynamicInterviewQs
       {dynamicInterviewQs && !interviewQsLoading && (
         <div className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-full w-fit"
           style={{ background: 'rgba(99,102,241,0.08)', color: '#6366f1' }}>
-          ✦ Preguntas adaptadas a tu perfil
+          ✦ Preguntas adaptadas al puesto
+        </div>
+      )}
+      {isIndustryPersonalized && !interviewQsLoading && (
+        <div className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-full w-fit"
+          style={{ background: 'rgba(0,119,181,0.08)', color: '#0077B5' }}>
+          🎯 Calibradas para {industryLabel || 'tu industria'}
         </div>
       )}
 
       {/* Progress */}
-      {(() => {
-        const activeQs = dynamicInterviewQs || INTERVIEW_QUESTIONS
-        return (
-          <>
-            <div className="flex items-center gap-1.5">
-              {activeQs.map((_, i) => (
-                <div key={i} className="h-1.5 rounded-full transition-all duration-500 flex-1"
-                  style={{
-                    background: i < interviewIdx
-                      ? 'linear-gradient(90deg,#6366f1,#8b5cf6)'
-                      : i === interviewIdx
-                        ? 'rgba(99,102,241,0.5)'
-                        : 'rgba(0,119,181,0.12)',
-                  }} />
-              ))}
-            </div>
-            <p className="text-xs text-slate-500 -mt-4">
-              Pregunta {interviewIdx + 1} de {activeQs.length}
-            </p>
+      <div className="flex items-center gap-1.5">
+        {activeQs.map((_, i) => (
+          <div key={i} className="h-1.5 rounded-full transition-all duration-500 flex-1"
+            style={{
+              background: i < interviewIdx
+                ? 'linear-gradient(90deg,#6366f1,#8b5cf6)'
+                : i === interviewIdx
+                  ? 'rgba(99,102,241,0.5)'
+                  : 'rgba(0,119,181,0.12)',
+            }} />
+        ))}
+      </div>
+      <p className="text-xs text-slate-500 -mt-4">
+        Pregunta {interviewIdx + 1} de {activeQs.length}
+      </p>
 
-            <div>
-              <h2 className="text-2xl sm:text-3xl font-bold text-slate-900 leading-snug" style={{ letterSpacing: '-0.01em' }}>
-                {activeQs[interviewIdx].pregunta}
-              </h2>
-              <p className="text-slate-500 text-sm mt-2 leading-relaxed">
-                {activeQs[interviewIdx].hint}
-              </p>
-            </div>
-          </>
-        )
-      })()}
+      <div>
+        <h2 className="text-2xl sm:text-3xl font-bold text-slate-900 leading-snug" style={{ letterSpacing: '-0.01em' }}>
+          {activeQs[interviewIdx].pregunta}
+        </h2>
+        <p className="text-slate-500 text-sm mt-2 leading-relaxed">
+          {activeQs[interviewIdx].hint}
+        </p>
+      </div>
 
       <div className="space-y-3">
         <div className="relative">
@@ -82,7 +84,7 @@ export default function InterviewScreen({ interviewQsLoading, dynamicInterviewQs
           className={`btn-glow w-full font-semibold py-4 rounded-2xl text-white text-sm ${interviewAnswer.trim().length < 20 ? 'opacity-40 cursor-not-allowed' : ''}`}
           style={{ background: 'linear-gradient(135deg,#6366f1,#8b5cf6)' }}
         >
-          {interviewIdx < INTERVIEW_QUESTIONS.length - 1 ? 'Siguiente →' : 'Ver mi feedback →'}
+          {interviewIdx < activeQs.length - 1 ? 'Siguiente →' : 'Ver mi feedback →'}
         </button>
       </div>
 
