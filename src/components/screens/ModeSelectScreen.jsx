@@ -1,3 +1,4 @@
+import { useState, useEffect } from 'react'
 import { STEPS, trackEvent } from '../../constants'
 import { Logo, Spinner } from '../ui'
 
@@ -16,6 +17,23 @@ export default function ModeSelectScreen({
   callGenerateCV,
   readinessIndex,
 }) {
+  const [streak, setStreak] = useState(0)
+  useEffect(() => {
+    const today = new Date().toISOString().slice(0, 10)
+    const lastActivity = localStorage.getItem('ol_last_activity')
+    const currentStreak = parseInt(localStorage.getItem('ol_streak') || '0', 10)
+
+    if (lastActivity === today) {
+      setStreak(currentStreak)
+    } else {
+      const yesterday = new Date(Date.now() - 86400000).toISOString().slice(0, 10)
+      const newStreak = lastActivity === yesterday ? currentStreak + 1 : 1
+      localStorage.setItem('ol_last_activity', today)
+      localStorage.setItem('ol_streak', String(newStreak))
+      setStreak(newStreak)
+    }
+  }, [])
+
   const firstName = result?.nombre_titular?.split(' ')[0] || null
 
   const done1 = !!result
@@ -72,7 +90,7 @@ export default function ModeSelectScreen({
       abg: 'rgba(5,150,105,0.08)',
       aborder: 'rgba(5,150,105,0.22)',
       title: 'CV de Combate',
-      tagline: 'Tu herramienta principal, calibrada para cada proceso',
+      tagline: 'Tu activo principal, calibrado para cada proceso competitivo',
       description: 'CV ATS-compatible de 1 página, con foto y formato profesional. Construido desde tu diagnóstico — sin editor en blanco.',
       resultText: 'Un CV listo para cualquier postulación.',
       done: done3,
@@ -199,6 +217,7 @@ export default function ModeSelectScreen({
               {readinessIndex >= 8 ? 'Candidato de alto rendimiento'
                : readinessIndex >= 6 ? 'En preparación activa'
                : 'Iniciando entrenamiento'}
+              {streak > 1 && <span style={{ marginLeft: 8, opacity: 0.8 }}>· {streak}d activo</span>}
             </p>
           </div>
           <div style={{ textAlign: 'right' }}>
@@ -207,6 +226,13 @@ export default function ModeSelectScreen({
             </span>
             <span style={{ fontSize: 14, opacity: 0.7 }}>/10</span>
           </div>
+        </div>
+      )}
+
+      {readinessIndex == null && streak > 1 && (
+        <div style={{ display:'flex', alignItems:'center', gap:6, padding:'8px 14px', background:'#f0f9ff', borderRadius:12, marginBottom:12, border:'1px solid #bae6fd' }}>
+          <span style={{ fontSize:14 }}>🔥</span>
+          <p style={{ fontSize:12, fontWeight:600, color:'#0369a1' }}>{streak} días de preparación activa</p>
         </div>
       )}
 
@@ -267,6 +293,13 @@ export default function ModeSelectScreen({
                       style={{ background: s.abg, color: s.ac, border: `1px solid ${s.aborder}` }}>
                       ● Siguiente recomendado
                     </span>
+                    <span style={{
+                      fontSize: 10, fontWeight: 700, padding: '2px 8px', borderRadius: 99,
+                      background: 'rgba(0,119,181,0.12)', color: '#0077B5',
+                      border: '1px solid rgba(0,119,181,0.25)'
+                    }}>
+                      Próxima sesión
+                    </span>
                   </div>
                 )}
 
@@ -302,7 +335,10 @@ export default function ModeSelectScreen({
                           <p className="text-xs mt-0.5 text-slate-500 leading-snug">{s.tagline}</p>
                         </div>
                         {s.done && !isRec && (
-                          <span className="text-xs font-bold shrink-0 mt-0.5" style={{ color: '#059669' }}>✓</span>
+                          <span className="text-[10px] font-bold shrink-0 mt-0.5 px-2 py-0.5 rounded-full"
+                            style={{ background: 'rgba(5,150,105,0.1)', color: '#059669', border: '1px solid rgba(5,150,105,0.25)', whiteSpace: 'nowrap' }}>
+                            ✓ Completado
+                          </span>
                         )}
                       </div>
 

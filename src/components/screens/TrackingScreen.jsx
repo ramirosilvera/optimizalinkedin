@@ -18,7 +18,7 @@ export default function TrackingScreen({ user, setShowPremiumModal, setStep, kan
             <div className="text-5xl">📍</div>
             <h2 className="text-xl font-bold" style={{ color: '#0d2137' }}>Seguimiento de Postulaciones</h2>
             <p className="text-sm max-w-xs mx-auto" style={{ color: '#475569' }}>
-              Organizá todas tus postulaciones en un tablero kanban. Vinculá el CV adaptado a cada oferta y nunca más pierdas el hilo de tu búsqueda laboral.
+              Organizá todas tus postulaciones en un tablero kanban. Vinculá el CV adaptado a cada oferta y nunca más pierdas el hilo de tu proceso de búsqueda.
             </p>
             <button onClick={() => setShowPremiumModal(true)}
               className="px-6 py-3 rounded-xl text-sm font-semibold text-white"
@@ -27,7 +27,7 @@ export default function TrackingScreen({ user, setShowPremiumModal, setStep, kan
             </button>
             <button onClick={() => setStep(STEPS.MODE_SELECT)}
               className="block mx-auto text-xs mt-2" style={{ color: '#94a3b8' }}>
-              Mi hoja de ruta
+              Mi preparación
             </button>
           </div>
         ) : (
@@ -49,7 +49,7 @@ export default function TrackingScreen({ user, setShowPremiumModal, setStep, kan
                 <button onClick={() => setStep(STEPS.MODE_SELECT)}
                   className="text-xs px-3 py-1.5 rounded-lg font-medium"
                   style={BTN_BACK_STYLE}>
-                  ← Hoja de ruta
+                  ← Mi preparación
                 </button>
               </div>
             </div>

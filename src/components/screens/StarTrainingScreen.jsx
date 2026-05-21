@@ -55,7 +55,7 @@ export default function StarTrainingScreen({ starPhase, setStarPhase, starQuesti
           </button>
           <button onClick={() => { trackEvent('star_back', { from: 'theory' }); interviewFeedback ? setStep(STEPS.INTERVIEW_FEEDBACK) : setStep(STEPS.MODE_SELECT) }}
             className="w-full py-3 rounded-2xl text-sm font-semibold" style={BTN_BACK_STYLE}>
-            {interviewFeedback ? '← Volver al feedback' : '← Mi hoja de ruta'}
+            {interviewFeedback ? '← Volver al feedback' : '← Mi preparación'}
           </button>
         </>
       )}
@@ -215,7 +215,7 @@ export default function StarTrainingScreen({ starPhase, setStarPhase, starQuesti
                 style={{ background: 'rgba(99,102,241,0.06)', border: '1px solid rgba(99,102,241,0.22)' }}>
                 <p className="text-sm font-semibold text-slate-800">🎙️ Ahora probalo en una entrevista real</p>
                 <p className="text-slate-500 text-xs leading-relaxed">
-                  Aplicá la técnica STAR en nuestra simulación de entrevista completa. 5 preguntas con feedback detallado de IA.
+                  Aplicá la técnica STAR en nuestra sesión de entrenamiento completa. 5 preguntas con feedback detallado de IA.
                 </p>
                 <button
                   onClick={() => { resetInterview(); trackEvent('star_to_interview_cta'); setStep(STEPS.INTERVIEW_INTRO) }}
@@ -230,7 +230,7 @@ export default function StarTrainingScreen({ starPhase, setStarPhase, starQuesti
 
           <button onClick={() => { trackEvent('star_back', { from: 'practice' }); result ? setStep(STEPS.RESULTS) : setStep(STEPS.MODE_SELECT) }}
             className="w-full py-3 rounded-2xl text-sm font-semibold" style={BTN_BACK_STYLE}>
-            {result ? '← Volver a mi análisis' : '← Mi hoja de ruta'}
+            {result ? '← Volver a mi análisis' : '← Mi preparación'}
           </button>
         </>
       )}

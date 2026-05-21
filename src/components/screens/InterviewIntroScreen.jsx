@@ -68,7 +68,7 @@ export default function InterviewIntroScreen({ interviewJobContext, setInterview
           className="w-full font-medium py-3 rounded-2xl text-sm transition-all"
           style={BTN_BACK_STYLE}
         >
-          {result ? '← Mi preparación' : '← Mi hoja de ruta'}
+          {result ? '← Mi preparación' : '← Mi preparación'}
         </button>
       </div>
     </div>

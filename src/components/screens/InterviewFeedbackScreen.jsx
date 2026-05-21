@@ -48,7 +48,7 @@ export default function InterviewFeedbackScreen({ interviewLoading, rateLimitEve
         </div>
       ) : !interviewFeedback ? (
         <div className="flex flex-col items-center justify-center min-h-[55vh] gap-5 text-center">
-          <p className="text-slate-500 text-sm">No hay datos de entrevista. Completá la simulación primero.</p>
+          <p className="text-slate-500 text-sm">No hay datos de entrevista. Completá la sesión de entrenamiento primero.</p>
           <button onClick={() => setStep(STEPS.INTERVIEW_INTRO)}
             className="btn-glow font-semibold px-6 py-3 rounded-2xl text-white text-sm"
             style={{ background: 'linear-gradient(135deg,#6366f1,#8b5cf6)' }}>
@@ -167,7 +167,7 @@ export default function InterviewFeedbackScreen({ interviewLoading, rateLimitEve
                 </div>
                 <div>
                   <p className="text-slate-900 text-xs font-semibold">Página OptimizaLK</p>
-                  <p className="text-slate-500 text-xs mt-0.5 leading-relaxed">Guías y contenido sobre búsqueda de empleo.</p>
+                  <p className="text-slate-500 text-xs mt-0.5 leading-relaxed">Guías y contenido sobre proceso de búsqueda.</p>
                 </div>
                 <a href={COMPANY_LINKEDIN_URL} target="_blank" rel="noopener noreferrer"
                   onClick={() => trackEvent('click_externo', { destino: 'linkedin_pagina', ubicacion: 'interview_feedback' })}
@@ -200,7 +200,7 @@ export default function InterviewFeedbackScreen({ interviewLoading, rateLimitEve
             className="w-full font-semibold py-4 rounded-2xl text-sm"
             style={BTN_BACK_STYLE}
           >
-            {result ? '← Mi preparación' : '← Mi hoja de ruta'}
+            {result ? '← Mi preparación' : '← Mi preparación'}
           </button>
         </>
       )}

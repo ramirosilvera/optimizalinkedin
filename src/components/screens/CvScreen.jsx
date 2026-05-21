@@ -989,7 +989,7 @@ export default function CvScreen({
           className="flex-1 font-medium py-3.5 rounded-2xl text-sm transition-all"
           style={BTN_BACK_STYLE}
         >
-          Mi hoja de ruta
+          Mi preparación
         </button>
       </div>
     </div>

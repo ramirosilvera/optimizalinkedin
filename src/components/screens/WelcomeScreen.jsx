@@ -25,9 +25,9 @@ export default function WelcomeScreen({ setStep, handleModeSelectJobAdapter, job
       <div className="grid grid-cols-2 gap-3">
         {[
           { icon: '🎯', label: 'Diagnóstico', step: 'Paso 1', text: 'Score de empleabilidad, keywords y gaps con ojo de headhunter', accent: '#0077B5' },
-          { icon: '📄', label: 'CV Inteligente', step: 'Paso 3', text: 'ATS-compatible, con foto, listo para enviar en 30 segundos', accent: '#059669' },
-          { icon: '📝', label: 'Adaptar por oferta', step: 'Paso 5', text: 'IA ajusta tu CV + genera la carta para cada aviso específico', accent: '#6366f1' },
-          { icon: '🎙️', label: 'Simular entrevistas', step: 'Paso 6', text: '5 preguntas reales con feedback de IA personalizado a tu perfil', accent: '#d97706' },
+          { icon: '📄', label: 'CV de Combate', step: 'Módulo 3', text: 'ATS-compatible, con foto, calibrado a tu perfil profesional', accent: '#059669' },
+          { icon: '📝', label: 'Adaptación Táctica', step: 'Módulo 4', text: 'IA calibra tu CV + genera la carta para cada oferta específica', accent: '#6366f1' },
+          { icon: '🎙️', label: 'Sesión de Entrenamiento', step: 'Módulo 5', text: '5 preguntas reales con feedback IA personalizado a tu industria', accent: '#d97706' },
         ].map(item => (
           <div key={item.label} className="rounded-2xl p-4 text-left relative overflow-hidden"
             style={{ background: 'white', border: '1px solid rgba(0,119,181,0.15)', boxShadow: '0 2px 12px rgba(0,0,0,0.06)' }}>
@@ -65,6 +65,55 @@ export default function WelcomeScreen({ setStep, handleModeSelectJobAdapter, job
           </p>
         )}
         <p className="text-slate-500 text-xs">Sin registro · Resultado en minutos · 100% gratis</p>
+      </div>
+
+      {/* Training Pillars */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 10, marginTop: 28, width: '100%', maxWidth: 380, margin: '0 auto' }}>
+        {[
+          { icon: '🎯', title: 'Diagnóstico', desc: 'Posición competitiva real en tu mercado' },
+          { icon: '⚡', title: 'Entrenamiento', desc: 'Sesiones de práctica con feedback IA' },
+          { icon: '📍', title: 'Ejecución', desc: 'Seguimiento activo de cada proceso' },
+        ].map(p => (
+          <div key={p.title} style={{
+            background: 'white',
+            borderRadius: 14,
+            padding: '14px 10px',
+            textAlign: 'center',
+            border: '1px solid rgba(0,0,0,0.07)',
+            boxShadow: '0 2px 8px rgba(0,0,0,0.05)',
+          }}>
+            <div style={{ fontSize: 22, marginBottom: 6 }}>{p.icon}</div>
+            <p style={{ fontSize: 12, fontWeight: 700, color: '#0d2137', marginBottom: 3 }}>{p.title}</p>
+            <p style={{ fontSize: 10, color: '#64748b', lineHeight: 1.4 }}>{p.desc}</p>
+          </div>
+        ))}
+      </div>
+
+      {/* Module strip */}
+      <div style={{ width: '100%', maxWidth: 380, margin: '0 auto' }}>
+        <p style={{ fontSize: 10, fontWeight: 600, color: '#94a3b8', textAlign: 'center', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 10 }}>
+          Sistema de 6 módulos de preparación
+        </p>
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, justifyContent: 'center' }}>
+          {[
+            { icon: '🎯', label: 'Diagnóstico' },
+            { icon: '✏️', label: 'Posicionamiento' },
+            { icon: '📄', label: 'CV de Combate' },
+            { icon: '🎙️', label: 'Entrenamiento' },
+            { icon: '⭐', label: 'STAR' },
+            { icon: '📍', label: 'Postulaciones' },
+          ].map(m => (
+            <span key={m.label} style={{
+              display: 'inline-flex', alignItems: 'center', gap: 4,
+              fontSize: 11, fontWeight: 500, color: '#475569',
+              background: '#f8fafc', border: '1px solid #e2e8f0',
+              borderRadius: 99, padding: '4px 10px',
+            }}>
+              <span style={{ fontSize: 12 }}>{m.icon}</span>
+              {m.label}
+            </span>
+          ))}
+        </div>
       </div>
 
       <CommentsSection />
@@ -216,7 +265,7 @@ export default function WelcomeScreen({ setStep, handleModeSelectJobAdapter, job
           <h2 className="text-xl font-bold text-slate-900 mb-4">Preguntas frecuentes</h2>
           <div className="space-y-3">
             {[
-              { q: '¿Qué es Optimiza LK?', a: 'Optimiza LK es una herramienta gratuita creada por Ramiro Silvera (Gerente de RRHH y Headhunter) que analiza tu perfil de LinkedIn con criterio profesional. También generás tu CV, practicás entrevistas con IA y adaptás tu CV a avisos de empleo — todo sin costo y sin registro.' },
+              { q: '¿Qué es Optimiza LK?', a: 'Optimiza LK es un sistema gratuito de preparación profesional creado por Ramiro Silvera (Gerente de RRHH y Headhunter) que diagnostica tu competitividad en el mercado laboral. También construís tu CV, entrenás entrevistas con IA y adaptás tu CV a cada oferta — todo sin costo y sin registro.' },
               { q: '¿Es realmente gratis?', a: 'Sí, 100% gratis y sin registro. No necesitás crear una cuenta ni dejar tu email para recibir el análisis.' },
               { q: '¿Qué pasa con mi CV o perfil?', a: 'Tu información se usa para generar el análisis. Solo se guarda si vos lo autorizás — por ejemplo, al solicitar contacto con Ramiro o generar tu CV, para poder brindarte un servicio más personalizado. En ningún caso se comparte con terceros.' },
               { q: '¿Cuánto tarda el análisis?', a: 'Menos de 60 segundos una vez que subís tu perfil. El cuestionario previo tarda unos 3 minutos.' },

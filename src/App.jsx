@@ -11,7 +11,7 @@ import {
   COMPANY_LINKEDIN_URL, MAX_PDF_SIZE,
 } from './constants'
 import {
-  STATIC_QUESTIONS, INTERVIEW_QUESTIONS, STAR_QUESTIONS,
+  STATIC_QUESTIONS, INTERVIEW_QUESTIONS, INTERVIEW_QUESTIONS_BY_INDUSTRY, STAR_QUESTIONS,
   LOADING_MESSAGES_BY_SITUACION, LOADING_MESSAGES_DEFAULT,
 } from './data'
 import { AI_DEFAULTS, extractAIText, parseAIJson } from './utils/ai'
@@ -1910,7 +1910,7 @@ Generá el feedback en este JSON exacto:
       const parsed = parseAIJson(extractAIText(data), AI_DEFAULTS.interview_feedback, 'Error al procesar el feedback. Intentá de nuevo.')
       setInterviewFeedback(parsed)
       trackTiming('entrevista_completada', _tInterview, { puntaje: parsed.puntaje_entrevista })
-      saveToHistorial('entrevista', { feedback: parsed, respuestas: answers }, 'Simulación de entrevista', parsed?.puntaje_entrevista ?? null)
+      saveToHistorial('entrevista', { feedback: parsed, respuestas: answers }, 'Sesión de Entrenamiento', parsed?.puntaje_entrevista ?? null)
     } catch (err) {
       trackError('interview', err.isRateLimit ? 'rate_limit' : err.name === 'AbortError' ? 'timeout' : 'api_error')
       if (!err.isRateLimit) {
@@ -2402,7 +2402,9 @@ Generá el feedback en este JSON exacto:
   // ── Avanzar en la entrevista ──
   const handleInterviewNext = (answer) => {
     if (interviewLoading) return
-    const activeQs = dynamicInterviewQs || INTERVIEW_QUESTIONS
+    const industria = qaHistory.find(h => h.questionId === 'industria')?.answer
+    const industryQs = !dynamicInterviewQs && industria ? INTERVIEW_QUESTIONS_BY_INDUSTRY[industria] : null
+    const activeQs = dynamicInterviewQs || industryQs || INTERVIEW_QUESTIONS
     const newAnswers = [...interviewAnswers, { pregunta: activeQs[interviewIdx].pregunta, respuesta: answer }]
     setInterviewAnswers(newAnswers)
     setInterviewAnswer('')
@@ -2601,8 +2603,8 @@ Generá el feedback en este JSON exacto:
               <button onClick={() => { loadHistorial(); setShowHistorial(true) }}
                 className="text-xs font-medium px-2.5 py-1.5 rounded-full"
                 style={BTN_GHOST_STYLE}
-                title="Mis resultados">
-                <span>📊</span><span className="hidden sm:inline"> Mis resultados</span>
+                title="Mi historial">
+                <span>📊</span><span className="hidden sm:inline"> Mi historial</span>
               </button>
             )}
             {user.es_premium && (

@@ -18,6 +18,34 @@ export default function PremiumModal({ user, setShowPremiumModal, subscriptionLo
           <p className="text-sm opacity-75 mt-1">Cancelás antes del día 7, no te cobramos nada.</p>
         </div>
         <div className="p-6 space-y-5 bg-white">
+          {/* RI Teaser */}
+          <div style={{
+            background: 'linear-gradient(135deg, #0d2137 0%, #0c3a5e 100%)',
+            borderRadius: 16,
+            padding: '14px 16px',
+            marginBottom: 16,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+          }}>
+            <div>
+              <p style={{ fontSize: 10, fontWeight: 700, color: 'rgba(255,255,255,0.6)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 3 }}>
+                Índice de Preparación
+              </p>
+              <p style={{ fontSize: 11, color: 'rgba(255,255,255,0.5)' }}>
+                Evolución de tu competitividad
+              </p>
+            </div>
+            <div style={{ display: 'flex', alignItems: 'baseline', gap: 2 }}>
+              <span style={{ fontSize: 36, fontWeight: 800, color: 'white', letterSpacing: '-0.03em' }}>—</span>
+              <span style={{ fontSize: 14, color: 'rgba(255,255,255,0.5)' }}>/10</span>
+            </div>
+          </div>
+
+          <p style={{ fontSize: 12, fontWeight: 600, color: '#475569', marginBottom: 10, textAlign: 'center' }}>
+            Lo que incluye el Plan Profesional
+          </p>
+
           <ul className="space-y-3">
             {[
               ['🏆', 'Entrenamiento continuo', 'Historial ilimitado de sesiones de entrevista, STAR y análisis para medir tu progreso real.'],
@@ -25,7 +53,7 @@ export default function PremiumModal({ user, setShowPremiumModal, subscriptionLo
               ['📍', 'Centro de operaciones', 'Kanban para trackear todas tus búsquedas activas y vincular el CV adaptado a cada una.'],
               ['🎯', 'Índice de Preparación', 'Seguí la evolución de tu nivel de competitividad con cada sesión de entrenamiento.'],
             ].map(([icon, title, desc]) => (
-              <li key={title} className="flex gap-3">
+              <li key={title} className="flex gap-3" style={{ background: '#f8fafc', borderRadius: 10, padding: '8px 12px', marginBottom: 6 }}>
                 <span className="text-xl shrink-0">{icon}</span>
                 <div>
                   <p className="text-slate-800 font-semibold text-sm">{title}</p>
@@ -34,6 +62,13 @@ export default function PremiumModal({ user, setShowPremiumModal, subscriptionLo
               </li>
             ))}
           </ul>
+
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, padding: '8px 0', borderTop: '1px solid #f1f5f9', borderBottom: '1px solid #f1f5f9', marginBottom: 12 }}>
+            <span style={{ fontSize: 13 }}>🔒</span>
+            <p style={{ fontSize: 11, color: '#94a3b8', textAlign: 'center' }}>
+              Cancelás antes del día 7, no se realiza ningún cobro
+            </p>
+          </div>
 
           {!user && (
             <>

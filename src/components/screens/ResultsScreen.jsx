@@ -189,7 +189,7 @@ export default function ResultsScreen({
                 <span className="text-[10px] font-bold uppercase tracking-wide px-2 py-0.5 rounded-full"
                   style={{ background: 'rgba(14,165,233,0.1)', color: '#0ea5e9' }}>Paso 2</span>
               </div>
-              <p className="text-xs font-bold text-slate-800 mt-0.5">Optimizar perfil LinkedIn</p>
+              <p className="text-xs font-bold text-slate-800 mt-0.5">Posicionamiento profesional LinkedIn</p>
               <p className="text-[10px] text-slate-500">Titular · Resumen · Keywords ATS · ↓ más abajo</p>
             </div>
           </button>
@@ -230,7 +230,7 @@ export default function ResultsScreen({
             style={{ borderColor: 'rgba(0,119,181,0.10)', background: 'rgba(0,119,181,0.03)' }}>
             <span className="text-[10px] font-bold uppercase tracking-wide px-2 py-0.5 rounded-full shrink-0"
               style={{ background: 'rgba(14,165,233,0.12)', color: '#0ea5e9' }}>Paso 2</span>
-            <p className="text-sm font-bold text-slate-800">Optimizar perfil LinkedIn</p>
+            <p className="text-sm font-bold text-slate-800">Posicionamiento profesional LinkedIn</p>
           </div>
           <div className="px-5 py-4 space-y-5">
 
