@@ -8,14 +8,15 @@ export default function PremiumModal({ user, setShowPremiumModal, subscriptionLo
       onClick={e => { if (e.target === e.currentTarget) { setShowPremiumModal(false); setShowCouponField(false); setCouponCode(''); setCouponError(''); setCouponSuccess(false) } }}>
       <div className="w-full max-w-sm rounded-3xl overflow-hidden"
         style={{ boxShadow: '0 25px 60px rgba(0,0,0,0.2)' }}>
-        <div className="p-6 text-white" style={{ background: LI_GRADIENT }}>
-          <p className="text-xs font-semibold opacity-80 mb-1">PLAN PROFESIONAL</p>
-          <h2 className="text-2xl font-bold">Premium</h2>
+        <div className="p-6 text-white" style={{ background: 'linear-gradient(135deg, #0d1f2d 0%, #1a3a5c 60%, #0d3055 100%)' }}>
+          <p className="text-xs font-semibold opacity-60 mb-1 tracking-widest">OPTIMIZA LK</p>
+          <h2 className="text-2xl font-bold tracking-tight">Premium ✦</h2>
           <div className="flex items-baseline gap-2 mt-2">
             <p className="text-4xl font-bold">$3.000<span className="text-lg font-normal opacity-80">/mes</span></p>
             <span className="text-xs font-bold px-2 py-0.5 rounded-full" style={{ background: 'rgba(255,255,255,0.22)', color: 'white' }}>7 DÍAS GRATIS</span>
           </div>
-          <p className="text-sm opacity-75 mt-1">Cancelás antes del día 7, no te cobramos nada.</p>
+          <p className="text-xs opacity-60 mt-1">Menos que un café por semana</p>
+          <p className="text-sm opacity-75 mt-0.5">Cancelás antes del día 7 y no te cobramos nada</p>
         </div>
         <div className="p-6 space-y-5 bg-white">
           {/* RI Teaser */}
@@ -48,10 +49,10 @@ export default function PremiumModal({ user, setShowPremiumModal, subscriptionLo
 
           <ul className="space-y-3">
             {[
-              ['🏆', 'Entrenamiento continuo', 'Historial ilimitado de sesiones de entrevista, STAR y análisis para medir tu progreso real.'],
-              ['📄', 'CV siempre disponible', 'Descargá cualquier versión de tu CV cuando lo necesites, sin límites.'],
+              ['🏆', 'Entrenamiento continuo', 'Historial ilimitado de sesiones de entrevista, STAR y análisis — mejorás de forma medible.'],
+              ['📄', 'CV re-descargable cuando quieras', 'Generá versiones y descargalas en cualquier momento, sin rehacer el proceso.'],
               ['📍', 'Centro de operaciones', 'Kanban para trackear todas tus búsquedas activas y vincular el CV adaptado a cada una.'],
-              ['🎯', 'Índice de Preparación', 'Seguí la evolución de tu nivel de competitividad con cada sesión de entrenamiento.'],
+              ['🎯', 'Índice de Preparación', 'Seguí la evolución de tu competitividad con cada sesión de entrenamiento.'],
             ].map(([icon, title, desc]) => (
               <li key={title} className="flex gap-3" style={{ background: '#f8fafc', borderRadius: 10, padding: '8px 12px', marginBottom: 6 }}>
                 <span className="text-xl shrink-0">{icon}</span>
@@ -95,7 +96,7 @@ export default function PremiumModal({ user, setShowPremiumModal, subscriptionLo
             {subscriptionLoading ? 'Procesando...' : 'Probar 7 días gratis → Mercado Pago'}
           </button>
           <p className="text-center text-xs text-slate-400 -mt-1">
-            La app seguirá siendo 100% gratuita. Premium es tu entrenamiento continuo.
+            La versión gratuita sigue siendo completa. Premium agrega historial y entrenamiento continuo.
           </p>
           <button onClick={() => setShowPremiumModal(false)}
             className="w-full py-2 text-sm text-slate-400 text-center">

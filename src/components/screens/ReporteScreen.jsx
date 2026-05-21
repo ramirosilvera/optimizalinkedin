@@ -92,7 +92,7 @@ function buildReportHtml({ readinessIndex, result, cvQuality, interviewFeedback,
   <h2>Desglose de módulos</h2>
   <table style="width:100%;border-collapse:collapse;">
     ${scoreRow('🎯 Diagnóstico de Competitividad', liScore)}
-    ${scoreRow('📄 CV de Combate', cvScore)}
+    ${scoreRow('📄 CV Profesional', cvScore)}
     ${scoreRow('🎙️ Sesión de Entrenamiento', interviewScore)}
     ${scoreRow('⭐ Alto Rendimiento STAR', starScore)}
   </table>
@@ -208,7 +208,7 @@ export default function ReporteScreen({ setStep, readinessIndex, result, cvQuali
         <p className="text-xs font-bold uppercase tracking-wide text-slate-400 mb-3">Desglose por módulo</p>
         <div className="space-y-2.5">
           <ScoreCard icon="🎯" title="Diagnóstico de Competitividad" score={result?.puntaje_general} />
-          <ScoreCard icon="📄" title="CV de Combate" score={cvQuality?.score} label={cvQuality?.nivel} />
+          <ScoreCard icon="📄" title="CV Profesional" score={cvQuality?.score} label={cvQuality?.nivel} />
           <ScoreCard icon="🎙️" title="Sesión de Entrenamiento" score={interviewFeedback?.puntaje_entrevista} />
           <ScoreCard icon="⭐" title="Alto Rendimiento STAR" score={starFeedback?.puntaje} />
         </div>

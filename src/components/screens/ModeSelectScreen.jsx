@@ -98,7 +98,7 @@ export default function ModeSelectScreen({
       ac: '#059669',
       abg: 'rgba(5,150,105,0.08)',
       aborder: 'rgba(5,150,105,0.22)',
-      title: 'CV de Combate',
+      title: 'CV Profesional',
       tagline: 'Tu activo principal, calibrado para cada proceso competitivo',
       description: 'CV ATS-compatible de 1 página, con foto y formato profesional. Construido desde tu diagnóstico — sin editor en blanco.',
       resultText: 'Un CV listo para cualquier postulación.',
@@ -426,7 +426,7 @@ export default function ModeSelectScreen({
               setStarPhase('practice')
               setStep(STEPS.STAR_TRAINING)
             }}
-            className="text-xs font-semibold px-4 py-2 rounded-xl transition-all"
+            className="w-full py-2.5 rounded-xl text-xs font-semibold transition-all"
             style={{ background: 'rgba(13,148,136,0.1)', color: '#0d9488', border: '1px solid rgba(13,148,136,0.25)' }}
           >
             Responder con STAR →
@@ -451,7 +451,7 @@ export default function ModeSelectScreen({
             </div>
             <span className="text-slate-300 text-lg shrink-0">›</span>
           </button>
-          {(result || cvQuality || interviewFeedback || starFeedback) && (
+          {(result || cvFinalData || interviewFeedback || starFeedback) && (
             <button
               onClick={() => { trackEvent('roadmap_reporte'); setStep(STEPS.REPORT) }}
               className="w-full flex items-center gap-3 px-4 py-3.5 text-left hover:bg-slate-50 transition-colors"

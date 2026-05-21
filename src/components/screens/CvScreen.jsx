@@ -138,7 +138,7 @@ export default function CvScreen({
       </div>
       <div className="flex items-center justify-between gap-3">
         <div>
-          <h1 className="text-xl font-bold text-slate-800">CV de Combate</h1>
+          <h1 className="text-xl font-bold text-slate-800">CV Profesional</h1>
           <p className="text-xs text-slate-500 mt-0.5">Construido desde tu diagnóstico · ATS-optimizado · Listo para competir</p>
         </div>
         {cvQuality && (
