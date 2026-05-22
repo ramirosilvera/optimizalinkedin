@@ -3008,29 +3008,6 @@ Generá el feedback en este JSON exacto:
           />
         )}
 
-        {/* ── REPORT ── */}
-        {step === STEPS.REPORT && (
-          <ReporteScreen
-            setStep={setStep}
-            result={result}
-            cvQuality={cvQuality}
-            interviewFeedback={interviewFeedback}
-            starFeedback={starFeedback}
-            user={user}
-            readinessIndex={(() => {
-              const scores = [
-                result?.puntaje_general != null ? { score: result.puntaje_general, weight: 0.25 } : null,
-                cvQuality?.score != null ? { score: cvQuality.score, weight: 0.25 } : null,
-                interviewFeedback?.puntaje_general != null ? { score: interviewFeedback.puntaje_general, weight: 0.30 } : null,
-                starFeedback?.puntaje_general != null ? { score: starFeedback.puntaje_general, weight: 0.20 } : null,
-              ].filter(Boolean)
-              if (!scores.length) return null
-              const totalWeight = scores.reduce((a, b) => a + b.weight, 0)
-              return Math.round(scores.reduce((a, b) => a + b.score * b.weight, 0) / totalWeight * 10) / 10
-            })()}
-          />
-        )}
-
         {/* ── TRACKING ── */}
         {step === STEPS.TRACKING && (
           <TrackingScreen
