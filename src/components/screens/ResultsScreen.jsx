@@ -46,12 +46,6 @@ export default function ResultsScreen({
               style={{ background: 'rgba(255,255,255,0.12)', color: 'rgba(255,255,255,0.75)' }}>
               ✓ Paso 1 — Diagnóstico
             </span>
-            <button
-              onClick={() => { trackEvent('results_go_to_roadmap'); setStep(STEPS.MODE_SELECT) }}
-              className="text-[10px] font-semibold transition-opacity hover:opacity-80"
-              style={{ color: 'rgba(255,255,255,0.55)' }}>
-              Mi preparación →
-            </button>
           </div>
           <div className="px-6 pt-6 pb-5 flex flex-col items-center gap-4 text-center">
             {/* Score ring — grande y central */}
@@ -92,59 +86,6 @@ export default function ResultsScreen({
               </button>
             )}
           </div>
-        </div>
-      )}
-
-      {/* ══ CTA — Estrategia de visibilidad LinkedIn ══ */}
-      {result && !linkedinGrowth && (
-        <button
-          onClick={() => {
-            trackEvent('growth_cta_click')
-            setShowGrowthSection(true)
-            setTimeout(() => document.getElementById('crecer-linkedin')?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 80)
-            if (!linkedinGrowth && !growthLoading) callLinkedinGrowth()
-          }}
-          disabled={growthLoading}
-          className="btn-glow w-full rounded-2xl p-4 text-left transition-all hover:shadow-lg active:scale-[0.99] flex items-center gap-3"
-          style={{ background: 'linear-gradient(135deg,#4f46e5,#7c3aed)', boxShadow: '0 4px 18px rgba(99,102,241,0.30)', opacity: growthLoading ? 0.8 : 1 }}
-        >
-          <span className="text-2xl shrink-0">📈</span>
-          <div className="flex-1 min-w-0">
-            <p className="text-base font-bold text-white leading-tight">
-              {growthLoading ? <span className="flex items-center gap-2"><Spinner size={3} />Generando estrategia…</span> : 'Generar estrategia de visibilidad LinkedIn →'}
-            </p>
-            <p className="text-[11px] text-white/75 mt-0.5">Plan de crecimiento · Banner personalizado · Networking 90 días</p>
-          </div>
-        </button>
-      )}
-      {result && linkedinGrowth && (
-        <button
-          onClick={() => document.getElementById('crecer-linkedin')?.scrollIntoView({ behavior: 'smooth', block: 'start' })}
-          className="w-full rounded-2xl p-3.5 text-left transition-all hover:shadow-md active:scale-[0.99] flex items-center gap-3"
-          style={{ background: 'rgba(99,102,241,0.07)', border: '1px solid rgba(99,102,241,0.28)' }}
-        >
-          <span className="text-xl shrink-0">📈</span>
-          <div className="flex-1 min-w-0">
-            <p className="text-xs font-bold text-slate-800">Estrategia de visibilidad LinkedIn</p>
-            <p className="text-[10px] text-slate-500">✓ Generada · Ver resultados ↓</p>
-          </div>
-        </button>
-      )}
-
-      {/* ── Post-diagnosis save prompt (free users) ── */}
-      {result && !user && (
-        <div className="rounded-2xl px-4 py-3 flex items-center justify-between gap-3"
-          style={{ background: 'rgba(99,102,241,0.05)', border: '1px solid rgba(99,102,241,0.18)' }}>
-          <div className="min-w-0">
-            <p className="text-xs font-semibold text-slate-700">Tu diagnóstico quedó listo</p>
-            <p className="text-[11px] text-slate-400 mt-0.5">Guardalo con el Plan Profesional — 7 días gratis</p>
-          </div>
-          <button
-            onClick={() => setShowPremiumModal(true)}
-            className="shrink-0 text-xs font-semibold px-3 py-1.5 rounded-xl text-white"
-            style={{ background: 'linear-gradient(135deg,#6366f1,#8b5cf6)' }}>
-            Guardar →
-          </button>
         </div>
       )}
 
@@ -254,6 +195,59 @@ export default function ResultsScreen({
             )}
           </div>
         </div>
+      )}
+
+      {/* ── Post-diagnosis save prompt (free users) ── */}
+      {result && !user && (
+        <div className="rounded-2xl px-4 py-3 flex items-center justify-between gap-3"
+          style={{ background: 'rgba(99,102,241,0.05)', border: '1px solid rgba(99,102,241,0.18)' }}>
+          <div className="min-w-0">
+            <p className="text-xs font-semibold text-slate-700">Tu diagnóstico quedó listo</p>
+            <p className="text-[11px] text-slate-400 mt-0.5">Guardalo con el Plan Profesional — 7 días gratis</p>
+          </div>
+          <button
+            onClick={() => setShowPremiumModal(true)}
+            className="shrink-0 text-xs font-semibold px-3 py-1.5 rounded-xl text-white"
+            style={{ background: 'linear-gradient(135deg,#6366f1,#8b5cf6)' }}>
+            Guardar →
+          </button>
+        </div>
+      )}
+
+      {/* ══ CTA — Estrategia de visibilidad LinkedIn ══ */}
+      {result && !linkedinGrowth && (
+        <button
+          onClick={() => {
+            trackEvent('growth_cta_click')
+            setShowGrowthSection(true)
+            setTimeout(() => document.getElementById('crecer-linkedin')?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 80)
+            if (!linkedinGrowth && !growthLoading) callLinkedinGrowth()
+          }}
+          disabled={growthLoading}
+          className="btn-glow w-full rounded-2xl p-3.5 text-left transition-all hover:shadow-lg active:scale-[0.99] flex items-center gap-3"
+          style={{ background: 'linear-gradient(135deg,#4f46e5,#7c3aed)', boxShadow: '0 4px 18px rgba(99,102,241,0.30)', opacity: growthLoading ? 0.8 : 1 }}
+        >
+          <span className="text-2xl shrink-0">📈</span>
+          <div className="flex-1 min-w-0">
+            <p className="text-sm font-semibold text-white leading-tight">
+              {growthLoading ? <span className="flex items-center gap-2"><Spinner size={3} />Generando estrategia…</span> : 'Generar estrategia de visibilidad LinkedIn →'}
+            </p>
+            <p className="text-[11px] text-white/75 mt-0.5">Plan de crecimiento · Banner personalizado · Networking 90 días</p>
+          </div>
+        </button>
+      )}
+      {result && linkedinGrowth && (
+        <button
+          onClick={() => document.getElementById('crecer-linkedin')?.scrollIntoView({ behavior: 'smooth', block: 'start' })}
+          className="w-full rounded-2xl p-3.5 text-left transition-all hover:shadow-md active:scale-[0.99] flex items-center gap-3"
+          style={{ background: 'rgba(99,102,241,0.07)', border: '1px solid rgba(99,102,241,0.28)' }}
+        >
+          <span className="text-xl shrink-0">📈</span>
+          <div className="flex-1 min-w-0">
+            <p className="text-xs font-bold text-slate-800">Estrategia de visibilidad LinkedIn</p>
+            <p className="text-[10px] text-slate-500">✓ Generada · Ver resultados ↓</p>
+          </div>
+        </button>
       )}
 
       {/* CV builder moved to CvScreen */}
