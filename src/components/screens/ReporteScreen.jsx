@@ -157,16 +157,19 @@ export default function ReporteScreen({ setStep, readinessIndex, result, cvQuali
 
     const html = buildReportHtml({ readinessIndex, result, cvQuality, interviewFeedback, starFeedback, userName })
     const filename = `Informe-Preparacion-${userName ? userName.replace(/\s+/g, '-') : 'OptimizaLK'}.html`
-    const blob = new Blob([html], { type: 'text/html; charset=utf-8' })
-    const file = new File([blob], filename, { type: 'text/html' })
 
     try {
       // Mobile (iOS 14.5+ / Android Chrome 89+) — Web Share API Level 2
-      if (navigator.canShare && navigator.canShare({ files: [file] })) {
-        await navigator.share({ files: [file], title: 'Informe de Preparación — Optimiza LK' })
-        trackEvent('reporte_export_share')
-        setExportState('idle')
-        return
+      // File created directly from string (not from Blob) — avoids iOS Safari tracking the Blob as a second download
+      // No `title` in share payload — iOS Safari 15/16 serializes title as a separate text item when files are present
+      if (navigator.canShare) {
+        const file = new File([html], filename, { type: 'text/html' })
+        if (navigator.canShare({ files: [file] })) {
+          await navigator.share({ files: [file] })
+          trackEvent('reporte_export_share')
+          setExportState('idle')
+          return
+        }
       }
 
       // Desktop — popup + print dialog → "Guardar como PDF"
@@ -175,24 +178,27 @@ export default function ReporteScreen({ setStep, readinessIndex, result, cvQuali
       if (win) {
         win.document.open(); win.document.write(printHtml); win.document.close()
         trackEvent('reporte_export_print')
-      } else {
-        // Popup bloqueado: descarga HTML con instrucción
-        const a = document.createElement('a')
-        a.href = URL.createObjectURL(blob)
-        a.download = filename
-        document.body.appendChild(a); a.click(); document.body.removeChild(a)
-        setTimeout(() => URL.revokeObjectURL(a.href), 2000)
-        setExportState('hint')
-        setTimeout(() => setExportState('idle'), 8000)
-        trackEvent('reporte_export_html_download')
+        setExportState('idle')
         return
       }
+
+      // Popup bloqueado: descarga HTML
+      // Blob created here only — never exists on the iOS share path
+      const blob = new Blob([html], { type: 'text/html; charset=utf-8' })
+      const a = document.createElement('a')
+      a.href = URL.createObjectURL(blob)
+      a.download = filename
+      document.body.appendChild(a); a.click(); document.body.removeChild(a)
+      setTimeout(() => URL.revokeObjectURL(a.href), 2000)
+      setExportState('hint')
+      setTimeout(() => setExportState('idle'), 8000)
+      trackEvent('reporte_export_html_download')
     } catch (err) {
       if (err.name !== 'AbortError') {
         trackEvent('reporte_export_error', { reason: err.message })
       }
+      setExportState('idle')
     }
-    setExportState('idle')
   }
 
   return (

@@ -2207,17 +2207,20 @@ Generá el feedback en este JSON exacto:
     try {
       const html = buildCvHtml(cvFinalData, profilePhotoRef.current, profilePhotoMimeRef.current, cvTemplate, { forExport: true })
       const filename = `CV-${_cvFileName()}`
-      const htmlBlob = new Blob([html], { type: 'text/html; charset=utf-8' })
-      const htmlFile = new File([htmlBlob], `${filename}.html`, { type: 'text/html' })
 
       // Web Share API Level 2 — iOS 14.5+, Android Chrome 89+
-      if (navigator.canShare && navigator.canShare({ files: [htmlFile] })) {
-        await navigator.share({ files: [htmlFile], title: `CV - ${cvFinalData?.nombre || 'Mi CV'}` })
-        dismissToast(loadingId)
-        addToast('CV exportado · Versión guardada en historial', 'success')
-        trackEvent('cv_export_share')
-        setCvExportState('idle')
-        return
+      // File created directly from string (not from Blob) — avoids iOS Safari tracking the Blob as a second download
+      // No `title` in share payload — iOS Safari 15/16 serializes title as a separate text item when files are present
+      if (navigator.canShare) {
+        const htmlFile = new File([html], `${filename}.html`, { type: 'text/html' })
+        if (navigator.canShare({ files: [htmlFile] })) {
+          await navigator.share({ files: [htmlFile] })
+          dismissToast(loadingId)
+          addToast('CV exportado · Versión guardada en historial', 'success')
+          trackEvent('cv_export_share')
+          setCvExportState('idle')
+          return
+        }
       }
 
       // Desktop: popup + print dialog → "Guardar como PDF"
@@ -2228,17 +2231,20 @@ Generá el feedback en este JSON exacto:
         dismissToast(loadingId)
         addToast('CV exportado · Versión guardada en historial', 'success')
         trackEvent('cv_export_print')
-      } else {
-        // Popup bloqueado: descarga HTML con instrucción
-        const a = document.createElement('a')
-        a.href = URL.createObjectURL(htmlBlob)
-        a.download = `${filename}.html`
-        document.body.appendChild(a); a.click(); document.body.removeChild(a)
-        setTimeout(() => URL.revokeObjectURL(a.href), 2000)
-        dismissToast(loadingId)
-        addToast('Abrí el archivo en Chrome → Ctrl+P → Guardar como PDF', 'success', 8000)
-        trackEvent('cv_export_html_download')
+        return
       }
+
+      // Popup bloqueado: descarga HTML con instrucción
+      // Blob created here only — never exists on the iOS share path
+      const htmlBlob = new Blob([html], { type: 'text/html; charset=utf-8' })
+      const a = document.createElement('a')
+      a.href = URL.createObjectURL(htmlBlob)
+      a.download = `${filename}.html`
+      document.body.appendChild(a); a.click(); document.body.removeChild(a)
+      setTimeout(() => URL.revokeObjectURL(a.href), 2000)
+      dismissToast(loadingId)
+      addToast('Abrí el archivo en Chrome → Ctrl+P → Guardar como PDF', 'success', 8000)
+      trackEvent('cv_export_html_download')
     } catch (err) {
       dismissToast(loadingId)
       if (err.name === 'AbortError') {
