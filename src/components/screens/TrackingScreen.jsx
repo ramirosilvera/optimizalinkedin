@@ -95,8 +95,8 @@ export default function TrackingScreen({ user, setShowPremiumModal, setStep, kan
                             </button>
                             <button
                               onClick={() => {
-                                setInterviewJobContext({ empresa: card.empresa, puesto: card.puesto, seniority: card.seniority || null, ats_keywords: card.ats_keywords || '', notas: card.notas || '', adaptation_notes: card.adaptation_notes || '', jd_summary: (card.job_description || '').slice(0, 600), card_id: card.id })
                                 resetInterview()
+                                setInterviewJobContext({ empresa: card.empresa, puesto: card.puesto, seniority: card.seniority || null, ats_keywords: card.ats_keywords || '', notas: card.notas || '', adaptation_notes: card.adaptation_notes || '', jd_summary: (card.job_description || '').slice(0, 600), card_id: card.id })
                                 trackEvent('kanban_to_interview', { empresa: card.empresa, puesto: card.puesto })
                                 setStep(STEPS.INTERVIEW_INTRO)
                               }}
@@ -158,8 +158,8 @@ export default function TrackingScreen({ user, setShowPremiumModal, setStep, kan
                               </div>
                               <button
                                 onClick={() => {
-                                  setInterviewJobContext({ empresa: card.empresa, puesto: card.puesto, seniority: card.seniority || null, ats_keywords: card.ats_keywords || '', notas: card.notas || '', adaptation_notes: card.adaptation_notes || '', jd_summary: (card.job_description || '').slice(0, 600), card_id: card.id })
                                   resetInterview()
+                                  setInterviewJobContext({ empresa: card.empresa, puesto: card.puesto, seniority: card.seniority || null, ats_keywords: card.ats_keywords || '', notas: card.notas || '', adaptation_notes: card.adaptation_notes || '', jd_summary: (card.job_description || '').slice(0, 600), card_id: card.id })
                                   trackEvent('kanban_to_interview', { empresa: card.empresa, puesto: card.puesto })
                                   setStep(STEPS.INTERVIEW_INTRO)
                                 }}

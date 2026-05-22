@@ -141,6 +141,11 @@ export default function InterviewIntroScreen({ interviewJobContext, setInterview
       </div>
 
       <div className="space-y-3">
+        {interviewJobContext?.empresa && (
+          <p className="text-xs text-center" style={{ color: '#8b5cf6', opacity: 0.85 }}>
+            ✦ Las preguntas son específicas para {interviewJobContext.empresa} — llegás preparado
+          </p>
+        )}
         <button
           onClick={handleStart}
           className="btn-glow w-full text-white font-semibold py-4 rounded-2xl text-base"

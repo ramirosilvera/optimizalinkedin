@@ -19,7 +19,7 @@ function ScoreDot({ score }) {
   )
 }
 
-export default function InterviewFeedbackScreen({ interviewLoading, rateLimitEvento, rateLimitSecs, waitlistEmail, setWaitlistEmail, waitlistSent, waitlistLoading, handleWaitlist, interviewError, setInterviewError, callInterviewFeedback, interviewAnswers, interviewFeedback, user, leadSaving, leadSent, setShowLeadModal, setShowPremiumModal, subscriptionLoading, setShowStarModal, result, setStep }) {
+export default function InterviewFeedbackScreen({ interviewLoading, rateLimitEvento, rateLimitSecs, waitlistEmail, setWaitlistEmail, waitlistSent, waitlistLoading, handleWaitlist, interviewError, setInterviewError, callInterviewFeedback, interviewAnswers, interviewFeedback, user, leadSaving, leadSent, setShowLeadModal, setShowPremiumModal, subscriptionLoading, setShowStarModal, result, setStep, onRetrain, retrainLabel }) {
   return (
     <div className="step-transition space-y-6">
       <Logo />
@@ -179,6 +179,24 @@ export default function InterviewFeedbackScreen({ interviewLoading, rateLimitEve
               <p className="text-sm text-slate-700 leading-relaxed">{interviewFeedback.recomendacion_final}</p>
             </div>
           )}
+
+          {/* Loop-back: retrain for same job */}
+          <div className="flex gap-2">
+            {onRetrain && (
+              <button
+                onClick={onRetrain}
+                className="flex-1 py-3 rounded-2xl text-sm font-semibold transition-all spring-tap"
+                style={{ background: 'rgba(217,119,6,0.08)', color: '#d97706', border: '1px solid rgba(217,119,6,0.2)' }}>
+                🔁 Volver a entrenar{retrainLabel ? ` — ${retrainLabel}` : ''}
+              </button>
+            )}
+            <button
+              onClick={() => setStep(STEPS.MODE_SELECT)}
+              className={`${onRetrain ? 'flex-1' : 'w-full'} py-3 rounded-2xl text-sm font-medium transition-all`}
+              style={{ color: '#94a3b8', background: '#f8fafc', border: '1px solid rgba(0,0,0,0.08)' }}>
+              ← Mi preparación
+            </button>
+          </div>
 
           {!user?.es_premium && (
             <div className="rounded-2xl px-4 py-3 flex items-center justify-between gap-3"

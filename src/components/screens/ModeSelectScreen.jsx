@@ -19,6 +19,7 @@ export default function ModeSelectScreen({
   readinessIndex,
   cvQuality,
   starFeedback,
+  trackingCards,
 }) {
   const [streak, setStreak] = useState(0)
   useEffect(() => {
@@ -165,6 +166,7 @@ export default function ModeSelectScreen({
       done: done6,
       available: true,
       ctaLabel: done6 ? 'Volver a entrenar →' : 'Entrenar entrevista →',
+      contextCard: trackingCards?.length > 0 ? trackingCards[0] : null,
       onClick: () => {
         trackEvent('roadmap_step', { step: 6, action: done6 ? 'repeat' : 'start' })
         resetInterview()
@@ -374,22 +376,30 @@ export default function ModeSelectScreen({
 
                       {/* CTA */}
                       {!isLocked ? (
-                        <button
-                          onClick={s.onClick}
-                          disabled={s.num === 5 && jobAdapterCheckLoading}
-                          className={`mt-3 spring-tap font-semibold text-xs transition-all ${isRec ? 'w-full py-3 rounded-xl text-white' : s.done ? 'py-1.5 px-3 rounded-lg' : 'py-2 px-3.5 rounded-xl'}`}
-                          style={isRec
-                            ? { background: s.ac, boxShadow: `0 4px 14px ${s.aborder}` }
-                            : s.done
-                              ? { color: '#059669', background: 'rgba(5,150,105,0.08)', border: '1px solid rgba(5,150,105,0.2)' }
-                              : { color: s.ac, background: s.abg, border: `1px solid ${s.aborder}` }
-                          }
-                        >
-                          {s.num === 5 && jobAdapterCheckLoading
-                            ? <span className="flex items-center justify-center gap-2"><Spinner size={3} /> Verificando...</span>
-                            : s.ctaLabel
-                          }
-                        </button>
+                        <>
+                          <button
+                            onClick={s.onClick}
+                            disabled={s.num === 5 && jobAdapterCheckLoading}
+                            className={`mt-3 spring-tap font-semibold text-xs transition-all ${isRec ? 'w-full py-3 rounded-xl text-white' : s.done ? 'py-1.5 px-3 rounded-lg' : 'py-2 px-3.5 rounded-xl'}`}
+                            style={isRec
+                              ? { background: s.ac, boxShadow: `0 4px 14px ${s.aborder}` }
+                              : s.done
+                                ? { color: '#059669', background: 'rgba(5,150,105,0.08)', border: '1px solid rgba(5,150,105,0.2)' }
+                                : { color: s.ac, background: s.abg, border: `1px solid ${s.aborder}` }
+                            }
+                          >
+                            {s.num === 5 && jobAdapterCheckLoading
+                              ? <span className="flex items-center justify-center gap-2"><Spinner size={3} /> Verificando...</span>
+                              : s.ctaLabel
+                            }
+                          </button>
+                          {s.contextCard && (
+                            <p className="text-[10px] mt-1.5 flex items-center gap-1" style={{ color: '#d97706' }}>
+                              <span>📍</span>
+                              <span className="truncate">{s.contextCard.empresa || s.contextCard.puesto}{s.contextCard.empresa && s.contextCard.puesto ? ` · ${s.contextCard.puesto}` : ''}</span>
+                            </p>
+                          )}
+                        </>
                       ) : (
                         <p className="text-[10px] text-slate-400 mt-2">🔒 {s.lockedLabel}</p>
                       )}

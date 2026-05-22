@@ -1160,6 +1160,8 @@ export default function App() {
     return () => clearInterval(id)
   }, [step, loadingMsgs.length])
 
+  // Clears all interview state including interviewJobContext.
+  // Always call BEFORE setInterviewJobContext when chaining — context set after this call persists.
   const resetInterview = () => {
     setInterviewAnswers([])
     setInterviewIdx(0)
@@ -2740,6 +2742,7 @@ Generá el feedback en este JSON exacto:
             readinessIndex={readinessIndex}
             cvQuality={cvQuality}
             starFeedback={starFeedback}
+            trackingCards={trackingCards}
           />
         )}
 
@@ -3012,6 +3015,13 @@ Generá el feedback en este JSON exacto:
             setShowStarModal={setShowStarModal}
             result={result}
             setStep={setStep}
+            onRetrain={interviewJobContext ? (() => {
+              const ctx = interviewJobContext
+              resetInterview()
+              setInterviewJobContext(ctx)
+              setStep(STEPS.INTERVIEW_INTRO)
+            }) : null}
+            retrainLabel={interviewJobContext ? (interviewJobContext.empresa || interviewJobContext.puesto) : null}
           />
         )}
 
