@@ -919,10 +919,10 @@ export default function CvScreen({
             {cvFinalData && (
               <button
                 onClick={() => { setJobCvForAdapter(cvFinalData); setJobPosting(''); setJobResult(null); setJobError(''); setShowJobModal(true); trackEvent('job_adapter_opened') }}
-                className="btn-glow w-full py-3.5 rounded-xl text-sm font-semibold transition-all text-white flex items-center justify-center gap-2"
-                style={{ background: 'linear-gradient(135deg,#6366f1,#8b5cf6)' }}
+                className="w-full py-3 rounded-xl text-sm font-semibold transition-all flex items-center justify-center gap-2"
+                style={{ background: 'rgba(99,102,241,0.08)', border: '1px solid rgba(99,102,241,0.25)', color: '#6366f1' }}
               >
-                📝 Adaptar este CV para una oferta →
+                📝 Adaptar para una oferta →
               </button>
             )}
             <button
