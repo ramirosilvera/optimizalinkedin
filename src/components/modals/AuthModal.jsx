@@ -9,10 +9,10 @@ export default function AuthModal({ user, authSuccess, setAuthSuccess, setShowAu
   const close = () => { setShowAuthModal(false); setAuthError(''); setAuthSuccess(null) }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4"
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 backdrop-enter"
       style={{ background: 'rgba(0,0,0,0.55)', backdropFilter: 'blur(4px)' }}
       onClick={e => { if (e.target === e.currentTarget) close() }}>
-      <div className="w-full max-w-sm rounded-3xl p-6 space-y-4"
+      <div className="w-full max-w-sm rounded-3xl p-6 space-y-4 modal-enter"
         style={{ background: 'white', boxShadow: '0 25px 60px rgba(0,0,0,0.2)' }}>
 
         {authSuccess ? (

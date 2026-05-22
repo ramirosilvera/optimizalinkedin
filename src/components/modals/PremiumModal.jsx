@@ -3,10 +3,10 @@ import { LinkedInIcon } from '../ui'
 
 export default function PremiumModal({ user, setShowPremiumModal, subscriptionLoading, premiumEmail, setPremiumEmail, startSubscription, couponCode, setCouponCode, couponEmail, setCouponEmail, couponLoading, applyCoupon, couponError, setCouponError, couponSuccess, setCouponSuccess, showCouponField, setShowCouponField, handleLinkedinAuthViaSupabase }) {
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4"
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 backdrop-enter"
       style={{ background: 'rgba(0,0,0,0.55)', backdropFilter: 'blur(4px)' }}
       onClick={e => { if (e.target === e.currentTarget) { setShowPremiumModal(false); setShowCouponField(false); setCouponCode(''); setCouponError(''); setCouponSuccess(false) } }}>
-      <div className="w-full max-w-sm rounded-3xl overflow-hidden"
+      <div className="w-full max-w-sm rounded-3xl overflow-hidden modal-enter"
         style={{ boxShadow: '0 25px 60px rgba(0,0,0,0.2)' }}>
         <div className="p-6 text-white" style={{ background: 'linear-gradient(135deg, #0d1f2d 0%, #1a3a5c 60%, #0d3055 100%)' }}>
           <p className="text-xs font-semibold opacity-60 mb-1 tracking-widest">PLAN PROFESIONAL</p>
@@ -54,7 +54,7 @@ export default function PremiumModal({ user, setShowPremiumModal, subscriptionLo
               ['📍', 'Centro de operaciones', 'Kanban para trackear todas tus búsquedas activas y vincular el CV adaptado a cada una.'],
               ['🎯', 'Índice de Preparación', 'Seguí la evolución de tu competitividad con cada sesión de entrenamiento.'],
             ].map(([icon, title, desc]) => (
-              <li key={title} className="flex gap-3" style={{ background: '#f8fafc', borderRadius: 10, padding: '8px 12px', marginBottom: 6 }}>
+              <li key={title} className="flex gap-3 card-depth" style={{ background: '#f8fafc', borderRadius: 10, padding: '8px 12px', marginBottom: 6 }}>
                 <span className="text-xl shrink-0">{icon}</span>
                 <div>
                   <p className="text-slate-800 font-semibold text-sm">{title}</p>
