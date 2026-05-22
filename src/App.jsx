@@ -3133,6 +3133,7 @@ Generá el feedback en este JSON exacto:
               title="Vista previa de tu CV"
               className="w-full h-full border-0"
               sandbox="allow-same-origin allow-scripts allow-modals"
+              onLoad={e => { try { e.target.contentWindow.dispatchEvent(new Event('resize')) } catch (_) {} }}
             />
           </div>
         </div>
