@@ -2599,8 +2599,8 @@ Generá el feedback en este JSON exacto:
                 <button onClick={() => { setCancelConfirm(false); setCancelDone(false); setShowManageModal(true) }}
                   className="text-xs font-bold px-2.5 py-1 rounded-full transition-opacity hover:opacity-80"
                   style={{ background: LI_GRADIENT, color: 'white' }}
-                  title={hasta ? `Premium hasta ${hasta.toLocaleDateString('es-AR', { day: 'numeric', month: 'short' })}` : 'Gestionar suscripción'}>
-                  <span>✦ Premium</span>
+                  title={hasta ? `Plan Pro hasta ${hasta.toLocaleDateString('es-AR', { day: 'numeric', month: 'short' })}` : 'Gestionar suscripción'}>
+                  <span>✦ Plan Pro</span>
                   {hasta && <span className="hidden sm:inline"> hasta {hasta.toLocaleDateString('es-AR', { day: 'numeric', month: 'short' })}</span>}
                 </button>
               )
@@ -2610,7 +2610,7 @@ Generá el feedback en este JSON exacto:
               <button onClick={() => setShowPremiumModal(true)} disabled={subscriptionLoading}
                 className="text-xs font-semibold px-2.5 py-1.5 rounded-full"
                 style={{ background: LI_GRADIENT, color: 'white', opacity: subscriptionLoading ? 0.7 : 1 }}>
-                {subscriptionLoading ? '...' : '⬆ Premium'}
+                {subscriptionLoading ? '...' : 'Plan Pro ↑'}
               </button>
             )}
             {user.es_premium && (

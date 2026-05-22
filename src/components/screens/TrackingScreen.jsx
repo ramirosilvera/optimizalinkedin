@@ -23,7 +23,7 @@ export default function TrackingScreen({ user, setShowPremiumModal, setStep, kan
             <button onClick={() => setShowPremiumModal(true)}
               className="px-6 py-3 rounded-xl text-sm font-semibold text-white"
               style={{ background: LI_GRADIENT }}>
-              ⬆ Activar Premium para acceder
+              Activar Plan Profesional →
             </button>
             <button onClick={() => setStep(STEPS.MODE_SELECT)}
               className="block mx-auto text-xs mt-2" style={{ color: '#94a3b8' }}>

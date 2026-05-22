@@ -27,9 +27,9 @@ export default function AuthModal({ user, authSuccess, setAuthSuccess, setShowAu
               </p>
               <p className="text-slate-500 text-sm leading-relaxed">
                 {authSuccess === 'linkedin_needs_premium'
-                  ? 'Conectaste con LinkedIn. La app es gratuita — si querés guardar tu historial, podés probar Premium 7 días gratis.'
+                  ? 'Conectaste con LinkedIn. La app es gratuita — si querés guardar tu historial, podés activar el Plan Profesional 7 días gratis.'
                   : authSuccess === 'register'
-                    ? 'Cuenta creada. La app funciona completa sin Premium. Si querés guardar tu historial, probalo 7 días gratis.'
+                    ? 'Cuenta creada. La app funciona completa sin Plan Profesional. Si querés guardar tu historial, probalo 7 días gratis.'
                     : 'Ya podés usar la app con tu historial guardado.'}
               </p>
             </div>
@@ -38,7 +38,7 @@ export default function AuthModal({ user, authSuccess, setAuthSuccess, setShowAu
                 <button onClick={() => { close(); setShowPremiumModal(true) }}
                   className="btn-glow w-full py-3 rounded-xl text-white font-semibold text-sm"
                   style={{ background: LI_GRADIENT }}>
-                  Probar Premium 7 días gratis →
+                  Activar Plan Profesional — 7 días →
                 </button>
                 <button onClick={() => { if (authSuccess === 'linkedin_needs_premium') authLogout(); close() }}
                   className="w-full py-2.5 text-sm font-medium rounded-xl"
@@ -125,7 +125,7 @@ export default function AuthModal({ user, authSuccess, setAuthSuccess, setShowAu
             )}
             {tab === 'register' && (
               <p className="text-xs text-center text-slate-400 leading-relaxed">
-                Con cuenta podés acceder a Premium — 7 días gratis, luego $3.000/mes.
+                Con cuenta podés acceder al Plan Profesional — 7 días gratis, luego $3.000/mes.
               </p>
             )}
           </>

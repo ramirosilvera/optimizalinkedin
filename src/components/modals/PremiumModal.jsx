@@ -9,8 +9,8 @@ export default function PremiumModal({ user, setShowPremiumModal, subscriptionLo
       <div className="w-full max-w-sm rounded-3xl overflow-hidden"
         style={{ boxShadow: '0 25px 60px rgba(0,0,0,0.2)' }}>
         <div className="p-6 text-white" style={{ background: 'linear-gradient(135deg, #0d1f2d 0%, #1a3a5c 60%, #0d3055 100%)' }}>
-          <p className="text-xs font-semibold opacity-60 mb-1 tracking-widest">OPTIMIZA LK</p>
-          <h2 className="text-2xl font-bold tracking-tight">Premium ✦</h2>
+          <p className="text-xs font-semibold opacity-60 mb-1 tracking-widest">PLAN PROFESIONAL</p>
+          <h2 className="text-2xl font-bold tracking-tight">Plan Profesional ✦</h2>
           <div className="flex items-baseline gap-2 mt-2">
             <p className="text-4xl font-bold">$3.000<span className="text-lg font-normal opacity-80">/mes</span></p>
             <span className="text-xs font-bold px-2 py-0.5 rounded-full" style={{ background: 'rgba(255,255,255,0.22)', color: 'white' }}>7 DÍAS GRATIS</span>
@@ -93,7 +93,7 @@ export default function PremiumModal({ user, setShowPremiumModal, subscriptionLo
           <button onClick={() => startSubscription()} disabled={subscriptionLoading || (!user && !premiumEmail.includes('@'))}
             className="btn-glow w-full py-3.5 rounded-xl text-white font-bold text-sm"
             style={{ background: LI_GRADIENT, opacity: (subscriptionLoading || (!user && !premiumEmail.includes('@'))) ? 0.6 : 1 }}>
-            {subscriptionLoading ? 'Procesando...' : 'Probar 7 días gratis → Mercado Pago'}
+            {subscriptionLoading ? 'Procesando...' : 'Activar Plan Profesional → 7 días gratis'}
           </button>
           <p className="text-center text-xs text-slate-400 -mt-1">
             La versión gratuita sigue siendo completa. Premium agrega historial y entrenamiento continuo.
