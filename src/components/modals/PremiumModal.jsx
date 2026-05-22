@@ -96,7 +96,7 @@ export default function PremiumModal({ user, setShowPremiumModal, subscriptionLo
             {subscriptionLoading ? 'Procesando...' : 'Activar Plan Profesional → 7 días gratis'}
           </button>
           <p className="text-center text-xs text-slate-400 -mt-1">
-            La versión gratuita sigue siendo completa. Premium agrega historial y entrenamiento continuo.
+            La versión gratuita es completa. El Plan Profesional agrega historial y entrenamiento continuo.
           </p>
           <button onClick={() => setShowPremiumModal(false)}
             className="w-full py-2 text-sm text-slate-400 text-center">
@@ -111,7 +111,7 @@ export default function PremiumModal({ user, setShowPremiumModal, subscriptionLo
             </button>
           ) : couponSuccess ? (
             <p className="text-center text-sm font-semibold py-2" style={{ color: '#16a34a' }}>
-              ✓ ¡Premium activado correctamente!
+              ✓ ¡Plan Profesional activado!
             </p>
           ) : (
             <div className="space-y-2 pt-1 border-t" style={{ borderColor: 'rgba(0,119,181,0.1)' }}>

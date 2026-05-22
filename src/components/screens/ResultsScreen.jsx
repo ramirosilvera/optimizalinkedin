@@ -137,7 +137,7 @@ export default function ResultsScreen({
           style={{ background: 'rgba(99,102,241,0.05)', border: '1px solid rgba(99,102,241,0.18)' }}>
           <div className="min-w-0">
             <p className="text-xs font-semibold text-slate-700">Tu diagnóstico quedó listo</p>
-            <p className="text-[11px] text-slate-400 mt-0.5">Guardalo con Premium — 7 días gratis</p>
+            <p className="text-[11px] text-slate-400 mt-0.5">Guardalo con el Plan Profesional — 7 días gratis</p>
           </div>
           <button
             onClick={() => setShowPremiumModal(true)}
@@ -521,20 +521,21 @@ export default function ResultsScreen({
         </div>
       )}
 
-      {/* ══ BLOQUE 7 — Social + Premium ══ */}
-      {/* Premium upsell */}
+      {/* ══ BLOQUE 7 — Social + Plan Profesional ══ */}
       {!user?.es_premium && (
         <div className="rounded-2xl p-4 space-y-2.5"
-          style={{ background: 'linear-gradient(135deg,rgba(0,119,181,0.06),rgba(14,165,233,0.04))', border: '1px solid rgba(0,119,181,0.18)' }}>
-          <p className="text-slate-800 text-sm font-semibold">💾 Guardá tu historial con Premium</p>
-          <p className="text-slate-500 text-xs leading-snug">
-            Todos tus análisis, CVs y simulaciones guardados. Incluye <strong>7 días gratis</strong>, luego $3.000/mes.
+          style={{ background: 'linear-gradient(135deg,rgba(13,31,45,0.04),rgba(26,58,92,0.06))', border: '1px solid rgba(0,119,181,0.15)' }}>
+          <div className="flex items-center gap-2">
+            <span className="badge-pro">✦ Plan Profesional</span>
+          </div>
+          <p className="text-slate-700 text-xs leading-snug">
+            Guardá este análisis, tu CV y todas tus sesiones de entrenamiento. <strong>7 días gratis</strong>, luego $3.000/mes.
           </p>
           <button onClick={() => setShowPremiumModal(true)}
             disabled={subscriptionLoading}
-            className="px-4 py-2 rounded-xl text-white text-xs font-semibold"
-            style={{ background: LI_GRADIENT, opacity: subscriptionLoading ? 0.7 : 1 }}>
-            {subscriptionLoading ? '...' : 'Probar 7 días gratis'}
+            className="spring-tap px-4 py-2 rounded-xl text-white text-xs font-semibold"
+            style={{ background: 'linear-gradient(135deg,#0d1f2d,#1a3a5c)', opacity: subscriptionLoading ? 0.7 : 1 }}>
+            {subscriptionLoading ? '...' : 'Activar Plan Profesional →'}
           </button>
         </div>
       )}
