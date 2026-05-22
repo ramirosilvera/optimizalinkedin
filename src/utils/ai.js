@@ -19,8 +19,9 @@ export const AI_DEFAULTS = {
     quality: { score: 0, nivel: 'Básico', aprobado: false, nota_consultor: '', riesgo_ats: 'Medio', fortalezas: [], gaps: [] },
   },
   interview_feedback: {
-    puntaje_entrevista: 0, feedback_general: '', puntos_fuertes: [],
-    areas_de_mejora: [], recomendaciones: [],
+    puntaje_entrevista: 0, evaluacion_general: '', alineacion_al_puesto: null,
+    fortalezas_entrevista: [], areas_de_mejora_entrevista: [],
+    feedback_por_respuesta: [], recomendacion_final: '',
   },
   star_feedback: {
     puntaje: 0,

@@ -119,8 +119,32 @@ Reglas: no preguntes lo que ya está claro. Si no hay brechas, devolvé pregunta
 
 JSON: {"preguntas":[{"id":"str","contexto":"str (máx 45c)","pregunta":"str","placeholder":"str (máx 60c)"}]}`,
 
+  interview_questions: `Sos headhunter senior con 20 años generando preguntas de entrevista calibradas para el puesto específico.
+
+ESTRUCTURA OBLIGATORIA — exactamente 5 preguntas en este orden:
+1. RAPPORT / MOTIVACIÓN: fit cultural o motivación específica para este puesto/empresa. NUNCA "¿cuál es tu fortaleza?" ni "contame sobre vos".
+2. COMPETENCIA STAR #1: pregunta situacional sobre una habilidad clave del puesto. Requerí Situación + Acción + Resultado concreto.
+3. COMPETENCIA STAR #2: segunda competencia crítica del puesto, distinta a la anterior.
+4. TÉCNICA / ROL-ESPECÍFICA: pregunta técnica o de criterio directamente vinculada al rol y seniority. Nunca genérica.
+5. PRESIÓN / AMBIGÜEDAD: situación de conflicto, urgencia o decisión con información incompleta.
+
+CALIDAD OBLIGATORIA:
+- Mencioná la empresa o el puesto dentro de la pregunta ("En [empresa]...", "El rol implica X, ¿cómo lo abordarías?").
+- Basate en las habilidades clave y descripción del puesto cuando estén disponibles.
+- Adaptá la complejidad al seniority: Junior = situaciones del día a día; Senior/Lead = decisiones estratégicas y gestión de equipos.
+- PROHIBIDO: preguntas genéricas, preguntas repetidas entre sí, frases de manual de RRHH.
+
+HINTS — campo "hint" de cada pregunta (OBLIGATORIO):
+- Prescriptivos: decirle AL CANDIDATO exactamente qué evidencia necesita mostrar.
+- NO: "mencioná una situación". SÍ: "Nombrá la métrica de resultado concreta: %, $, tiempo ahorrado o usuarios impactados".
+- Si hay habilidades clave del puesto disponibles, referenciá al menos una en cada hint de las preguntas STAR.
+
+FORMATO: Array JSON — [{"pregunta": "...", "hint": "..."}]
+Sin markdown, sin texto fuera del JSON.`,
+
   interview_feedback: `Sos headhunter y entrevistadora senior de RRHH con 20 años en selección ejecutiva.
 Evaluá las respuestas de la entrevista usando estos criterios: claridad del mensaje, método STAR en logros, autoconciencia, propuesta de valor, autenticidad y solidez de los argumentos.
+Cuando se provea contexto del puesto, evaluá también la alineación de las respuestas con los requisitos específicos del rol.
 Español rioplatense. Directa, específica, sin genéricos. Respondé SOLO en JSON válido, sin markdown.`,
 
   star_feedback: `Sos coach de entrevistas especializado en metodología STAR. Evaluá si la respuesta aplica correctamente Situación, Tarea, Acción, Resultado. Directo, específico, constructivo. Español rioplatense. JSON válido, sin markdown.`,
@@ -238,6 +262,7 @@ const RATE_LIMITS = {
   generate_cv:        3,
   cv_quality:         6,
   cv_pre_questions:   3,
+  interview_questions: 8,
   interview_feedback: 5,
   star_feedback:      10,
   job_adapter:        3,

@@ -75,6 +75,7 @@ export default function InterviewIntroScreen({ interviewJobContext, setInterview
                       ats_keywords: card.ats_keywords || '',
                       notas: card.notas || '',
                       adaptation_notes: card.adaptation_notes || '',
+                      jd_summary: (card.job_description || '').slice(0, 600),
                       card_id: card.id,
                     })}
                     className="w-full text-left rounded-xl px-3 py-2 transition-all"

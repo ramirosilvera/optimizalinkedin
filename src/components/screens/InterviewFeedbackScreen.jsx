@@ -156,6 +156,21 @@ export default function InterviewFeedbackScreen({ interviewLoading, rateLimitEve
             </ResultCard>
           )}
 
+          {/* Alineación al puesto — solo cuando había contexto de postulación */}
+          {interviewFeedback.alineacion_al_puesto && (
+            <div className="rounded-xl p-4"
+              style={{ background: 'rgba(99,102,241,0.06)', border: '1px solid rgba(99,102,241,0.22)' }}>
+              <div className="flex items-center justify-between mb-2">
+                <p className="text-xs font-semibold uppercase tracking-wide" style={{ color: '#6366f1' }}>🎯 Fit con el puesto</p>
+                <span className="text-sm font-bold"
+                  style={{ color: interviewFeedback.alineacion_al_puesto.score >= 7 ? '#16a34a' : interviewFeedback.alineacion_al_puesto.score >= 5 ? '#d97706' : '#dc2626' }}>
+                  {interviewFeedback.alineacion_al_puesto.score}/10
+                </span>
+              </div>
+              <p className="text-sm text-slate-700 leading-relaxed">{interviewFeedback.alineacion_al_puesto.comentario}</p>
+            </div>
+          )}
+
           {/* Recomendación final */}
           {interviewFeedback.recomendacion_final && (
             <div className="rounded-xl p-4"

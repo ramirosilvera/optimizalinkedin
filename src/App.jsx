@@ -1192,21 +1192,24 @@ export default function App() {
         : []
       const candidateNotas = activeJobContext?.notas || ''
       const adaptationNotes = activeJobContext?.adaptation_notes || ''
-      const prompt = `Sos un headhunter experto generando preguntas de entrevista laboral personalizadas.
-
-CANDIDATO: ${profesion}${industria ? ` · Industria: ${industria}` : ''}${jobSeniority ? ` · Nivel: ${jobSeniority}` : ''}${activeJobContext?.empresa ? ` · Empresa objetivo: ${activeJobContext.empresa}` : ''}
-${activeJobContext?.puesto ? `PUESTO OBJETIVO: ${activeJobContext.puesto}\n` : ''}${atsKeywords.length > 0 ? `HABILIDADES CLAVE DEL PUESTO (sondear evidencia concreta): ${atsKeywords.join(', ')}\n` : ''}${candidateNotas ? `CONTEXTO DEL CANDIDATO: ${candidateNotas}\n` : ''}${adaptationNotes ? `BRECHAS DETECTADAS EN CV (profundizar): ${adaptationNotes}\n` : ''}
-Generá exactamente 5 preguntas de entrevista.${activeJobContext ? ` Priorizá: (1) al menos 2 preguntas que sondeen evidencia de las habilidades clave, (2) preguntas situacionales para nivel ${jobSeniority || 'profesional'}, (3) preguntas que aborden las brechas detectadas si las hay.` : ' Deben ser relevantes para su profesión y nivel, no genéricas.'}
-Formato JSON exacto: [{"pregunta": "...", "hint": "..."}]
-
-Devolvé solo el array JSON, sin markdown ni explicación.`
+      const jdSummary = activeJobContext?.jd_summary || ''
+      const parts = [
+        `CANDIDATO: ${profesion}${industria ? ` · Industria: ${industria}` : ''}${jobSeniority ? ` · Nivel: ${jobSeniority}` : ''}`,
+        activeJobContext?.empresa ? `EMPRESA: ${activeJobContext.empresa}` : '',
+        activeJobContext?.puesto ? `PUESTO: ${activeJobContext.puesto}` : '',
+        atsKeywords.length > 0 ? `HABILIDADES CLAVE: ${atsKeywords.join(', ')}` : '',
+        jdSummary ? `DESCRIPCIÓN DEL PUESTO:\n${jdSummary}` : '',
+        adaptationNotes ? `BRECHAS EN CV DEL CANDIDATO: ${adaptationNotes}` : '',
+        candidateNotas ? `NOTAS DEL CANDIDATO: ${candidateNotas}` : '',
+      ].filter(Boolean).join('\n')
+      const prompt = parts + (activeJobContext ? '' : '\n\nGenerá preguntas relevantes para la profesión y nivel del candidato.')
       const res = await fetch(WORKER_URL, {
         method: 'POST',
         headers: WORKER_HEADERS,
         body: JSON.stringify({
-          action: 'ai_generic',
+          action: 'ai_interview_questions',
           contents: [{ parts: [{ text: prompt }] }],
-          generationConfig: { responseMimeType: 'application/json', maxOutputTokens: 900 },
+          generationConfig: { responseMimeType: 'application/json', maxOutputTokens: 1100 },
         }),
       })
       if (!res.ok) throw new Error('err')
@@ -1878,9 +1881,19 @@ JSON:
       .map(h => `- ${STATIC_QUESTIONS.find(q => q.question === h.question)?.id ?? 'dato'}: ${h.answer}`)
       .join('\n')
 
+    const jobCtx = interviewJobContext
+    const jobCtxBlock = jobCtx
+      ? `\nPuesto de entrevista: ${jobCtx.puesto}${jobCtx.empresa ? ` en ${jobCtx.empresa}` : ''}${jobCtx.seniority ? ` (${jobCtx.seniority})` : ''}\n${jobCtx.ats_keywords ? `Habilidades clave requeridas: ${jobCtx.ats_keywords}\n` : ''}`
+      : ''
+    const alineacionField = jobCtx
+      ? `\n  "alineacion_al_puesto": { "score": número del 1 al 10, "comentario": "2 oraciones sobre qué tan bien las respuestas demuestran las competencias requeridas para el puesto de ${jobCtx.puesto}${jobCtx.empresa ? ` en ${jobCtx.empresa}` : ''}" },`
+      : ''
+    const historialTitulo = jobCtx
+      ? `Entrevista: ${jobCtx.puesto}${jobCtx.empresa ? ` en ${jobCtx.empresa}` : ''}`
+      : 'Sesión de Entrenamiento'
     const prompt = `Contexto del profesional (cuestionario previo):
 ${contexto}
-
+${jobCtxBlock}
 Análisis de perfil (puntaje: ${result?.puntaje_general ?? 'N/D'}/10):
 ${result?.resumen_diagnostico ?? ''}
 
@@ -1890,7 +1903,7 @@ ${transcripcion}
 Generá el feedback en este JSON exacto:
 {
   "puntaje_entrevista": número del 1 al 10,
-  "evaluacion_general": "2-3 oraciones directas sobre la performance general en la entrevista",
+  "evaluacion_general": "2-3 oraciones directas sobre la performance general en la entrevista",${alineacionField}
   "fortalezas_entrevista": ["fortaleza 1", "fortaleza 2", "fortaleza 3"],
   "areas_de_mejora_entrevista": ["area 1", "area 2", "area 3"],
   "feedback_por_respuesta": [
@@ -1928,7 +1941,7 @@ Generá el feedback en este JSON exacto:
       const parsed = parseAIJson(extractAIText(data), AI_DEFAULTS.interview_feedback, 'Error al procesar el feedback. Intentá de nuevo.')
       setInterviewFeedback(parsed)
       trackTiming('entrevista_completada', _tInterview, { puntaje: parsed.puntaje_entrevista })
-      saveToHistorial('entrevista', { feedback: parsed, respuestas: answers }, 'Sesión de Entrenamiento', parsed?.puntaje_entrevista ?? null)
+      saveToHistorial('entrevista', { feedback: parsed, respuestas: answers }, historialTitulo, parsed?.puntaje_entrevista ?? null)
     } catch (err) {
       trackError('interview', err.isRateLimit ? 'rate_limit' : err.name === 'AbortError' ? 'timeout' : 'api_error')
       if (!err.isRateLimit) {
