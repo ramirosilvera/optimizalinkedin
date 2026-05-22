@@ -13,6 +13,40 @@ const ALLOWED_ORIGINS = new Set([
 const WORKER_NOTIFICATION_URL = 'https://linkedin-optimizer-proxy.raa1990-rs.workers.dev/mp-webhook'
 const BACK_URL = 'https://optimizalinkedin.com/?premium=ok'
 
+// ── Shared bullet-writing rules (embedded in all CV prompts) ─────────────────
+const BULLET_WRITING_RULES = `
+BULLETS — REDACCIÓN PROFESIONAL:
+Estructura: [verbo 1ª persona] + [objeto/alcance] + [contexto o método] + [impacto o resultado].
+Longitud: máx 15 palabras para Junior/SSR · máx 20 palabras para Senior+.
+
+ELEGÍ verbos según el seniority REAL del cargo (no el más impresionante, el más creíble):
+
+SI el cargo es JUNIOR / ANALISTA / ASISTENTE → usá solo:
+  Ejecuté · Procesé · Registré · Elaboré · Documenté · Reporté · Consolidé · Monitoreé · Analicé · Colaboré en · Asistí en · Contribuí a · Apoyé · Integré
+  PROHIBIDO en este nivel: Lideré · Dirigí · Supervisé · Conduje · Encabecé · Transformé · Definí estrategia
+
+SI el cargo es SEMI-SENIOR / SSR / ANALISTA SR → usá solo:
+  Implementé · Gestioné · Desarrollé · Coordiné · Analicé · Optimicé · Diseñé · Automaticé · Mejoré · Reestructuré · Administré · Capacité · Audité · Establecí
+  PROHIBIDO en este nivel: Conduje · Encabecé · Transformé · Definí la estrategia de
+
+SI el cargo es SENIOR / ESPECIALISTA → usá:
+  Lideré · Diseñé · Supervisé · Dirigí · Reestructuré · Definí · Establecí · Formulé · Evalué · Propuse · Instrumenté
+
+SI el cargo es LEAD / JEFE / COORDINADOR → usá:
+  Conduje (equipo de) · Encabecé · Establecí la estrategia de · Lideré la implementación de
+
+SI el cargo es GERENTE / DIRECTOR / HEAD → usá:
+  Diseñé la estrategia de · Lideré la transformación de · Definí la visión de · Conduje la organización hacia
+
+VERBOS TRANSVERSALES (válidos para cualquier nivel):
+  Presenté · Capacité · Reporté · Documenté · Centralicé · Compilé · Medí · Ajusté · Planeé · Mejoré · Simplifiqué
+
+CUANTIFICACIÓN: si existe un número real, incluilo. Si no hay métricas disponibles, usá descriptores de alcance: "equipo de N personas" · "cartera de N clientes" · "proceso mensual de..." · "+N% de mejora".
+
+VARIEDAD OBLIGATORIA: cada bullet de la misma experiencia debe iniciar con un verbo diferente. Antes de finalizar, verificá que ningún verbo se repita dentro de la misma experiencia.
+
+PROHIBIDO iniciar un bullet con: "Responsable de" · "Encargado de" · "A cargo de" · "Trabajé en" · "Me encargué de" · "Participé en el equipo de".`
+
 // ── AI system prompts (stored here, never sent to clients) ───────────────────
 const AI_SYSTEM_PROMPTS = {
   analyze_linkedin: `Sos headhunter y consultora senior de RRHH con 20 años en posicionamiento profesional en LinkedIn.
@@ -48,6 +82,8 @@ ESTRUCTURA:
 - Habilidades: 6-10 keywords del perfil. Idioma: español (técnicos en inglés si se usan así).
 
 Usá "titular_propuesto" y "resumen_propuesto" del análisis si están disponibles.
+${BULLET_WRITING_RULES}
+
 Respondé SOLO en JSON válido, sin markdown.`,
 
   cv_quality: `Sos consultor de empleabilidad senior con estándares de headhunter.
@@ -100,7 +136,8 @@ EXTRACCIÓN DEL AVISO: Del texto del aviso detectá:
 - cargo_detectado: título exacto del puesto publicado
 - seniority_detectado: nivel inferido del aviso ("Junior", "Semi Senior", "Senior", "Lead", "No especificado")
 
-ADAPTACIÓN: ajustá titular y resumen con keywords del aviso. Reorganizá bullets y habilidades priorizando lo relevante para la posición.
+ADAPTACIÓN: ajustá titular y resumen con keywords del aviso. Reorganizá bullets y habilidades priorizando lo relevante para la posición. Al reformular bullets, aplicá las reglas de redacción profesional definidas abajo.
+${BULLET_WRITING_RULES}
 
 CARTA (3-4 párrafos): quién es y por qué aplica → logros relevantes con datos reales → cierre con CTA. Profesional, directo, sin clichés. Español rioplatense.
 
@@ -137,6 +174,7 @@ ESTRUCTURA:
 - "experiencias_anteriores" = ÚNICAMENTE las que NO están ya en "experiencias". Si no quedan sobrantes → [].
 - Resumen: 2 oraciones, datos reales. Habilidades: 6-10 keywords del perfil.
 - Usá "titular_propuesto" y "resumen_propuesto" del análisis si están disponibles.
+${BULLET_WRITING_RULES}
 
 TAREA 2 — EVALUAR EL CV QUE ACABÁS DE GENERAR:
 Inmediatamente después de generarlo, revisalo con criterio de headhunter senior.
@@ -168,13 +206,13 @@ REGLAS ANTI-ALUCINACIÓN:
 - Preservá cargo, empresa, periodo, institución educativa exactamente como están en el JSON original
 
 MEJORAS OBLIGATORIAS — siempre aplicás todas estas, sin excepción:
-1. Verbos de acción: reemplazá verbos débiles → "trabajé en" › "lideré", "hice" › "implementé", "estuve a cargo" › "gestioné", "participé en" › "coordiné", "ayudé a" › "contribuí a optimizar", "fui responsable de" › "lideré"
-2. Eliminá frases vacías en todos los campos: "orientado a resultados", "proactivo", "dinámico", "apasionado", "trabajo en equipo", "multitarea", "comprometido", "pasión por"
-3. Cada bullet: verbo fuerte + qué hiciste + impacto o resultado (aunque sea cualitativo como "mejorando la experiencia del usuario")
-4. Titular: específico, especialidad concreta + propuesta de valor, máx 90 caracteres
-5. Resumen: 2-3 oraciones — especialidad/rol actual + logro o expertise más relevante + propuesta de valor. Sin clichés. Específico al candidato.
-6. Habilidades: eliminá genéricas (Microsoft Office, Internet), priorizá las técnicas específicas del área, reordená por relevancia ATS
-7. Si hay datos adicionales del candidato: incorporalos en los bullets de la experiencia más relevante
+1. Bullets: aplicá las reglas de redacción profesional definidas abajo. Reemplazá frases nominales débiles con verbos conjugados que correspondan al seniority del cargo.
+2. Eliminá frases vacías: "orientado a resultados", "proactivo", "dinámico", "apasionado", "trabajo en equipo", "multitarea", "comprometido", "pasión por", "responsable de", "encargado de".
+3. Titular: específico, especialidad concreta + propuesta de valor, máx 90 caracteres.
+4. Resumen: 2-3 oraciones — especialidad/rol actual + logro o expertise más relevante + propuesta de valor. Sin clichés. Específico al candidato.
+5. Habilidades: eliminá genéricas (Microsoft Office, Internet), priorizá las técnicas específicas del área, reordená por relevancia ATS.
+6. Si hay datos adicionales del candidato: incorporalos en los bullets de la experiencia más relevante.
+${BULLET_WRITING_RULES}
 
 Respondé SOLO en JSON válido, sin markdown, con esta estructura exacta:
 {"cv":{...mismo esquema del CV recibido...},"quality":{"score":1-10,"nivel":"Básico|Intermedio|Sólido|Premium","nota_consultor":"1 oración sobre el CV optimizado","riesgo_ats":"Bajo|Medio|Alto","fortalezas":["str","str"],"mejoras_aplicadas":["mejora 1 con referencia al campo/cargo","mejora 2","mejora 3"]}}
