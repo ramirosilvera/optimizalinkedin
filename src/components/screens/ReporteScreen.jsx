@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import { STEPS, trackEvent } from '../../constants'
 import { Logo, ScoreRing } from '../ui'
 
@@ -136,6 +137,7 @@ function buildReportHtml({ readinessIndex, result, cvQuality, interviewFeedback,
 }
 
 export default function ReporteScreen({ setStep, readinessIndex, result, cvQuality, interviewFeedback, starFeedback, user }) {
+  const [exportState, setExportState] = useState('idle') // 'idle' | 'loading' | 'hint'
   const userName = result?.nombre_titular || user?.nombre || null
   const riLabel = readinessIndex != null ? SCORE_LABEL(readinessIndex) : null
 
@@ -148,21 +150,49 @@ export default function ReporteScreen({ setStep, readinessIndex, result, cvQuali
     return null
   })()
 
-  const handleDownload = () => {
+  const handleDownload = async () => {
+    if (exportState === 'loading') return
+    setExportState('loading')
     trackEvent('reporte_download')
+
     const html = buildReportHtml({ readinessIndex, result, cvQuality, interviewFeedback, starFeedback, userName })
-    const printHtml = html.replace('</body>', `<script>window.onload=function(){setTimeout(function(){window.print()},350)}<\/script></body>`)
-    const win = window.open('', '_blank', 'width=900,height=750')
-    if (win) {
-      win.document.open(); win.document.write(printHtml); win.document.close()
-    } else {
-      const blob = new Blob([html], { type: 'text/html; charset=utf-8' })
-      const a = document.createElement('a')
-      a.href = URL.createObjectURL(blob)
-      a.download = 'Informe-Preparacion-OptimizaLK.html'
-      document.body.appendChild(a); a.click(); document.body.removeChild(a)
-      setTimeout(() => URL.revokeObjectURL(a.href), 2000)
+    const filename = `Informe-Preparacion-${userName ? userName.replace(/\s+/g, '-') : 'OptimizaLK'}.html`
+    const blob = new Blob([html], { type: 'text/html; charset=utf-8' })
+    const file = new File([blob], filename, { type: 'text/html' })
+
+    try {
+      // Mobile (iOS 14.5+ / Android Chrome 89+) — Web Share API Level 2
+      if (navigator.canShare && navigator.canShare({ files: [file] })) {
+        await navigator.share({ files: [file], title: 'Informe de Preparación — Optimiza LK' })
+        trackEvent('reporte_export_share')
+        setExportState('idle')
+        return
+      }
+
+      // Desktop — popup + print dialog → "Guardar como PDF"
+      const printHtml = html.replace('</body>', `<script>window.onload=function(){setTimeout(function(){window.print()},350)}<\/script></body>`)
+      const win = window.open('', '_blank', 'width=900,height=750')
+      if (win) {
+        win.document.open(); win.document.write(printHtml); win.document.close()
+        trackEvent('reporte_export_print')
+      } else {
+        // Popup bloqueado: descarga HTML con instrucción
+        const a = document.createElement('a')
+        a.href = URL.createObjectURL(blob)
+        a.download = filename
+        document.body.appendChild(a); a.click(); document.body.removeChild(a)
+        setTimeout(() => URL.revokeObjectURL(a.href), 2000)
+        setExportState('hint')
+        setTimeout(() => setExportState('idle'), 8000)
+        trackEvent('reporte_export_html_download')
+        return
+      }
+    } catch (err) {
+      if (err.name !== 'AbortError') {
+        trackEvent('reporte_export_error', { reason: err.message })
+      }
     }
+    setExportState('idle')
   }
 
   return (
@@ -276,14 +306,23 @@ export default function ReporteScreen({ setStep, readinessIndex, result, cvQuali
         </div>
       )}
 
-      {/* ── Descarga PDF — artefacto de valor tangible ── */}
+      {/* ── Descarga PDF — Web Share API (mobile) / print dialog (desktop) ── */}
       <button
         onClick={handleDownload}
-        className="btn-glow w-full font-semibold py-4 rounded-2xl text-white text-sm"
-        style={{ background: 'linear-gradient(135deg,#0d2137,#0077B5)' }}
+        disabled={exportState === 'loading'}
+        className="btn-glow w-full font-semibold py-4 rounded-2xl text-white text-sm flex items-center justify-center gap-2"
+        style={{ background: 'linear-gradient(135deg,#0d2137,#0077B5)', opacity: exportState === 'loading' ? 0.7 : 1 }}
       >
-        📥 Descargar informe completo como PDF
+        {exportState === 'loading'
+          ? <><span className="w-4 h-4 rounded-full border-2 border-white border-t-transparent animate-spin" /><span>Preparando…</span></>
+          : <><span>📥</span><span>Descargar informe como PDF</span></>
+        }
       </button>
+      {exportState === 'hint' && (
+        <p className="text-xs text-slate-500 text-center leading-relaxed">
+          Abrí el archivo descargado en Chrome → <strong>Ctrl+P</strong> → Guardar como PDF
+        </p>
+      )}
 
       <button
         onClick={() => { trackEvent('reporte_back_to_roadmap'); setStep(STEPS.MODE_SELECT) }}
