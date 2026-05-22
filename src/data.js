@@ -1,11 +1,5 @@
 export const STATIC_QUESTIONS = [
-  {
-    id: 'profesion',
-    question: '¿A qué te dedicás?',
-    type: 'text',
-    placeholder: 'Ej: Desarrollador web freelance, Gerente de marketing en empresa de retail, Psicóloga clínica independiente...',
-    hint: 'Escribí tu profesión o rol actual con el mayor detalle que puedas.',
-  },
+  // Q1: Situacion first — MCQ builds momentum before blank-page text input
   {
     id: 'situacion',
     question: '¿Cuál es tu situación profesional actual?',
@@ -16,6 +10,14 @@ export const STATIC_QUESTIONS = [
       'Profesional buscando crecer o ascender en mi empresa',
       'En transición de carrera o reingresando al mercado',
     ],
+  },
+  // Q2: Profesion — text after user is already engaged
+  {
+    id: 'profesion',
+    question: '¿A qué te dedicás?',
+    type: 'text',
+    placeholder: 'Ej: Desarrollador web freelance, Gerente de marketing en empresa de retail, Psicóloga clínica independiente...',
+    hint: 'Escribí tu profesión o rol actual con el mayor detalle que puedas.',
   },
   {
     id: 'industria',
@@ -56,54 +58,18 @@ export const STATIC_QUESTIONS = [
       'Comunidad y red de contactos profesionales',
     ],
   },
+  // Q6: logro_principal — merges area_impacto + resultado into a single high-signal question
   {
-    id: 'area_impacto',
-    question: '¿En qué área generaste tu mayor impacto profesional?',
+    id: 'logro_principal',
+    question: '¿Cuál de estas opciones describe mejor tu logro profesional más importante?',
     options: [
-      'Aumenté ventas, ingresos o captación de clientes',
-      'Reduje costos, tiempos o mejoré la eficiencia operativa',
-      'Lideré equipos o desarrollé personas',
-      'Lancé productos, servicios o proyectos nuevos',
-      'Implementé procesos, sistemas o transformaciones digitales',
-      'Asesoría, estrategia o consultoría de alto nivel',
-      'Estoy construyendo mi trayectoria, aún sin logros grandes',
-    ],
-  },
-  {
-    id: 'escala',
-    question: '¿A qué escala trabajaste o trabajás habitualmente?',
-    options: [
-      'De forma individual, sin equipo a cargo',
-      'Equipo pequeño (2 a 5 personas)',
-      'Equipo mediano (6 a 15 personas)',
-      'Equipos grandes o múltiples equipos (+15 personas)',
-      'A nivel de área o empresa completa',
-      'A nivel regional, multinacional o internacional',
-    ],
-  },
-  {
-    id: 'resultado',
-    question: '¿Qué tipo de resultado describe mejor tus logros más importantes?',
-    options: [
-      'Aumenté ventas o contratos en un porcentaje concreto (ej: 30%, $X)',
-      'Reduje costos, errores o tiempos en un % medible',
+      'Aumenté ventas, ingresos o captación de clientes (con números concretos)',
+      'Reduje costos, tiempos o errores operativos de forma medible',
+      'Lideré equipos, desarrollé personas o generé cambio cultural',
+      'Lancé o implementé algo nuevo que no existía antes en la empresa',
       'Crecí una base de usuarios, clientes o audiencia',
-      'Entregué proyectos en tiempo y dentro del presupuesto',
-      'Implementé algo que no existía antes en la empresa',
-      'Mis logros son más cualitativos (cultura, relaciones, estrategia)',
-      'Todavía no tengo métricas concretas para mostrar',
-    ],
-  },
-  {
-    id: 'reconocimiento',
-    question: '¿Cuál de estas situaciones te representa mejor?',
-    options: [
-      'Me ascendieron o me dieron más responsabilidades recientemente',
-      'Trabajé en empresas o proyectos de renombre en mi industria',
-      'Tengo clientes que me recomiendan o vuelven a contratarme',
-      'Fui reconocido/a formalmente (premio, mención, certificación)',
-      'Participé en proyectos de alto impacto o visibilidad pública',
-      'Estoy construyendo mi reputación, sin reconocimientos formales aún',
+      'Mis logros son principalmente estratégicos, relacionales o cualitativos',
+      'Estoy construyendo mi trayectoria, aún sin logros grandes',
     ],
   },
   {
@@ -118,13 +84,6 @@ export const STATIC_QUESTIONS = [
       'Mi facilidad para comunicar, vender ideas y generar confianza',
       'Todavía estoy construyendo mi reputación profesional',
     ],
-  },
-  {
-    id: 'contexto_adicional',
-    question: '¿Hay algo más que quieras agregar sobre tu perfil o situación?',
-    type: 'text',
-    placeholder: 'Ej: Estoy cambiando de industria luego de 10 años en finanzas. Tengo un proyecto personal en IA. Quiero enfocarme en el mercado de EEUU...',
-    hint: 'Opcional — cualquier detalle que las preguntas anteriores no hayan cubierto y que sea relevante para tu perfil.',
   },
 ]
 

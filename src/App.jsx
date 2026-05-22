@@ -1150,7 +1150,7 @@ export default function App() {
 
   // Loading message rotation
   const [loadingMsgIdx, setLoadingMsgIdx] = useState(0)
-  const loadingMsgs = LOADING_MESSAGES_BY_SITUACION[qaHistory[1]?.answer] ?? LOADING_MESSAGES_DEFAULT
+  const loadingMsgs = LOADING_MESSAGES_BY_SITUACION[qaHistory.find(h => h.questionId === 'situacion')?.answer] ?? LOADING_MESSAGES_DEFAULT
   useEffect(() => {
     if (step !== STEPS.LOADING) return
     const id = setInterval(() => setLoadingMsgIdx(i => (i + 1) % loadingMsgs.length), 3500)
@@ -1283,12 +1283,12 @@ Devolvé solo el array JSON, sin markdown ni explicación.`
 
   // ── Avanzar al siguiente paso del cuestionario ──
   const handleAnswer = (answer) => {
-    const newHistory = [...qaHistory, { question: currentQ.question, answer }]
+    const newHistory = [...qaHistory, { questionId: currentQ.id, question: currentQ.question, answer }]
     setQaHistory(newHistory)
     setSelectedOption(null)
     setTextAnswer('')
     const nextIndex = newHistory.length
-    const totalQs = fastTrack ? 3 : STATIC_QUESTIONS.length
+    const totalQs = fastTrack ? 4 : STATIC_QUESTIONS.length
     trackEvent('paso_completado', { paso: nextIndex, id: currentQ.id, fast_track: fastTrack })
     if (nextIndex < totalQs) {
       setCurrentQ(STATIC_QUESTIONS[nextIndex])

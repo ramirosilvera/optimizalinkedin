@@ -3,8 +3,14 @@ import { LI_GRADIENT } from '../../constants'
 import { Logo, OptionButton } from '../ui'
 
 export default function QuestionnaireScreen({ qaHistory, currentQ, selectedOption, setSelectedOption, textAnswer, setTextAnswer, handleAnswer, handleBack, fastTrack }) {
-  const totalQs = fastTrack ? 3 : STATIC_QUESTIONS.length
+  const totalQs = fastTrack ? 4 : STATIC_QUESTIONS.length
   const activeQs = STATIC_QUESTIONS.slice(0, totalQs)
+  const currentStep = qaHistory.length + 1
+  const milestone = currentStep === Math.ceil(totalQs / 2) + 1
+    ? '¡Ya la mitad!'
+    : currentStep === totalQs
+      ? '¡Última pregunta!'
+      : null
   return (
     <div className="step-transition space-y-7">
       <Logo />
@@ -34,8 +40,10 @@ export default function QuestionnaireScreen({ qaHistory, currentQ, selectedOptio
         })}
       </div>
       <p className="text-xs text-slate-500 -mt-4">
-        Evaluación {qaHistory.length + 1} de {totalQs}
-        {currentQ.id && <span className="ml-2 opacity-60">· {currentQ.id.replace(/_/g,' ')}</span>}
+        Pregunta {currentStep} de {totalQs}
+        {milestone && (
+          <span className="ml-2 font-semibold" style={{ color: '#0077B5' }}>{milestone}</span>
+        )}
       </p>
 
       {/* Question */}
