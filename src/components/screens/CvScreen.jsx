@@ -288,48 +288,31 @@ export default function CvScreen({
         {/* CV listo — score + revisión consultor + botón imprimir */}
         {cvStage === 'done' && cvFinalData && (
           <div className="space-y-3">
-            {/* Template picker */}
-            <div className="rounded-2xl p-3 space-y-2"
-              style={{ background: 'rgba(0,119,181,0.04)', border: '1px solid rgba(0,119,181,0.14)' }}>
-              <div className="flex items-center justify-between mb-2">
-                <p className="text-xs font-semibold text-slate-700">Diseño del CV</p>
-                {cvTemplate && (
-                  <span className="text-[10px] text-slate-400">
-                    {{
-                      clasico:   'Corporativo · ATS',
-                      minimal:   'ATS puro · Limpio',
-                      ejecutivo: 'Liderazgo · Senior',
-                      tech:      'IT · Startups',
-                      creativo:  'Diseño · Marketing',
-                    }[cvTemplate]}
-                  </span>
-                )}
-              </div>
-              <div className="grid grid-cols-5 gap-1.5">
-                {[
-                  { id: 'clasico',   label: 'Clásico',   color: '#0d2137', sub: 'Corporativo' },
-                  { id: 'minimal',   label: 'Minimal',   color: '#374151', sub: 'ATS puro' },
-                  { id: 'ejecutivo', label: 'Ejecutivo', color: '#1e293b', sub: 'Liderazgo' },
-                  { id: 'tech',      label: 'Tech',      color: '#134e4a', sub: 'IT / Dev' },
-                  { id: 'creativo',  label: 'Creativo',  color: '#7c3aed', sub: 'Diseño' },
-                ].map(t => (
-                  <button
-                    key={t.id}
-                    onClick={() => {
-                      setCvTemplate(t.id)
-                      if (cvFinalData && showCvPreview) setCvPreviewHtml(buildCvHtml(cvFinalData, profilePhoto, profilePhotoMime, t.id))
-                    }}
-                    className="flex flex-col items-center gap-1 py-2 px-1 rounded-xl border transition-all text-center"
-                    style={{
-                      background: cvTemplate === t.id ? 'rgba(0,119,181,0.12)' : '#f8fafc',
-                      borderColor: cvTemplate === t.id ? 'rgba(0,119,181,0.5)' : 'rgba(0,0,0,0.08)',
-                    }}
-                  >
-                    <div className="w-full h-5 rounded-sm" style={{ background: t.color }} />
-                    <span className="text-[9px] text-slate-600 font-medium leading-tight">{t.label}</span>
-                  </button>
-                ))}
-              </div>
+            {/* Template picker — compact */}
+            <div className="flex items-center gap-2 px-1 pb-1 flex-wrap">
+              <span className="text-[10px] font-semibold text-slate-400 uppercase tracking-wide shrink-0">Plantilla:</span>
+              {[
+                { id: 'clasico',   label: 'Clásico',   color: '#0d2137' },
+                { id: 'minimal',   label: 'Minimal',   color: '#374151' },
+                { id: 'ejecutivo', label: 'Ejecutivo', color: '#1e293b' },
+                { id: 'tech',      label: 'Tech',      color: '#134e4a' },
+                { id: 'creativo',  label: 'Creativo',  color: '#7c3aed' },
+              ].map(t => (
+                <button
+                  key={t.id}
+                  onClick={() => {
+                    setCvTemplate(t.id)
+                    if (cvFinalData && showCvPreview) setCvPreviewHtml(buildCvHtml(cvFinalData, profilePhoto, profilePhotoMime, t.id))
+                  }}
+                  className="text-xs font-semibold px-3 py-1.5 rounded-full transition-all shrink-0"
+                  style={cvTemplate === t.id
+                    ? { background: t.color, color: 'white', boxShadow: `0 2px 8px ${t.color}44` }
+                    : { background: '#f1f5f9', color: '#475569', border: '1px solid #e2e8f0' }
+                  }
+                >
+                  {t.label}
+                </button>
+              ))}
             </div>
             {/* Cuando el CV se restauró desde historial sin análisis asociado */}
             {!result && (
@@ -936,10 +919,10 @@ export default function CvScreen({
             {cvFinalData && (
               <button
                 onClick={() => { setJobCvForAdapter(cvFinalData); setJobPosting(''); setJobResult(null); setJobError(''); setShowJobModal(true); trackEvent('job_adapter_opened') }}
-                className="btn-glow w-full py-3.5 rounded-xl text-sm font-semibold transition-all text-white flex items-center justify-center gap-2"
-                style={{ background: 'linear-gradient(135deg,#6366f1,#8b5cf6)' }}
+                className="w-full py-3 rounded-xl text-sm font-semibold transition-all flex items-center justify-center gap-2"
+                style={{ background: 'rgba(99,102,241,0.08)', border: '1px solid rgba(99,102,241,0.25)', color: '#6366f1' }}
               >
-                📝 Adaptar este CV para una oferta →
+                📝 Adaptar para una oferta →
               </button>
             )}
             <button
