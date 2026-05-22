@@ -3,14 +3,14 @@ import { LinkedInIcon } from '../ui'
 
 export default function PremiumModal({ user, setShowPremiumModal, subscriptionLoading, premiumEmail, setPremiumEmail, startSubscription, couponCode, setCouponCode, couponEmail, setCouponEmail, couponLoading, applyCoupon, couponError, setCouponError, couponSuccess, setCouponSuccess, showCouponField, setShowCouponField, handleLinkedinAuthViaSupabase }) {
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4"
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 backdrop-enter"
       style={{ background: 'rgba(0,0,0,0.55)', backdropFilter: 'blur(4px)' }}
       onClick={e => { if (e.target === e.currentTarget) { setShowPremiumModal(false); setShowCouponField(false); setCouponCode(''); setCouponError(''); setCouponSuccess(false) } }}>
-      <div className="w-full max-w-sm rounded-3xl overflow-hidden"
+      <div className="w-full max-w-sm rounded-3xl overflow-hidden modal-enter"
         style={{ boxShadow: '0 25px 60px rgba(0,0,0,0.2)' }}>
         <div className="p-6 text-white" style={{ background: 'linear-gradient(135deg, #0d1f2d 0%, #1a3a5c 60%, #0d3055 100%)' }}>
-          <p className="text-xs font-semibold opacity-60 mb-1 tracking-widest">OPTIMIZA LK</p>
-          <h2 className="text-2xl font-bold tracking-tight">Premium ✦</h2>
+          <p className="text-xs font-semibold opacity-60 mb-1 tracking-widest">PLAN PROFESIONAL</p>
+          <h2 className="text-2xl font-bold tracking-tight">Plan Profesional ✦</h2>
           <div className="flex items-baseline gap-2 mt-2">
             <p className="text-4xl font-bold">$3.000<span className="text-lg font-normal opacity-80">/mes</span></p>
             <span className="text-xs font-bold px-2 py-0.5 rounded-full" style={{ background: 'rgba(255,255,255,0.22)', color: 'white' }}>7 DÍAS GRATIS</span>
@@ -54,7 +54,7 @@ export default function PremiumModal({ user, setShowPremiumModal, subscriptionLo
               ['📍', 'Centro de operaciones', 'Kanban para trackear todas tus búsquedas activas y vincular el CV adaptado a cada una.'],
               ['🎯', 'Índice de Preparación', 'Seguí la evolución de tu competitividad con cada sesión de entrenamiento.'],
             ].map(([icon, title, desc]) => (
-              <li key={title} className="flex gap-3" style={{ background: '#f8fafc', borderRadius: 10, padding: '8px 12px', marginBottom: 6 }}>
+              <li key={title} className="flex gap-3 card-depth" style={{ background: '#f8fafc', borderRadius: 10, padding: '8px 12px', marginBottom: 6 }}>
                 <span className="text-xl shrink-0">{icon}</span>
                 <div>
                   <p className="text-slate-800 font-semibold text-sm">{title}</p>
@@ -93,10 +93,10 @@ export default function PremiumModal({ user, setShowPremiumModal, subscriptionLo
           <button onClick={() => startSubscription()} disabled={subscriptionLoading || (!user && !premiumEmail.includes('@'))}
             className="btn-glow w-full py-3.5 rounded-xl text-white font-bold text-sm"
             style={{ background: LI_GRADIENT, opacity: (subscriptionLoading || (!user && !premiumEmail.includes('@'))) ? 0.6 : 1 }}>
-            {subscriptionLoading ? 'Procesando...' : 'Probar 7 días gratis → Mercado Pago'}
+            {subscriptionLoading ? 'Procesando...' : 'Activar Plan Profesional → 7 días gratis'}
           </button>
           <p className="text-center text-xs text-slate-400 -mt-1">
-            La versión gratuita sigue siendo completa. Premium agrega historial y entrenamiento continuo.
+            La versión gratuita es completa. El Plan Profesional agrega historial y entrenamiento continuo.
           </p>
           <button onClick={() => setShowPremiumModal(false)}
             className="w-full py-2 text-sm text-slate-400 text-center">
@@ -111,7 +111,7 @@ export default function PremiumModal({ user, setShowPremiumModal, subscriptionLo
             </button>
           ) : couponSuccess ? (
             <p className="text-center text-sm font-semibold py-2" style={{ color: '#16a34a' }}>
-              ✓ ¡Premium activado correctamente!
+              ✓ ¡Plan Profesional activado!
             </p>
           ) : (
             <div className="space-y-2 pt-1 border-t" style={{ borderColor: 'rgba(0,119,181,0.1)' }}>

@@ -199,12 +199,12 @@ export default function ModeSelectScreen({
       {/* Header */}
       <div className="space-y-1 pb-1">
         <h2 className="text-xl font-bold text-slate-900 leading-tight">
-          {firstName ? `Hola, ${firstName} 👋` : 'Centro de Carrera Inteligente'}
+          {firstName ? `Hola, ${firstName} 👋` : 'Centro de Alto Rendimiento'}
         </h2>
         <p className="text-sm text-slate-500 leading-snug">
           {firstName
             ? 'Tu preparación profesional, módulo a módulo.'
-            : 'Un sistema estratégico y guiado para conseguir trabajo más rápido.'}
+            : 'Tu programa de preparación profesional de alto rendimiento.'}
         </p>
       </div>
 
@@ -248,7 +248,7 @@ export default function ModeSelectScreen({
       {/* Progress */}
       {completedCount > 0 && (
         <div className="rounded-2xl px-4 py-3.5 space-y-2"
-          style={{ background: 'rgba(0,119,181,0.04)', border: '1px solid rgba(0,119,181,0.12)' }}>
+          style={{ background: 'rgba(0,119,181,0.05)', border: '1px solid rgba(0,119,181,0.15)', boxShadow: '0 2px 8px rgba(0,119,181,0.06)' }}>
           <div className="flex items-center justify-between">
             <p className="text-xs font-semibold text-slate-600">
               {completedCount === 7 ? '¡Preparación completa! ✦' : `${completedCount} módulos completados de tu preparación`}
@@ -268,7 +268,7 @@ export default function ModeSelectScreen({
       )}
 
       {/* Journey steps */}
-      <div className="space-y-2">
+      <div className="space-y-2 stagger-in">
         {steps.map(s => {
           const isRec = s.num === nextRec
           const isLocked = !s.available
@@ -276,7 +276,7 @@ export default function ModeSelectScreen({
           return (
             <div key={s.num}>
               <div
-                className={`rounded-2xl transition-all duration-200 overflow-hidden ${isRec ? 'shadow-md' : ''}`}
+                className={`rounded-2xl transition-all duration-200 overflow-hidden step-card card-depth ${isRec ? 'shadow-md' : ''}`}
                 style={{
                   border: isRec
                     ? `1.5px solid ${s.ac}`
@@ -299,8 +299,8 @@ export default function ModeSelectScreen({
                 {isRec && (
                   <div className="px-4 pt-3 pb-0.5 flex items-center gap-2">
                     <span className="text-[10px] font-bold uppercase tracking-widest px-2.5 py-0.5 rounded-full"
-                      style={{ background: s.abg, color: s.ac, border: `1px solid ${s.aborder}` }}>
-                      ● Siguiente recomendado
+                      style={{ background: s.ac, color: 'white', letterSpacing: '0.06em' }}>
+                      ↑ Siguiente
                     </span>
                     <span style={{
                       fontSize: 10, fontWeight: 700, padding: '2px 8px', borderRadius: 99,
@@ -366,7 +366,7 @@ export default function ModeSelectScreen({
                         <button
                           onClick={s.onClick}
                           disabled={s.num === 5 && jobAdapterCheckLoading}
-                          className={`mt-3 font-semibold text-xs transition-all ${isRec ? 'w-full py-3 rounded-xl text-white' : s.done ? 'py-1.5 px-3 rounded-lg' : 'py-2 px-3.5 rounded-xl'}`}
+                          className={`mt-3 spring-tap font-semibold text-xs transition-all ${isRec ? 'w-full py-3 rounded-xl text-white' : s.done ? 'py-1.5 px-3 rounded-lg' : 'py-2 px-3.5 rounded-xl'}`}
                           style={isRec
                             ? { background: s.ac, boxShadow: `0 4px 14px ${s.aborder}` }
                             : s.done
@@ -406,7 +406,7 @@ export default function ModeSelectScreen({
 
       {/* Daily STAR challenge */}
       {dailyStarQuestion && (
-        <div className="rounded-2xl p-4 space-y-3"
+        <div className="rounded-2xl p-4 space-y-3 card-depth"
           style={{ background: 'linear-gradient(135deg,rgba(13,148,136,0.06),rgba(5,150,105,0.04))', border: '1px solid rgba(13,148,136,0.2)' }}>
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
@@ -426,13 +426,15 @@ export default function ModeSelectScreen({
               setStarPhase('practice')
               setStep(STEPS.STAR_TRAINING)
             }}
-            className="w-full py-2.5 rounded-xl text-xs font-semibold transition-all"
+            className="w-full py-2.5 rounded-xl text-xs font-semibold transition-all spring-tap"
             style={{ background: 'rgba(13,148,136,0.1)', color: '#0d9488', border: '1px solid rgba(13,148,136,0.25)' }}
           >
             Responder con STAR →
           </button>
         </div>
       )}
+
+      <div className="accent-line" />
 
       {/* Mi Actividad */}
       <div className="rounded-2xl overflow-hidden" style={{ border: '1px solid rgba(0,0,0,0.07)' }}>
@@ -442,7 +444,7 @@ export default function ModeSelectScreen({
         <div className="divide-y divide-slate-100">
           <button
             onClick={() => { trackEvent('roadmap_tracking'); setStep(STEPS.TRACKING) }}
-            className="w-full flex items-center gap-3 px-4 py-3.5 text-left hover:bg-slate-50 transition-colors"
+            className="w-full flex items-center gap-3 px-4 py-3.5 text-left hover:bg-slate-50 transition-colors spring-tap"
           >
             <span className="text-base shrink-0">📍</span>
             <div className="flex-1 min-w-0">
@@ -454,7 +456,7 @@ export default function ModeSelectScreen({
           {(result || cvFinalData || interviewFeedback || starFeedback) && (
             <button
               onClick={() => { trackEvent('roadmap_reporte'); setStep(STEPS.REPORT) }}
-              className="w-full flex items-center gap-3 px-4 py-3.5 text-left hover:bg-slate-50 transition-colors"
+              className="w-full flex items-center gap-3 px-4 py-3.5 text-left hover:bg-slate-50 transition-colors spring-tap"
             >
               <span className="text-base shrink-0">📊</span>
               <div className="flex-1 min-w-0">

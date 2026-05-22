@@ -30,9 +30,9 @@ export default function ManageSubscriptionModal({ user, setShowManageModal, canc
         {/* Header */}
         <div className="p-6 text-white" style={{ background: LI_GRADIENT }}>
           <p className="text-xs font-semibold opacity-80 mb-1">
-            {isMpSubscription ? 'TU SUSCRIPCIÓN' : 'TU ACCESO PREMIUM'}
+            {isMpSubscription ? 'TU SUSCRIPCIÓN' : 'TU ACCESO — PLAN PROFESIONAL'}
           </p>
-          <h2 className="text-xl font-bold">Cuenta Premium</h2>
+          <h2 className="text-xl font-bold">Plan Profesional</h2>
           {hastaFormatted && (
             <p className="text-sm opacity-80 mt-1">
               {isMpSubscription ? 'Próxima renovación' : 'Activo hasta'}: {hastaFormatted}
@@ -48,7 +48,7 @@ export default function ManageSubscriptionModal({ user, setShowManageModal, canc
               <p className="text-2xl">✓</p>
               <p className="font-semibold text-slate-800">Cancelación procesada</p>
               <p className="text-sm text-slate-500">
-                No se realizarán cobros futuros. Tu acceso Premium continúa activo
+                No se realizarán cobros futuros. Tu acceso al Plan Profesional continúa activo
                 {hastaFormatted ? ` hasta el ${hastaFormatted}.` : ' hasta el vencimiento del período actual.'}
               </p>
               <button onClick={handleClose}
@@ -62,7 +62,7 @@ export default function ManageSubscriptionModal({ user, setShowManageModal, canc
             /* ── Confirmar cancelación (solo MP) ── */
             <div className="space-y-3">
               <p className="text-sm text-slate-700 text-center font-medium">¿Confirmar cancelación?</p>
-              <p className="text-xs text-slate-500 text-center">No se realizarán cargos futuros. Tu acceso Premium continúa hasta que venza el período actual.</p>
+              <p className="text-xs text-slate-500 text-center">No se realizarán cargos futuros. Tu acceso al Plan Profesional continúa hasta que venza el período actual.</p>
               <button onClick={cancelSubscription} disabled={cancelLoading}
                 className="w-full py-3 rounded-xl text-sm font-semibold text-white"
                 style={{ background: '#ef4444', opacity: cancelLoading ? 0.7 : 1 }}>
@@ -102,7 +102,7 @@ export default function ManageSubscriptionModal({ user, setShowManageModal, canc
                 <p className="text-sm font-semibold text-slate-700">{sourceLabel}</p>
               </div>
               <p className="text-sm text-slate-600">
-                Tu acceso Premium fue activado mediante {sourceLabel.toLowerCase()}.
+                Tu acceso al Plan Profesional fue activado mediante {sourceLabel.toLowerCase()}.
                 {hastaFormatted
                   ? ` Está activo hasta el ${hastaFormatted}.`
                   : ' No tiene fecha de vencimiento configurada.'}

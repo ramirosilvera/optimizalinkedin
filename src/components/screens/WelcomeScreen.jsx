@@ -13,7 +13,7 @@ export default function WelcomeScreen({ setStep, handleModeSelectJobAdapter, job
         </div>
         <h1 className="text-4xl sm:text-5xl font-bold leading-tight tracking-tight" style={{ letterSpacing: '-0.02em' }}>
           <span className="text-slate-900">Preparate para competir</span><br />
-          <span style={{ background: 'linear-gradient(135deg, #0ea5e9 0%, #6366f1 100%)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent' }}>
+          <span className="gradient-text-pro">
             en el mercado laboral.
           </span>
         </h1>
@@ -23,12 +23,12 @@ export default function WelcomeScreen({ setStep, handleModeSelectJobAdapter, job
       </div>
 
 
-      <div className="space-y-3">
+      <div className="space-y-3 stagger-in">
         {result ? (
           <>
             <button
               onClick={() => { trackEvent('click_retomar_preparacion', { location: 'hero' }); setStep(STEPS.MODE_SELECT) }}
-              className="btn-glow w-full text-white font-semibold py-4 px-8 rounded-2xl text-base"
+              className="btn-glow spring-tap w-full text-white font-semibold py-4 px-8 rounded-2xl text-base"
               style={{ background: 'linear-gradient(135deg, #0d2137 0%, #0077B5 100%)' }}
             >
               Retomar mi preparación →
@@ -44,7 +44,7 @@ export default function WelcomeScreen({ setStep, handleModeSelectJobAdapter, job
         ) : (
           <button
             onClick={() => { trackEvent('click_empezar_analisis', { location: 'hero' }); setStep(STEPS.QUESTIONS) }}
-            className="btn-glow w-full text-white font-semibold py-4 px-8 rounded-2xl text-base"
+            className="btn-glow spring-tap w-full text-white font-semibold py-4 px-8 rounded-2xl text-base"
             style={{ background: 'linear-gradient(135deg, #0077B5 0%, #0ea5e9 100%)' }}
           >
             Iniciar diagnóstico →
@@ -78,10 +78,11 @@ export default function WelcomeScreen({ setStep, handleModeSelectJobAdapter, job
         <p className="text-slate-500 text-xs">Sin registro · Resultado en minutos · 100% gratis</p>
       </div>
 
+      <div className="accent-line" style={{ maxWidth: 380, margin: '0 auto' }} />
       {/* Module strip */}
       <div style={{ width: '100%', maxWidth: 380, margin: '0 auto' }}>
         <p style={{ fontSize: 10, fontWeight: 600, color: '#94a3b8', textAlign: 'center', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 10 }}>
-          Sistema de 6 módulos de preparación
+          Sistema de preparación · 6 módulos
         </p>
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, justifyContent: 'center' }}>
           {[

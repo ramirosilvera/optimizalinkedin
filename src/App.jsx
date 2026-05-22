@@ -2597,11 +2597,11 @@ Generá el feedback en este JSON exacto:
               const hasta = user.premium_hasta ? new Date(user.premium_hasta) : null
               return (
                 <button onClick={() => { setCancelConfirm(false); setCancelDone(false); setShowManageModal(true) }}
-                  className="text-xs font-bold px-2.5 py-1 rounded-full transition-opacity hover:opacity-80"
-                  style={{ background: LI_GRADIENT, color: 'white' }}
-                  title={hasta ? `Premium hasta ${hasta.toLocaleDateString('es-AR', { day: 'numeric', month: 'short' })}` : 'Gestionar suscripción'}>
-                  <span>✦ Premium</span>
-                  {hasta && <span className="hidden sm:inline"> hasta {hasta.toLocaleDateString('es-AR', { day: 'numeric', month: 'short' })}</span>}
+                  className="badge-pro transition-opacity hover:opacity-80"
+                  title={hasta ? `Plan Profesional hasta ${hasta.toLocaleDateString('es-AR', { day: 'numeric', month: 'short' })}` : 'Gestionar Plan Profesional'}>
+                  <span>✦</span>
+                  <span>Plan Pro</span>
+                  {hasta && <span className="hidden sm:inline"> · {hasta.toLocaleDateString('es-AR', { day: 'numeric', month: 'short' })}</span>}
                 </button>
               )
             })()}
@@ -2610,7 +2610,7 @@ Generá el feedback en este JSON exacto:
               <button onClick={() => setShowPremiumModal(true)} disabled={subscriptionLoading}
                 className="text-xs font-semibold px-2.5 py-1.5 rounded-full"
                 style={{ background: LI_GRADIENT, color: 'white', opacity: subscriptionLoading ? 0.7 : 1 }}>
-                {subscriptionLoading ? '...' : '⬆ Premium'}
+                {subscriptionLoading ? '...' : 'Plan Pro ↑'}
               </button>
             )}
             {user.es_premium && (

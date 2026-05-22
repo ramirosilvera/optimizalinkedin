@@ -220,3 +220,140 @@ body.modal-open {
     padding-right: 0.75rem !important;
   }
 }
+
+/* ── 1. Dot grid background overlay — tactical/analytics atmosphere ── */
+body::after {
+  content: '';
+  position: fixed;
+  inset: 0;
+  background-image: radial-gradient(circle, rgba(0,119,181,0.055) 1px, transparent 1px);
+  background-size: 32px 32px;
+  pointer-events: none;
+  z-index: 0;
+  opacity: 0.8;
+}
+
+/* ── 2. Stagger animation system — orchestrated entrance sequences ── */
+.stagger-in > * {
+  animation: fadeSlideUp 0.4s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+.stagger-in > *:nth-child(1) { animation-delay: 0.00s; }
+.stagger-in > *:nth-child(2) { animation-delay: 0.06s; }
+.stagger-in > *:nth-child(3) { animation-delay: 0.12s; }
+.stagger-in > *:nth-child(4) { animation-delay: 0.18s; }
+.stagger-in > *:nth-child(5) { animation-delay: 0.24s; }
+.stagger-in > *:nth-child(6) { animation-delay: 0.30s; }
+.stagger-in > *:nth-child(7) { animation-delay: 0.36s; }
+
+/* ── 3. Card depth hover system — desktop only (no hover on touch) ── */
+.card-depth {
+  transition: transform 0.22s cubic-bezier(0.16, 1, 0.3, 1),
+              box-shadow 0.22s ease;
+  will-change: transform;
+}
+@media (hover: hover) {
+  .card-depth:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 8px 28px rgba(0,119,181,0.11), 0 2px 8px rgba(0,0,0,0.06);
+  }
+}
+
+/* ── 4. Spring tap feedback — physical touch response on mobile ── */
+.spring-tap {
+  transition: transform 0.12s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+.spring-tap:active {
+  transform: scale(0.965);
+}
+
+/* ── 5. Modal slide-up entrance — emerge from below ── */
+@keyframes modalIn {
+  from {
+    opacity: 0;
+    transform: translateY(24px) scale(0.97);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+.modal-enter {
+  animation: modalIn 0.35s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+@keyframes backdropIn {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+.backdrop-enter {
+  animation: backdropIn 0.25s ease both;
+}
+
+/* ── 6. Glowing accent lines — premium zone signaling ── */
+.accent-line {
+  height: 1px;
+  background: linear-gradient(90deg, transparent 0%, rgba(0,119,181,0.5) 30%, rgba(14,165,233,0.6) 50%, rgba(0,119,181,0.5) 70%, transparent 100%);
+}
+
+.accent-line-premium {
+  height: 1px;
+  background: linear-gradient(90deg, transparent 0%, rgba(99,102,241,0.4) 30%, rgba(139,92,246,0.5) 50%, rgba(99,102,241,0.4) 70%, transparent 100%);
+}
+
+/* ── 7. Score ring animation — animated score reveal on mount ── */
+@keyframes scoreReveal {
+  from {
+    stroke-dashoffset: 314;
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+.score-ring-animate {
+  animation: scoreReveal 0.8s cubic-bezier(0.16, 1, 0.3, 1) 0.2s both;
+}
+
+/* ── 8. High-performance hero gradient text ── */
+.gradient-text-pro {
+  background: linear-gradient(135deg, #0077B5 0%, #0ea5e9 40%, #6366f1 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+/* ── 9. Skeleton pulse loader — context-aware loading states ── */
+@keyframes skeletonPulse {
+  0%, 100% { opacity: 0.5; }
+  50%       { opacity: 1;   }
+}
+.skeleton {
+  background: linear-gradient(90deg, #e2e8f0 25%, #f1f5f9 50%, #e2e8f0 75%);
+  background-size: 200% 100%;
+  animation: skeletonPulse 1.5s ease-in-out infinite;
+  border-radius: 8px;
+}
+
+/* ── 10. Elite badge — Plan Profesional and premium indicators ── */
+.badge-pro {
+  background: linear-gradient(135deg, #0d1f2d 0%, #1a3a5c 100%);
+  color: white;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  padding: 3px 10px;
+  border-radius: 99px;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+/* ── 11. Refined hover system for roadmap step cards ── */
+.step-card {
+  transition: border-color 0.2s ease, box-shadow 0.2s ease, background-color 0.2s ease;
+}
+@media (hover: hover) {
+  .step-card:hover {
+    box-shadow: 0 4px 16px rgba(0,0,0,0.08);
+  }
+}

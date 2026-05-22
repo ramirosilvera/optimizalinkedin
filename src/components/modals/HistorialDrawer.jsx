@@ -2,9 +2,9 @@ import { Spinner } from '../ui'
 
 export default function HistorialDrawer({ historial, historialLoading, setShowHistorial, deletingHistorialId, setDeletingHistorialId, deleteHistorialLoading, deleteHistorialItem, restoreFromHistorial, user }) {
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4"
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 backdrop-enter"
       style={{ background: 'rgba(0,0,0,0.55)', backdropFilter: 'blur(4px)' }}>
-      <div className="w-full max-w-lg rounded-3xl p-6 space-y-4 max-h-[85dvh] overflow-y-auto"
+      <div className="w-full max-w-lg rounded-3xl p-6 space-y-4 max-h-[85dvh] overflow-y-auto modal-enter"
         style={{ background: 'white', boxShadow: '0 25px 60px rgba(0,0,0,0.2)' }}>
         <div className="flex items-center justify-between">
           <h2 className="text-slate-900 font-bold text-lg">Historial de preparación</h2>
@@ -60,7 +60,7 @@ export default function HistorialDrawer({ historial, historialLoading, setShowHi
               return (
                 <div key={item.id}
                   onClick={isRestorable ? () => restoreFromHistorial(item) : undefined}
-                  className={`rounded-2xl p-4 flex items-center justify-between gap-3 transition-all duration-150 ${isRestorable ? 'cursor-pointer hover:shadow-md active:scale-[0.99]' : ''}`}
+                  className={`rounded-2xl p-4 flex items-center justify-between gap-3 transition-all duration-150 ${isRestorable ? 'cursor-pointer card-depth' : ''}`}
                   style={{ border: '1px solid rgba(0,119,181,0.12)', background: isRestorable ? 'white' : '#f8fafc' }}>
                   <div className="flex items-center gap-2 min-w-0">
                     <span className="text-xs font-semibold px-2 py-0.5 rounded-full shrink-0"

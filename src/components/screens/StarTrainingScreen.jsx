@@ -199,14 +199,14 @@ export default function StarTrainingScreen({ starPhase, setStarPhase, starQuesti
               {!user?.es_premium && (
                 <div className="rounded-2xl p-4 space-y-2.5"
                   style={{ background: 'rgba(0,119,181,0.04)', border: '1px solid rgba(0,119,181,0.15)' }}>
-                  <p className="text-slate-700 text-sm font-semibold">⭐ Guardá tus prácticas STAR con Premium</p>
+                  <p className="text-slate-700 text-sm font-semibold">⭐ Guardá tus prácticas STAR con el Plan Profesional</p>
                   <p className="text-slate-500 text-xs leading-snug">
                     Accedé a tu historial completo de prácticas y seguí tu progreso. 7 días gratis, luego $3.000/mes.
                   </p>
                   <button onClick={() => setShowPremiumModal(true)}
                     className="px-4 py-2 rounded-xl text-white text-xs font-semibold"
                     style={{ background: LI_GRADIENT }}>
-                    Desbloqueá Premium
+                    Activar Plan Profesional
                   </button>
                 </div>
               )}
