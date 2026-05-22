@@ -1,11 +1,13 @@
-import { STEPS, LI_GRADIENT, RAMIRO_LINKEDIN_URL, trackEvent, BTN_GHOST_STYLE } from '../../constants'
+import { STEPS, LI_GRADIENT, RAMIRO_LINKEDIN_URL, trackEvent } from '../../constants'
 import { Logo, LinkedInIcon } from '../ui'
 import CommentsSection from '../CommentsSection'
 
-export default function WelcomeScreen({ setStep, handleModeSelectJobAdapter, jobAdapterCheckLoading, jobAdapterNoCv, setJobAdapterNoCv, result, onStartFastTrack }) {
+export default function WelcomeScreen({ setStep, result }) {
   return (
     <div className="step-transition text-center space-y-8">
       <Logo />
+
+      {/* Hero */}
       <div className="space-y-5">
         <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full text-xs font-semibold tracking-wide badge-shimmer"
           style={{ border: '1px solid rgba(0,119,181,0.4)', color: '#0077B5' }}>
@@ -13,17 +15,15 @@ export default function WelcomeScreen({ setStep, handleModeSelectJobAdapter, job
         </div>
         <h1 className="text-4xl sm:text-5xl font-bold leading-tight tracking-tight" style={{ letterSpacing: '-0.02em' }}>
           <span className="text-slate-900">Preparate para competir</span><br />
-          <span className="gradient-text-pro">
-            en el mercado laboral.
-          </span>
+          <span className="gradient-text-pro">en el mercado laboral.</span>
         </h1>
         <p className="text-slate-600 text-base max-w-sm mx-auto leading-relaxed">
           Sistema de preparación profesional con criterio de headhunter. Diagnóstico, CV, entrevista y estrategia — sin registro, sin costo.
         </p>
       </div>
 
-
-      <div className="space-y-3 stagger-in">
+      {/* ── Primary CTA zone — single action ── */}
+      <div className="space-y-3">
         {result ? (
           <>
             <button
@@ -33,13 +33,14 @@ export default function WelcomeScreen({ setStep, handleModeSelectJobAdapter, job
             >
               Retomar mi preparación →
             </button>
-            <button
-              onClick={() => { trackEvent('click_ver_diagnostico', { location: 'hero' }); setStep(STEPS.RESULTS) }}
-              className="w-full font-semibold py-3 px-8 rounded-2xl text-sm transition-all"
-              style={{ border: '1.5px solid rgba(0,119,181,0.3)', color: '#0077B5', background: 'rgba(0,119,181,0.05)' }}
-            >
-              Ver diagnóstico ({result.puntaje_general ?? '—'}/10) →
-            </button>
+            <p className="text-xs" style={{ color: '#94a3b8' }}>
+              <button
+                onClick={() => { trackEvent('click_ver_diagnostico', { location: 'hero' }); setStep(STEPS.RESULTS) }}
+                className="underline hover:text-slate-500 transition-colors"
+              >
+                Ver diagnóstico ({result.puntaje_general ?? '—'}/10)
+              </button>
+            </p>
           </>
         ) : (
           <button
@@ -50,36 +51,12 @@ export default function WelcomeScreen({ setStep, handleModeSelectJobAdapter, job
             Iniciar diagnóstico →
           </button>
         )}
-        <button
-          onClick={() => { trackEvent('click_job_adapter', { location: 'hero' }); handleModeSelectJobAdapter() }}
-          disabled={jobAdapterCheckLoading}
-          className="w-full font-semibold py-3.5 px-8 rounded-2xl text-sm transition-all"
-          style={{ border: '1.5px solid rgba(99,102,241,0.35)', color: '#6366f1', background: 'rgba(99,102,241,0.06)' }}
-        >
-          {jobAdapterCheckLoading ? '...' : '📝 Adaptar mi CV para un aviso →'}
-        </button>
-        {jobAdapterNoCv && (
-          <p className="text-xs text-center leading-relaxed" style={{ color: '#6366f1' }}>
-            Primero necesitás generar tu CV con el diagnóstico →{' '}
-            <button onClick={() => { setJobAdapterNoCv(false); setStep(STEPS.QUESTIONS) }} className="underline font-semibold">
-              Empezar ahora
-            </button>
-          </p>
-        )}
-        {!result && onStartFastTrack && (
-          <button
-            onClick={onStartFastTrack}
-            className="w-full font-medium py-2.5 px-8 rounded-2xl text-xs transition-all"
-            style={{ border: '1px solid rgba(0,119,181,0.18)', color: '#64748b', background: 'rgba(0,119,181,0.03)' }}
-          >
-            ⚡ Diagnóstico express — 3 preguntas (inicio rápido)
-          </button>
-        )}
         <p className="text-slate-500 text-xs">Sin registro · Resultado en minutos · 100% gratis</p>
       </div>
 
       <div className="accent-line" style={{ maxWidth: 380, margin: '0 auto' }} />
-      {/* Module strip */}
+
+      {/* Module strip — system context, below fold */}
       <div style={{ width: '100%', maxWidth: 380, margin: '0 auto' }}>
         <p style={{ fontSize: 10, fontWeight: 600, color: '#94a3b8', textAlign: 'center', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 10 }}>
           Sistema de preparación · 6 módulos
@@ -281,7 +258,6 @@ export default function WelcomeScreen({ setStep, handleModeSelectJobAdapter, job
         </div>
 
       </div>
-
     </div>
   )
 }

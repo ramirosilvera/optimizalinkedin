@@ -2686,18 +2686,7 @@ Generá el feedback en este JSON exacto:
         {step === STEPS.WELCOME && (
           <WelcomeScreen
             setStep={setStep}
-            handleModeSelectJobAdapter={handleModeSelectJobAdapter}
-            jobAdapterCheckLoading={jobAdapterCheckLoading}
-            jobAdapterNoCv={jobAdapterNoCv}
-            setJobAdapterNoCv={setJobAdapterNoCv}
             result={result}
-            onStartFastTrack={() => {
-              trackEvent('click_fast_track')
-              setFastTrack(true)
-              setQaHistory([])
-              setCurrentQ(STATIC_QUESTIONS[0])
-              setStep(STEPS.QUESTIONS)
-            }}
           />
         )}
 
