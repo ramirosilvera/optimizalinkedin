@@ -11,14 +11,14 @@ export default function WelcomeScreen({ setStep, result }) {
       <div className="space-y-5">
         <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full text-xs font-semibold tracking-wide badge-shimmer"
           style={{ border: '1px solid rgba(0,119,181,0.4)', color: '#0077B5' }}>
-          ✦ &nbsp;Sistema de Preparación Profesional · 100% gratis
+          ✦ &nbsp;Centro de Preparación Profesional
         </div>
         <h1 className="text-4xl sm:text-5xl font-bold leading-tight tracking-tight" style={{ letterSpacing: '-0.02em' }}>
-          <span className="text-slate-900">Preparate para competir</span><br />
-          <span className="gradient-text-pro">en el mercado laboral.</span>
+          <span className="text-slate-900">Tu preparación profesional,</span><br />
+          <span className="gradient-text-pro">con criterio de headhunter.</span>
         </h1>
         <p className="text-slate-600 text-base max-w-sm mx-auto leading-relaxed">
-          Sistema de preparación profesional con criterio de headhunter. Diagnóstico, CV, entrevista y estrategia — sin registro, sin costo.
+          Diagnóstico, CV, entrenamiento y seguimiento — sistema guiado, sin registro, sin costo.
         </p>
       </div>
 
@@ -51,7 +51,7 @@ export default function WelcomeScreen({ setStep, result }) {
             Iniciar diagnóstico →
           </button>
         )}
-        <p className="text-slate-500 text-xs">Sin registro · Resultado en minutos · 100% gratis</p>
+        <p className="text-slate-500 text-xs">Sin registro · Resultado en minutos · Gratuito</p>
       </div>
 
       <div className="accent-line" style={{ maxWidth: 380, margin: '0 auto' }} />
@@ -59,7 +59,7 @@ export default function WelcomeScreen({ setStep, result }) {
       {/* Module strip — system context, below fold */}
       <div style={{ width: '100%', maxWidth: 380, margin: '0 auto' }}>
         <p style={{ fontSize: 10, fontWeight: 600, color: '#94a3b8', textAlign: 'center', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 10 }}>
-          Sistema de preparación · 6 módulos
+          Sistema de preparación · 7 módulos
         </p>
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, justifyContent: 'center' }}>
           {[
@@ -69,6 +69,7 @@ export default function WelcomeScreen({ setStep, result }) {
             { icon: '🎙️', label: 'Entrenamiento' },
             { icon: '⭐', label: 'STAR' },
             { icon: '📍', label: 'Postulaciones' },
+            { icon: '📊', label: 'Informe' },
           ].map(m => (
             <span key={m.label} style={{
               display: 'inline-flex', alignItems: 'center', gap: 4,
@@ -88,20 +89,70 @@ export default function WelcomeScreen({ setStep, result }) {
       {/* ── Secciones SEO ── */}
       <div className="text-left space-y-12 pt-6">
 
-        {/* ¿Qué incluye? */}
+        {/* Cómo funciona — moved first: validates the journey before feature list */}
         <section>
-          <h2 className="text-xl font-bold text-slate-900 mb-4">¿Qué incluye tu análisis?</h2>
+          <h2 className="text-xl font-bold text-slate-900 mb-4">Cómo funciona</h2>
           <div className="space-y-3">
             {[
-              { icon: '🎯', title: 'Diagnóstico con criterio de headhunter', desc: 'Puntaje general del perfil y evaluación estratégica del primer impacto en reclutadores.' },
-              { icon: '🔍', title: 'SEO de LinkedIn', desc: 'Palabras clave sugeridas para aparecer en búsquedas reales de reclutadores y clientes.' },
-              { icon: '✏️', title: 'Titular y resumen reescritos', desc: 'Versión mejorada del titular y del About con propuesta de valor clara y llamada a la acción.' },
-              { icon: '📋', title: 'Recomendaciones accionables', desc: 'Lista priorizada de cambios concretos que podés implementar hoy.' },
-              { icon: '📄', title: 'CV de 1 página listo para enviar', desc: 'Lo que los reclutadores piden hoy: un CV moderno, ATS-compatible y de una sola página generado con tu perfil optimizado.' },
-              { icon: '📣', title: 'Estrategia de contenido', desc: 'Qué publicar en LinkedIn según tu objetivo profesional para aumentar tu visibilidad.' },
-              { icon: '🎙️', title: 'Simulador de entrevista con IA', desc: 'Practicá una entrevista inicial y recibí feedback detallado con criterio de RRHH.' },
-              { icon: '⭐', title: 'Entrenamiento metodología STAR', desc: 'Aprendé el framework que usan los mejores candidatos y practicá con feedback instantáneo de IA para estructurar respuestas de alto impacto.' },
-              { icon: '📝', title: 'CV adaptado por aviso + carta de presentación', desc: 'Pegás el aviso de empleo y la IA ajusta tu CV para esa posición específica e incluye una carta de presentación personalizada lista para enviar.' },
+              {
+                num: '1', color: '#0077B5',
+                title: 'Diagnóstico inicial',
+                desc: 'Respondés 7 preguntas y pegás tu perfil de LinkedIn. En 60 segundos recibís tu score de empleabilidad, brechas críticas y las acciones más impactantes que podés tomar hoy.',
+              },
+              {
+                num: '2', color: '#059669',
+                title: 'Construís tu perfil y CV',
+                desc: 'Aplicás las mejoras al LinkedIn, generás tu CV ATS-compatible de 1 página y definís tu estrategia de contenido para aparecer en búsquedas de reclutadores.',
+              },
+              {
+                num: '3', color: '#6366f1',
+                title: 'Entrenás y postulás con ventaja',
+                desc: 'Simulás entrevistas reales con IA, dominás la metodología STAR y adaptás tu CV y carta de presentación para cada oferta específica.',
+              },
+            ].map(stepItem => (
+              <div key={stepItem.num} className="flex items-start gap-4 rounded-2xl p-4"
+                style={{ background: 'white', border: '1px solid rgba(0,119,181,0.10)' }}>
+                <div className="w-8 h-8 rounded-full flex items-center justify-center text-white text-sm font-bold shrink-0"
+                  style={{ background: stepItem.color }}>{stepItem.num}</div>
+                <div>
+                  <p className="text-slate-800 text-sm font-semibold">{stepItem.title}</p>
+                  <p className="text-slate-500 text-xs mt-0.5 leading-relaxed">{stepItem.desc}</p>
+                </div>
+              </div>
+            ))}
+          </div>
+        </section>
+
+        {/* ¿Qué incluye el sistema? — consolidated from 9 → 5 items */}
+        <section>
+          <h2 className="text-xl font-bold text-slate-900 mb-4">¿Qué incluye el sistema?</h2>
+          <div className="space-y-3">
+            {[
+              {
+                icon: '🎯',
+                title: 'Diagnóstico con criterio de headhunter',
+                desc: 'Score de empleabilidad, análisis de brechas críticas y recomendaciones concretas basadas en criterio real de selección profesional.',
+              },
+              {
+                icon: '✏️',
+                title: 'LinkedIn y CV de 1 página',
+                desc: 'Titular y resumen reescritos con propuesta de valor, palabras clave SEO y CV ATS-compatible generado con tu perfil optimizado.',
+              },
+              {
+                icon: '🎙️',
+                title: 'Simulador de entrevista + metodología STAR',
+                desc: 'Practicá 5 preguntas reales con IA y recibí feedback de RRHH. Dominá el framework que usan los mejores candidatos para respuestas de alto impacto.',
+              },
+              {
+                icon: '📝',
+                title: 'CV adaptado por oferta + carta de presentación',
+                desc: 'Pegás el aviso y recibís tu CV personalizado para esa posición más una carta de presentación lista para enviar.',
+              },
+              {
+                icon: '📍',
+                title: 'Seguimiento de postulaciones',
+                desc: 'Tablero kanban para organizar tus aplicaciones, estado y próximos pasos — todo integrado en un sistema de preparación continuo.',
+              },
             ].map(item => (
               <div key={item.title} className="flex items-start gap-3 rounded-2xl p-4"
                 style={{ background: 'white', border: '1px solid rgba(0,119,181,0.10)' }}>
@@ -115,13 +166,67 @@ export default function WelcomeScreen({ setStep, result }) {
           </div>
         </section>
 
+        {/* Gratuito vs. Profesional — new section, communicates model clearly */}
+        <section>
+          <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full text-xs font-semibold mb-3"
+            style={{ background: 'rgba(0,119,181,0.07)', color: '#0077B5', border: '1px solid rgba(0,119,181,0.2)' }}>
+            Modelo de acceso
+          </div>
+          <h2 className="text-xl font-bold text-slate-900 mb-2">Gratuito y sin registro</h2>
+          <p className="text-slate-500 text-sm mb-5 leading-relaxed">
+            El sistema completo es gratuito. Activás Profesional si querés historial y continuidad entre sesiones.
+          </p>
+          <div className="grid grid-cols-2 gap-3">
+            <div className="rounded-2xl p-4 space-y-3"
+              style={{ background: 'white', border: '1px solid rgba(0,119,181,0.12)' }}>
+              <div>
+                <p className="text-slate-900 font-bold text-sm">Gratuito</p>
+                <p className="text-slate-400 text-xs">Sin registro</p>
+              </div>
+              <ul className="space-y-1.5">
+                {[
+                  '7 módulos completos',
+                  'Diagnóstico, CV, entrevista',
+                  'STAR y Postulaciones',
+                  'Sin límite de usos',
+                ].map(f => (
+                  <li key={f} className="flex items-start gap-1.5 text-xs text-slate-600">
+                    <span className="text-emerald-500 font-bold shrink-0 mt-0.5">✓</span>
+                    {f}
+                  </li>
+                ))}
+              </ul>
+            </div>
+            <div className="rounded-2xl p-4 space-y-3"
+              style={{ background: 'linear-gradient(135deg, #0d2137 0%, #0077B5 100%)' }}>
+              <div>
+                <p className="text-white font-bold text-sm">Profesional</p>
+                <p className="text-blue-200 text-xs">$3.000 ARS/mes</p>
+              </div>
+              <ul className="space-y-1.5">
+                {[
+                  'Todo lo gratuito, más:',
+                  'Historial persistente',
+                  'Continuidad de sesiones',
+                  'Seguimiento de evolución',
+                ].map(f => (
+                  <li key={f} className="flex items-start gap-1.5 text-xs text-blue-100">
+                    <span className="text-blue-200 font-bold shrink-0 mt-0.5">✓</span>
+                    {f}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          </div>
+        </section>
+
         {/* Comparativa vs alternativas */}
         <section>
           <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full text-xs font-semibold mb-3"
             style={{ background: 'rgba(99,102,241,0.08)', color: '#6366f1', border: '1px solid rgba(99,102,241,0.2)' }}>
             Por qué esta app
           </div>
-          <h2 className="text-xl font-bold text-slate-900 mb-2">Gratis vs. las alternativas</h2>
+          <h2 className="text-xl font-bold text-slate-900 mb-2">Comparativa con alternativas</h2>
           <p className="text-slate-500 text-sm mb-5 leading-relaxed">
             Lo mismo que te costaría entre <strong className="text-slate-700">$30.000 y $125.000</strong> con un asesor, o <strong className="text-slate-700">~$56.000/mes</strong> con LinkedIn Premium — acá lo obtenés sin costo.
           </p>
@@ -132,7 +237,7 @@ export default function WelcomeScreen({ setStep, result }) {
                   <th className="text-left py-3 pl-4 pr-2 text-slate-400 font-normal" style={{ width: 160 }}></th>
                   <th className="py-3 px-2 text-center font-bold text-white" style={{ background: 'linear-gradient(135deg,#6366f1,#0ea5e9)', minWidth: 86 }}>
                     <div className="text-[10px] font-normal opacity-80 mb-0.5">Optimiza LK</div>
-                    <div className="text-emerald-200">GRATIS 🎉</div>
+                    <div className="text-emerald-200">Gratuito</div>
                   </th>
                   <th className="py-3 px-2 text-center text-slate-500 font-medium bg-slate-50" style={{ minWidth: 86 }}>
                     <div className="text-[10px] text-slate-400 mb-0.5">LinkedIn Premium</div>
@@ -182,28 +287,6 @@ export default function WelcomeScreen({ setStep, result }) {
           </p>
         </section>
 
-        {/* Cómo funciona */}
-        <section>
-          <h2 className="text-xl font-bold text-slate-900 mb-4">Cómo funciona</h2>
-          <div className="space-y-3">
-            {[
-              { num: '1', title: 'Diagnóstico LinkedIn', desc: 'Respondés 7 preguntas (o 3 en modo express) y subís tu perfil. En 60 segundos tenés tu score de empleabilidad, gaps y sugerencias.', color: '#0077B5' },
-              { num: '2', title: 'Optimizás y generás tu CV', desc: 'Aplicás las mejoras al perfil y generás un CV ATS-compatible de 1 página con tu información optimizada.', color: '#059669' },
-              { num: '3', title: 'Practicás y adaptás para cada oferta', desc: 'Simulás entrevistas con IA, adaptás tu CV por aviso y usás el método STAR para respuestas de impacto.', color: '#6366f1' },
-            ].map(stepItem => (
-              <div key={stepItem.num} className="flex items-start gap-4 rounded-2xl p-4"
-                style={{ background: 'white', border: '1px solid rgba(0,119,181,0.10)' }}>
-                <div className="w-8 h-8 rounded-full flex items-center justify-center text-white text-sm font-bold shrink-0"
-                  style={{ background: stepItem.color }}>{stepItem.num}</div>
-                <div>
-                  <p className="text-slate-800 text-sm font-semibold">{stepItem.title}</p>
-                  <p className="text-slate-500 text-xs mt-0.5 leading-relaxed">{stepItem.desc}</p>
-                </div>
-              </div>
-            ))}
-          </div>
-        </section>
-
         {/* Quién está detrás */}
         <section>
           <h2 className="text-xl font-bold text-slate-900 mb-4">Quién está detrás</h2>
@@ -213,7 +296,7 @@ export default function WelcomeScreen({ setStep, result }) {
               style={{ background: LI_GRADIENT }}>RS</div>
             <div>
               <p className="text-slate-900 font-semibold text-sm">Ramiro Silvera</p>
-              <p className="text-slate-500 text-xs mt-0.5">Gerente de RRHH · Headhunter</p>
+              <p className="text-slate-500 text-xs mt-0.5">Gerente de RRHH · Headhunter · +10 años de experiencia</p>
               <p className="text-slate-600 text-sm mt-2 leading-relaxed">
                 Con más de 10 años seleccionando profesionales en Argentina y la región, creé <strong className="text-slate-700">Optimiza LK</strong> para que cualquier persona pueda acceder al mismo análisis que haría un headhunter real — sin costo.
               </p>
@@ -232,10 +315,10 @@ export default function WelcomeScreen({ setStep, result }) {
           <h2 className="text-xl font-bold text-slate-900 mb-4">Preguntas frecuentes</h2>
           <div className="space-y-3">
             {[
-              { q: '¿Qué es Optimiza LK?', a: 'Optimiza LK es un sistema gratuito de preparación profesional creado por Ramiro Silvera (Gerente de RRHH y Headhunter) que diagnostica tu competitividad en el mercado laboral. También construís tu CV, entrenás entrevistas con IA y adaptás tu CV a cada oferta — todo sin costo y sin registro.' },
-              { q: '¿Es realmente gratis?', a: 'Sí, 100% gratis y sin registro. No necesitás crear una cuenta ni dejar tu email para recibir el análisis.' },
-              { q: '¿Qué pasa con mi CV o perfil?', a: 'Tu información se usa para generar el análisis. Solo se guarda si vos lo autorizás — por ejemplo, al solicitar contacto con Ramiro o generar tu CV, para poder brindarte un servicio más personalizado. En ningún caso se comparte con terceros.' },
-              { q: '¿Cuánto tarda el análisis?', a: 'Menos de 60 segundos una vez que subís tu perfil. El cuestionario previo tarda 1-3 minutos (podés usar el modo express de 3 preguntas para empezar más rápido).' },
+              { q: '¿Qué es Optimiza LK?', a: 'Optimiza LK es el Centro de Preparación Profesional creado por Ramiro Silvera (Gerente de RRHH y Headhunter con +10 años de experiencia). Diagnosticá tu competitividad laboral, construí tu CV, entrenás entrevistas con IA y adaptás tu candidatura para cada oferta — todo sin costo y sin registro.' },
+              { q: '¿Es realmente gratis?', a: 'Sí, 100% gratis y sin registro. No necesitás crear una cuenta ni dejar tu email para recibir el análisis completo.' },
+              { q: '¿Qué pasa con mi CV o perfil?', a: 'Tu información se usa para generar el análisis. Solo se guarda si vos lo autorizás — por ejemplo, al activar el plan Profesional para mantener tu historial entre sesiones. En ningún caso se comparte con terceros.' },
+              { q: '¿Cuánto tarda el análisis?', a: 'Menos de 60 segundos una vez que subís tu perfil. El cuestionario inicial tarda 3-5 minutos dependiendo del detalle que ingreses.' },
               { q: '¿Sirve si vivo fuera de Argentina?', a: 'Sí. El análisis se adapta a tu mercado y objetivo declarado en el cuestionario.' },
               { q: '¿Qué es el simulador de entrevista?', a: 'Una entrevista inicial simulada con IA donde respondés 5 preguntas reales de RRHH y recibís feedback detallado sobre cada respuesta.' },
               { q: '¿Necesito tener el PDF de LinkedIn?', a: 'No es obligatorio. Podés subir el PDF, pegar la URL de tu perfil o completar un formulario directamente en la app.' },
@@ -253,7 +336,7 @@ export default function WelcomeScreen({ setStep, result }) {
         <div className="pt-4 pb-2 text-center border-t" style={{ borderColor: 'rgba(0,119,181,0.1)' }}>
           <p className="text-xs text-slate-400 leading-relaxed">
             <strong className="text-slate-500">Optimiza LK</strong> · Creado por Ramiro Silvera · Argentina<br />
-            <span>Análisis de perfiles LinkedIn con IA · Generador de CV · Simulador de entrevista</span>
+            <span>Centro de Preparación Profesional · Diagnóstico, CV, Entrevista y Seguimiento</span>
           </p>
         </div>
 
