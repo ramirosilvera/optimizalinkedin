@@ -208,16 +208,21 @@ export default function ModeSelectScreen({
         </p>
       </div>
 
-      {/* Readiness Index */}
+      {/* Readiness Index — tappable: opens full Informe */}
       {readinessIndex != null && (
-        <div style={{
-          display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-          padding: '12px 16px',
-          background: 'linear-gradient(135deg, #0d2137, #0077B5)',
-          borderRadius: 16,
-          marginBottom: 0,
-          color: 'white',
-        }}>
+        <button
+          onClick={() => { trackEvent('roadmap_ri_bar_tap'); setStep(STEPS.REPORT) }}
+          style={{
+            display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+            padding: '12px 16px',
+            background: 'linear-gradient(135deg, #0d2137, #0077B5)',
+            borderRadius: 16,
+            color: 'white',
+            width: '100%',
+            textAlign: 'left',
+            cursor: 'pointer',
+            border: 'none',
+          }}>
           <div>
             <p style={{ fontSize: 11, fontWeight: 600, opacity: 0.7, textTransform: 'uppercase', letterSpacing: '0.05em', margin: 0 }}>
               Índice de Preparación
@@ -228,14 +233,20 @@ export default function ModeSelectScreen({
                : 'Iniciando entrenamiento'}
               {streak > 1 && <span style={{ marginLeft: 8, opacity: 0.8 }}>· {streak}d activo</span>}
             </p>
+            <p style={{ fontSize: 10, opacity: 0.5, marginTop: 4, marginBottom: 0 }}>
+              Ver informe completo →
+            </p>
           </div>
-          <div style={{ textAlign: 'right' }}>
-            <span style={{ fontSize: 32, fontWeight: 800, letterSpacing: '-0.02em' }}>
-              {readinessIndex.toFixed(1)}
-            </span>
-            <span style={{ fontSize: 14, opacity: 0.7 }}>/10</span>
+          <div style={{ textAlign: 'right', display: 'flex', alignItems: 'center', gap: 6 }}>
+            <div>
+              <span style={{ fontSize: 32, fontWeight: 800, letterSpacing: '-0.02em' }}>
+                {readinessIndex.toFixed(1)}
+              </span>
+              <span style={{ fontSize: 14, opacity: 0.7 }}>/10</span>
+            </div>
+            <span style={{ fontSize: 18, opacity: 0.4, marginTop: 2 }}>›</span>
           </div>
-        </div>
+        </button>
       )}
 
       {readinessIndex == null && streak > 1 && (
@@ -436,7 +447,7 @@ export default function ModeSelectScreen({
 
       <div className="accent-line" />
 
-      {/* Mi Actividad */}
+      {/* Centro de Operaciones */}
       <div className="rounded-2xl overflow-hidden" style={{ border: '1px solid rgba(0,0,0,0.07)' }}>
         <div className="px-4 py-3 border-b flex items-center gap-2" style={{ background: '#fafafa', borderColor: 'rgba(0,0,0,0.06)' }}>
           <p className="text-xs font-bold uppercase tracking-wide text-slate-500">Centro de Operaciones</p>
@@ -449,31 +460,10 @@ export default function ModeSelectScreen({
             <span className="text-base shrink-0">📍</span>
             <div className="flex-1 min-w-0">
               <p className="text-sm font-semibold text-slate-800">Postulaciones activas</p>
-              <p className="text-xs text-slate-400">Seguimiento en tiempo real de todos tus procesos activos · vinculá el CV adaptado a cada uno</p>
+              <p className="text-xs text-slate-400">Seguimiento en tiempo real de todos tus procesos · vinculá el CV adaptado a cada uno</p>
             </div>
             <span className="text-slate-300 text-lg shrink-0">›</span>
           </button>
-          {(result || cvFinalData || interviewFeedback || starFeedback) && (
-            <button
-              onClick={() => { trackEvent('roadmap_reporte'); setStep(STEPS.REPORT) }}
-              className="w-full flex items-center gap-3 px-4 py-3.5 text-left hover:bg-slate-50 transition-colors spring-tap"
-            >
-              <span className="text-base shrink-0">📊</span>
-              <div className="flex-1 min-w-0">
-                <div className="flex items-center gap-2">
-                  <p className="text-sm font-semibold text-slate-800">Informe de preparación</p>
-                  {readinessIndex != null && (
-                    <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full"
-                      style={{ background: 'rgba(0,119,181,0.1)', color: '#0077B5' }}>
-                      {readinessIndex.toFixed(1)}/10
-                    </span>
-                  )}
-                </div>
-                <p className="text-xs text-slate-400">Resumen consolidado de todos tus módulos · Descargable como PDF</p>
-              </div>
-              <span className="text-slate-300 text-lg shrink-0">›</span>
-            </button>
-          )}
         </div>
       </div>
 
