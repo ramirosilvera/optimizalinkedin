@@ -104,7 +104,7 @@ ADAPTACIÓN: ajustá titular y resumen con keywords del aviso. Reorganizá bulle
 
 CARTA (3-4 párrafos): quién es y por qué aplica → logros relevantes con datos reales → cierre con CTA. Profesional, directo, sin clichés. Español rioplatense.
 
-JSON: {"empresa_detectada":"str|null","cargo_detectado":"str","seniority_detectado":"str","cv_adaptado":{...mismo esquema...},"carta_de_presentacion":"str","palabras_clave_incorporadas":["str"],"ajustes_principales":["str"]}`,
+JSON: {"empresa_detectada":"str|null","cargo_detectado":"str","seniority_detectado":"str","cv_adaptado":{...mismo esquema...},"carta_de_presentacion":"str","palabras_clave_incorporadas":["str"],"ajustes_principales":["str"],"quality":{"score":1-10,"nivel":"Básico|Intermedio|Sólido|Premium","nota_consultor":"1 oración sobre el CV adaptado para esta posición","riesgo_ats":"Bajo|Medio|Alto","fortalezas":["str"]}}`,
 
   cv_optimize_consult: `Sos consultor senior de empleabilidad. Analizás CVs ya generados para detectar qué datos adicionales necesitás del candidato para optimizarlos con impacto real.
 
@@ -176,7 +176,10 @@ MEJORAS OBLIGATORIAS — siempre aplicás todas estas, sin excepción:
 6. Habilidades: eliminá genéricas (Microsoft Office, Internet), priorizá las técnicas específicas del área, reordená por relevancia ATS
 7. Si hay datos adicionales del candidato: incorporalos en los bullets de la experiencia más relevante
 
-Devolvé SOLO el JSON del CV mejorado con exactamente la misma estructura que recibiste. Sin markdown, sin campos extra, sin explicaciones.`,
+Respondé SOLO en JSON válido, sin markdown, con esta estructura exacta:
+{"cv":{...mismo esquema del CV recibido...},"quality":{"score":1-10,"nivel":"Básico|Intermedio|Sólido|Premium","nota_consultor":"1 oración sobre el CV optimizado","riesgo_ats":"Bajo|Medio|Alto","fortalezas":["str","str"],"mejoras_aplicadas":["mejora 1 con referencia al campo/cargo","mejora 2","mejora 3"]}}
+"mejoras_aplicadas": listá solo las mejoras reales que aplicaste, referenciando el campo o cargo afectado (ej: "Titular reescrito con especialidad concreta y propuesta de valor", "Bullets de [Cargo] fortalecidos con verbos de impacto", "Frases genéricas eliminadas del resumen").
+SCORING HONESTO: evaluá el CV mejorado con criterio independiente. Si el CV aún tiene limitaciones (logros sin métricas, resumen genérico, skills débiles), reflejalas en el score. Un CV optimizado no es automáticamente perfecto. Score 9-10 solo para CVs con métricas concretas, titular específico y bullets de alto impacto en todas las experiencias.`,
 
   linkedin_growth: `Sos experto en personal branding y crecimiento en LinkedIn para el mercado hispanoparlante.
 Generá basándote en el perfil y análisis del usuario:

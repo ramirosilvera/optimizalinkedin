@@ -172,7 +172,8 @@ export default function JobAdapterModal({
                     onClick={() => openAdaptedCvPreview(
                       jobResult.cv_adaptado,
                       jobResult.empresa_detectada,
-                      jobResult.cargo_detectado
+                      jobResult.cargo_detectado,
+                      jobResult.quality || null
                     )}
                     className="w-full py-3.5 rounded-xl text-sm font-semibold text-white"
                     style={{ background: LI_GRADIENT, boxShadow: '0 4px 12px rgba(0,119,181,0.25)' }}>

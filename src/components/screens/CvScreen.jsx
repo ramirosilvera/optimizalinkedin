@@ -60,6 +60,11 @@ export default function CvScreen({
   cvOptimizeError,
   cvOptimizeSuggestion,
   setCvOptimizeSuggestion,
+  cvOptimizeSuggestionQuality,
+  setCvOptimizeSuggestionQuality,
+  cvBeforeOptimizeQuality,
+  setCvBeforeOptimizeQuality,
+  cvBaselineScore,
   cvOptimizeApplied,
   setCvOptimizeApplied,
   cvBeforeOptimize,
@@ -85,6 +90,7 @@ export default function CvScreen({
   const [photosLoading, setPhotosLoading] = useState(false)
   const [deletingId, setDeletingId] = useState(null)
   const [settingDefaultId, setSettingDefaultId] = useState(null)
+  const [showMejoras, setShowMejoras] = useState(false)
 
   const openPhotosPanel = async () => {
     if (showPhotosPanel) { setShowPhotosPanel(false); return }
@@ -331,47 +337,93 @@ export default function CvScreen({
                 </button>
               </div>
             )}
-            {cvQuality && (
-              <div className="rounded-2xl overflow-hidden"
-                style={{ border: `1px solid ${cvQuality.score >= 8 ? 'rgba(34,197,94,0.25)' : 'rgba(0,119,181,0.18)'}` }}>
-                {/* Score header */}
-                <div className="flex items-center gap-3 px-4 py-3"
-                  style={{ background: cvQuality.score >= 8 ? 'rgba(34,197,94,0.06)' : 'rgba(0,119,181,0.05)' }}>
-                  <div className="shrink-0 w-12 h-12 rounded-full flex flex-col items-center justify-center font-black"
-                    style={{ background: cvQuality.score >= 8 ? 'rgba(34,197,94,0.12)' : 'rgba(0,119,181,0.10)', color: cvQuality.score >= 8 ? '#16a34a' : '#0077B5', border: `1.5px solid ${cvQuality.score >= 8 ? 'rgba(34,197,94,0.30)' : 'rgba(0,119,181,0.25)'}` }}>
-                    <span className="text-lg leading-none">{cvQuality.score}</span>
-                    <span className="text-[9px] text-slate-500 font-normal">/10</span>
+            {cvQuality && (() => {
+              const scoreDelta = cvBaselineScore != null && cvQuality.score > cvBaselineScore
+                ? +(cvQuality.score - cvBaselineScore).toFixed(1) : null
+              const isHigh = cvQuality.score >= 8
+              const borderColor = isHigh ? 'rgba(34,197,94,0.25)' : 'rgba(0,119,181,0.18)'
+              const bgColor    = isHigh ? 'rgba(34,197,94,0.06)' : 'rgba(0,119,181,0.05)'
+              const circleBg   = isHigh ? 'rgba(34,197,94,0.12)' : 'rgba(0,119,181,0.10)'
+              const circleColor= isHigh ? '#16a34a' : '#0077B5'
+              const circleBorder=isHigh ? 'rgba(34,197,94,0.30)' : 'rgba(0,119,181,0.25)'
+              const mejoras = cvQuality.mejoras_aplicadas || []
+              return (
+                <div className="rounded-2xl overflow-hidden" style={{ border: `1px solid ${borderColor}` }}>
+                  {/* Score header */}
+                  <div className="flex items-center gap-3 px-4 py-3" style={{ background: bgColor }}>
+                    {/* Score circle */}
+                    <div className="shrink-0 w-12 h-12 rounded-full flex flex-col items-center justify-center font-black"
+                      style={{ background: circleBg, color: circleColor, border: `1.5px solid ${circleBorder}`, transition: 'all 0.3s ease' }}>
+                      <span className="text-lg leading-none">{cvQuality.score}</span>
+                      <span className="text-[9px] text-slate-500 font-normal">/10</span>
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <p className="text-sm font-semibold text-slate-800">CV {cvQuality.nivel}</p>
+                        {cvQuality.riesgo_ats && (
+                          <span className="text-[10px] px-1.5 py-0.5 rounded font-semibold"
+                            style={{
+                              background: cvQuality.riesgo_ats === 'Bajo' ? 'rgba(34,197,94,0.10)' : cvQuality.riesgo_ats === 'Alto' ? 'rgba(239,68,68,0.10)' : 'rgba(245,158,11,0.10)',
+                              color: cvQuality.riesgo_ats === 'Bajo' ? '#16a34a' : cvQuality.riesgo_ats === 'Alto' ? '#dc2626' : '#d97706',
+                            }}>
+                            ATS {cvQuality.riesgo_ats}
+                          </span>
+                        )}
+                        {/* Score delta — only shown after optimization or job adaptation */}
+                        {scoreDelta != null && (
+                          <span className="text-[10px] px-1.5 py-0.5 rounded font-semibold"
+                            style={{ background: 'rgba(34,197,94,0.12)', color: '#16a34a', border: '1px solid rgba(34,197,94,0.25)' }}>
+                            ↑ +{scoreDelta} pts
+                          </span>
+                        )}
+                      </div>
+                      <p className="text-xs text-slate-500 mt-0.5 leading-snug">
+                        {scoreDelta != null
+                          ? `Antes: ${cvBaselineScore} → Ahora: ${cvQuality.score}`
+                          : (cvQuality.nota_consultor || (isHigh ? 'Listo para enviar a reclutadores' : 'Generado con tu información real'))
+                        }
+                      </p>
+                    </div>
                   </div>
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2 flex-wrap">
-                      <p className="text-sm font-semibold text-slate-800">CV {cvQuality.nivel}</p>
-                      {cvQuality.riesgo_ats && (
-                        <span className="text-[10px] px-1.5 py-0.5 rounded font-semibold"
-                          style={{
-                            background: cvQuality.riesgo_ats === 'Bajo' ? 'rgba(34,197,94,0.10)' : cvQuality.riesgo_ats === 'Alto' ? 'rgba(239,68,68,0.10)' : 'rgba(245,158,11,0.10)',
-                            color: cvQuality.riesgo_ats === 'Bajo' ? '#16a34a' : cvQuality.riesgo_ats === 'Alto' ? '#dc2626' : '#d97706',
-                          }}>
-                          ATS {cvQuality.riesgo_ats}
-                        </span>
+                  {/* Fortalezas del consultor */}
+                  {cvQuality.fortalezas?.length > 0 && (
+                    <div className="px-4 py-3 space-y-1.5 border-t" style={{ borderColor: 'rgba(0,0,0,0.06)', background: 'white' }}>
+                      <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-500">Fortalezas del CV</p>
+                      {cvQuality.fortalezas.map((f, i) => (
+                        <div key={i} className="flex items-start gap-2">
+                          <span className="text-emerald-500 shrink-0 mt-0.5 text-xs">✓</span>
+                          <p className="text-xs text-slate-600 leading-snug">{f}</p>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                  {/* Mejoras aplicadas — expandable, only after optimization */}
+                  {mejoras.length > 0 && (
+                    <div className="border-t" style={{ borderColor: 'rgba(0,0,0,0.06)', background: 'white' }}>
+                      <button
+                        onClick={() => setShowMejoras(v => !v)}
+                        className="w-full px-4 py-2.5 flex items-center justify-between text-left"
+                      >
+                        <p className="text-[10px] font-semibold uppercase tracking-wide" style={{ color: '#0077B5' }}>
+                          Mejoras aplicadas ({mejoras.length})
+                        </p>
+                        <span className="text-slate-400 text-xs">{showMejoras ? '▲' : '▼'}</span>
+                      </button>
+                      {showMejoras && (
+                        <div className="px-4 pb-3 space-y-1.5">
+                          {mejoras.map((m, i) => (
+                            <div key={i} className="flex items-start gap-2">
+                              <span className="shrink-0 mt-0.5 text-xs" style={{ color: '#0077B5' }}>✓</span>
+                              <p className="text-xs text-slate-600 leading-snug">{m}</p>
+                            </div>
+                          ))}
+                        </div>
                       )}
                     </div>
-                    <p className="text-xs text-slate-500 mt-0.5 leading-snug">{cvQuality.nota_consultor || (cvQuality.score >= 8 ? 'Listo para enviar a reclutadores' : 'Generado con tu información real')}</p>
-                  </div>
+                  )}
                 </div>
-                {/* Fortalezas del consultor */}
-                {cvQuality.fortalezas?.length > 0 && (
-                  <div className="px-4 py-3 space-y-1.5 border-t" style={{ borderColor: 'rgba(0,0,0,0.06)', background: 'white' }}>
-                    <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-500">Fortalezas del CV</p>
-                    {cvQuality.fortalezas.map((f, i) => (
-                      <div key={i} className="flex items-start gap-2">
-                        <span className="text-emerald-500 shrink-0 mt-0.5 text-xs">✓</span>
-                        <p className="text-xs text-slate-600 leading-snug">{f}</p>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-            )}
+              )
+            })()}
             {/* Foto de perfil */}
             <div className="rounded-2xl p-4 space-y-3"
               style={{ background: profilePhotoPreview ? 'rgba(5,150,105,0.05)' : 'rgba(0,119,181,0.05)', border: `1px solid ${profilePhotoPreview ? 'rgba(5,150,105,0.2)' : 'rgba(0,119,181,0.18)'}` }}>
@@ -885,9 +937,12 @@ export default function CvScreen({
                       <button
                         onClick={() => {
                           setCvBeforeOptimize({ ...cvFinalData })
+                          setCvBeforeOptimizeQuality(cvQuality ? { ...cvQuality } : null)
                           updateCv(cvOptimizeSuggestion, 'optimizado')
+                          if (cvOptimizeSuggestionQuality) setCvQuality(cvOptimizeSuggestionQuality)
                           setShowCvOptimizePanel(false)
                           setCvOptimizeSuggestion(null)
+                          setCvOptimizeSuggestionQuality(null)
                           setCvOptimizeApplied(true)
                           trackEvent('cv_optimize_applied', { changes: totalChanges })
                         }}
@@ -907,7 +962,13 @@ export default function CvScreen({
                 style={{ background: 'rgba(34,197,94,0.07)', border: '1px solid rgba(34,197,94,0.25)' }}>
                 <p className="text-xs font-medium" style={{ color: '#16a34a' }}>✓ Mejoras aplicadas al CV</p>
                 <button
-                  onClick={() => { updateCv(cvBeforeOptimize); setCvBeforeOptimize(null); setCvOptimizeApplied(false) }}
+                  onClick={() => {
+                    updateCv(cvBeforeOptimize)
+                    if (cvBeforeOptimizeQuality) setCvQuality(cvBeforeOptimizeQuality)
+                    setCvBeforeOptimize(null)
+                    setCvBeforeOptimizeQuality(null)
+                    setCvOptimizeApplied(false)
+                  }}
                   className="text-xs px-3 py-1.5 rounded-lg shrink-0 font-medium transition-all"
                   style={{ background: 'rgba(239,68,68,0.08)', color: '#dc2626', border: '1px solid rgba(239,68,68,0.25)' }}>
                   ↩ Deshacer

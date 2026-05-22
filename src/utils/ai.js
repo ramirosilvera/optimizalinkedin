@@ -30,10 +30,15 @@ export const AI_DEFAULTS = {
     resultado: { presente: false, comentario: '' },
     sugerencia_clave: '',
   },
+  optimize_cv: {
+    cv: null,
+    quality: null,
+  },
   job_adapter: {
     empresa_detectada: null, cargo_detectado: null, seniority_detectado: null,
     cv_adaptado: null, carta_de_presentacion: '',
     palabras_clave_incorporadas: [], ajustes_principales: [],
+    quality: null,
   },
   linkedin_growth: {
     banner_ideas: [],

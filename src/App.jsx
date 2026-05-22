@@ -185,6 +185,9 @@ export default function App() {
   // CV iterativo — pipeline de calidad y gaps
   const [cvDraft, setCvDraft] = useState(null)
   const [cvQuality, setCvQuality] = useState(null)
+  const [cvBaselineScore, setCvBaselineScore] = useState(null)          // Initial score — frozen after first done, used for delta display
+  const [cvOptimizeSuggestionQuality, setCvOptimizeSuggestionQuality] = useState(null) // Temp quality from optimize_cv, pending user accept
+  const [cvBeforeOptimizeQuality, setCvBeforeOptimizeQuality] = useState(null)         // Previous quality saved for undo
   const [cvGapAnswers, setCvGapAnswers] = useState({})
   const [cvStage, setCvStage] = useState('idle') // 'idle'|'drafting'|'gap_form'|'regenerating'|'done'
   const [cvTemplate, setCvTemplate] = useState('clasico')
@@ -2046,6 +2049,9 @@ Generá el feedback en este JSON exacto:
     setCvPreviewHtml('')
     setCvDraft(null)
     setCvQuality(null)
+    setCvBaselineScore(null)
+    setCvOptimizeSuggestionQuality(null)
+    setCvBeforeOptimizeQuality(null)
     setCvFinalData(null)
     setCvGapAnswers({})
     const resolvedContacto = contacto && Object.keys(contacto).length ? contacto : (cvContacto || {})
@@ -2090,6 +2096,7 @@ Generá el feedback en este JSON exacto:
         setCvFinalData(cv)
         setCvVariant(null)
         setCvStage('done')
+        setCvBaselineScore(quality?.score ?? null)
         setCvPreviewHtml(buildCvHtml(cv, profilePhotoRef.current, profilePhotoMimeRef.current, cvTemplate))
         setShowCvPreview(true)
         // Not saving here — export action is the canonical save point
@@ -2132,9 +2139,9 @@ Generá el feedback en este JSON exacto:
         headers: WORKER_HEADERS,
         signal: controller.signal,
         body: JSON.stringify({
-          action: 'ai_generate_cv',
+          action: 'ai_generate_cv_full',
           contents: [{ parts: [{ text: userPrompt }] }],
-          generationConfig: { responseMimeType: 'application/json', maxOutputTokens: 2000 },
+          generationConfig: { responseMimeType: 'application/json', maxOutputTokens: 3500 },
         }),
       })
       if (!res.ok) {
@@ -2143,7 +2150,10 @@ Generá el feedback en este JSON exacto:
         throw new Error(parseGeminiError(res.status, e))
       }
       const data = await res.json()
-      const cv = parseAIJson(extractAIText(data), AI_DEFAULTS.generate_cv, 'No se pudo regenerar el CV. Intentá de nuevo.')
+      const parsed = parseAIJson(extractAIText(data), AI_DEFAULTS.generate_cv_full, 'No se pudo regenerar el CV. Intentá de nuevo.')
+      const cv = sanitizeCv(parsed.cv || parsed)
+      const quality = parsed.quality || null
+      if (quality) { setCvQuality(quality); setCvBaselineScore(quality.score) }
       setCvFinalData(cv)
       setCvVariant(null)
       setCvStage('done')
@@ -2176,15 +2186,16 @@ Generá el feedback en este JSON exacto:
   }
 
   // ── Abre preview con el CV adaptado (cierra el modal del job adapter) ───────
-  const openAdaptedCvPreview = (adaptedCv, empresa, cargo) => {
+  const openAdaptedCvPreview = (adaptedCv, empresa, cargo, adaptedQuality = null) => {
     if (!adaptedCv) return
     setCvFinalData(adaptedCv)
     setCvVariant({ empresa: empresa || null, cargo: cargo || null })
+    if (adaptedQuality) setCvQuality(adaptedQuality)
     setCvPreviewHtml(buildCvHtml(adaptedCv, profilePhotoRef.current, profilePhotoMimeRef.current, cvTemplate))
     setShowCvPreview(true)
     setShowJobModal(false)
     setJobResult(null)
-    trackEvent('job_adapter_open_preview')
+    trackEvent('job_adapter_open_preview', { score: adaptedQuality?.score })
   }
 
   // ── Exportar CV: guarda snapshot + Web Share API en mobile, popup+print en desktop ──
@@ -2393,7 +2404,11 @@ Generá el feedback en este JSON exacto:
         throw new Error('La IA devolvió una respuesta inesperada. Intentá de nuevo.')
       }
 
-      const merged = safeMergeOptimized(cvFinalData, raw)
+      // Support both new format {cv, quality} and legacy flat CV object
+      const cvFromResponse = (raw.cv && typeof raw.cv === 'object' && !Array.isArray(raw.cv)) ? raw.cv : raw
+      const qualityFromResponse = raw.quality && typeof raw.quality === 'object' ? raw.quality : null
+
+      const merged = safeMergeOptimized(cvFinalData, cvFromResponse)
 
       // Calculate diff for UX summary (informational only — never blocks the panel)
       const titularChanged = merged.titular !== cvFinalData.titular
@@ -2405,8 +2420,9 @@ Generá el feedback en este JSON exacto:
       const habilidadesChanged = JSON.stringify(merged.habilidades) !== JSON.stringify(cvFinalData.habilidades)
 
       setCvOptimizeSuggestion(merged)
+      setCvOptimizeSuggestionQuality(qualityFromResponse)
       setShowCvOptimizePanel(true)
-      trackEvent('cv_optimized', { titular_changed: titularChanged, resumen_changed: resumenChanged, bullets_improved: bulletsChanged, habilidades_changed: habilidadesChanged, with_answers: answersEntries.length > 0 })
+      trackEvent('cv_optimized', { titular_changed: titularChanged, resumen_changed: resumenChanged, bullets_improved: bulletsChanged, habilidades_changed: habilidadesChanged, with_answers: answersEntries.length > 0, score_before: cvQuality?.score, score_after: qualityFromResponse?.score })
     } catch (err) {
       setCvOptimizeError(err.name === 'AbortError' ? 'El análisis tardó demasiado. Intentá de nuevo.' : err.message || 'Error al optimizar el CV. Tu contenido fue preservado.')
     } finally {
@@ -2901,6 +2917,11 @@ Generá el feedback en este JSON exacto:
             cvOptimizeError={cvOptimizeError}
             cvOptimizeSuggestion={cvOptimizeSuggestion}
             setCvOptimizeSuggestion={setCvOptimizeSuggestion}
+            cvOptimizeSuggestionQuality={cvOptimizeSuggestionQuality}
+            setCvOptimizeSuggestionQuality={setCvOptimizeSuggestionQuality}
+            cvBeforeOptimizeQuality={cvBeforeOptimizeQuality}
+            setCvBeforeOptimizeQuality={setCvBeforeOptimizeQuality}
+            cvBaselineScore={cvBaselineScore}
             cvOptimizeApplied={cvOptimizeApplied}
             setCvOptimizeApplied={setCvOptimizeApplied}
             cvBeforeOptimize={cvBeforeOptimize}
