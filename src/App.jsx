@@ -129,7 +129,7 @@ export default function App() {
   const [interviewError, setInterviewError] = useState('')
   const [dynamicInterviewQs, setDynamicInterviewQs] = useState(null)
   const [interviewQsLoading, setInterviewQsLoading] = useState(false)
-  const [interviewJobContext, setInterviewJobContext] = useState(null) // { empresa, puesto } from Kanban
+  const [interviewJobContext, setInterviewJobContext] = useState(null) // { empresa, puesto, seniority, ats_keywords, notas, adaptation_notes, card_id }
   const [kanbanListMode, setKanbanListMode] = useState(false)
 
   // Contacto con Ramiro
@@ -1186,12 +1186,17 @@ export default function App() {
     if (contextOverride) setInterviewJobContext(contextOverride)
     setInterviewQsLoading(true)
     try {
-      const jobCtx = activeJobContext ? ` · ${activeJobContext.empresa ? `Empresa: ${activeJobContext.empresa} · ` : ''}Puesto: ${activeJobContext.puesto}` : ''
+      const jobSeniority = activeJobContext?.seniority || seniority
+      const atsKeywords = activeJobContext?.ats_keywords
+        ? activeJobContext.ats_keywords.split(',').map(k => k.trim()).filter(Boolean).slice(0, 8)
+        : []
+      const candidateNotas = activeJobContext?.notas || ''
+      const adaptationNotes = activeJobContext?.adaptation_notes || ''
       const prompt = `Sos un headhunter experto generando preguntas de entrevista laboral personalizadas.
 
-Candidato: ${profesion}${industria ? ` · Industria: ${industria}` : ''}${seniority ? ` · Nivel: ${seniority}` : ''}${jobCtx}
-
-Generá exactamente 5 preguntas de entrevista adaptadas a este perfil.${activeJobContext ? ` Las preguntas deben ser específicas para el puesto de "${activeJobContext.puesto}"${activeJobContext.empresa ? ` en "${activeJobContext.empresa}"` : ''}.` : ' Deben ser relevantes para su profesión y nivel, no genéricas.'}
+CANDIDATO: ${profesion}${industria ? ` · Industria: ${industria}` : ''}${jobSeniority ? ` · Nivel: ${jobSeniority}` : ''}${activeJobContext?.empresa ? ` · Empresa objetivo: ${activeJobContext.empresa}` : ''}
+${activeJobContext?.puesto ? `PUESTO OBJETIVO: ${activeJobContext.puesto}\n` : ''}${atsKeywords.length > 0 ? `HABILIDADES CLAVE DEL PUESTO (sondear evidencia concreta): ${atsKeywords.join(', ')}\n` : ''}${candidateNotas ? `CONTEXTO DEL CANDIDATO: ${candidateNotas}\n` : ''}${adaptationNotes ? `BRECHAS DETECTADAS EN CV (profundizar): ${adaptationNotes}\n` : ''}
+Generá exactamente 5 preguntas de entrevista.${activeJobContext ? ` Priorizá: (1) al menos 2 preguntas que sondeen evidencia de las habilidades clave, (2) preguntas situacionales para nivel ${jobSeniority || 'profesional'}, (3) preguntas que aborden las brechas detectadas si las hay.` : ' Deben ser relevantes para su profesión y nivel, no genéricas.'}
 Formato JSON exacto: [{"pregunta": "...", "hint": "..."}]
 
 Devolvé solo el array JSON, sin markdown ni explicación.`
@@ -2007,7 +2012,7 @@ Generá el feedback en este JSON exacto:
   const saveCvSnapshot = () => {
     if (!cvFinalData) return
     const titulo = cvFinalData.nombre || 'CV guardado'
-    saveToHistorial('cv', cvFinalData, titulo, null)
+    saveCvToHistorial(cvFinalData, titulo)
     if (user?.es_premium) {
       setCvSuccess('✓ Versión guardada')
       setTimeout(() => setCvSuccess(''), 3000)
@@ -2097,9 +2102,9 @@ Generá el feedback en este JSON exacto:
         setCvVariant(null)
         setCvStage('done')
         setCvBaselineScore(quality?.score ?? null)
+        saveCvToHistorial(cv, cv.nombre || 'CV base')
         setCvPreviewHtml(buildCvHtml(cv, profilePhotoRef.current, profilePhotoMimeRef.current, cvTemplate))
         setShowCvPreview(true)
-        // Not saving here — export action is the canonical save point
       } else {
         trackEvent('cv_gap_form_shown', { gap_count: quality.gaps?.length || 0 })
         setCvStage('gap_form')
@@ -2157,10 +2162,10 @@ Generá el feedback en este JSON exacto:
       setCvFinalData(cv)
       setCvVariant(null)
       setCvStage('done')
+      saveCvToHistorial(cv, cv.nombre || 'CV base')
       setCvPreviewHtml(buildCvHtml(cv, profilePhotoRef.current, profilePhotoMimeRef.current, cvTemplate))
       setShowCvPreview(true)
       trackEvent('cv_regenerated', { answered_count: Object.keys(gapAnswers).length })
-      // Not saving here — export action is the canonical save point
     } catch (err) {
       if (!err.isRateLimit) {
         setCvStage('gap_form')
@@ -2191,6 +2196,7 @@ Generá el feedback en este JSON exacto:
     setCvFinalData(adaptedCv)
     setCvVariant({ empresa: empresa || null, cargo: cargo || null })
     if (adaptedQuality) setCvQuality(adaptedQuality)
+    saveCvToHistorial(adaptedCv, empresa ? `CV adaptado — ${empresa}` : 'CV adaptado')
     setCvPreviewHtml(buildCvHtml(adaptedCv, profilePhotoRef.current, profilePhotoMimeRef.current, cvTemplate))
     setShowCvPreview(true)
     setShowJobModal(false)
@@ -2203,15 +2209,6 @@ Generá el feedback en este JSON exacto:
     if (!cvFinalData || cvExportState === 'loading') return
     setCvExportState('loading')
     trackEvent('cv_export_start')
-
-    // Guardar snapshot en historial solo si el contenido cambió (evita duplicados por exports múltiples)
-    const snapshotTitulo = (() => {
-      if (!cvVariant) return cvFinalData.nombre || 'CV base'
-      if (cvVariant === 'optimizado') return `${cvFinalData.nombre || 'CV'} — optimizado`
-      if (typeof cvVariant === 'object' && cvVariant.empresa) return `CV adaptado — ${cvVariant.empresa}`
-      return cvFinalData.nombre || 'CV'
-    })()
-    saveCvToHistorial(cvFinalData, snapshotTitulo)
 
     const loadingId = addToast('Preparando tu CV…', 'loading', 0)
 
@@ -2227,7 +2224,7 @@ Generá el feedback en este JSON exacto:
         if (navigator.canShare({ files: [htmlFile] })) {
           await navigator.share({ files: [htmlFile] })
           dismissToast(loadingId)
-          addToast('CV exportado · Versión guardada en historial', 'success')
+          addToast('✓ CV exportado', 'success')
           trackEvent('cv_export_share')
           setCvExportState('idle')
           return
@@ -2240,7 +2237,7 @@ Generá el feedback en este JSON exacto:
       if (win) {
         win.document.open(); win.document.write(printHtml); win.document.close()
         dismissToast(loadingId)
-        addToast('CV exportado · Versión guardada en historial', 'success')
+        addToast('✓ CV exportado', 'success')
         trackEvent('cv_export_print')
         return
       }
@@ -2952,6 +2949,7 @@ Generá el feedback en este JSON exacto:
             generatePersonalizedInterviewQs={generatePersonalizedInterviewQs}
             setStep={setStep}
             result={result}
+            trackingCards={trackingCards}
           />
         )}
 

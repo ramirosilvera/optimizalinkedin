@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { STEPS, trackEvent, BTN_BACK_STYLE } from '../../constants'
 import { Logo } from '../ui'
 
-export default function InterviewIntroScreen({ interviewJobContext, setInterviewJobContext, generatePersonalizedInterviewQs, setStep, result }) {
+export default function InterviewIntroScreen({ interviewJobContext, setInterviewJobContext, generatePersonalizedInterviewQs, setStep, result, trackingCards }) {
   const [customTarget, setCustomTarget] = useState('')
 
   const handleStart = () => {
@@ -46,19 +46,62 @@ export default function InterviewIntroScreen({ interviewJobContext, setInterview
           style={{ background: 'rgba(99,102,241,0.07)', border: '1px solid rgba(99,102,241,0.22)' }}>
           <span className="text-sm">📍</span>
           <div className="text-left">
-            <p className="text-xs font-bold" style={{ color: '#6366f1' }}>{interviewJobContext.empresa}</p>
+            {interviewJobContext.empresa && (
+              <p className="text-xs font-bold" style={{ color: '#6366f1' }}>{interviewJobContext.empresa}</p>
+            )}
             <p className="text-xs text-slate-500">{interviewJobContext.puesto}</p>
+            {interviewJobContext.seniority && (
+              <p className="text-[10px]" style={{ color: '#94a3b8' }}>{interviewJobContext.seniority}</p>
+            )}
           </div>
           <button onClick={() => setInterviewJobContext(null)} className="text-slate-300 hover:text-slate-500 ml-1">×</button>
         </div>
       )}
 
-      {/* Custom job target input — only if no Kanban context */}
+      {/* Postulaciones picker + custom input — only if no Kanban context */}
       {!interviewJobContext && (
-        <div className="w-full max-w-sm mx-auto text-left space-y-1.5">
-          <label className="text-xs font-semibold text-slate-500">
-            ¿Para qué puesto querés entrenar? <span className="font-normal">(opcional)</span>
-          </label>
+        <div className="w-full max-w-sm mx-auto text-left space-y-3">
+          {trackingCards?.length > 0 && (
+            <>
+              <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide">Tus postulaciones</p>
+              <div className="space-y-1.5">
+                {trackingCards.slice(0, 4).map(card => (
+                  <button
+                    key={card.id}
+                    onClick={() => setInterviewJobContext({
+                      empresa: card.empresa || '',
+                      puesto: card.puesto || '',
+                      seniority: card.seniority || null,
+                      ats_keywords: card.ats_keywords || '',
+                      notas: card.notas || '',
+                      adaptation_notes: card.adaptation_notes || '',
+                      card_id: card.id,
+                    })}
+                    className="w-full text-left rounded-xl px-3 py-2 transition-all"
+                    style={{ background: '#f8fafc', border: '1px solid rgba(99,102,241,0.18)' }}>
+                    <div className="flex items-center justify-between gap-2">
+                      <div className="min-w-0">
+                        <p className="text-xs font-bold truncate" style={{ color: '#0d2137' }}>{card.empresa || card.puesto}</p>
+                        {card.empresa && <p className="text-xs truncate" style={{ color: '#6366f1' }}>{card.puesto}</p>}
+                      </div>
+                      {card.seniority && (
+                        <span className="text-[10px] px-2 py-0.5 rounded-full shrink-0"
+                          style={{ background: 'rgba(99,102,241,0.08)', color: '#6366f1', border: '1px solid rgba(99,102,241,0.15)' }}>
+                          {card.seniority}
+                        </span>
+                      )}
+                    </div>
+                  </button>
+                ))}
+              </div>
+              <p className="text-xs text-slate-400 text-center">— o especificá otro puesto —</p>
+            </>
+          )}
+          {!trackingCards?.length && (
+            <label className="text-xs font-semibold text-slate-500">
+              ¿Para qué puesto querés entrenar? <span className="font-normal">(opcional)</span>
+            </label>
+          )}
           <input
             type="text"
             value={customTarget}
