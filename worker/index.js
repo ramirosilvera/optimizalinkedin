@@ -449,14 +449,41 @@ async function logAdminAction(env, adminId, action, targetType, targetId, detail
 // ── AI usage log (fire-and-forget) ───────────────────────────────────────────
 
 /**
- * HTTP 200 — Gemini responded. Tokens present if usageMetadata was included.
- * @typedef {{ type: 'success', feature: string, userId: string|null, inputTokens: number|null, outputTokens: number|null, durationMs: number, statusCode: number }} AiUsageSuccessEvent
+ * Fields shared by every AI usage event regardless of outcome.
+ * @typedef {{
+ *   feature:      string,
+ *   userId:       string|null,
+ *   durationMs:   number,
+ *   statusCode:   number,
+ *   retryCount?:  number,
+ *   apiKeyAlias?: string|null,
+ * }} AiUsageBaseEvent
  */
+
+/**
+ * HTTP 200 — Gemini responded. Tokens present if usageMetadata was included.
+ * `thinkingTokens` comes from `usageMetadata.thoughtsTokenCount` (Flash Lite: always 0).
+ * @typedef {AiUsageBaseEvent & {
+ *   type:            'success',
+ *   inputTokens:     number|null,
+ *   outputTokens:    number|null,
+ *   thinkingTokens?: number|null,
+ * }} AiUsageSuccessEvent
+ */
+
 /**
  * Any failure: HTTP 4xx/5xx, network error, timeout, abort.
  * Token fields are semantically absent — the concept doesn't apply.
- * @typedef {{ type: 'failure', feature: string, userId: string|null, durationMs: number, statusCode: number, errorType: string }} AiUsageFailureEvent
+ * `retryDelaySecs` is parsed from google.rpc.RetryInfo (429 body); null when absent.
+ * `quotaType` distinguishes RPD exhaustion ('daily') from RPM throttle ('minute').
+ * @typedef {AiUsageBaseEvent & {
+ *   type:             'failure',
+ *   errorType:        string,
+ *   retryDelaySecs?:  number|null,
+ *   quotaType?:       string|null,
+ * }} AiUsageFailureEvent
  */
+
 /**
  * @typedef {AiUsageSuccessEvent | AiUsageFailureEvent} AiUsageEvent
  */
