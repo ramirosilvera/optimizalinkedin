@@ -2966,6 +2966,8 @@ Generá el feedback en este JSON exacto:
             setStep={setStep}
             result={result}
             trackingCards={trackingCards}
+            loadTracking={loadTracking}
+            trackingLoading={trackingLoading}
           />
         )}
 

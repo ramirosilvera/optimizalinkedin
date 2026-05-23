@@ -1,9 +1,27 @@
-import { useState } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { STEPS, trackEvent, BTN_BACK_STYLE } from '../../constants'
 import { Logo } from '../ui'
 
-export default function InterviewIntroScreen({ interviewJobContext, setInterviewJobContext, generatePersonalizedInterviewQs, setStep, result, trackingCards }) {
+export default function InterviewIntroScreen({ interviewJobContext, setInterviewJobContext, generatePersonalizedInterviewQs, setStep, result, trackingCards, loadTracking, trackingLoading }) {
   const [customTarget, setCustomTarget] = useState('')
+  const [showSkeleton, setShowSkeleton] = useState(false)
+  const skeletonTimerRef = useRef(null)
+
+  useEffect(() => {
+    if (!trackingCards?.length && !trackingLoading && !interviewJobContext) {
+      loadTracking?.()
+    }
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    if (trackingLoading && !trackingCards?.length && !interviewJobContext) {
+      skeletonTimerRef.current = setTimeout(() => setShowSkeleton(true), 200)
+    } else {
+      clearTimeout(skeletonTimerRef.current)
+      setShowSkeleton(false)
+    }
+    return () => clearTimeout(skeletonTimerRef.current)
+  }, [trackingLoading, trackingCards?.length, interviewJobContext])
 
   const handleStart = () => {
     trackEvent('entrevista_iniciada', { has_job_context: !!(interviewJobContext || customTarget.trim()) })
@@ -18,6 +36,9 @@ export default function InterviewIntroScreen({ interviewJobContext, setInterview
     }
     setStep(STEPS.INTERVIEW)
   }
+
+  // Gate start button only while loading and no context provided yet
+  const isStartDisabled = !!(trackingLoading && !trackingCards?.length && !interviewJobContext && !customTarget.trim())
 
   return (
     <div className="step-transition text-center space-y-8">
@@ -61,10 +82,22 @@ export default function InterviewIntroScreen({ interviewJobContext, setInterview
       {/* Postulaciones picker + custom input — only if no Kanban context */}
       {!interviewJobContext && (
         <div className="w-full max-w-sm mx-auto text-left space-y-3">
-          {trackingCards?.length > 0 && (
+          {showSkeleton && (
             <>
               <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide">Tus postulaciones</p>
               <div className="space-y-1.5">
+                {[0, 1, 2].map(i => (
+                  <div key={i} className="w-full rounded-xl px-3 py-2 animate-pulse"
+                    style={{ background: '#f1f5f9', border: '1px solid rgba(99,102,241,0.1)', height: '48px' }} />
+                ))}
+              </div>
+            </>
+          )}
+
+          {!trackingLoading && trackingCards?.length > 0 && (
+            <div style={{ animation: 'fadeIn 150ms ease-out' }}>
+              <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide">Tus postulaciones</p>
+              <div className="space-y-1.5 mt-2">
                 {trackingCards.slice(0, 4).map(card => (
                   <button
                     key={card.id}
@@ -95,14 +128,16 @@ export default function InterviewIntroScreen({ interviewJobContext, setInterview
                   </button>
                 ))}
               </div>
-              <p className="text-xs text-slate-400 text-center">— o especificá otro puesto —</p>
-            </>
+              <p className="text-xs text-slate-400 text-center mt-2">— o especificá otro puesto —</p>
+            </div>
           )}
-          {!trackingCards?.length && (
+
+          {!trackingLoading && !trackingCards?.length && (
             <label className="text-xs font-semibold text-slate-500">
               ¿Para qué puesto querés entrenar? <span className="font-normal">(opcional)</span>
             </label>
           )}
+
           <input
             type="text"
             value={customTarget}
@@ -148,10 +183,23 @@ export default function InterviewIntroScreen({ interviewJobContext, setInterview
         )}
         <button
           onClick={handleStart}
-          className="btn-glow w-full text-white font-semibold py-4 rounded-2xl text-base"
-          style={{ background: 'linear-gradient(135deg,#6366f1,#8b5cf6)' }}
+          disabled={isStartDisabled}
+          className="btn-glow w-full text-white font-semibold py-4 rounded-2xl text-base transition-opacity"
+          style={{
+            background: 'linear-gradient(135deg,#6366f1,#8b5cf6)',
+            opacity: isStartDisabled ? 0.6 : 1,
+            cursor: isStartDisabled ? 'not-allowed' : 'pointer',
+          }}
         >
-          Comenzar sesión →
+          {isStartDisabled ? (
+            <span className="flex items-center justify-center gap-2">
+              <svg className="animate-spin h-4 w-4" fill="none" viewBox="0 0 24 24">
+                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+              </svg>
+              Cargando postulaciones…
+            </span>
+          ) : 'Comenzar sesión →'}
         </button>
         <button
           onClick={() => setStep(STEPS.MODE_SELECT)}
