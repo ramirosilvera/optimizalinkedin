@@ -1173,6 +1173,11 @@ export default function App() {
     }
   }, [step]) // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Top-of-funnel signal: fire once per questionnaire entry so GA4 funnels have a visible entry step
+  useEffect(() => {
+    if (step === STEPS.QUESTIONS) trackEvent('questionnaire_started')
+  }, [step]) // eslint-disable-line react-hooks/exhaustive-deps
+
   // Single source of truth: rebuild CV preview whenever photo, CV data, stage, or template changes.
   // Covers all async paths: upload, storage auto-load, historial restore, template switch.
   useEffect(() => {

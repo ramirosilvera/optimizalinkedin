@@ -1805,28 +1805,28 @@ function BarChart({ data, keys, colors, keyLabels, height = 130 }) {
 function FunnelBar({ stages }) {
   if (!stages?.length) return <Empty text="Sin datos de funnel" />
   const maxCount = Math.max(1, stages[0]?.count || 1)
-  const COLORS = ['#0077B5','#0ea5e9','#38bdf8','#7dd3fc','#bae6fd']
+  const COLORS = ['#0077B5','#0ea5e9','#38bdf8','#7dd3fc','#bae6fd','#93c5fd']
   return (
     <div style={{ display:'flex', flexDirection:'column', gap:10 }}>
       {stages.map((s, i) => {
         const prev = stages[i - 1]
         const dropPct = prev && prev.count > 0 ? Math.round((1 - s.count / prev.count) * 100) : null
-        const barW = Math.max(4, (s.count / maxCount) * 100)
+        const isEmpty = s.count === 0
+        const barW = isEmpty ? 0 : Math.max(4, (s.count / maxCount) * 100)
         return (
           <div key={i}>
             <div style={{ display:'flex', alignItems:'center', gap:10, marginBottom:4 }}>
               <div style={{ minWidth:50, flexBasis:130, flexShrink:1, fontSize:12, color:'#475569', textAlign:'right', fontWeight:500, wordBreak:'break-word' }}>
                 {s.stage}
               </div>
-              <div style={{ flex:1, background:'#f1f5f9', borderRadius:6, height:26, overflow:'hidden' }}>
-                <div style={{
-                  height:'100%', borderRadius:6, width:`${barW}%`,
-                  background:COLORS[i] || '#0077B5',
-                  transition:'width 0.6s ease',
-                }} />
+              <div style={{ flex:1, background:'#f1f5f9', borderRadius:6, height:26, overflow:'hidden', position:'relative' }}>
+                {isEmpty
+                  ? <div style={{ position:'absolute', inset:0, display:'flex', alignItems:'center', paddingLeft:8, fontSize:10, color:'#94a3b8', fontStyle:'italic' }}>sin datos aún</div>
+                  : <div style={{ height:'100%', borderRadius:6, width:`${barW}%`, background:COLORS[i] || '#0077B5', transition:'width 0.6s ease' }} />
+                }
               </div>
-              <div style={{ width:120, fontSize:12, fontWeight:700, color:'#0d2137', flexShrink:0 }}>
-                {fmtN(s.count)} <span style={{ color:'#94a3b8', fontWeight:500 }}>({s.pct}%)</span>
+              <div style={{ width:120, fontSize:12, fontWeight:700, color: isEmpty ? '#94a3b8' : '#0d2137', flexShrink:0 }}>
+                {isEmpty ? '—' : fmtN(s.count)} <span style={{ color:'#94a3b8', fontWeight:500 }}>({s.pct}%)</span>
               </div>
             </div>
             {dropPct !== null && dropPct > 0 && (

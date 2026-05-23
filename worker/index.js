@@ -1462,23 +1462,36 @@ export default {
         if (!env.GA4_CREDENTIALS_JSON) {
           return new Response(JSON.stringify({ ok: true, not_configured: true }), { status: 200, headers: corsHeaders })
         }
+        const { days = 30 } = body
+        // 30-min rolling cache window — prevents quota burns on admin refreshes
+        const cacheWindow = Math.floor(Date.now() / (30 * 60 * 1000))
+        const cacheKey = new Request(`https://cache-internal/ga4_funnel_${days}_${cacheWindow}`)
+        try {
+          const cached = await caches.default.match(cacheKey)
+          if (cached) return cached
+        } catch { /* cache miss is silent */ }
         try {
           const creds = JSON.parse(env.GA4_CREDENTIALS_JSON)
           const token = await getGa4AccessToken(creds)
-          const { days = 30 } = body
           const GA4_PROPERTY = '534867380'
+          // Updated funnel: starts from questionnaire entry so top-of-funnel is always visible
           const FUNNEL_STEPS = [
-            { name: 'Inicia análisis',   event: 'analysis_started'        },
-            { name: 'Completa análisis', event: 'analysis_completed'       },
-            { name: 'Inicia CV',         event: 'cv_generation_started'    },
-            { name: 'Completa CV',       event: 'cv_generation_completed'  },
-            { name: 'Ve modal premium',  event: 'premium_modal_shown'      },
-            { name: 'Abre checkout',     event: 'premium_checkout_opened'  },
+            { name: 'Inicia cuestionario', event: 'questionnaire_started'    },
+            { name: 'Inicia análisis',     event: 'analysis_started'         },
+            { name: 'Completa análisis',   event: 'analysis_completed'       },
+            { name: 'Inicia CV',           event: 'cv_generation_started'    },
+            { name: 'Ve modal premium',    event: 'premium_modal_shown'      },
+            { name: 'Abre checkout',       event: 'premium_checkout_opened'  },
           ]
           const report = await runGa4FunnelReport(token, GA4_PROPERTY, FUNNEL_STEPS, days)
           const { stages, diag } = parseGa4FunnelResponse(report, FUNNEL_STEPS.map(s => s.name))
           console.log('[ga4_funnel] parsed stages:', stages.length, 'diag:', JSON.stringify(diag))
-          return new Response(JSON.stringify({ ok: true, stages, days, diag }), { status: 200, headers: corsHeaders })
+          const resp = new Response(
+            JSON.stringify({ ok: true, stages, days, diag }),
+            { status: 200, headers: { ...corsHeaders, 'Cache-Control': 'max-age=1800' } }
+          )
+          try { caches.default.put(cacheKey, resp.clone()) } catch { /* non-fatal */ }
+          return resp
         } catch (e) {
           return new Response(JSON.stringify({ ok: false, error: e.message }), { status: 500, headers: corsHeaders })
         }
