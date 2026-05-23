@@ -37,8 +37,10 @@ const OnboardingScreen       = lazy(() => import('./components/screens/Onboardin
 const CvScreen               = lazy(() => import('./components/screens/CvScreen'))
 const InterviewIntroScreen   = lazy(() => import('./components/screens/InterviewIntroScreen'))
 const InterviewScreen        = lazy(() => import('./components/screens/InterviewScreen'))
+const InterviewChatScreen    = lazy(() => import('./components/screens/InterviewChatScreen'))
 const InterviewFeedbackScreen= lazy(() => import('./components/screens/InterviewFeedbackScreen'))
 const StarTrainingScreen     = lazy(() => import('./components/screens/StarTrainingScreen'))
+const StarChatScreen         = lazy(() => import('./components/screens/StarChatScreen'))
 const TrackingScreen         = lazy(() => import('./components/screens/TrackingScreen'))
 const ReporteScreen          = lazy(() => import('./components/screens/ReporteScreen'))
 
@@ -58,6 +60,16 @@ const LeadModal              = lazy(() => import('./components/modals/LeadModal'
 
 export default function App() {
   const [step, setStep] = useState(STEPS.WELCOME)
+
+  // Detecta si el viewport es mobile (< 640px) — se actualiza en resize
+  const [isMobile, setIsMobile] = useState(() => window.innerWidth < 640)
+  useEffect(() => {
+    const mq = window.matchMedia('(max-width: 639px)')
+    const handler = (e) => setIsMobile(e.matches)
+    mq.addEventListener('change', handler)
+    setIsMobile(mq.matches)
+    return () => mq.removeEventListener('change', handler)
+  }, [])
 
   // Cuestionario estático
   const [qaHistory, setQaHistory] = useState([])
@@ -130,6 +142,7 @@ export default function App() {
   const [dynamicInterviewQs, setDynamicInterviewQs] = useState(null)
   const [interviewQsLoading, setInterviewQsLoading] = useState(false)
   const [interviewJobContext, setInterviewJobContext] = useState(null) // { empresa, puesto, seniority, ats_keywords, notas, adaptation_notes, card_id }
+  const [interviewMode, setInterviewMode] = useState('coaching') // 'coaching' | 'presion'
   const [kanbanListMode, setKanbanListMode] = useState(false)
 
   // Contacto con Ramiro
@@ -1211,6 +1224,7 @@ export default function App() {
     setDynamicInterviewQs(null)
     setInterviewQsLoading(false)
     setInterviewJobContext(null)
+    setInterviewMode('coaching')
     setLeadSaving(false)
     setLeadSent(false)
     setShowLeadModal(false)
@@ -1995,6 +2009,72 @@ Generá el feedback en este JSON exacto:
     }
   }
 
+  // ── Entrevista conversacional (turno a turno) ────────────────────────────────
+  // contents: Gemini-format conversation history + current user message
+  // meta: { job_context, questions, current_q_index, total_questions, followup_used, mode }
+  // Returns: { messages: [{type, text}], next_q, done, summary }
+  const callInterviewChat = async (contents, meta) => {
+    if (!WORKER_URL) throw new Error('Worker URL no configurada.')
+
+    const candidateProfile = qaHistory
+      .filter(h => h.answer?.trim())
+      .slice(0, 5)
+      .map(h => {
+        const qId = STATIC_QUESTIONS.find(q => q.question === h.question)?.id ?? 'dato'
+        return `${qId}: ${h.answer}`
+      })
+      .join(', ')
+
+    const fullMeta = { ...meta, candidate_profile: candidateProfile }
+
+    const isLikelyClosing = meta.current_q_index >= meta.total_questions - 1 && !meta.followup_used
+    const maxOutputTokens = isLikelyClosing ? 600 : 300
+
+    const controller = new AbortController()
+    const timeoutId = setTimeout(() => controller.abort(), 30000)
+    try {
+      const res = await fetch(WORKER_URL, {
+        method: 'POST',
+        headers: WORKER_HEADERS,
+        body: JSON.stringify({
+          action: 'ai_interview_chat',
+          contents,
+          interview_meta: fullMeta,
+          generationConfig: { responseMimeType: 'application/json', maxOutputTokens },
+        }),
+        signal: controller.signal,
+      })
+      if (!res.ok) {
+        const e = await res.json().catch(() => ({}))
+        if (res.status === 429) {
+          setRateLimitEvento('entrevista_chat')
+          setRateLimitSecs(90)
+          setWaitlistSent(false)
+          throw makeRateLimitError()
+        }
+        throw new Error(parseGeminiError(res.status, e))
+      }
+      const data = await res.json()
+      if (data.candidates?.[0]?.finishReason === 'MAX_TOKENS') {
+        throw new Error('Respuesta demasiado larga. Intentá de nuevo.')
+      }
+      const text = extractAIText(data)
+      let parsed
+      try { parsed = JSON.parse(text) } catch {
+        throw new Error('Respuesta inválida del coach. Intentá de nuevo.')
+      }
+      if (!Array.isArray(parsed?.messages)) {
+        throw new Error('Formato de respuesta inesperado.')
+      }
+      return parsed
+    } catch (err) {
+      trackError('interview_chat', err.isRateLimit ? 'rate_limit' : err.name === 'AbortError' ? 'timeout' : 'api_error')
+      throw err.name === 'AbortError' ? new Error('La respuesta tardó demasiado. Intentá de nuevo.') : err
+    } finally {
+      clearTimeout(timeoutId)
+    }
+  }
+
   // ── Entrenador STAR ─────────────────────────────────────────
 
   const callStarFeedback = async () => {
@@ -2535,8 +2615,18 @@ Generá el feedback en este JSON exacto:
   return (
     <Suspense fallback={null}>
     <main
-      className="min-h-dvh flex flex-col items-center px-4 py-8 sm:py-14"
-      style={{ paddingBottom: 'max(2rem, env(safe-area-inset-bottom))' }}
+      className={[
+        'min-h-dvh flex flex-col items-center',
+        // En mobile, los steps de chat usan fullscreen sin padding
+        (step === STEPS.INTERVIEW || step === STEPS.STAR_TRAINING) && isMobile
+          ? 'p-0'
+          : 'px-4 py-8 sm:py-14',
+      ].join(' ')}
+      style={
+        (step === STEPS.INTERVIEW || step === STEPS.STAR_TRAINING) && isMobile
+          ? {}
+          : { paddingBottom: 'max(2rem, env(safe-area-inset-bottom))' }
+      }
     >
 
       {/* ── Admin Panel ── */}
@@ -3014,6 +3104,8 @@ Generá el feedback en este JSON exacto:
             trackingCards={trackingCards}
             loadTracking={loadTracking}
             trackingLoading={trackingLoading}
+            interviewMode={interviewMode}
+            setInterviewMode={setInterviewMode}
           />
         )}
 
@@ -3023,6 +3115,40 @@ Generá el feedback en este JSON exacto:
           const interviewIndustryQs = !dynamicInterviewQs && interviewIndustria
             ? INTERVIEW_QUESTIONS_BY_INDUSTRY[interviewIndustria]
             : null
+          const activeQs = dynamicInterviewQs || interviewIndustryQs || INTERVIEW_QUESTIONS
+          const jobCtxStr = interviewJobContext
+            ? `${interviewJobContext.puesto || ''}${interviewJobContext.empresa ? ` en ${interviewJobContext.empresa}` : ''}${interviewJobContext.seniority ? ` (${interviewJobContext.seniority})` : ''}${interviewJobContext.ats_keywords ? ` — skills: ${interviewJobContext.ats_keywords}` : ''}`
+            : ''
+          // Chat mode en mobile — formulario clásico en desktop
+          if (isMobile) {
+            return (
+              <InterviewChatScreen
+                questions={activeQs}
+                jobContext={jobCtxStr}
+                interviewMode={interviewMode}
+                callInterviewChat={callInterviewChat}
+                onSessionComplete={(summary) => {
+                  if (!summary) return
+                  const titulo = interviewJobContext
+                    ? `${interviewJobContext.puesto || 'Entrevista'}${interviewJobContext.empresa ? ` en ${interviewJobContext.empresa}` : ''}`
+                    : 'Sesión de Entrenamiento'
+                  saveToHistorial('entrevista', { summary, mode: interviewMode }, titulo, summary.score ?? null)
+                  trackEvent('interview_chat_completed', { score: summary.score, nivel: summary.nivel, mode: interviewMode })
+                }}
+                onBack={() => { setStep(STEPS.INTERVIEW_INTRO) }}
+                onRetrain={interviewJobContext ? (() => {
+                  const ctx = interviewJobContext
+                  resetInterview()
+                  setInterviewJobContext(ctx)
+                  setStep(STEPS.INTERVIEW_INTRO)
+                }) : (() => {
+                  resetInterview()
+                  setStep(STEPS.INTERVIEW_INTRO)
+                })}
+                retrainLabel={interviewJobContext ? (interviewJobContext.empresa || interviewJobContext.puesto) : null}
+              />
+            )
+          }
           return (
             <InterviewScreen
               interviewQsLoading={interviewQsLoading}
@@ -3074,35 +3200,62 @@ Generá el feedback en este JSON exacto:
         )}
 
         {/* ── STAR TRAINING ── */}
-        {step === STEPS.STAR_TRAINING && (
-          <StarTrainingScreen
-            starPhase={starPhase}
-            setStarPhase={setStarPhase}
-            starQuestionIdx={starQuestionIdx}
-            setStarQuestionIdx={setStarQuestionIdx}
-            starAnswer={starAnswer}
-            setStarAnswer={setStarAnswer}
-            starFeedback={starFeedback}
-            setStarFeedback={setStarFeedback}
-            starLoading={starLoading}
-            starError={starError}
-            setStarError={setStarError}
-            rateLimitEvento={rateLimitEvento}
-            rateLimitSecs={rateLimitSecs}
-            waitlistEmail={waitlistEmail}
-            setWaitlistEmail={setWaitlistEmail}
-            waitlistSent={waitlistSent}
-            waitlistLoading={waitlistLoading}
-            handleWaitlist={handleWaitlist}
-            callStarFeedback={callStarFeedback}
-            resetInterview={resetInterview}
-            interviewFeedback={interviewFeedback}
-            user={user}
-            result={result}
-            setStep={setStep}
-            setShowPremiumModal={setShowPremiumModal}
-          />
-        )}
+        {step === STEPS.STAR_TRAINING && (() => {
+          // Chat mode en mobile — formulario clásico en desktop
+          if (isMobile) {
+            return (
+              <StarChatScreen
+                starPhase={starPhase}
+                setStarPhase={setStarPhase}
+                starQuestionIdx={starQuestionIdx}
+                setStarQuestionIdx={setStarQuestionIdx}
+                starAnswer={starAnswer}
+                setStarAnswer={setStarAnswer}
+                starFeedback={starFeedback}
+                setStarFeedback={setStarFeedback}
+                starLoading={starLoading}
+                starError={starError}
+                setStarError={setStarError}
+                callStarFeedback={callStarFeedback}
+                resetInterview={resetInterview}
+                interviewFeedback={interviewFeedback}
+                user={user}
+                result={result}
+                setStep={setStep}
+                setShowPremiumModal={setShowPremiumModal}
+              />
+            )
+          }
+          return (
+            <StarTrainingScreen
+              starPhase={starPhase}
+              setStarPhase={setStarPhase}
+              starQuestionIdx={starQuestionIdx}
+              setStarQuestionIdx={setStarQuestionIdx}
+              starAnswer={starAnswer}
+              setStarAnswer={setStarAnswer}
+              starFeedback={starFeedback}
+              setStarFeedback={setStarFeedback}
+              starLoading={starLoading}
+              starError={starError}
+              setStarError={setStarError}
+              rateLimitEvento={rateLimitEvento}
+              rateLimitSecs={rateLimitSecs}
+              waitlistEmail={waitlistEmail}
+              setWaitlistEmail={setWaitlistEmail}
+              waitlistSent={waitlistSent}
+              waitlistLoading={waitlistLoading}
+              handleWaitlist={handleWaitlist}
+              callStarFeedback={callStarFeedback}
+              resetInterview={resetInterview}
+              interviewFeedback={interviewFeedback}
+              user={user}
+              result={result}
+              setStep={setStep}
+              setShowPremiumModal={setShowPremiumModal}
+            />
+          )
+        })()}
 
         {/* ── TRACKING ── */}
         {step === STEPS.TRACKING && (

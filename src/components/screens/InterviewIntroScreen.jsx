@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from 'react'
 import { STEPS, trackEvent, BTN_BACK_STYLE } from '../../constants'
 import { Logo } from '../ui'
 
-export default function InterviewIntroScreen({ interviewJobContext, setInterviewJobContext, generatePersonalizedInterviewQs, setStep, result, trackingCards, loadTracking, trackingLoading }) {
+export default function InterviewIntroScreen({ interviewJobContext, setInterviewJobContext, generatePersonalizedInterviewQs, setStep, result, trackingCards, loadTracking, trackingLoading, interviewMode, setInterviewMode }) {
   const [customTarget, setCustomTarget] = useState('')
   const [showSkeleton, setShowSkeleton] = useState(false)
   const skeletonTimerRef = useRef(null)
@@ -174,6 +174,33 @@ export default function InterviewIntroScreen({ interviewJobContext, setInterview
           </div>
         ))}
       </div>
+
+      {/* Mode selector */}
+      {setInterviewMode && (
+        <div className="w-full max-w-sm mx-auto">
+          <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide text-center mb-2">Modo de entrenamiento</p>
+          <div className="grid grid-cols-2 gap-2">
+            {[
+              { value: 'coaching', label: 'Coaching', icon: '🤝', desc: 'Feedback empático + hints' },
+              { value: 'presion', label: 'Presión', icon: '⚡', desc: 'Sin hints, repreguntas exigentes' },
+            ].map(m => (
+              <button
+                key={m.value}
+                onClick={() => setInterviewMode(m.value)}
+                className="p-3 rounded-2xl text-left transition-all"
+                style={{
+                  background: interviewMode === m.value ? 'rgba(99,102,241,0.08)' : '#f8fafc',
+                  border: interviewMode === m.value ? '2px solid rgba(99,102,241,0.5)' : '1px solid rgba(0,119,181,0.15)',
+                }}
+              >
+                <div className="text-lg mb-1">{m.icon}</div>
+                <p className="text-xs font-semibold text-slate-800">{m.label}</p>
+                <p className="text-[11px] text-slate-500 leading-snug mt-0.5">{m.desc}</p>
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
 
       <div className="space-y-3">
         {interviewJobContext?.empresa && (
