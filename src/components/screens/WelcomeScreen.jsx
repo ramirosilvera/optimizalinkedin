@@ -2,7 +2,28 @@ import { STEPS, LI_GRADIENT, RAMIRO_LINKEDIN_URL, trackEvent } from '../../const
 import { Logo, LinkedInIcon } from '../ui'
 import CommentsSection from '../CommentsSection'
 
-export default function WelcomeScreen({ setStep, result }) {
+export default function WelcomeScreen({ setStep, result, latestAnalisis, historialLoading, hasCV, hasInterview }) {
+  // Synchronous localStorage hints — available before any async resolves
+  const isPremiumHint = localStorage.getItem('ol_premium') === '1'
+  const hasAnalysisHint = localStorage.getItem('ol_has_analysis') === '1'
+
+  // Unified session data: in-session result takes priority over restored historial item
+  const sessionData = result || latestAnalisis?.datos || null
+  const hasActiveSession = !!sessionData
+
+  // Show skeleton card while historial is loading for a known PRO user with prior work
+  const showSkeleton = isPremiumHint && hasAnalysisHint && !hasActiveSession && historialLoading
+
+  // Progress items — derived from what's been done
+  const progressItems = sessionData ? [
+    { done: true, label: 'Diagnóstico' },
+    { done: !!result || hasCV, label: 'CV generado' },
+    { done: !!result || hasInterview, label: 'Entrevista' },
+  ] : []
+
+  const sessionName = sessionData?.nombre_titular || null
+  const sessionScore = sessionData?.puntaje_general ?? null
+
   return (
     <div className="step-transition text-center space-y-8">
       <Logo />
@@ -22,26 +43,83 @@ export default function WelcomeScreen({ setStep, result }) {
         </p>
       </div>
 
-      {/* ── Primary CTA zone — single action ── */}
+      {/* ── Continuation card (skeleton) ── */}
+      {showSkeleton && (
+        <div className="w-full max-w-sm mx-auto rounded-2xl overflow-hidden animate-pulse"
+          style={{ border: '1px solid rgba(0,119,181,0.12)', background: 'white', height: 88 }} />
+      )}
+
+      {/* ── Continuation card (active) ── */}
+      {hasActiveSession && (
+        <div className="w-full max-w-sm mx-auto rounded-2xl overflow-hidden flex"
+          style={{
+            border: '1px solid rgba(0,119,181,0.15)',
+            background: 'white',
+            boxShadow: '0 2px 12px rgba(0,0,0,0.06)',
+            animation: 'fadeSlideUp 0.3s cubic-bezier(0.16,1,0.3,1) 120ms both',
+          }}>
+          {/* Left accent bar */}
+          <div className="w-1 shrink-0" style={{ background: 'linear-gradient(180deg,#0d2137,#0077B5)' }} />
+          <div className="flex-1 px-4 py-3 text-left">
+            <div className="flex items-start justify-between gap-2">
+              <div className="min-w-0">
+                <p className="text-[10px] font-semibold uppercase tracking-wide" style={{ color: '#94a3b8' }}>
+                  Sesión activa
+                </p>
+                {sessionName && (
+                  <p className="text-sm font-bold truncate" style={{ color: '#0d2137' }}>{sessionName}</p>
+                )}
+              </div>
+              {sessionScore !== null && (
+                <span className="text-xs font-bold px-2 py-0.5 rounded-full shrink-0"
+                  style={{ background: 'rgba(16,185,129,0.10)', color: '#059669', border: '1px solid rgba(16,185,129,0.2)' }}>
+                  {sessionScore}/10
+                </span>
+              )}
+            </div>
+            {/* Progress pills */}
+            <div className="flex items-center gap-2 mt-2 flex-wrap">
+              {progressItems.map(item => (
+                <span key={item.label} className="flex items-center gap-1 text-[10px] font-medium"
+                  style={{ color: item.done ? '#059669' : '#f59e0b' }}>
+                  {item.done ? '✔' : '⏳'} {item.label}
+                </span>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Primary CTA zone ── */}
       <div className="space-y-3">
-        {result ? (
+        {hasActiveSession ? (
           <>
             <button
-              onClick={() => { trackEvent('click_retomar_preparacion', { location: 'hero' }); setStep(STEPS.MODE_SELECT) }}
+              onClick={() => { trackEvent('click_seguir_preparacion', { location: 'hero', has_session: !!result }); setStep(STEPS.MODE_SELECT) }}
               className="btn-glow spring-tap w-full text-white font-semibold py-4 px-8 rounded-2xl text-base"
               style={{ background: 'linear-gradient(135deg, #0d2137 0%, #0077B5 100%)' }}
             >
-              Retomar mi preparación →
+              Seguir con tu preparación →
             </button>
             <p className="text-xs" style={{ color: '#94a3b8' }}>
               <button
-                onClick={() => { trackEvent('click_ver_diagnostico', { location: 'hero' }); setStep(STEPS.RESULTS) }}
+                onClick={() => { trackEvent('click_ver_diagnostico', { location: 'hero' }); setStep(result ? STEPS.RESULTS : STEPS.QUESTIONS) }}
                 className="underline hover:text-slate-500 transition-colors"
               >
-                Ver diagnóstico ({result.puntaje_general ?? '—'}/10)
+                {result ? `Ver diagnóstico (${result.puntaje_general ?? '—'}/10)` : 'Ver diagnóstico anterior'}
+              </button>
+              {' · '}
+              <button
+                onClick={() => { trackEvent('click_nuevo_diagnostico', { location: 'hero' }); setStep(STEPS.QUESTIONS) }}
+                className="underline hover:text-slate-500 transition-colors"
+              >
+                Nuevo diagnóstico
               </button>
             </p>
           </>
+        ) : showSkeleton ? (
+          <div className="w-full rounded-2xl py-4 animate-pulse"
+            style={{ background: '#e2e8f0', height: 56 }} />
         ) : (
           <button
             onClick={() => { trackEvent('click_empezar_analisis', { location: 'hero' }); setStep(STEPS.QUESTIONS) }}

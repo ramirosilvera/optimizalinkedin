@@ -566,6 +566,7 @@ export default function App() {
     const uid = localStorage.getItem('ol_uid')
     const isPremium = localStorage.getItem('ol_premium') === '1'
     if (!token || !uid || !isPremium) return
+    if (tipo === 'analisis') localStorage.setItem('ol_has_analysis', '1')
     try {
       await fetch(`${SUPABASE_URL}/rest/v1/historial`, {
         method: 'POST',
@@ -971,6 +972,8 @@ export default function App() {
         checkAdminStatus(data.access_token)
         // After session restored: load profile from Supabase (may be richer than localStorage)
         loadLinkedinProfile()
+        // Eagerly hydrate historial for PRO users so WelcomeScreen can show continuation CTA
+        if (userData.es_premium) loadHistorial()
       })
       .catch(() => clearSession())
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -2721,6 +2724,10 @@ Generá el feedback en este JSON exacto:
           <WelcomeScreen
             setStep={setStep}
             result={result}
+            latestAnalisis={historial.find(i => i.tipo === 'analisis') || null}
+            historialLoading={historialLoading}
+            hasCV={historial.some(i => i.tipo === 'cv')}
+            hasInterview={historial.some(i => i.tipo === 'entrevista')}
           />
         )}
 
