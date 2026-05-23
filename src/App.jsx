@@ -232,6 +232,11 @@ export default function App() {
   const [authSuccess, setAuthSuccess] = useState(null) // null | 'login'
   const [showHistorial, setShowHistorial] = useState(false)
   const [historial, setHistorial] = useState([])
+  // sessionChecked: true = auth verified (or no session to verify). false = has tokens, waiting for auth.
+  // Initialized synchronously so WelcomeScreen can show skeleton from the very first render.
+  const [sessionChecked, setSessionChecked] = useState(
+    () => !localStorage.getItem('ol_at') || !localStorage.getItem('ol_rt') || !localStorage.getItem('ol_uid')
+  )
   const [showPremiumModal, setShowPremiumModal] = useState(false)
   const [premiumEmail, setPremiumEmail] = useState('')
   const [showPostPayment, setShowPostPayment] = useState(false)
@@ -609,6 +614,8 @@ export default function App() {
       const items = Array.isArray(rows) ? rows : []
       setHistorial(items)
       setHistorialLoading(false)
+      // Backfill hint flag for users who predate the ol_has_analysis feature
+      if (items.some(i => i.tipo === 'analisis')) localStorage.setItem('ol_has_analysis', '1')
       return items
     } catch { /* silencioso */ }
     setHistorialLoading(false)
@@ -981,7 +988,7 @@ export default function App() {
     })
       .then(r => r.json())
       .then(async data => {
-        if (!data.access_token) { clearSession(); return }
+        if (!data.access_token) { clearSession(); setSessionChecked(true); return }
         const perfil = await loadPerfil(uid, data.access_token)
         const userData = {
           id: uid,
@@ -992,13 +999,14 @@ export default function App() {
           premium_source: perfil?.premium_source || null,
         }
         applySession(data.access_token, data.refresh_token, userData)
+        // Fire side-effects in parallel — they don't affect the skeleton gate
         checkAdminStatus(data.access_token)
-        // After session restored: load profile from Supabase (may be richer than localStorage)
         loadLinkedinProfile()
-        // Eagerly hydrate historial for PRO users so WelcomeScreen can show continuation CTA
-        if (userData.es_premium) loadHistorial()
+        // Await historial for PRO users: skeleton stays until data is ready
+        if (userData.es_premium) await loadHistorial()
+        setSessionChecked(true)
       })
-      .catch(() => clearSession())
+      .catch(() => { clearSession(); setSessionChecked(true) })
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
@@ -2753,6 +2761,7 @@ Generá el feedback en este JSON exacto:
             hasInterview={historial.some(i => i.tipo === 'entrevista')}
             onResumePreparation={resumePreparation}
             restoreFromHistorial={restoreFromHistorial}
+            sessionChecked={sessionChecked}
           />
         )}
 

@@ -2,17 +2,18 @@ import { STEPS, LI_GRADIENT, RAMIRO_LINKEDIN_URL, trackEvent } from '../../const
 import { Logo, LinkedInIcon } from '../ui'
 import CommentsSection from '../CommentsSection'
 
-export default function WelcomeScreen({ setStep, result, latestAnalisis, historialLoading, hasCV, hasInterview, onResumePreparation, restoreFromHistorial }) {
+export default function WelcomeScreen({ setStep, result, latestAnalisis, historialLoading, hasCV, hasInterview, onResumePreparation, restoreFromHistorial, sessionChecked }) {
   // Synchronous localStorage hints — available before any async resolves
   const isPremiumHint = localStorage.getItem('ol_premium') === '1'
-  const hasAnalysisHint = localStorage.getItem('ol_has_analysis') === '1'
 
   // Unified session data: in-session result takes priority over restored historial item
   const sessionData = result || latestAnalisis?.datos || null
   const hasActiveSession = !!sessionData
 
-  // Show skeleton card while historial is loading for a known PRO user with prior work
-  const showSkeleton = isPremiumHint && hasAnalysisHint && !hasActiveSession && historialLoading
+  // Show skeleton while auth + historial are resolving for a known PRO user.
+  // sessionChecked starts false (has tokens) and becomes true only after the full
+  // auth+historial bootstrap completes — eliminating the flash of wrong CTA.
+  const showSkeleton = isPremiumHint && !hasActiveSession && !sessionChecked
 
   // Progress items — derived from what's been done
   const progressItems = sessionData ? [
@@ -45,8 +46,15 @@ export default function WelcomeScreen({ setStep, result, latestAnalisis, histori
 
       {/* ── Continuation card (skeleton) ── */}
       {showSkeleton && (
-        <div className="w-full max-w-sm mx-auto rounded-2xl overflow-hidden animate-pulse"
-          style={{ border: '1px solid rgba(0,119,181,0.12)', background: 'white', height: 88 }} />
+        <div className="w-full max-w-sm mx-auto rounded-2xl overflow-hidden flex"
+          style={{ border: '1px solid rgba(0,119,181,0.12)', background: 'white', height: 88 }}>
+          <div className="w-1 shrink-0 animate-pulse" style={{ background: 'rgba(0,119,181,0.3)' }} />
+          <div className="flex-1 px-4 py-3 flex flex-col justify-center gap-2">
+            <div className="h-2 rounded-full animate-pulse" style={{ background: '#e2e8f0', width: '40%' }} />
+            <div className="h-3 rounded-full animate-pulse" style={{ background: '#e2e8f0', width: '70%' }} />
+            <p className="text-[10px] font-medium" style={{ color: '#94a3b8' }}>Cargando tu preparación…</p>
+          </div>
+        </div>
       )}
 
       {/* ── Continuation card (active) ── */}
@@ -132,7 +140,7 @@ export default function WelcomeScreen({ setStep, result, latestAnalisis, histori
             </p>
           </>
         ) : showSkeleton ? (
-          <div className="w-full rounded-2xl py-4 animate-pulse"
+          <div className="w-full rounded-2xl animate-pulse"
             style={{ background: '#e2e8f0', height: 56 }} />
         ) : (
           <button
