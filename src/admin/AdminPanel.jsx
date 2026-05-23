@@ -19,6 +19,8 @@ const TABS = [
 ]
 
 // Gemini 2.5 Flash Lite pricing (USD per token)
+// NOTE: candidatesTokenCount underreports output by ~8.5x (confirmed Google bug, May 2025).
+// Cost figures shown in the dashboard are NOMINAL — multiply by ~8.5 for billing reconciliation.
 const COST_INPUT_PER_TOKEN  = 0.075  / 1_000_000
 const COST_OUTPUT_PER_TOKEN = 0.30   / 1_000_000
 const fmtCost = (inp, out) => {
@@ -1106,22 +1108,188 @@ function CommentsTab({ adminFetch }) {
   )
 }
 
+// ── AI Ops helpers ────────────────────────────────────────────────────────────
+
+function computeAiHealthScore(stats) {
+  const t7      = stats?.totals_7d  || {}
+  const quota   = stats?.quota      || {}
+  const rpdPct  = (quota.rpd_today  || 0) / Math.max(1, stats?.quota_limits?.RPD || 1000)
+  const errRate = t7.count > 0 ? (t7.error_count || 0) / t7.count : 0
+  const avgLat  = quota.avg_latency_ms_7d || 0
+  const scoreQ  = Math.max(0, 100 - rpdPct * 100)
+  const scoreE  = Math.max(0, 100 - errRate * 500)
+  const scoreL  = avgLat === 0 ? 100 : avgLat < 5000 ? 100 : avgLat < 10000 ? 80 : avgLat < 20000 ? 50 : 20
+  return {
+    score:  Math.round(Math.max(0, Math.min(100, scoreQ * 0.35 + scoreE * 0.45 + scoreL * 0.20))),
+    scoreQ: Math.round(scoreQ),
+    scoreE: Math.round(scoreE),
+    scoreL: Math.round(scoreL),
+  }
+}
+
+function generateAiAlerts(stats) {
+  const alerts = []
+  const t24  = stats?.totals_24h || {}
+  const t7   = stats?.totals_7d  || {}
+  const quota = stats?.quota     || {}
+  const rpdLimit = stats?.quota_limits?.RPD || 1000
+  const rpdPct   = (quota.rpd_today || 0) / rpdLimit
+
+  if (rpdPct >= 0.8) {
+    alerts.push({
+      id: 'rpd_high', severity: rpdPct >= 0.95 ? 'critical' : 'warning',
+      title: rpdPct >= 0.95 ? 'Cuota RPD crítica — casi agotada' : 'Cuota RPD al 80%+',
+      detail: `Consumiste ${quota.rpd_today} de ${rpdLimit} requests permitidos hoy.`,
+      metric: `RPD: ${quota.rpd_today}/${rpdLimit} (${(rpdPct*100).toFixed(1)}%)`,
+      dismissible: true,
+    })
+  }
+
+  const errRate = t7.count > 0 ? (t7.error_count || 0) / t7.count : 0
+  if (errRate > 0.10) {
+    alerts.push({
+      id: 'err_high', severity: errRate > 0.25 ? 'critical' : 'warning',
+      title: 'Alta tasa de errores IA',
+      detail: `${(errRate*100).toFixed(1)}% de los requests fallaron en los últimos 7 días.`,
+      metric: `${t7.error_count} errores de ${t7.count} requests`,
+      dismissible: true,
+    })
+  }
+
+  const rate429 = t24.count > 0 ? (t24.count_429 || 0) / t24.count : 0
+  if (rate429 > 0.02) {
+    alerts.push({
+      id: 'rate429', severity: 'warning',
+      title: 'Rate limit hits (429)',
+      detail: 'Gemini rechazó requests por superar el RPM. Revisá bursts de tráfico.',
+      metric: `${t24.count_429} × 429 hoy (${(rate429*100).toFixed(1)}% del tráfico)`,
+      dismissible: true,
+    })
+  }
+
+  const byFeature = stats?.by_feature || {}
+  const todayByF  = stats?.today_by_feature || {}
+  Object.entries(todayByF).forEach(([feat, todayCount]) => {
+    const avg7d = (byFeature[feat]?.count_7d || 0) / 7
+    if (avg7d > 2 && todayCount > avg7d * 3) {
+      alerts.push({
+        id: `spike_${feat}`, severity: 'anomaly',
+        title: `Spike: ${feat}`,
+        detail: `${todayCount} requests hoy vs. promedio diario de ${avg7d.toFixed(1)} (${Math.round(todayCount/avg7d)}× normal).`,
+        metric: `feat:${feat}  hoy=${todayCount}  avg=${avg7d.toFixed(1)}`,
+        dismissible: true,
+      })
+    }
+  })
+
+  return alerts
+}
+
+function exportAiCsv(stats) {
+  const byFeat = stats?.by_feature || {}
+  const header = 'Feature,Requests (30d),Tokens In,Tokens Out,Costo est. USD,Avg ms,Errores'
+  const rows = Object.entries(byFeat)
+    .sort((a, b) => (b[1].count||0) - (a[1].count||0))
+    .map(([feat, d]) => {
+      const cost = ((d.input_tokens||0)*COST_INPUT_PER_TOKEN + (d.output_tokens||0)*COST_OUTPUT_PER_TOKEN).toFixed(6)
+      return `${feat},${d.count||0},${d.input_tokens||0},${d.output_tokens||0},${cost},${d.avg_duration_ms||''},${d.error_count||0}`
+    })
+  const csv = [header, ...rows].join('\n')
+  const url = URL.createObjectURL(new Blob([csv], { type:'text/csv;charset=utf-8' }))
+  const a = document.createElement('a')
+  a.href = url
+  a.download = `ai_ops_${new Date().toISOString().slice(0,10)}.csv`
+  a.click()
+  URL.revokeObjectURL(url)
+}
+
+// ── QuotaGauge ────────────────────────────────────────────────────────────────
+function QuotaGauge({ label, used, limit, unit = 'req', daysLeft }) {
+  const pct  = limit > 0 ? Math.min(100, (used / limit) * 100) : 0
+  const color = pct >= 90 ? '#dc2626' : pct >= 70 ? '#f59e0b' : pct >= 50 ? '#0ea5e9' : '#16a34a'
+  let projection = null
+  if (daysLeft != null) {
+    projection = daysLeft > 999 ? 'seguro (uso muy bajo)'
+      : daysLeft < 1 ? '⚠ agotamiento hoy'
+      : `~${daysLeft}d restantes`
+  }
+  return (
+    <div style={{ ...C.card, padding:'14px 16px' }}>
+      <div style={{ fontSize:11, fontWeight:700, color:'#64748b', textTransform:'uppercase', letterSpacing:1, marginBottom:8 }}>{label}</div>
+      <div style={{ fontSize:20, fontWeight:800, color, marginBottom:6 }}>
+        {fmtK(used)} <span style={{ fontSize:13, fontWeight:500, color:'#94a3b8' }}>/ {fmtK(limit)} {unit}</span>
+      </div>
+      <div style={{ height:8, borderRadius:6, background:'#f1f5f9', marginBottom:6, overflow:'hidden' }}>
+        <div style={{ height:'100%', borderRadius:6, width:`${pct}%`, background:color, transition:'width 0.6s ease' }} />
+      </div>
+      <div style={{ display:'flex', justifyContent:'space-between', fontSize:10, color:'#94a3b8' }}>
+        <span style={{ color, fontWeight:700 }}>{pct.toFixed(1)}%</span>
+        {projection && <span>{projection}</span>}
+      </div>
+    </div>
+  )
+}
+
+// ── AiAlertCard ───────────────────────────────────────────────────────────────
+const AI_ALERT_STYLES = {
+  critical: { bg:'#fef2f2', border:'#fecaca', bar:'#dc2626', icon:'🔴', label:'CRÍTICO'  },
+  warning:  { bg:'#fffbeb', border:'#fde68a', bar:'#f59e0b', icon:'⚠️',  label:'AVISO'   },
+  anomaly:  { bg:'#f0f9ff', border:'#bae6fd', bar:'#0369a1', icon:'📈', label:'ANOMALÍA' },
+}
+function AiAlertCard({ severity, title, detail, metric, id, dismissible }) {
+  const [dismissed, setDismissed] = useState(() => {
+    try { return sessionStorage.getItem(`ai_alert_${id}`) === '1' } catch { return false }
+  })
+  if (dismissed) return null
+  const s = AI_ALERT_STYLES[severity] || AI_ALERT_STYLES.warning
+  return (
+    <div style={{ background:s.bg, border:`1px solid ${s.border}`, borderLeft:`4px solid ${s.bar}`, borderRadius:10, padding:'12px 14px', display:'flex', flexDirection:'column', gap:4 }}>
+      <div style={{ display:'flex', alignItems:'center', gap:8 }}>
+        <span style={{ fontSize:14 }}>{s.icon}</span>
+        <span style={{ fontWeight:700, fontSize:13, color:'#0d2137', flex:1 }}>{title}</span>
+        <span style={{ fontSize:10, fontWeight:700, background:`${s.bar}18`, color:s.bar, borderRadius:99, padding:'2px 8px', border:`1px solid ${s.bar}40`, flexShrink:0 }}>{s.label}</span>
+        {dismissible && (
+          <button onClick={() => { try { sessionStorage.setItem(`ai_alert_${id}`, '1') } catch {} setDismissed(true) }}
+            style={{ border:'none', background:'none', cursor:'pointer', color:'#94a3b8', fontSize:18, lineHeight:1, padding:0, marginLeft:4 }}>×</button>
+        )}
+      </div>
+      <div style={{ fontSize:12, color:'#475569' }}>{detail}</div>
+      {metric && <code style={{ fontSize:11, background:'rgba(0,0,0,0.04)', padding:'2px 8px', borderRadius:4, color:'#475569', fontFamily:'monospace' }}>{metric}</code>}
+    </div>
+  )
+}
+
+// ── MiniBar sparkline (no external libs) ──────────────────────────────────────
+function MiniBarChart({ values, color = '#0077B5', height = 28 }) {
+  if (!values?.length) return null
+  const max = Math.max(1, ...values)
+  return (
+    <div style={{ display:'flex', alignItems:'flex-end', gap:2, height }}>
+      {values.map((v, i) => (
+        <div key={i} style={{ flex:1, borderRadius:2, background: i === values.length - 1 ? color : color + '60',
+          height:`${Math.max(10, (v / max) * 100)}%`, minWidth:4, transition:'height 0.3s' }} />
+      ))}
+    </div>
+  )
+}
+
 // ── IA Analytics Tab ─────────────────────────────────────────────────────────
 function IaTab({ adminFetch }) {
-  const [stats, setStats]     = useState(null)
-  const [logs, setLogs]       = useState([])
-  const [loading, setLoading] = useState(true)
+  const [stats, setStats]           = useState(null)
+  const [logs, setLogs]             = useState([])
+  const [loading, setLoading]       = useState(true)
   const [logsLoading, setLogsLoading] = useState(false)
-  const [error, setError]     = useState('')
+  const [error, setError]           = useState('')
   const [featureFilter, setFeatureFilter] = useState('')
-  const [logsOffset, setLogsOffset]       = useState(0)
-  const [hasMore, setHasMore] = useState(false)
+  const [logsOffset, setLogsOffset] = useState(0)
+  const [hasMore, setHasMore]       = useState(false)
+  const [lastRefresh, setLastRefresh] = useState(null)
   const LIMIT = 40
 
   const loadStats = useCallback(async () => {
     setLoading(true); setError('')
     const d = await adminFetch('admin_ai_stats')
-    if (d?.ok) setStats(d)
+    if (d?.ok) { setStats(d); setLastRefresh(Date.now()) }
     else setError(d?.error || 'Error al cargar estadísticas IA')
     setLoading(false)
   }, [adminFetch])
@@ -1140,54 +1308,158 @@ function IaTab({ adminFetch }) {
 
   useEffect(() => { loadStats(); loadLogs(0, true, '') }, [loadStats, loadLogs])
 
-  const applyFilter = (feat) => {
-    setFeatureFilter(feat)
-    loadLogs(0, true, feat)
-  }
+  const applyFilter = (feat) => { setFeatureFilter(feat); loadLogs(0, true, feat) }
 
   if (loading) return <div style={{ textAlign:'center', padding:60 }}><Spin /></div>
   if (error)   return <ErrBox msg={error} onRetry={loadStats} />
 
-  const t30 = stats?.totals_30d || {}
-  const t7  = stats?.totals_7d  || {}
-  const t24 = stats?.totals_24h || {}
-  const byFeature = stats?.by_feature || {}
-  const topUsers  = stats?.top_users  || []
+  const t30        = stats?.totals_30d        || {}
+  const t7         = stats?.totals_7d         || {}
+  const t24        = stats?.totals_24h        || {}
+  const byFeature  = stats?.by_feature        || {}
+  const topUsers   = stats?.top_users         || []
+  const daily7     = stats?.daily_7d          || []
+  const quotaInfo  = stats?.quota             || {}
+  const quotaLimits = stats?.quota_limits     || { RPD: 1000, RPM: 15, TPM: 250000 }
+  const alerts     = generateAiAlerts(stats)
+  const health     = computeAiHealthScore(stats)
+  const errRate30  = t30.count > 0 ? `${((t30.error_count||0)/t30.count*100).toFixed(1)}% err` : '0% err'
+  const sparkReq   = daily7.map(d => d.count  || 0)
+  const sparkErr   = daily7.map(d => d.errors || 0)
+  const maxTopTok  = Math.max(1, ...topUsers.map(u => u.total_tokens || 0))
 
   return (
     <div style={{ display:'flex', flexDirection:'column', gap:16 }}>
-      {/* Summary cards */}
-      <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fill,minmax(130px,1fr))', gap:10 }}>
-        <StatCard label="Requests 24h"  value={fmtK(t24.count)}          color="#0077B5" sub={fmtCost(t24.input_tokens, t24.output_tokens)} />
-        <StatCard label="Requests 7d"   value={fmtK(t7.count)}           color="#6366f1" sub={fmtCost(t7.input_tokens, t7.output_tokens)} />
-        <StatCard label="Requests 30d"  value={fmtK(t30.count)}          color="#0d9488" sub={fmtCost(t30.input_tokens, t30.output_tokens)} />
-        <StatCard label="Errores 30d"   value={t30.error_count ?? '—'}   color="#dc2626" />
-        <StatCard label="Tokens 30d"    value={fmtK((t30.input_tokens||0)+(t30.output_tokens||0))} color="#f59e0b" />
+
+      {/* Actions bar */}
+      <div style={{ display:'flex', gap:8, alignItems:'center', flexWrap:'wrap' }}>
+        <button onClick={loadStats} style={{ ...C.sec, fontSize:12, padding:'6px 12px' }}>↺ Actualizar</button>
+        <button onClick={() => exportAiCsv(stats)} disabled={!stats}
+          style={{ ...C.sec, fontSize:12, padding:'6px 12px', opacity: stats ? 1 : 0.5, cursor: stats ? 'pointer' : 'default' }}>
+          ↓ Export CSV
+        </button>
+        {lastRefresh && (
+          <span style={{ fontSize:10, color:'#94a3b8', marginLeft:'auto' }}>
+            Actualizado: {new Date(lastRefresh).toLocaleTimeString('es-AR', { hour:'2-digit', minute:'2-digit' })}
+          </span>
+        )}
       </div>
+
+      {/* AI Health Score */}
+      <div style={{ ...C.card, padding:'16px', textAlign:'center' }}>
+        <div style={{ fontSize:11, fontWeight:700, color:'#64748b', textTransform:'uppercase', letterSpacing:1, marginBottom:8 }}>AI Health Score</div>
+        <div style={{ fontSize:52, fontWeight:900, lineHeight:1, color: health.score >= 70 ? '#16a34a' : health.score >= 40 ? '#f59e0b' : '#dc2626' }}>
+          {health.score}
+        </div>
+        <div style={{ fontSize:11, color:'#94a3b8', marginTop:4, marginBottom:12 }}>
+          {health.score >= 80 ? 'Todos los sistemas operativos' : health.score >= 50 ? 'Atención recomendada' : 'Requiere intervención'}
+        </div>
+        <div style={{ display:'flex', gap:16, justifyContent:'center', flexWrap:'wrap' }}>
+          {[{l:'Quota', v:health.scoreQ}, {l:'Errores', v:health.scoreE}, {l:'Latencia', v:health.scoreL}].map(({l,v}) => (
+            <div key={l} style={{ textAlign:'center' }}>
+              <div style={{ fontSize:18, fontWeight:800, color: v >= 70 ? '#16a34a' : v >= 40 ? '#f59e0b' : '#dc2626' }}>{v}</div>
+              <div style={{ fontSize:9, color:'#94a3b8', textTransform:'uppercase', letterSpacing:0.5 }}>{l}</div>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* Quota gauges */}
+      <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fill,minmax(180px,1fr))', gap:10 }}>
+        <QuotaGauge label="RPD Hoy" used={quotaInfo.rpd_today || 0} limit={quotaLimits.RPD}
+          daysLeft={quotaInfo.projected_days_left} />
+        <QuotaGauge label="TPD Hoy" used={quotaInfo.tpd_today || 0} limit={quotaLimits.TPM * 1440}
+          unit="tok" />
+      </div>
+      <div style={{ fontSize:10, color:'#94a3b8', marginTop:-8 }}>
+        RPM: {quotaLimits.RPM}/min — no monitoreado en tiempo real (Google no expone headers de quota en respuestas exitosas)
+      </div>
+
+      {/* Alert cards */}
+      {alerts.length > 0 ? (
+        <div style={{ display:'flex', flexDirection:'column', gap:8 }}>
+          {alerts.map(a => <AiAlertCard key={a.id} {...a} />)}
+        </div>
+      ) : (
+        <div style={{ ...C.card, padding:'12px 16px', fontSize:12, color:'#16a34a', fontWeight:600, display:'flex', alignItems:'center', gap:8 }}>
+          ✓ Sin alertas activas — todos los indicadores dentro de rango normal
+        </div>
+      )}
+
+      {/* KPI cards with sparklines */}
+      <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fill,minmax(150px,1fr))', gap:10 }}>
+        {[
+          { label:'Requests 24h', value:fmtK(t24.count), sub:fmtCost(t24.input_tokens, t24.output_tokens), color:'#0077B5' },
+          { label:'Requests 7d',  value:fmtK(t7.count),  sub:fmtCost(t7.input_tokens,  t7.output_tokens),  color:'#6366f1' },
+          { label:'Requests 30d', value:fmtK(t30.count), sub:fmtCost(t30.input_tokens, t30.output_tokens), color:'#0d9488' },
+          { label:'Errores 30d',  value:t30.error_count ?? '—', sub:errRate30, color:'#dc2626' },
+          { label:'Tokens 30d',   value:fmtK((t30.input_tokens||0)+(t30.output_tokens||0)), sub:'input+output', color:'#f59e0b' },
+        ].map(({label, value, sub, color}) => (
+          <StatCard key={label} label={label} value={value} color={color} sub={sub} />
+        ))}
+      </div>
+
+      {/* 7d sparkline strip */}
+      {sparkReq.length > 0 && (
+        <div style={{ ...C.card, padding:'14px 16px' }}>
+          <div style={{ fontSize:11, fontWeight:700, color:'#64748b', textTransform:'uppercase', letterSpacing:1, marginBottom:10 }}>Tendencia 7 días</div>
+          <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:16 }}>
+            <div>
+              <div style={{ fontSize:11, color:'#64748b', marginBottom:6 }}>Requests/día</div>
+              <MiniBarChart values={sparkReq} color="#0077B5" height={36} />
+              <div style={{ display:'flex', justifyContent:'space-between', fontSize:9, color:'#94a3b8', marginTop:4 }}>
+                <span>{daily7[0]?.date?.slice(5)}</span><span>{daily7[daily7.length-1]?.date?.slice(5)}</span>
+              </div>
+            </div>
+            <div>
+              <div style={{ fontSize:11, color:'#64748b', marginBottom:6 }}>Errores/día</div>
+              <MiniBarChart values={sparkErr} color="#dc2626" height={36} />
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* By feature breakdown */}
       {Object.keys(byFeature).length > 0 && (
         <div style={{ ...C.card }}>
-          <div style={{ padding:'12px 16px', borderBottom:'1px solid #f1f5f9', fontWeight:700, fontSize:13 }}>Por feature (30 días)</div>
+          <div style={{ padding:'12px 16px', borderBottom:'1px solid #f1f5f9', fontWeight:700, fontSize:13 }}>
+            Por feature (30 días)
+            <span style={{ fontSize:10, fontWeight:400, color:'#94a3b8', marginLeft:8 }}>* costo nominal — ver nota sobre bug Gemini ×8.5</span>
+          </div>
           <div style={{ overflowX:'auto' }}>
             <table style={{ width:'100%', borderCollapse:'collapse', fontSize:12 }}>
               <thead>
                 <tr>
-                  <Th ch="Feature" /><Th ch="Requests" /><Th ch="Tokens in" /><Th ch="Tokens out" /><Th ch="Costo est." /><Th ch="Avg ms" /><Th ch="Errores" />
+                  <Th ch="Feature" />
+                  <Th ch="Req" />
+                  <Th ch="% quota" />
+                  <Th ch="Costo*" />
+                  <Th ch="Avg ms" />
+                  <Th ch="Err" />
+                  <Th ch="Vol." />
                 </tr>
               </thead>
               <tbody>
-                {Object.entries(byFeature).sort((a,b) => (b[1].count||0)-(a[1].count||0)).map(([feat, d]) => (
-                  <tr key={feat} style={{ cursor:'pointer' }} onClick={() => applyFilter(featureFilter === feat ? '' : feat)}>
-                    <Td><span style={{ fontWeight:700, color:'#0077B5' }}>{feat}</span></Td>
-                    <Td>{d.count}</Td>
-                    <Td>{fmtK(d.input_tokens)}</Td>
-                    <Td>{fmtK(d.output_tokens)}</Td>
-                    <Td>{fmtCost(d.input_tokens, d.output_tokens)}</Td>
-                    <Td>{d.avg_duration_ms ? `${d.avg_duration_ms}ms` : '—'}</Td>
-                    <Td s={{ color: d.error_count > 0 ? '#dc2626' : '#64748b' }}>{d.error_count || 0}</Td>
-                  </tr>
-                ))}
+                {Object.entries(byFeature).sort((a,b) => (b[1].count||0)-(a[1].count||0)).map(([feat, d]) => {
+                  const pctOfTotal = t30.count > 0 ? (d.count / t30.count * 100) : 0
+                  const errPct = d.count > 0 ? (d.error_count||0)/d.count : 0
+                  return (
+                    <tr key={feat} style={{ cursor:'pointer' }} onClick={() => applyFilter(featureFilter === feat ? '' : feat)}>
+                      <Td><span style={{ fontWeight:700, color: featureFilter === feat ? '#0077B5' : '#0d2137' }}>{feat}</span></Td>
+                      <Td>{d.count}</Td>
+                      <Td s={{ color: pctOfTotal > 30 ? '#f59e0b' : '#475569' }}>{pctOfTotal.toFixed(0)}%</Td>
+                      <Td>{fmtCost(d.input_tokens, d.output_tokens)}</Td>
+                      <Td>{d.avg_duration_ms ? `${d.avg_duration_ms}ms` : '—'}</Td>
+                      <Td s={{ color: errPct > 0.1 ? '#dc2626' : '#64748b', fontWeight: errPct > 0.1 ? 700 : 400 }}>{d.error_count || 0}</Td>
+                      <Td>
+                        <div style={{ width:60, height:6, borderRadius:3, background:'#f1f5f9', display:'inline-block', verticalAlign:'middle' }}>
+                          <div style={{ height:'100%', borderRadius:3, width:`${Math.min(100, pctOfTotal * 3)}%`,
+                            background: errPct > 0.1 ? '#dc2626' : '#0077B5' }} />
+                        </div>
+                      </Td>
+                    </tr>
+                  )
+                })}
               </tbody>
             </table>
           </div>
@@ -1198,39 +1470,67 @@ function IaTab({ adminFetch }) {
       {topUsers.length > 0 && (
         <div style={{ ...C.card }}>
           <div style={{ padding:'12px 16px', borderBottom:'1px solid #f1f5f9', fontWeight:700, fontSize:13 }}>Top usuarios por tokens (30 días)</div>
-          <div style={{ padding:'10px 14px', display:'flex', flexDirection:'column', gap:6 }}>
-            {topUsers.map((u, i) => (
-              <div key={u.user_id} style={{ display:'flex', justifyContent:'space-between', alignItems:'center', fontSize:12, padding:'6px 0', borderBottom:'1px solid #f8fafc' }}>
-                <span style={{ color:'#475569' }}>{i+1}. <span style={{ fontFamily:'monospace', fontSize:11 }}>{String(u.user_id).slice(0,8)}…</span></span>
-                <span style={{ color:'#64748b' }}>{u.requests} req · {fmtK(u.total_tokens)} tokens</span>
-              </div>
-            ))}
+          <div style={{ padding:'10px 14px', display:'flex', flexDirection:'column', gap:8 }}>
+            {topUsers.map((u, i) => {
+              const hasSpike = u.requests_today > 0 && u.requests > 0 &&
+                u.requests_today > (u.requests / 30) * 3
+              const tokenBarW = Math.min(100, (u.total_tokens / maxTopTok) * 100)
+              return (
+                <div key={u.user_id || i} style={{ display:'flex', flexDirection:'column', gap:4, paddingBottom:8, borderBottom:'1px solid #f8fafc' }}>
+                  <div style={{ display:'flex', alignItems:'center', gap:6, flexWrap:'wrap', fontSize:12 }}>
+                    <span style={{ color:'#94a3b8', minWidth:18 }}>{i+1}.</span>
+                    <span style={{ fontFamily:'monospace', fontSize:11, color:'#0d2137' }}>{String(u.user_id).slice(0,8)}…</span>
+                    <span style={{ marginLeft:'auto', color:'#64748b' }}>{u.requests} req · {fmtK(u.total_tokens)} tok</span>
+                    {u.requests_today > 0 && <span style={{ color:'#94a3b8' }}>({u.requests_today} hoy)</span>}
+                    {hasSpike && (
+                      <span style={{ background:'#fef2f2', color:'#dc2626', fontSize:10, fontWeight:700, borderRadius:99, padding:'1px 7px', border:'1px solid #fecaca' }}>SPIKE</span>
+                    )}
+                  </div>
+                  <div style={{ height:4, borderRadius:2, background:'#f1f5f9', marginLeft:24 }}>
+                    <div style={{ height:'100%', borderRadius:2, width:`${tokenBarW}%`,
+                      background: hasSpike ? '#f59e0b' : '#0ea5e9', transition:'width 0.4s' }} />
+                  </div>
+                </div>
+              )
+            })}
           </div>
         </div>
       )}
+
+      {/* Bug notice */}
+      <div style={{ fontSize:11, color:'#94a3b8', padding:'8px 12px', background:'#fefce8', border:'1px solid #fef08a', borderRadius:8 }}>
+        ⚠ Nota técnica: <strong>candidatesTokenCount</strong> en Gemini 2.5 Flash Lite underreporta output tokens ~8.5× (bug confirmado por Google, mayo 2025).
+        Los costos mostrados son nominales. Para reconciliación exacta, usar BigQuery Billing Export de GCP.
+      </div>
 
       {/* Recent logs */}
       <div style={{ ...C.card }}>
         <div style={{ padding:'12px 16px', borderBottom:'1px solid #f1f5f9', display:'flex', justifyContent:'space-between', alignItems:'center' }}>
           <div style={{ fontWeight:700, fontSize:13 }}>
             Logs recientes
-            {featureFilter && <span style={{ marginLeft:8, fontSize:11, background:'#e0f2fe', color:'#0369a1', borderRadius:99, padding:'2px 8px' }}>{featureFilter} <button onClick={() => applyFilter('')} style={{ border:'none', background:'none', cursor:'pointer', color:'#0369a1', fontWeight:700 }}>×</button></span>}
+            {featureFilter && <span style={{ marginLeft:8, fontSize:11, background:'#e0f2fe', color:'#0369a1', borderRadius:99, padding:'2px 8px' }}>
+              {featureFilter} <button onClick={() => applyFilter('')} style={{ border:'none', background:'none', cursor:'pointer', color:'#0369a1', fontWeight:700 }}>×</button>
+            </span>}
           </div>
-          <button onClick={() => loadStats()} style={{ ...C.sec, fontSize:11, padding:'4px 10px' }}>↺ Refrescar</button>
+          <button onClick={() => loadLogs(0, true, featureFilter)} style={{ ...C.sec, fontSize:11, padding:'4px 10px' }}>↺</button>
         </div>
         <div style={{ padding:'10px 14px', display:'flex', flexDirection:'column', gap:6 }}>
           {logs.length === 0 && !logsLoading && <Empty text="Sin logs registrados aún" />}
           {logs.map(l => (
-            <div key={l.id} style={{ padding:'8px 12px', background:'#f8fafc', borderRadius:9, borderLeft:`3px solid ${l.status_code === 200 ? '#10b981' : l.status_code ? '#dc2626' : '#94a3b8'}`, fontSize:12 }}>
+            <div key={l.id} style={{ padding:'8px 12px', background:'#f8fafc', borderRadius:9,
+              borderLeft:`3px solid ${l.status_code === 200 ? '#10b981' : l.status_code ? '#dc2626' : '#94a3b8'}`, fontSize:12 }}>
               <div style={{ display:'flex', justifyContent:'space-between', flexWrap:'wrap', gap:4 }}>
-                <div style={{ display:'flex', gap:8, alignItems:'center' }}>
+                <div style={{ display:'flex', gap:8, alignItems:'center', flexWrap:'wrap' }}>
                   <span style={{ fontWeight:700, color:'#0077B5' }}>{l.feature}</span>
                   {l.status_code && l.status_code !== 200 && <span style={{ color:'#dc2626', fontWeight:700 }}>{l.status_code}{l.error_type ? ` · ${l.error_type}` : ''}</span>}
-                  {l.input_tokens != null && <span style={{ color:'#64748b' }}>in:{fmtK(l.input_tokens)} out:{fmtK(l.output_tokens)}</span>}
+                  {l.quota_type === 'daily' && <span style={{ background:'#fef2f2', color:'#dc2626', fontSize:10, fontWeight:700, borderRadius:4, padding:'1px 5px' }}>RPD AGOTADO</span>}
+                  {l.input_tokens != null && <span style={{ color:'#64748b' }}>in:{fmtK(l.input_tokens)} out:{fmtK(l.output_tokens)}{l.thinking_tokens ? ` think:${fmtK(l.thinking_tokens)}` : ''}</span>}
+                  {l.retry_count > 0 && <span style={{ color:'#f59e0b', fontSize:11 }}>↺{l.retry_count}</span>}
                   {l.duration_ms != null && <span style={{ color:'#94a3b8' }}>{l.duration_ms}ms</span>}
+                  {l.api_key_alias && <span style={{ color:'#94a3b8', fontSize:10 }}>{l.api_key_alias}</span>}
                 </div>
                 <span style={{ color:'#94a3b8', whiteSpace:'nowrap' }}>
-                  {new Date(l.created_at).toLocaleString('es-AR',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'})}
+                  {new Date(l.created_at).toLocaleString('es-AR', {day:'2-digit', month:'2-digit', hour:'2-digit', minute:'2-digit'})}
                 </span>
               </div>
             </div>

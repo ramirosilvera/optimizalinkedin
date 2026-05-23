@@ -256,19 +256,30 @@ JSON:
 {"banner_ideas":[{"titulo":"str","concepto":"str","copy_principal":"máx 8 palabras","copy_secundario":"máx 12 palabras","paleta":["#hex1","#hex2","#hex3"],"estilo":"Minimalista|Profesional|Creativo|Tecnológico|Corporativo"}],"plan_networking":{"objetivo_resumido":"str","acciones_semanales":[{"frecuencia":"Diario|3× semana|Semanal|Quincenal","accion":"str","ejemplo":"str"}],"contenido_sugerido":[{"formato":"Post de texto|Carrusel|Artículo|Video corto|Encuesta|Repost comentado","tema":"str","frecuencia":"Semanal|Quincenal|Mensual"}],"metrica_90dias":"str"}}`,
 }
 
+// ── Gemini quota constants (free tier — verify in AI Studio if tier changes) ──
+// Quotas are per GCP PROJECT, not per API key. All keys share the same pool.
+// Free tier resets at midnight Pacific Time daily.
+const GEMINI_QUOTA = {
+  RPD: 1_000,    // requests per day
+  RPM: 15,       // requests per minute (approximate — not enforced by us, by Google)
+  TPM: 250_000,  // tokens per minute
+}
+
 // ── Rate limits per action (requests / hour / IP) ────────────────────────────
 const RATE_LIMITS = {
-  analyze_linkedin:   3,
-  generate_cv:        3,
-  cv_quality:         6,
-  cv_pre_questions:   3,
-  interview_questions: 8,
-  interview_feedback: 5,
-  star_feedback:      10,
-  job_adapter:        3,
-  linkedin_growth:    5,
-  optimize_cv:        4,
+  analyze_linkedin:    3,
+  generate_cv:         3,
+  cv_quality:          6,
+  cv_pre_questions:    3,
+  interview_questions: 4,  // reduced from 8: no legitimate need for rapid repetition
+  interview_feedback:  5,
+  star_feedback:       10,
+  job_adapter:         3,
+  linkedin_growth:     5,
+  optimize_cv:         2,  // reduced from 4: most expensive feature per call
   cv_optimize_consult: 4,
+  generate_cv_full:    2,  // was missing — combined CV+quality, highest system prompt cost
+  _raw_proxy:          5,  // PDF extraction proxy — large inputs, protect quota
 }
 
 async function checkRateLimit(env, ip, actionKey) {
@@ -291,14 +302,18 @@ async function callGeminiApi(env, ctx, geminiBody, corsHeaders, { feature = 'unk
   const geminiKeys = (env.GEMINI_API_KEYS || env.GEMINI_API_KEY || '').split(',').map(k => k.trim()).filter(Boolean)
 
   let res = null
+  let usedKeyIndex = 0
+  let retryCount = 0
+
   try {
-    // Phase 1: rotate through keys on 429
-    for (const key of geminiKeys) {
+    // Phase 1: rotate through keys on 429 (note: all keys share the same GCP project quota)
+    for (let i = 0; i < geminiKeys.length; i++) {
       res = await fetch(
-        `https://generativelanguage.googleapis.com/v1beta/models/${DEFAULT_MODEL}:generateContent?key=${key}`,
+        `https://generativelanguage.googleapis.com/v1beta/models/${DEFAULT_MODEL}:generateContent?key=${geminiKeys[i]}`,
         { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(geminiBody), signal: controller.signal }
       )
-      if (res.status !== 429) break
+      if (res.status !== 429) { usedKeyIndex = i; break }
+      retryCount++
     }
 
     // Phase 2: retry on 5xx with exponential backoff
@@ -309,36 +324,61 @@ async function callGeminiApi(env, ctx, geminiBody, corsHeaders, { feature = 'unk
         `https://generativelanguage.googleapis.com/v1beta/models/${DEFAULT_MODEL}:generateContent?key=${key}`,
         { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(geminiBody), signal: controller.signal }
       )
+      retryCount++
     }
   } catch (err) {
     clearTimeout(timeoutId)
     const isTimeout = err.name === 'AbortError'
-    logAiUsage(env, ctx, { type: 'failure', feature, userId, durationMs: Date.now() - startMs, statusCode: 504, errorType: isTimeout ? 'timeout' : 'network' })
+    logAiUsage(env, ctx, {
+      type: 'failure', feature, userId,
+      durationMs: Date.now() - startMs, statusCode: 504,
+      errorType: isTimeout ? 'timeout' : 'network',
+      retryCount, apiKeyAlias: `key_${usedKeyIndex + 1}`,
+    })
     const msg = isTimeout ? 'El servicio de IA tardó demasiado. Intentá de nuevo.' : 'Error de conexión con el servicio de IA.'
     return new Response(JSON.stringify({ error: { message: msg } }), { status: 504, headers: corsHeaders })
   }
 
-  clearTimeout(timeoutId)
+  // Parse body before clearing timeout so abort protection covers the full response
   const data = await res.json().catch(() => ({ error: { message: 'Respuesta inválida del servicio de IA.' } }))
+  clearTimeout(timeoutId)
+
   if (res.status === 200) {
     logAiUsage(env, ctx, {
-      type: 'success',
-      feature,
-      userId,
-      inputTokens:  data.usageMetadata?.promptTokenCount    ?? null,
-      outputTokens: data.usageMetadata?.candidatesTokenCount ?? null,
-      durationMs:   Date.now() - startMs,
-      statusCode:   200,
+      type: 'success', feature, userId,
+      inputTokens:    data.usageMetadata?.promptTokenCount     ?? null,
+      outputTokens:   data.usageMetadata?.candidatesTokenCount ?? null,
+      thinkingTokens: data.usageMetadata?.thoughtsTokenCount   ?? null,
+      durationMs: Date.now() - startMs, statusCode: 200,
+      retryCount, apiKeyAlias: `key_${usedKeyIndex + 1}`,
     })
   } else {
+    // Parse retryDelay from google.rpc.RetryInfo — distinguishes RPM (seconds) from RPD (hours)
+    let retryDelaySecs = null
+    let quotaType = null
+    if (res.status === 429) {
+      try {
+        const retryInfo = data?.error?.details?.find(d => d['@type']?.includes('RetryInfo'))
+        if (retryInfo?.retryDelay) {
+          retryDelaySecs = parseInt(retryInfo.retryDelay.replace('s', ''), 10) || null
+        }
+        const quotaFailure = data?.error?.details?.find(d => d['@type']?.includes('QuotaFailure'))
+        const quotaId = quotaFailure?.violations?.[0]?.quotaId || ''
+        quotaType = quotaId.includes('PerDay') ? 'daily' : quotaId.includes('PerMinute') ? 'minute' : null
+      } catch { /* non-fatal */ }
+    }
     logAiUsage(env, ctx, {
-      type: 'failure',
-      feature,
-      userId,
-      durationMs:  Date.now() - startMs,
-      statusCode:  res.status,
-      errorType:   `http_${res.status}`,
+      type: 'failure', feature, userId,
+      durationMs: Date.now() - startMs, statusCode: res.status,
+      errorType: `http_${res.status}`,
+      retryCount, apiKeyAlias: `key_${usedKeyIndex + 1}`,
+      retryDelaySecs, quotaType,
     })
+    // Surface quota type to client so frontend can show an informative message
+    if (res.status === 429 && quotaType === 'daily') {
+      const dailyMsg = { error: { message: 'Cuota diaria de IA agotada. El servicio se restablece a medianoche (hora de Argentina). Volvé mañana.' } }
+      return new Response(JSON.stringify(dailyMsg), { status: 429, headers: corsHeaders })
+    }
   }
   return new Response(JSON.stringify(data), { status: res.status, headers: corsHeaders })
 }
@@ -412,15 +452,21 @@ async function logAdminAction(env, adminId, action, targetType, targetId, detail
  */
 function logAiUsage(env, ctx, event) {
   if (!env.SUPABASE_SERVICE_ROLE_KEY || !env.SUPABASE_URL) return
+  const isSuccess = event.type === 'success'
   const row = {
-    user_id: event.userId ?? null,
-    feature: event.feature,
-    model: DEFAULT_MODEL,
-    input_tokens:  event.type === 'success' ? (event.inputTokens  ?? null) : null,
-    output_tokens: event.type === 'success' ? (event.outputTokens ?? null) : null,
-    duration_ms:   event.durationMs  ?? null,
-    status_code:   event.statusCode  ?? null,
-    error_type:    event.type === 'failure' ? event.errorType : null,
+    user_id:         event.userId         ?? null,
+    feature:         event.feature,
+    model:           DEFAULT_MODEL,
+    input_tokens:    isSuccess ? (event.inputTokens    ?? null) : null,
+    output_tokens:   isSuccess ? (event.outputTokens   ?? null) : null,
+    thinking_tokens: isSuccess ? (event.thinkingTokens ?? null) : null,
+    duration_ms:     event.durationMs     ?? null,
+    status_code:     event.statusCode     ?? null,
+    error_type:      !isSuccess ? event.errorType : null,
+    retry_count:     event.retryCount     ?? 0,
+    api_key_alias:   event.apiKeyAlias    ?? null,
+    retry_delay_secs: event.retryDelaySecs ?? null,
+    quota_type:      event.quotaType      ?? null,
   }
   const logFetch = fetch(`${env.SUPABASE_URL}/rest/v1/ai_usage_logs`, {
     method: 'POST',
@@ -432,7 +478,6 @@ function logAiUsage(env, ctx, event) {
     },
     body: JSON.stringify(row),
   }).catch(() => {})
-  // waitUntil keeps the Worker alive until the log write completes
   if (ctx?.waitUntil) ctx.waitUntil(logFetch)
 }
 
@@ -1264,7 +1309,8 @@ export default {
             body: '{}',
           })
           const data = await res.json()
-          return new Response(JSON.stringify({ ok: true, ...data }), { status: 200, headers: corsHeaders })
+          // Attach known quota limits so the dashboard can compute % used without hardcoding
+          return new Response(JSON.stringify({ ok: true, quota_limits: GEMINI_QUOTA, ...data }), { status: 200, headers: corsHeaders })
         } catch (e) {
           return new Response(JSON.stringify({ ok: false, error: e.message }), { status: 500, headers: corsHeaders })
         }
@@ -1870,14 +1916,23 @@ export default {
     // ── Gemini raw proxy (PDF extraction only) ────────────────────────────────
     if (!body.contents) return new Response(JSON.stringify({ error: { message: 'Falta el campo requerido: contents' } }), { status: 400, headers: corsHeaders })
 
-    if (env.APP_TOKEN) {
-      const appToken = request.headers.get('X-App-Token')
-      if (appToken !== env.APP_TOKEN) {
-        return new Response(JSON.stringify({ error: { message: 'Unauthorized' } }), { status: 401, headers: corsHeaders })
-      }
+    // APP_TOKEN is required on this path — fail hard if not configured
+    if (!env.APP_TOKEN) {
+      return new Response(JSON.stringify({ error: { message: 'Raw proxy disabled: APP_TOKEN not configured' } }), { status: 503, headers: corsHeaders })
+    }
+    const appToken = request.headers.get('X-App-Token')
+    if (appToken !== env.APP_TOKEN) {
+      return new Response(JSON.stringify({ error: { message: 'Unauthorized' } }), { status: 401, headers: corsHeaders })
+    }
+
+    // Rate limit raw proxy at 5 req/hour/IP (PDF uploads are large — protect quota)
+    const proxyIp = request.headers.get('CF-Connecting-IP') || 'unknown'
+    const proxyRl = await checkRateLimit(env, proxyIp, '_raw_proxy')
+    if (!proxyRl.ok) {
+      return new Response(JSON.stringify({ error: { message: 'Límite de uso alcanzado. Intentá en 60 minutos.' } }), { status: 429, headers: corsHeaders })
     }
 
     const { model: modelField, ...geminiBody } = body
-    return callGeminiApi(env, ctx, geminiBody, corsHeaders)
+    return callGeminiApi(env, ctx, geminiBody, corsHeaders, { feature: 'pdf_extraction' })
   },
 }
