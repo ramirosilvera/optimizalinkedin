@@ -2,7 +2,7 @@ import { STEPS, LI_GRADIENT, RAMIRO_LINKEDIN_URL, trackEvent } from '../../const
 import { Logo, LinkedInIcon } from '../ui'
 import CommentsSection from '../CommentsSection'
 
-export default function WelcomeScreen({ setStep, result, latestAnalisis, historialLoading, hasCV, hasInterview }) {
+export default function WelcomeScreen({ setStep, result, latestAnalisis, historialLoading, hasCV, hasInterview, onResumePreparation, restoreFromHistorial }) {
   // Synchronous localStorage hints — available before any async resolves
   const isPremiumHint = localStorage.getItem('ol_premium') === '1'
   const hasAnalysisHint = localStorage.getItem('ol_has_analysis') === '1'
@@ -95,7 +95,14 @@ export default function WelcomeScreen({ setStep, result, latestAnalisis, histori
         {hasActiveSession ? (
           <>
             <button
-              onClick={() => { trackEvent('click_seguir_preparacion', { location: 'hero', has_session: !!result }); setStep(STEPS.MODE_SELECT) }}
+              onClick={() => {
+                trackEvent('click_seguir_preparacion', { location: 'hero', has_session: !!result })
+                if (!result && latestAnalisis && onResumePreparation) {
+                  onResumePreparation()
+                } else {
+                  setStep(STEPS.MODE_SELECT)
+                }
+              }}
               className="btn-glow spring-tap w-full text-white font-semibold py-4 px-8 rounded-2xl text-base"
               style={{ background: 'linear-gradient(135deg, #0d2137 0%, #0077B5 100%)' }}
             >
@@ -103,7 +110,14 @@ export default function WelcomeScreen({ setStep, result, latestAnalisis, histori
             </button>
             <p className="text-xs" style={{ color: '#94a3b8' }}>
               <button
-                onClick={() => { trackEvent('click_ver_diagnostico', { location: 'hero' }); setStep(result ? STEPS.RESULTS : STEPS.QUESTIONS) }}
+                onClick={() => {
+                  trackEvent('click_ver_diagnostico', { location: 'hero' })
+                  if (result) {
+                    setStep(STEPS.RESULTS)
+                  } else if (latestAnalisis && restoreFromHistorial) {
+                    restoreFromHistorial(latestAnalisis)
+                  }
+                }}
                 className="underline hover:text-slate-500 transition-colors"
               >
                 {result ? `Ver diagnóstico (${result.puntaje_general ?? '—'}/10)` : 'Ver diagnóstico anterior'}

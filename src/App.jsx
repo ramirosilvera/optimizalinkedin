@@ -696,6 +696,29 @@ export default function App() {
     }
   }
 
+  // Hydrates result, cvFinalData, and interviewFeedback from historial, then navigates to MODE_SELECT.
+  // Called when a returning PRO user clicks "Seguir con tu preparación" and result is not yet in session.
+  const resumePreparation = () => {
+    const analisisItem = historial.find(i => i.tipo === 'analisis')
+    const cvItem = historial.find(i => i.tipo === 'cv')
+    const interviewItem = historial.find(i => i.tipo === 'entrevista')
+
+    if (analisisItem) setResult(analisisItem.datos)
+
+    if (cvItem) {
+      setCvFinalData(cvItem.datos)
+      setCvDraft(cvItem.datos)
+      setCvStage('done')  // triggers useEffect at line 1147 to rebuild cvPreviewHtml
+    }
+
+    if (interviewItem) {
+      setInterviewFeedback(interviewItem.datos?.feedback || interviewItem.datos)
+      setInterviewAnswers(interviewItem.datos?.respuestas || [])
+    }
+
+    setStep(STEPS.MODE_SELECT)
+  }
+
   const handleModeSelectJobAdapter = async () => {
     setJobAdapterNoCv(false)
     // Current session CV takes priority
@@ -2728,6 +2751,8 @@ Generá el feedback en este JSON exacto:
             historialLoading={historialLoading}
             hasCV={historial.some(i => i.tipo === 'cv')}
             hasInterview={historial.some(i => i.tipo === 'entrevista')}
+            onResumePreparation={resumePreparation}
+            restoreFromHistorial={restoreFromHistorial}
           />
         )}
 
