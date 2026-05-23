@@ -256,13 +256,14 @@ JSON:
 {"banner_ideas":[{"titulo":"str","concepto":"str","copy_principal":"máx 8 palabras","copy_secundario":"máx 12 palabras","paleta":["#hex1","#hex2","#hex3"],"estilo":"Minimalista|Profesional|Creativo|Tecnológico|Corporativo"}],"plan_networking":{"objetivo_resumido":"str","acciones_semanales":[{"frecuencia":"Diario|3× semana|Semanal|Quincenal","accion":"str","ejemplo":"str"}],"contenido_sugerido":[{"formato":"Post de texto|Carrusel|Artículo|Video corto|Encuesta|Repost comentado","tema":"str","frecuencia":"Semanal|Quincenal|Mensual"}],"metrica_90dias":"str"}}`,
 }
 
-// ── Gemini quota constants (free tier — verify in AI Studio if tier changes) ──
-// Quotas are per GCP PROJECT, not per API key. All keys share the same pool.
-// Free tier resets at midnight Pacific Time daily.
+// ── Gemini quota constants (Paid Tier 1 — billing account attached) ──────────
+// Quotas are per GCP PROJECT (gen-lang-client-0251415813), not per API key.
+// Resets at midnight Pacific Time daily.
+// VERIFY exact limits in: aistudio.google.com/rate-limit
 const GEMINI_QUOTA = {
-  RPD: 1_000,    // requests per day
-  RPM: 15,       // requests per minute (approximate — not enforced by us, by Google)
-  TPM: 250_000,  // tokens per minute
+  RPD: 10_000,     // requests per day (Tier 1 typical; confirm in AI Studio)
+  RPM: 1_000,      // requests per minute (Tier 1 typical; confirm in AI Studio)
+  TPM: 4_000_000,  // tokens per minute (Tier 1 typical; confirm in AI Studio)
 }
 
 // ── Rate limits per action (requests / hour / IP) ────────────────────────────

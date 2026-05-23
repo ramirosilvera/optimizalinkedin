@@ -186,7 +186,7 @@ BEGIN
     'avg_rpd_7d',        ROUND(avg_rpd_7d::numeric, 1),
     'projected_days_left',
       CASE WHEN avg_rpd_7d > 0
-        THEN ROUND(GREATEST(0, 1000 - rpd_today)::numeric / avg_rpd_7d, 1)
+        THEN ROUND(GREATEST(0, 10000 - rpd_today)::numeric / avg_rpd_7d, 1)  -- Paid Tier 1
         ELSE NULL
       END,
     'avg_latency_ms_7d', avg_lat
