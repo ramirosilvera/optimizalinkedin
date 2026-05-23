@@ -494,22 +494,39 @@ async function logAdminAction(env, adminId, action, targetType, targetId, detail
  */
 function logAiUsage(env, ctx, event) {
   if (!env.SUPABASE_SERVICE_ROLE_KEY || !env.SUPABASE_URL) return
-  const isSuccess = event.type === 'success'
-  const row = {
-    user_id:         event.userId         ?? null,
-    feature:         event.feature,
-    model:           DEFAULT_MODEL,
-    input_tokens:    isSuccess ? (event.inputTokens    ?? null) : null,
-    output_tokens:   isSuccess ? (event.outputTokens   ?? null) : null,
-    thinking_tokens: isSuccess ? (event.thinkingTokens ?? null) : null,
-    duration_ms:     event.durationMs     ?? null,
-    status_code:     event.statusCode     ?? null,
-    error_type:      !isSuccess ? event.errorType : null,
-    retry_count:     event.retryCount     ?? 0,
-    api_key_alias:   event.apiKeyAlias    ?? null,
-    retry_delay_secs: event.retryDelaySecs ?? null,
-    quota_type:      event.quotaType      ?? null,
-  }
+  // Narrow the discriminated union so TypeScript knows which fields are available
+  // in each branch. Fields absent from a branch are set to null explicitly.
+  const row = event.type === 'success'
+    ? {
+        user_id:          event.userId          ?? null,
+        feature:          event.feature,
+        model:            DEFAULT_MODEL,
+        input_tokens:     event.inputTokens     ?? null,
+        output_tokens:    event.outputTokens    ?? null,
+        thinking_tokens:  event.thinkingTokens  ?? null,
+        duration_ms:      event.durationMs      ?? null,
+        status_code:      event.statusCode      ?? null,
+        error_type:       null,
+        retry_count:      event.retryCount      ?? 0,
+        api_key_alias:    event.apiKeyAlias     ?? null,
+        retry_delay_secs: null,
+        quota_type:       null,
+      }
+    : {
+        user_id:          event.userId          ?? null,
+        feature:          event.feature,
+        model:            DEFAULT_MODEL,
+        input_tokens:     null,
+        output_tokens:    null,
+        thinking_tokens:  null,
+        duration_ms:      event.durationMs      ?? null,
+        status_code:      event.statusCode      ?? null,
+        error_type:       event.errorType,
+        retry_count:      event.retryCount      ?? 0,
+        api_key_alias:    event.apiKeyAlias     ?? null,
+        retry_delay_secs: event.retryDelaySecs  ?? null,
+        quota_type:       event.quotaType       ?? null,
+      }
   const logFetch = fetch(`${env.SUPABASE_URL}/rest/v1/ai_usage_logs`, {
     method: 'POST',
     headers: {
