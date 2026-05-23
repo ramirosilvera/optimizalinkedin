@@ -283,16 +283,30 @@ const RATE_LIMITS = {
   _raw_proxy:          5,  // PDF extraction proxy — large inputs, protect quota
 }
 
+// Max total AI calls per IP per 24 hours across ALL features combined.
+// Legitimate heavy users: ~9 calls/session × 2-3 sessions = ~25 calls/day max.
+// This cap stops budget-drain attacks via IP rotation or hourly limit cycling.
+const DAILY_IP_CAP = 50
+
 async function checkRateLimit(env, ip, actionKey) {
   if (!env.RATE_LIMIT_KV) return { ok: true }
+
+  // 1. Per-action hourly limit (existing)
   const limit = RATE_LIMITS[actionKey]
-  if (!limit) return { ok: true }
-  const key = `rl:${ip}:${actionKey}`
-  const current = await env.RATE_LIMIT_KV.get(key)
-  const count = parseInt(current || '0', 10)
-  if (count >= limit) return { ok: false, count, limit }
-  await env.RATE_LIMIT_KV.put(key, String(count + 1), { expirationTtl: 3600 })
-  return { ok: true, count: count + 1, limit }
+  if (limit) {
+    const hourKey = `rl:${ip}:${actionKey}`
+    const hourCount = parseInt((await env.RATE_LIMIT_KV.get(hourKey)) || '0', 10)
+    if (hourCount >= limit) return { ok: false, count: hourCount, limit, reason: 'hourly' }
+    await env.RATE_LIMIT_KV.put(hourKey, String(hourCount + 1), { expirationTtl: 3600 })
+  }
+
+  // 2. Daily total cap per IP (all features combined) — blocks budget-drain attacks
+  const dayKey = `rl:day:${ip}`
+  const dayCount = parseInt((await env.RATE_LIMIT_KV.get(dayKey)) || '0', 10)
+  if (dayCount >= DAILY_IP_CAP) return { ok: false, count: dayCount, limit: DAILY_IP_CAP, reason: 'daily' }
+  await env.RATE_LIMIT_KV.put(dayKey, String(dayCount + 1), { expirationTtl: 86400 })
+
+  return { ok: true }
 }
 
 // ── Gemini API helper ─────────────────────────────────────────────────────────
@@ -1904,7 +1918,10 @@ export default {
       const ip = request.headers.get('CF-Connecting-IP') || 'unknown'
       const rl = await checkRateLimit(env, ip, promptKey)
       if (!rl.ok) {
-        return new Response(JSON.stringify({ error: { message: `Límite de uso alcanzado (${rl.limit} por hora). Volvé a intentarlo en 60 minutos.` } }), { status: 429, headers: corsHeaders })
+        const rlMsg = rl.reason === 'daily'
+          ? `Límite diario de uso alcanzado (${rl.limit} requests/día). Volvé mañana.`
+          : `Límite de uso alcanzado (${rl.limit} por hora). Volvé a intentarlo en 60 minutos.`
+        return new Response(JSON.stringify({ error: { message: rlMsg } }), { status: 429, headers: corsHeaders })
       }
       const userId = getUserIdFromToken(request)
       return callGeminiApi(env, ctx, {
