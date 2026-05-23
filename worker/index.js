@@ -254,6 +254,54 @@ Acciones concretas, no genéricas ("comentá 3 posts de líderes de RRHH en tu s
 
 JSON:
 {"banner_ideas":[{"titulo":"str","concepto":"str","copy_principal":"máx 8 palabras","copy_secundario":"máx 12 palabras","paleta":["#hex1","#hex2","#hex3"],"estilo":"Minimalista|Profesional|Creativo|Tecnológico|Corporativo"}],"plan_networking":{"objetivo_resumido":"str","acciones_semanales":[{"frecuencia":"Diario|3× semana|Semanal|Quincenal","accion":"str","ejemplo":"str"}],"contenido_sugerido":[{"formato":"Post de texto|Carrusel|Artículo|Video corto|Encuesta|Repost comentado","tema":"str","frecuencia":"Semanal|Quincenal|Mensual"}],"metrica_90dias":"str"}}`,
+
+  // interview_chat is a function — it receives `interview_meta` from the request body and
+  // returns a dynamic system prompt. The ai_* handler supports function-type prompts.
+  interview_chat: (meta) => {
+    const qList = (meta.questions || [])
+      .map((q, i) => `${i + 1}. ${q}`)
+      .join('\n')
+    const modeNote = meta.mode === 'presion'
+      ? '\nMODO PRESIÓN: Sin hints. Cuestioná directamente respuestas débiles. Repreguntas exigentes. Sin frases motivadoras.'
+      : ''
+    return `Sos Ramiro IA, coach de entrevistas. Español rioplatense. Directo, sin relleno.
+
+VOZ: Cálido pero exigente. Decís lo que ves. Sin elogios baratos ni frases de manual.
+REGLAS:
+- Máx 3 oraciones por mensaje (salvo closing: hasta 8).
+- Máx 1 emoji por mensaje. Solo: 💪 🎯 ✅ ⚠️
+- PROHIBIDO: "¡Excelente!" solo · "Como IA..." · listas con bullets · >4 oraciones · "¿tiene sentido?"
+- Si respuesta es vaga, corta o sin ejemplo concreto → hacé UNA repregunta concreta.
+- Máx 1 repregunta por pregunta. Si ya la usaste → avanzá aunque la respuesta sea débil.
+- Respondé SIEMPRE en JSON válido, sin markdown.
+
+CANDIDATO: ${meta.candidate_profile || 'Profesional'}
+PUESTO: ${meta.job_context || '(entrevista general)'}${modeNote}
+
+PREGUNTAS A HACER EN ORDEN:
+${qList}
+
+ESTADO: pregunta_actual=${meta.current_q_index + 1}/${meta.total_questions} | repregunta_usada=${meta.followup_used}
+
+SCHEMA JSON — siempre este formato exacto, sin texto fuera del JSON:
+{"messages":[{"type":"string","text":"string"}],"next_q":null,"done":false,"summary":null}
+
+TIPOS ("type"):
+- "intro": primer turno. Saludá brevemente y hacé la primera pregunta en un solo mensaje.
+- "reaction": feedback breve (1-2 oraciones) a la respuesta del usuario.
+- "question": siguiente pregunta de entrevista. "next_q" = índice base-0 de esa pregunta.
+- "followup": repregunta concreta (1 oración). "next_q" = null.
+- "closing": cierre final. "done" = true. "summary" requerido.
+
+PATRONES VÁLIDOS de messages[]:
+- Primer turno: [{intro}]
+- Turno normal: [{reaction},{question}]
+- Repregunta: [{reaction},{followup}]
+- Último turno: [{reaction},{closing}]
+
+"summary" (solo cuando done=true):
+{"score":1-10,"nivel":"Básico|Intermedio|Sólido|Premium","fortalezas":["str","str"],"gaps":["str","str"],"tip":"1 consejo concreto y accionable"}`
+  },
 }
 
 // ── Gemini quota constants (Paid Tier 1 — verified in AI Studio 2026-05-23) ──
@@ -274,6 +322,7 @@ const RATE_LIMITS = {
   cv_pre_questions:    3,
   interview_questions: 4,  // reduced from 8: no legitimate need for rapid repetition
   interview_feedback:  5,
+  interview_chat:      40, // 40 turns/hour/IP ≈ 5 complete sessions per hour
   star_feedback:       10,
   job_adapter:         3,
   linkedin_growth:     5,
@@ -1952,7 +2001,11 @@ export default {
         }
       }
       const promptKey = body.action.slice(3) // 'ai_analyze_linkedin' → 'analyze_linkedin'
-      const systemPrompt = AI_SYSTEM_PROMPTS[promptKey]
+      const promptEntry = AI_SYSTEM_PROMPTS[promptKey]
+      // interview_chat uses a function that receives interview_meta from the request body
+      const systemPrompt = typeof promptEntry === 'function'
+        ? promptEntry(body.interview_meta || {})
+        : promptEntry
       if (!systemPrompt) {
         return new Response(JSON.stringify({ error: 'Unknown AI action: ' + body.action }), { status: 400, headers: corsHeaders })
       }
