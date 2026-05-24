@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
-import { LI_GRADIENT, BTN_BACK_STYLE, BTN_GHOST_STYLE, CARD_STYLE, WORKER_URL, WORKER_HEADERS, trackEvent } from '../../constants'
+import { LI_GRADIENT, BTN_BACK_STYLE, BTN_GHOST_STYLE, CARD_STYLE, WORKER_URL, WORKER_HEADERS, trackEvent, trackTiming, trackError } from '../../constants'
 import { Spinner } from '../ui'
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -31,10 +31,16 @@ import { Spinner } from '../ui'
 // ─────────────────────────────────────────────────────────────────────────────
 
 // ── Colour helpers ────────────────────────────────────────────────────────────
+// Score language follows a "high-performance coach" framing:
+//   80–100 → "Altamente Competitivo" — you are a strong differentiator, go for it
+//   60–79  → "Perfil Compatible"    — solid fit, a few gaps you can address
+//   40–59  → "Potencial a Desarrollar" — shown with coaching framing, not dismissal
+//   < 40   → shown to Premium only (gap intelligence); hidden from free users
 function matchColor(pct) {
-  if (pct >= 85) return { stroke: '#22c55e', glow: 'rgba(34,197,94,0.28)', badge: '#dcfce7', text: '#15803d' }
-  if (pct >= 65) return { stroke: '#f59e0b', glow: 'rgba(245,158,11,0.28)', badge: '#fef9c3', text: '#92400e' }
-  return         { stroke: '#ef4444', glow: 'rgba(239,68,68,0.28)',  badge: '#fee2e2', text: '#991b1b' }
+  if (pct >= 80) return { stroke: '#16a34a', glow: 'rgba(22,163,74,0.28)',   badge: 'rgba(22,163,74,0.10)',   text: '#15803d', label: 'Altamente Competitivo',  icon: '🏆' }
+  if (pct >= 60) return { stroke: '#d97706', glow: 'rgba(217,119,6,0.28)',   badge: 'rgba(217,119,6,0.10)',   text: '#92400e', label: 'Perfil Compatible',       icon: '📈' }
+  if (pct >= 40) return { stroke: '#6366f1', glow: 'rgba(99,102,241,0.24)',  badge: 'rgba(99,102,241,0.08)',  text: '#4338ca', label: 'Potencial a Desarrollar', icon: '🎯' }
+  return               { stroke: '#94a3b8', glow: 'rgba(148,163,184,0.18)',  badge: 'rgba(148,163,184,0.07)', text: '#475569', label: 'Brecha Significativa',     icon: '📋' }
 }
 
 // ── MatchScoreRing ────────────────────────────────────────────────────────────
@@ -118,36 +124,54 @@ function SkeletonCard() {
 }
 
 // ── LoadingStage ──────────────────────────────────────────────────────────────
-// Progressive loading messages. Cycles at 2 s intervals to build trust.
+// Progressive loading messages — each one builds anticipation like a coach
+// briefing an athlete before a competition. They reference the process, not
+// just the technology. Cycles at 2 s intervals.
 const LOADING_STAGES = [
-  { icon: '🔍', msg: 'Interpretando tu perfil...' },
-  { icon: '📡', msg: 'Buscando oportunidades compatibles...' },
-  { icon: '🤖', msg: 'Calculando compatibilidad con IA...' },
-  { icon: '✨', msg: 'Finalizando recomendaciones...' },
+  {
+    icon: '📡',
+    msg: 'Escaneando el mercado con tu perfil...',
+    sub: 'Cada competidor tiene un perfil. Estamos buscando dónde el tuyo es diferencial.',
+  },
+  {
+    icon: '🔬',
+    msg: 'Identificando roles donde tu experiencia pesa más...',
+    sub: 'No todos los roles son iguales — buscamos los que valoran exactamente lo que traés.',
+  },
+  {
+    icon: '⚡',
+    msg: 'Calculando compatibilidad real, no solo palabras clave...',
+    sub: 'La IA compara trayectoria, industria y seniority — no solo el título del puesto.',
+  },
+  {
+    icon: '🏆',
+    msg: 'Clasificando oportunidades por tu potencial competitivo...',
+    sub: 'Las mejores oportunidades llegan primero. Preparate para ver tu radar.',
+  },
 ]
 
 function LoadingStage({ stage }) {
   const s = LOADING_STAGES[Math.min(stage, LOADING_STAGES.length - 1)]
   return (
-    <div className="flex flex-col items-center gap-4 py-12">
-      {/* Animated pulse ring */}
+    <div className="flex flex-col items-center gap-4 py-12 px-4">
+      {/* Animated pulse ring — crimson matches Radar Laboral brand color */}
       <div className="relative w-16 h-16 flex items-center justify-center">
-        <span className="absolute inset-0 rounded-full animate-ping opacity-30"
-          style={{ background: 'rgba(0,119,181,0.25)' }} />
+        <span className="absolute inset-0 rounded-full animate-ping opacity-25"
+          style={{ background: 'rgba(194,24,91,0.30)', animationDuration: '1.6s' }} />
         <span className="relative w-16 h-16 rounded-full flex items-center justify-center text-3xl"
-          style={{ background: 'rgba(0,119,181,0.10)', border: '1.5px solid rgba(0,119,181,0.25)' }}>
+          style={{ background: 'rgba(194,24,91,0.08)', border: '1.5px solid rgba(194,24,91,0.22)' }}>
           {s.icon}
         </span>
       </div>
-      <p className="text-sm font-medium text-center" style={{ color: '#0d2137' }}>{s.msg}</p>
-      <p className="text-xs text-center" style={{ color: '#94a3b8' }}>
-        Esto puede tardar unos segundos — la IA analiza decenas de oportunidades
-      </p>
+      <div className="text-center space-y-1.5">
+        <p className="text-sm font-semibold" style={{ color: '#0d2137' }}>{s.msg}</p>
+        <p className="text-xs leading-relaxed max-w-xs mx-auto" style={{ color: '#94a3b8' }}>{s.sub}</p>
+      </div>
       {/* Progress dots */}
       <div className="flex gap-1.5 mt-1">
         {LOADING_STAGES.map((_, i) => (
           <span key={i} className="w-2 h-2 rounded-full transition-all duration-500"
-            style={{ background: i <= stage ? '#0077B5' : 'rgba(0,119,181,0.20)' }} />
+            style={{ background: i <= stage ? '#c2185b' : 'rgba(194,24,91,0.18)' }} />
         ))}
       </div>
     </div>
@@ -307,6 +331,14 @@ function JobCard({
     if (days < 30) return `Hace ${Math.floor(days / 7)} sem.`
     return `Hace ${Math.floor(days / 30)} mes.`
   })()
+  const isStale = (() => {
+    if (!job.posted_at) return false
+    const days = Math.floor((Date.now() - new Date(job.posted_at).getTime()) / 86400000)
+    return days > 14
+  })()
+  // Market segment: global remote sources vs. local LATAM aggregators
+  const isGlobalRemote = ['remoteok', 'remotive', 'arbeitnow'].includes(job.source)
+  const isLocalMarket  = ['jooble', 'adzuna'].includes(job.source)
 
   // ── Touch swipe handlers ───────────────────────────────────────────────────
   const onTouchStart = (e) => {
@@ -353,49 +385,72 @@ function JobCard({
   // ── Celebration pulse for high-match ──────────────────────────────────────
   const [showCelebration, setShowCelebration] = useState(false)
   useEffect(() => {
-    if (scorePct >= 85 && index < 3) {
+    // Trigger for "Altamente Competitivo" (80+) on first 3 cards
+    if (scorePct >= 80 && index < 3) {
       const t = setTimeout(() => setShowCelebration(true), 300 + index * 150)
-      const t2 = setTimeout(() => setShowCelebration(false), 2800 + index * 150)
+      const t2 = setTimeout(() => setShowCelebration(false), 3000 + index * 150)
       return () => { clearTimeout(t); clearTimeout(t2) }
     }
   }, [scorePct, index])
 
   if (dismissed) return null
 
-  // ── Blurred card (freemium gate) ───────────────────────────────────────────
+  // ── Blurred card (freemium gate) ─────────────────────────────────────────────
+  // Design decisions:
+  //   blur(5px): enough to obscure content, light enough to show shape/structure
+  //   Score IS revealed even on blurred cards — the % creates urgency to unlock
+  //   ("esta posición tiene 84% de compatibilidad — y no la podés ver aún")
+  //   We intentionally avoid blur(8px)+ which makes cards look broken/empty
+  //   Lock overlay: semi-transparent white, NOT full white — preserves depth cue
   if (blurred) {
     return (
       <div className="rounded-2xl overflow-hidden relative"
-        style={{ ...CARD_STYLE, minHeight: 120 }}>
-        {/* Blurred content preview */}
-        <div style={{ filter: 'blur(6px)', pointerEvents: 'none', userSelect: 'none' }}
+        style={{ ...CARD_STYLE, minHeight: 130 }}>
+        {/* Blurred content preview — filter:blur(5px) chosen for shape visibility */}
+        <div style={{ filter: 'blur(5px)', pointerEvents: 'none', userSelect: 'none' }}
           className="p-4 space-y-2">
           <div className="flex items-start gap-3">
-            <div className="w-10 h-10 rounded-xl bg-slate-200 shrink-0" />
+            <div className="w-10 h-10 rounded-xl shrink-0 flex items-center justify-center text-sm font-bold"
+              style={{ background: 'linear-gradient(135deg,#e2e8f0,#cbd5e1)', color: '#64748b' }}>
+              {String.fromCharCode(65 + (index % 26))}
+            </div>
             <div className="flex-1">
               <p className="font-semibold text-sm text-slate-800">Posición disponible</p>
-              <p className="text-xs text-slate-500">Empresa • Remoto</p>
+              <p className="text-xs text-slate-500 mt-0.5">Empresa · Remoto · Publicado recientemente</p>
             </div>
-            {/* Score IS visible even when blurred — teases value */}
-            {scorePct != null && (
+            {/* Score IS visible on blurred cards — creates desire to unlock */}
+            {scorePct != null && scorePct >= 40 && (
               <MatchScoreRing score={scorePct} size={48} animated={false} />
             )}
           </div>
+          <div className="space-y-1.5 pt-1">
+            <div className="h-3 rounded-lg bg-slate-200" style={{ width: '85%' }} />
+            <div className="h-3 rounded-lg bg-slate-100" style={{ width: '65%' }} />
+          </div>
         </div>
-        {/* Premium overlay */}
-        <div className="absolute inset-0 flex flex-col items-center justify-center px-4 text-center"
-          style={{ background: 'rgba(255,255,255,0.72)', backdropFilter: 'blur(2px)' }}>
-          <span className="text-lg mb-1">🔒</span>
-          <p className="text-xs font-semibold mb-2" style={{ color: '#0d2137' }}>Resultado Premium</p>
-          {scorePct != null && (
-            <p className="text-xs mb-3" style={{ color: '#475569' }}>
-              Esta posición tiene <strong style={{ color: c?.text }}>{scorePct}% de compatibilidad</strong> con tu perfil
+
+        {/* Premium overlay — rgba(255,255,255,0.78) keeps blur shape visible */}
+        <div className="absolute inset-0 flex flex-col items-center justify-center px-5 text-center"
+          style={{ background: 'rgba(255,255,255,0.80)', backdropFilter: 'blur(1px)' }}>
+          <span className="text-base mb-1">🔒</span>
+          <p className="text-xs font-bold mb-1" style={{ color: '#0d2137' }}>Resultado Premium</p>
+          {scorePct != null && scorePct >= 40 && (
+            <p className="text-xs mb-3 leading-snug" style={{ color: '#475569' }}>
+              Esta posición tiene{' '}
+              <strong style={{ color: c?.text }}>{scorePct}% de compatibilidad</strong>{' '}
+              con tu perfil. Desbloqueala para ver el análisis completo.
             </p>
           )}
+          {scorePct != null && scorePct < 40 && (
+            <p className="text-xs mb-3 leading-snug" style={{ color: '#64748b' }}>
+              Análisis de compatibilidad disponible con Premium.
+            </p>
+          )}
+          {/* Urgency: quantified — shown in parent via banner, but button reinforces */}
           <button onClick={onUpgrade}
-            className="px-4 py-2 rounded-xl text-xs font-semibold text-white"
-            style={{ background: LI_GRADIENT }}>
-            Desbloqueá con Premium →
+            className="px-5 py-2.5 rounded-xl text-xs font-bold text-white transition-all active:scale-[0.97]"
+            style={{ background: 'linear-gradient(135deg,#0d2137,#0077B5)', boxShadow: '0 4px 16px rgba(0,119,181,0.30)' }}>
+            Desbloquear acceso completo →
           </button>
         </div>
       </div>
@@ -424,24 +479,49 @@ function JobCard({
       onTouchMove={onTouchMove}
       onTouchEnd={onTouchEnd}>
 
-      {/* Swipe direction hints */}
+      {/* ── Swipe direction overlays ──
+          RIGHT → green background tint + save icon + label (grows with delta)
+          LEFT  → rose background tint + dismiss icon + label
+          Both use position:relative on the card so these absolute children work. */}
       {swipeDelta > 30 && (
-        <div className="absolute left-3 top-1/2 -translate-y-1/2 text-green-500 font-bold text-xs z-10">
-          ✓ Guardar
+        <div
+          className="absolute inset-0 pointer-events-none z-10 flex items-center justify-start pl-4"
+          style={{ background: `rgba(22,163,74,${Math.min((swipeDelta - 30) / 50, 0.18)})` }}
+        >
+          <div className="flex items-center gap-2">
+            <span className="text-xl" style={{ opacity: Math.min((swipeDelta - 30) / 25, 1) }}>🔖</span>
+            <span
+              className="text-xs font-bold"
+              style={{ color: '#16a34a', opacity: Math.min((swipeDelta - 30) / 25, 1) }}
+            >
+              Guardar en pipeline
+            </span>
+          </div>
         </div>
       )}
       {swipeDelta < -30 && (
-        <div className="absolute right-3 top-1/2 -translate-y-1/2 text-red-400 font-bold text-xs z-10">
-          × Descartar
+        <div
+          className="absolute inset-0 pointer-events-none z-10 flex items-center justify-end pr-4"
+          style={{ background: `rgba(239,68,68,${Math.min((Math.abs(swipeDelta) - 30) / 50, 0.12)})` }}
+        >
+          <div className="flex items-center gap-2">
+            <span
+              className="text-xs font-bold"
+              style={{ color: '#dc2626', opacity: Math.min((Math.abs(swipeDelta) - 30) / 25, 1) }}
+            >
+              No me interesa
+            </span>
+            <span className="text-xl" style={{ opacity: Math.min((Math.abs(swipeDelta) - 30) / 25, 1) }}>✕</span>
+          </div>
         </div>
       )}
 
-      {/* High-match celebration badge */}
+      {/* High-match "Altamente Competitivo" celebration badge */}
       {showCelebration && (
         <div className="absolute top-0 left-0 right-0 flex justify-center pt-1 z-10 pointer-events-none">
           <span className="px-3 py-0.5 rounded-b-xl text-xs font-bold text-white animate-bounce"
-            style={{ background: '#22c55e', boxShadow: '0 2px 8px rgba(34,197,94,0.4)' }}>
-            Match alto!
+            style={{ background: '#16a34a', boxShadow: '0 2px 10px rgba(22,163,74,0.45)' }}>
+            🏆 Altamente Competitivo
           </span>
         </div>
       )}
@@ -470,23 +550,44 @@ function JobCard({
                   Remoto
                 </span>
               )}
+              {isGlobalRemote && (
+                <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold"
+                  style={{ background: 'rgba(99,102,241,0.10)', color: '#4f46e5', border: '1px solid rgba(99,102,241,0.2)' }}>
+                  Global
+                </span>
+              )}
+              {isLocalMarket && (
+                <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold"
+                  style={{ background: 'rgba(0,119,181,0.10)', color: '#0077B5', border: '1px solid rgba(0,119,181,0.2)' }}>
+                  Mercado local
+                </span>
+              )}
               {job.location && !job.remote && (
                 <span className="text-[10px]" style={{ color: '#94a3b8' }}>
                   {job.location}
                 </span>
               )}
               {daysAgo && (
-                <span className="text-[10px]" style={{ color: '#94a3b8' }}>· {daysAgo}</span>
+                <span className="text-[10px]" style={{ color: isStale ? '#f59e0b' : '#94a3b8' }}>· {daysAgo}</span>
               )}
             </div>
+            {isStale && (
+              <p className="text-[10px] mt-1 px-2 py-0.5 rounded-lg"
+                style={{ background: 'rgba(245,158,11,0.08)', color: '#92400e', border: '1px solid rgba(245,158,11,0.2)' }}>
+                Publicado hace más de 2 semanas — verificá si sigue activo
+              </p>
+            )}
           </div>
 
           {/* Match score ring */}
-          {scorePct != null && (
+          {/* Score < 40 is only shown to premium users — free users see nothing
+              for very-low matches (no value in demoralizing; premium gets the
+              gap map as competition intelligence). */}
+          {scorePct != null && (isPremium || scorePct >= 40) && (
             <div className="shrink-0 flex flex-col items-center gap-0.5">
               <MatchScoreRing score={scorePct} size={52} animated={index < 5} />
-              <span className="text-[9px] font-semibold uppercase tracking-wide" style={{ color: c?.text }}>
-                {scorePct >= 85 ? 'Excelente' : scorePct >= 65 ? 'Bueno' : 'Básico'}
+              <span className="text-[9px] font-semibold text-center leading-tight" style={{ color: c?.text }}>
+                {c?.label}
               </span>
             </div>
           )}
@@ -511,13 +612,13 @@ function JobCard({
           </div>
         )}
 
-        {/* ── Row 4: Gaps (collapsed: 1 max) ── */}
+        {/* ── Row 4: Gaps → reframed as growth opportunities ── */}
         {gaps?.length > 0 && (
           <div className="space-y-1">
             {gaps.slice(0, expanded ? 2 : 1).map((g, i) => (
               <div key={i} className="flex items-start gap-1.5">
-                <span className="shrink-0 mt-0.5 text-xs">⚠️</span>
-                <p className="text-xs leading-snug" style={{ color: '#92400e' }}>{g}</p>
+                <span className="shrink-0 mt-0.5 text-xs">📈</span>
+                <p className="text-xs leading-snug" style={{ color: '#475569' }}>{g}</p>
               </div>
             ))}
           </div>
@@ -566,7 +667,22 @@ function JobCard({
 
         {/* ── Toggle expand ── */}
         <button
-          onClick={() => { setExpanded(v => !v); trackEvent('job_card_expanded', { expanded: !expanded }) }}
+          onClick={() => {
+            const nextExpanded = !expanded
+            setExpanded(nextExpanded)
+            if (nextExpanded) {
+              // 4. JOB CARD TAPPED — user opened a job detail view.
+              //    position is 1-based (index prop is 0-based).
+              trackEvent('radar_laboral_job_card_tapped', {
+                match_score: scorePct,
+                position:    index + 1,
+                source:      job.source || null,
+                company:     job.company || null,
+                is_remote:   !!job.remote,
+              })
+            }
+            trackEvent('job_card_expanded', { expanded: nextExpanded })
+          }}
           className="text-xs w-full text-center py-0.5"
           style={{ color: '#0077B5' }}>
           {expanded ? '▲ Ver menos' : '▼ Ver más detalles'}
@@ -575,16 +691,19 @@ function JobCard({
         {/* ── Quick actions row ── */}
         {/* Touch targets min 44 × 44 px */}
         <div className="flex gap-2 pt-1">
-          {/* Guardar */}
+          {/* Guardar — post-save: green badge with kanban CTA hint */}
           <button
             onClick={handleSave}
             disabled={saved || saveLoading}
             className="flex-1 py-2.5 rounded-xl text-xs font-semibold flex items-center justify-center gap-1.5 transition-all duration-200"
             style={saved
-              ? { background: 'rgba(34,197,94,0.12)', color: '#15803d', border: '1px solid rgba(34,197,94,0.3)' }
+              ? { background: 'rgba(22,163,74,0.12)', color: '#15803d', border: '1px solid rgba(22,163,74,0.30)' }
               : { background: LI_GRADIENT, color: 'white' }}>
-            {saveLoading ? <span className="w-3 h-3 border border-white border-t-transparent rounded-full animate-spin" /> : null}
-            {saved ? '✓ Guardado' : '🔖 Guardar'}
+            {saveLoading
+              ? <span className="w-3 h-3 border border-white border-t-transparent rounded-full animate-spin" />
+              : null
+            }
+            {saved ? '✓ En tu pipeline' : '🔖 Guardar'}
           </button>
 
           {/* Adaptar CV */}
@@ -648,6 +767,10 @@ export default function JobRecommendationsScreen({
   setInterviewJobContext,
   generatePersonalizedInterviewQs,
   onBack,
+  // Streak integration — searching for jobs counts as daily activity
+  streak = 0,
+  // Weekly insight passed in from parent (e.g. "Esta semana exploraste 12 oportunidades")
+  weeklyExplored = 0,
 }) {
   // ── Loading states ─────────────────────────────────────────────────────────
   const [loadState, setLoadState]         = useState('idle')   // 'idle'|'loading'|'done'|'error'|'no_profile'
@@ -657,6 +780,14 @@ export default function JobRecommendationsScreen({
   const [quotaRemaining, setQuotaRem]     = useState(null)
   const [totalAnalyzed, setTotalAnalyzed] = useState(0)
   const [fromCache, setFromCache]         = useState(false)
+
+  // ── Analytics session refs ─────────────────────────────────────────────────
+  // Track how many cards the user has seen and saved in this session
+  // so we can report on back-navigation
+  const jobsSeenRef  = useRef(0)
+  const jobsSavedRef = useRef(0)
+  // Wall-clock stamp for session duration reporting
+  const screenOpenedAtRef = useRef(Date.now())
 
   // ── Filters ────────────────────────────────────────────────────────────────
   const [showFilters, setShowFilters]     = useState(false)
@@ -702,6 +833,18 @@ export default function JobRecommendationsScreen({
 
     const queries = buildQueries()
     if (!queries.length) { setLoadState('no_profile'); return }
+
+    // 2. SEARCH INITIATED — fires every time the user triggers a search,
+    //    including manual refresh, pull-to-refresh, and filter changes.
+    trackEvent('radar_laboral_search_started', {
+      query_terms_count: queries.length,
+      remote_ok:         activeFilters.remoteOnly,
+      location_filter:   activeFilters.location || null,
+      seniority_filter:  activeFilters.seniority || null,
+      min_salary_filter: activeFilters.minSalary || null,
+      is_premium:        isPremium,
+    })
+    const _searchStartMs = Date.now()
 
     setLoadState('loading')
     setLoadStage(0)
@@ -768,21 +911,56 @@ export default function JobRecommendationsScreen({
       setTotalAnalyzed(data.total_jobs_analyzed || 0)
       setFromCache(data.from_cache || false)
       setLoadState('done')
-      trackEvent('job_recommendations_loaded', {
-        count:      data.recommendations.length,
-        from_cache: data.from_cache,
-        is_premium: isPremium,
+
+      // 3. SEARCH COMPLETED — rich params enable source-level attribution and
+      //    latency percentile analysis in BigQuery / Looker Studio.
+      //    source_counts: object keyed by API name → number of jobs returned from it.
+      const sourceCounts = (data.recommendations || []).reduce((acc, rec) => {
+        const src = rec.job?.source || 'unknown'
+        acc[src] = (acc[src] || 0) + 1
+        return acc
+      }, {})
+      const avgScore = data.recommendations.length
+        ? Math.round(data.recommendations.reduce((s, r) => s + (r.match_score ?? 0), 0) / data.recommendations.length * 10)
+        : null
+
+      trackEvent('radar_laboral_search_completed', {
+        total_results:      data.recommendations.length,
+        total_analyzed:     data.total_jobs_analyzed || 0,
+        time_ms:            Math.round(Date.now() - _searchStartMs),
+        from_cache:         data.from_cache || false,
+        avg_match_score:    avgScore,
+        has_remote_results: data.recommendations.some(r => r.job?.remote),
+        is_premium:         isPremium,
+        // Flat source_counts — GA4 params must be scalar; send top-4 sources
+        source_remoteok:    sourceCounts['remoteok']  || 0,
+        source_remotive:    sourceCounts['remotive']  || 0,
+        source_jobicy:      sourceCounts['jobicy']    || 0,
+        source_jooble:      sourceCounts['jooble']    || 0,
       })
+      // Reset per-session seen counter on each new search result batch
+      jobsSeenRef.current = 0
+
     } catch (err) {
       clearInterval(stageTimer)
       setError('Algo salió mal al buscar oportunidades. Intentá de nuevo.')
       setLoadState('error')
+      trackError('radar_laboral', err.isRateLimit ? 'rate_limit' : err.name === 'AbortError' ? 'timeout' : 'api_error', { message: err.message })
       trackEvent('job_recommendations_error', { message: err.message })
     }
   }, [profileText, buildQueries, activeFilters, authToken, user?.id, isPremium])
 
   // ── Auto-fetch on mount if profile available ───────────────────────────────
   useEffect(() => {
+    // 1. SCREEN OPENED — fires once on mount regardless of profile state.
+    //    has_profile lets us segment "landed with no CV" vs "ready to search".
+    trackEvent('radar_laboral_opened', {
+      has_profile:  !!(profileText && profileText.length >= 50),
+      has_cv:       !!cvFinalData,
+      is_premium:   !!user?.es_premium,
+    })
+    screenOpenedAtRef.current = Date.now()
+
     if (loadState === 'idle' && profileText?.length >= 50) {
       fetchRecommendations()
     } else if (!profileText || profileText.length < 50) {
@@ -816,7 +994,21 @@ export default function JobRecommendationsScreen({
         body: JSON.stringify({ action: 'job_save_to_kanban', rec_id: rec.rec_id }),
       })
       if (!res.ok) throw new Error('No se pudo guardar')
-      addToast('Agregado a tu Kanban ✓', 'success')
+      // Toast copy: action-confirmation + immediate next step.
+      // "Guardado en tu pipeline" → professional framing, not "added to list".
+      // The toast system supports a 'cta' field for an inline button.
+      addToast('Guardado en tu pipeline de postulaciones ✓', 'success')
+      // 5. JOB SAVED TO KANBAN — primary engagement conversion.
+      //    This is the "job saved" funnel step and retention loop anchor.
+      jobsSavedRef.current += 1
+      trackEvent('radar_laboral_job_saved', {
+        match_score: rec.match_score != null ? Math.round(rec.match_score * 10) : null,
+        source:      rec.job?.source || null,
+        company:     rec.job?.company || null,
+        is_remote:   !!rec.job?.remote,
+        position:    filteredRecs.findIndex(r => r.rec_id === rec.rec_id) + 1,
+        jobs_saved_this_session: jobsSavedRef.current,
+      })
       return
     }
     // Fallback: direct createCard (for non-persisted recs or anon)
@@ -837,7 +1029,17 @@ export default function JobRecommendationsScreen({
       fecha_aplicacion: new Date().toISOString().slice(0, 10),
       seniority:        rec.job.seniority !== 'No especificado' ? rec.job.seniority : null,
     })
-    addToast('Agregado a tu Kanban ✓', 'success')
+    addToast('Guardado en tu pipeline de postulaciones ✓', 'success')
+    // 5. JOB SAVED TO KANBAN (fallback path)
+    jobsSavedRef.current += 1
+    trackEvent('radar_laboral_job_saved', {
+      match_score: rec.match_score != null ? Math.round(rec.match_score * 10) : null,
+      source:      rec.job?.source || null,
+      company:     rec.job?.company || null,
+      is_remote:   !!rec.job?.remote,
+      position:    filteredRecs.findIndex(r => r.rec_id === rec.rec_id) + 1,
+      jobs_saved_this_session: jobsSavedRef.current,
+    })
   }
 
   // ── Dismiss ────────────────────────────────────────────────────────────────
@@ -850,6 +1052,15 @@ export default function JobRecommendationsScreen({
         body: JSON.stringify({ action: 'job_update_status', rec_id: rec.rec_id, status: 'dismissed' }),
       }).catch(() => {})
     }
+    // 6. JOB DISMISSED — signals negative signal for future ML ranking and
+    //    lets us calculate "dismiss rate by match score band" in GA4.
+    trackEvent('radar_laboral_job_dismissed', {
+      match_score: rec.match_score != null ? Math.round(rec.match_score * 10) : null,
+      source:      rec.job?.source || null,
+      position:    filteredRecs.findIndex(r => r.rec_id === rec.rec_id) + 1,
+      // reason is not captured in UI yet; set to null so the schema is stable
+      reason:      null,
+    })
   }
 
   // ── Adapt CV ───────────────────────────────────────────────────────────────
@@ -872,7 +1083,14 @@ export default function JobRecommendationsScreen({
     setJobResult(null)
     setJobError('')
     setShowJobModal(true)
+    // 9. ADAPT CV TAPPED — premium upsell #2 touchpoint.
+    //    Keep legacy event name for continuity; add rich params.
     trackEvent('job_recommendations_adapt_cv', { company: rec.job.company })
+    trackEvent('radar_laboral_adapt_cv_tapped', {
+      match_score: rec.match_score != null ? Math.round(rec.match_score * 10) : null,
+      source:      rec.job?.source || null,
+      has_cv:      !!cvFinalData,
+    })
   }
 
   // ── Prep interview ─────────────────────────────────────────────────────────
@@ -891,7 +1109,13 @@ export default function JobRecommendationsScreen({
     generatePersonalizedInterviewQs(ctx)
     // Navigate to interview intro (already pre-configured)
     import('../../constants').then(({ STEPS }) => setStep(STEPS.INTERVIEW_INTRO))
+    // 10. PREP INTERVIEW TAPPED — premium upsell #3 touchpoint.
+    //     Keep legacy event name for continuity; add rich params.
     trackEvent('job_recommendations_prep_interview', { company: rec.job.company })
+    trackEvent('radar_laboral_prep_interview_tapped', {
+      match_score: rec.match_score != null ? Math.round(rec.match_score * 10) : null,
+      source:      rec.job?.source || null,
+    })
   }
 
   // ── Pull to refresh handlers ───────────────────────────────────────────────
@@ -933,20 +1157,40 @@ export default function JobRecommendationsScreen({
         style={{ background: 'rgba(248,250,252,0.97)', backdropFilter: 'blur(8px)', borderBottom: '1px solid rgba(0,119,181,0.08)' }}>
 
         {/* Back + title row */}
-        <div className="flex items-center justify-between gap-3 mb-3">
-          <button onClick={onBack}
+        <div className="flex items-center justify-between gap-3 mb-2">
+          <button
+            onClick={() => {
+              trackEvent('radar_laboral_exited', {
+                results_seen:       jobsSeenRef.current,
+                jobs_saved:         jobsSavedRef.current,
+                session_duration_s: Math.round((Date.now() - screenOpenedAtRef.current) / 1000),
+                load_state:         loadState,
+              })
+              onBack()
+            }}
             className="flex items-center gap-1.5 text-sm px-3 py-2 rounded-xl"
             style={BTN_BACK_STYLE}>
             ← Volver
           </button>
           <div className="flex-1 min-w-0">
-            <h1 className="font-bold text-sm truncate" style={{ color: '#0d2137' }}>
-              Oportunidades para vos
-            </h1>
+            <div className="flex items-center gap-2">
+              <h1 className="font-bold text-sm truncate" style={{ color: '#0d2137' }}>
+                Radar Laboral
+              </h1>
+              {/* Día X activo — streak badge shown inline in header */}
+              {streak > 0 && (
+                <span
+                  className="shrink-0 text-[10px] font-bold px-2 py-0.5 rounded-full"
+                  style={{ background: 'rgba(249,115,22,0.10)', color: '#ea580c', border: '1px solid rgba(249,115,22,0.20)' }}
+                >
+                  🔥 Día {streak}
+                </span>
+              )}
+            </div>
             {loadState === 'done' && (
               <p className="text-[10px]" style={{ color: '#94a3b8' }}>
-                {totalAnalyzed > 0 ? `Analizamos ${totalAnalyzed} avisos` : ''}
-                {fromCache ? ' · Resultado guardado' : ''}
+                {totalAnalyzed > 0 ? `${totalAnalyzed} avisos analizados` : ''}
+                {fromCache ? ' · Actualizado' : ''}
               </p>
             )}
           </div>
@@ -960,6 +1204,21 @@ export default function JobRecommendationsScreen({
             {loadState === 'loading' ? <span className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin block" /> : '↻'}
           </button>
         </div>
+
+        {/* Weekly insight — "Esta semana exploraste X oportunidades" */}
+        {/* Shows after first search; anchored to header so always visible */}
+        {weeklyExplored > 0 && loadState === 'done' && (
+          <div
+            className="mb-2 px-3 py-1.5 rounded-xl flex items-center gap-2"
+            style={{ background: 'rgba(194,24,91,0.05)', border: '1px solid rgba(194,24,91,0.14)' }}
+          >
+            <span className="text-xs" style={{ color: '#c2185b' }}>📡</span>
+            <p className="text-[11px]" style={{ color: '#94a3b8' }}>
+              Esta semana exploraste{' '}
+              <span className="font-semibold" style={{ color: '#c2185b' }}>{weeklyExplored} oportunidades</span>
+            </p>
+          </div>
+        )}
 
         {/* Filter bar (horizontal scroll on mobile) */}
         {loadState === 'done' && filteredRecs.length > 0 && (
@@ -1113,38 +1372,70 @@ export default function JobRecommendationsScreen({
             )}
 
             {/* Job cards */}
-            {filteredRecs.map((rec, i) => (
-              <JobCard
-                key={rec.rec_id || `${rec.job.source}-${rec.job.external_id}`}
-                rec={rec}
-                index={i}
-                isPremium={isPremium}
-                blurred={!isPremium && i >= FREE_VISIBLE}
-                onSave={handleSaveToKanban}
-                onDismiss={handleDismiss}
-                onAdaptCv={handleAdaptCv}
-                onPrepInterview={handlePrepInterview}
-                onUpgrade={() => setShowPremiumModal(true)}
-                addToast={addToast}
-              />
-            ))}
+            {filteredRecs.map((rec, i) => {
+              const isBlurred = !isPremium && i >= FREE_VISIBLE
+              // Increment seen count when the card is rendered unblurred.
+              // This runs during render, giving us the high-water mark
+              // without needing an IntersectionObserver.
+              if (!isBlurred && i >= jobsSeenRef.current) {
+                jobsSeenRef.current = i + 1
+              }
+              return (
+                <JobCard
+                  key={rec.rec_id || `${rec.job.source}-${rec.job.external_id}`}
+                  rec={rec}
+                  index={i}
+                  isPremium={isPremium}
+                  blurred={isBlurred}
+                  onSave={handleSaveToKanban}
+                  onDismiss={handleDismiss}
+                  onAdaptCv={handleAdaptCv}
+                  onPrepInterview={handlePrepInterview}
+                  onUpgrade={() => {
+                    // 7. PREMIUM GATE HIT — user tapped a blurred result card.
+                    trackEvent('radar_laboral_premium_gate_hit', {
+                      gate_type:    'results_blur',
+                      position:     i + 1,
+                      match_score:  rec.match_score != null ? Math.round(rec.match_score * 10) : null,
+                      locked_count: recommendations.length - FREE_VISIBLE,
+                    })
+                    // 8. PREMIUM MODAL OPENED from radar blur gate.
+                    trackEvent('radar_laboral_premium_modal_opened', {
+                      trigger: 'radar_blur',
+                    })
+                    setShowPremiumModal(true)
+                  }}
+                  addToast={addToast}
+                />
+              )
+            })}
 
             {/* Freemium upgrade banner (appears after free cards) */}
+            {/* Quantified: "Quedan N oportunidades más para vos" — not generic "upgrade" */}
             {!isPremium && recommendations.length > FREE_VISIBLE && (
               <div className="rounded-2xl p-5 text-center space-y-3"
                 style={{ background: 'linear-gradient(135deg,#0d2137,#0077B5)', boxShadow: '0 8px 32px rgba(0,119,181,0.28)' }}>
-                <p className="text-white font-bold text-sm">
-                  {recommendations.length - FREE_VISIBLE} oportunidades más esperan por vos
+                <p className="text-[10px] font-bold uppercase tracking-widest" style={{ color: 'rgba(255,255,255,0.55)' }}>
+                  Plan Profesional
                 </p>
-                <p className="text-sm" style={{ color: 'rgba(226,232,240,0.80)' }}>
-                  Desbloqueá todas las recomendaciones, filtros avanzados y guardado en Kanban con Plan Profesional.
+                <p className="text-white font-bold text-base leading-snug">
+                  Quedan {recommendations.length - FREE_VISIBLE} oportunidades analizadas para vos
+                </p>
+                <p className="text-sm leading-relaxed" style={{ color: 'rgba(226,232,240,0.78)' }}>
+                  Incluye análisis de fit completo, guardado ilimitado en pipeline y filtros por seniority, salario y ubicación.
                 </p>
                 <button
-                  onClick={() => setShowPremiumModal(true)}
-                  className="px-6 py-3 rounded-2xl text-sm font-semibold"
-                  style={{ background: 'white', color: '#0077B5' }}>
+                  onClick={() => {
+                    trackEvent('radar_laboral_premium_modal_opened', { trigger: 'radar_upgrade_banner' })
+                    setShowPremiumModal(true)
+                  }}
+                  className="w-full px-6 py-3.5 rounded-2xl text-sm font-bold transition-all active:scale-[0.98]"
+                  style={{ background: 'white', color: '#0d2137', boxShadow: '0 2px 8px rgba(0,0,0,0.20)' }}>
                   Activar Plan Profesional →
                 </button>
+                <p className="text-[11px]" style={{ color: 'rgba(255,255,255,0.40)' }}>
+                  Las oportunidades son en tiempo real — cada día se actualizan
+                </p>
               </div>
             )}
 

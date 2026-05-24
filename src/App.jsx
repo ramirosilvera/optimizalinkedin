@@ -41,8 +41,9 @@ const InterviewChatScreen    = lazy(() => import('./components/screens/Interview
 const InterviewFeedbackScreen= lazy(() => import('./components/screens/InterviewFeedbackScreen'))
 const StarTrainingScreen     = lazy(() => import('./components/screens/StarTrainingScreen'))
 const StarChatScreen         = lazy(() => import('./components/screens/StarChatScreen'))
-const TrackingScreen         = lazy(() => import('./components/screens/TrackingScreen'))
-const ReporteScreen          = lazy(() => import('./components/screens/ReporteScreen'))
+const TrackingScreen             = lazy(() => import('./components/screens/TrackingScreen'))
+const ReporteScreen              = lazy(() => import('./components/screens/ReporteScreen'))
+const JobRecommendationsScreen   = lazy(() => import('./components/screens/JobRecommendationsScreen'))
 
 // Lazy-loaded modals
 const ScoreShareModal        = lazy(() => import('./components/modals/ScoreShareModal'))
@@ -2591,7 +2592,9 @@ Generá el feedback en este JSON exacto:
 
   // ── Readiness Index ────────────────────────────────────────
   // Weighted average of all available scores (0-10 scale)
-  // Weights: interview 30%, linkedin 25%, cv 25%, star 20%
+  // Weights: linkedin 20%, cv 20%, radar 20%, interview 25%, star 15%
+  // Radar score: 10 if at least 1 Kanban card exists (user has an active job pipeline)
+  const radarScore = trackingCards.length > 0 ? 10 : null
   const readinessIndex = (() => {
     const scores = []
     const linkedinScore = result?.puntaje_general
@@ -2599,10 +2602,11 @@ Generá el feedback en este JSON exacto:
     const interviewScore = interviewFeedback?.puntaje_entrevista
     const starScore = starFeedback?.puntaje
 
-    if (linkedinScore != null) scores.push({ value: linkedinScore, weight: 0.25 })
-    if (cvScore != null) scores.push({ value: cvScore, weight: 0.25 })
-    if (interviewScore != null) scores.push({ value: interviewScore, weight: 0.30 })
-    if (starScore != null) scores.push({ value: starScore, weight: 0.20 })
+    if (linkedinScore  != null) scores.push({ value: linkedinScore,  weight: 0.20 })
+    if (cvScore        != null) scores.push({ value: cvScore,        weight: 0.20 })
+    if (radarScore     != null) scores.push({ value: radarScore,     weight: 0.20 })
+    if (interviewScore != null) scores.push({ value: interviewScore, weight: 0.25 })
+    if (starScore      != null) scores.push({ value: starScore,      weight: 0.15 })
 
     if (scores.length === 0) return null
     const totalWeight = scores.reduce((acc, s) => acc + s.weight, 0)
@@ -2890,7 +2894,7 @@ Generá el feedback en este JSON exacto:
       <div className="w-full max-w-xl">
 
         {/* ── Journey progress indicator ── */}
-        {step > STEPS.WELCOME && step !== STEPS.MODE_SELECT && step !== STEPS.REPORT && (() => {
+        {step > STEPS.WELCOME && step !== STEPS.MODE_SELECT && step !== STEPS.REPORT && step !== STEPS.JOB_RECOMMENDATIONS && (() => {
           const journeySteps = [
             { label: 'Perfil', active: step >= STEPS.QUESTIONS && step <= STEPS.LOADING, done: !!result || step > STEPS.LOADING },
             { label: 'Análisis', active: step === STEPS.RESULTS || step === STEPS.ONBOARDING, done: !!result && (step > STEPS.RESULTS || step === STEPS.CV) && step !== STEPS.ONBOARDING },
@@ -2953,6 +2957,7 @@ Generá el feedback en este JSON exacto:
             cvQuality={cvQuality}
             starFeedback={starFeedback}
             trackingCards={trackingCards}
+            radarSavedCount={trackingCards.length}
           />
         )}
 
@@ -3368,6 +3373,28 @@ Generá el feedback en este JSON exacto:
             resetInterview={resetInterview}
             cvFinalData={cvFinalData}
             loadTracking={loadTracking}
+            setShowJobModal={setShowJobModal}
+            setJobCvForAdapter={setJobCvForAdapter}
+            setJobPosting={setJobPosting}
+          />
+        )}
+
+        {/* ── JOB RECOMMENDATIONS ── */}
+        {step === STEPS.JOB_RECOMMENDATIONS && (
+          <JobRecommendationsScreen
+            profileText={profileText}
+            result={result}
+            user={user}
+            authToken={authToken}
+            cvFinalData={cvFinalData}
+            trackingColumnas={trackingColumnas}
+            createCard={createCard}
+            setStep={setStep}
+            setShowPremiumModal={setShowPremiumModal}
+            setShowJobModal={setShowJobModal}
+            setInterviewJobContext={setInterviewJobContext}
+            generatePersonalizedInterviewQs={generatePersonalizedInterviewQs}
+            onBack={() => setStep(STEPS.MODE_SELECT)}
           />
         )}
 
@@ -3380,6 +3407,7 @@ Generá el feedback en este JSON exacto:
             cvQuality={cvQuality}
             interviewFeedback={interviewFeedback}
             starFeedback={starFeedback}
+            radarScore={radarScore}
             user={user}
           />
         )}

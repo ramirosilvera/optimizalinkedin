@@ -3,6 +3,208 @@ import { STEPS, trackEvent } from '../../constants'
 import { STAR_QUESTIONS } from '../../data'
 import { Logo, Spinner } from '../ui'
 
+// ── RadarLiveDot ──────────────────────────────────────────────────────────────
+// Animated pulsing dot: signals "live" scanning state.
+// Used in Radar Laboral card when user has done a previous search.
+function RadarLiveDot({ color = '#e11d48' }) {
+  return (
+    <span className="relative inline-flex items-center justify-center w-2.5 h-2.5 shrink-0">
+      <span
+        className="absolute inline-flex w-full h-full rounded-full animate-ping"
+        style={{ background: color, opacity: 0.45, animationDuration: '1.8s' }}
+      />
+      <span
+        className="relative inline-flex w-1.5 h-1.5 rounded-full"
+        style={{ background: color }}
+      />
+    </span>
+  )
+}
+
+// ── RadarStepCard ─────────────────────────────────────────────────────────────
+// Custom card for Radar Laboral (step 5). Separated from the generic step card
+// because it has a unique visual language: crimson-to-dark-rose gradient,
+// live indicator, and special locked/done states.
+//
+// Design rationale:
+//   Color: #c2185b (crimson/rose) — reads as "competition" and "urgency" without
+//   the anxiety of pure red. Distinct from LinkedIn blue (#0077B5) and CV green
+//   (#059669). In high-performance sport contexts, rose/crimson = race day.
+//   Icon: 📡 — scanning. Not a magnifying glass (too generic) or briefcase (LinkedIn).
+//          Radar dish = active signal, real-time, technology watching for you.
+function RadarStepCard({
+  isRec,
+  isLocked,
+  hasSavedJobs,     // user has at least 1 saved job (done state)
+  lastSearchCount,  // number from last search (for "N nuevas" badge), null if no search yet
+  savedCount,       // number of saved jobs
+  onClick,
+}) {
+  const AC      = '#c2185b'
+  const AC_BG   = 'rgba(194,24,91,0.07)'
+  const AC_BDR  = 'rgba(194,24,91,0.22)'
+  const DONE_AC = '#c2185b'
+
+  const cardBorder = isRec
+    ? `1.5px solid ${AC}`
+    : hasSavedJobs
+      ? `1px solid ${AC_BDR}`
+      : isLocked
+        ? '1px solid rgba(0,0,0,0.05)'
+        : `1px solid ${AC_BDR}`
+
+  const cardBg = isLocked
+    ? '#fafafa'
+    : hasSavedJobs
+      ? 'rgba(194,24,91,0.025)'
+      : 'white'
+
+  return (
+    <div
+      className={`rounded-2xl transition-all duration-200 overflow-hidden step-card card-depth ${isRec ? 'shadow-md' : ''}`}
+      style={{
+        border: cardBorder,
+        background: cardBg,
+        opacity: isLocked ? 0.6 : 1,
+      }}
+    >
+      {/* Recommended label */}
+      {isRec && (
+        <div className="px-4 pt-3 pb-0.5 flex items-center gap-2">
+          <span
+            className="text-[10px] font-bold uppercase tracking-widest px-2.5 py-0.5 rounded-full"
+            style={{ background: AC, color: 'white', letterSpacing: '0.06em' }}
+          >
+            ↑ Siguiente
+          </span>
+          <span style={{
+            fontSize: 10, fontWeight: 700, padding: '2px 8px', borderRadius: 99,
+            background: 'rgba(194,24,91,0.10)', color: AC,
+            border: `1px solid ${AC_BDR}`,
+          }}>
+            Próxima sesión
+          </span>
+        </div>
+      )}
+
+      <div className="p-4">
+        <div className="flex items-start gap-3">
+          {/* Icon + step number */}
+          <div className="shrink-0 text-center w-10">
+            <div
+              className="w-10 h-10 rounded-xl flex items-center justify-center text-xl relative"
+              style={{ background: isLocked ? '#f1f5f9' : AC_BG }}
+            >
+              {hasSavedJobs
+                ? <span style={{ fontSize: 18, color: DONE_AC }}>✓</span>
+                : <span>📡</span>
+              }
+              {/* Scanning animation overlay when active but no saved jobs yet */}
+              {!isLocked && !hasSavedJobs && (
+                <span
+                  className="absolute inset-0 rounded-xl animate-ping"
+                  style={{ background: AC_BG, opacity: 0.6, animationDuration: '2.4s' }}
+                />
+              )}
+            </div>
+            <span
+              className="text-[9px] font-semibold mt-0.5 block"
+              style={{ color: isLocked ? '#94a3b8' : hasSavedJobs ? DONE_AC : AC }}
+            >
+              Paso 5
+            </span>
+          </div>
+
+          {/* Content */}
+          <div className="flex-1 min-w-0">
+            <div className="flex items-start justify-between gap-1.5">
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <p className={`font-bold text-sm leading-tight ${hasSavedJobs && !isRec ? 'text-slate-500' : 'text-slate-900'}`}>
+                    Radar Laboral
+                  </p>
+
+                  {/* Live scanning badge — shows when user has run at least one search */}
+                  {!isLocked && !hasSavedJobs && lastSearchCount == null && (
+                    <span
+                      className="flex items-center gap-1 text-[9px] font-bold uppercase tracking-wide px-2 py-0.5 rounded-full shrink-0"
+                      style={{ background: AC_BG, color: AC, border: `1px solid ${AC_BDR}` }}
+                    >
+                      <RadarLiveDot color={AC} />
+                      En vivo
+                    </span>
+                  )}
+
+                  {/* "N resultados" badge after first search */}
+                  {!isLocked && lastSearchCount != null && !hasSavedJobs && (
+                    <span
+                      className="flex items-center gap-1 text-[9px] font-bold uppercase tracking-wide px-2 py-0.5 rounded-full shrink-0"
+                      style={{ background: AC_BG, color: AC, border: `1px solid ${AC_BDR}` }}
+                    >
+                      <RadarLiveDot color={AC} />
+                      {lastSearchCount} encontradas
+                    </span>
+                  )}
+                </div>
+                <p className="text-xs mt-0.5 text-slate-500 leading-snug">
+                  {hasSavedJobs
+                    ? 'Preparación activa — oportunidades guardadas en pipeline'
+                    : 'Donde la preparación se convierte en postulaciones reales'}
+                </p>
+              </div>
+
+              {/* Done state badge */}
+              {hasSavedJobs && !isRec && (
+                <span
+                  className="text-[10px] font-bold shrink-0 mt-0.5 px-2 py-0.5 rounded-full"
+                  style={{ background: AC_BG, color: DONE_AC, border: `1px solid ${AC_BDR}`, whiteSpace: 'nowrap' }}
+                >
+                  {savedCount > 0 ? `${savedCount} guardadas` : '✓ Activo'}
+                </span>
+              )}
+            </div>
+
+            {/* Description — for recommended and available-not-done */}
+            {!isLocked && (isRec || !hasSavedJobs) && (
+              <p className="text-xs text-slate-500 mt-2 leading-relaxed">
+                IA analiza el mercado laboral en tiempo real y selecciona los roles donde tu perfil es diferencial. Cada resultado incluye % de fit y brechas concretas.
+              </p>
+            )}
+            {isRec && (
+              <p className="text-xs mt-1.5 font-medium leading-snug" style={{ color: AC }}>
+                → Tenés un pipeline de oportunidades concretas listo para actuar.
+              </p>
+            )}
+
+            {/* CTA */}
+            {!isLocked ? (
+              <button
+                onClick={onClick}
+                className={`mt-3 spring-tap font-semibold text-xs transition-all ${isRec ? 'w-full py-3 rounded-xl text-white' : hasSavedJobs ? 'py-1.5 px-3 rounded-lg' : 'py-2 px-3.5 rounded-xl'}`}
+                style={isRec
+                  ? { background: `linear-gradient(135deg, #c2185b, #ad1457)`, boxShadow: `0 4px 16px rgba(194,24,91,0.30)` }
+                  : hasSavedJobs
+                    ? { color: DONE_AC, background: AC_BG, border: `1px solid ${AC_BDR}` }
+                    : { color: AC, background: AC_BG, border: `1px solid ${AC_BDR}` }
+                }
+              >
+                {hasSavedJobs
+                  ? 'Ver oportunidades →'
+                  : lastSearchCount != null
+                    ? `Revisar ${lastSearchCount} resultados →`
+                    : 'Activar radar →'
+                }
+              </button>
+            ) : (
+              <p className="text-[10px] text-slate-400 mt-2">🔒 Disponible cuando tengas tu CV</p>
+            )}
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 export default function ModeSelectScreen({
   setStep,
   handleModeSelectJobAdapter,
@@ -20,6 +222,9 @@ export default function ModeSelectScreen({
   cvQuality,
   starFeedback,
   trackingCards,
+  // Radar Laboral props — wired from App.jsx
+  radarSavedCount,      // number of jobs saved to Kanban from Radar (activates done state)
+  radarLastSearchCount, // count of results from most recent search (for live badge)
 }) {
   const [streak, setStreak] = useState(0)
   useEffect(() => {
@@ -50,10 +255,14 @@ export default function ModeSelectScreen({
   const done2 = !!result
   const done3 = !!cvFinalData
   const done4 = !!(cvFinalData && cvOptimizeApplied)
+  // Radar Laboral activates when user has at least 1 saved job
+  const done5radar = !!(radarSavedCount > 0)
   const done6 = !!interviewFeedback
 
-  const completedCount = [done1, done2, done3, done4, false, done6, false].filter(Boolean).length
-  const nextRec = !done1 ? 1 : !done3 ? 3 : !done6 ? 6 : null
+  // Radar pushes into the recommendation flow once CV is built
+  const completedCount = [done1, done2, done3, done4, done5radar, false, done6, false].filter(Boolean).length
+  // nextRec: if radar not active and CV is ready → radar is the priority next step
+  const nextRec = !done1 ? 1 : !done3 ? 3 : (done3 && !done5radar) ? 5 : !done6 ? 7 : null
 
   const steps = [
     {
@@ -132,8 +341,14 @@ export default function ModeSelectScreen({
         setStep(STEPS.CV)
       },
     },
+    // Step 5 = Radar Laboral — rendered via RadarStepCard (not the generic card)
     {
       num: 5,
+      isRadar: true,  // flag to switch to custom component
+      available: done3,
+    },
+    {
+      num: 6,
       icon: '📝',
       ac: '#6366f1',
       abg: 'rgba(99,102,241,0.08)',
@@ -148,13 +363,13 @@ export default function ModeSelectScreen({
       lockedLabel: 'Disponible cuando tengas tu CV',
       onClick: () => {
         if (jobAdapterCheckLoading) return
-        trackEvent('roadmap_step', { step: 5, action: 'start' })
+        trackEvent('roadmap_step', { step: 6, action: 'start' })
         setJobAdapterNoCv(false)
         handleModeSelectJobAdapter()
       },
     },
     {
-      num: 6,
+      num: 7,
       icon: '🎙️',
       ac: '#d97706',
       abg: 'rgba(217,119,6,0.08)',
@@ -168,13 +383,13 @@ export default function ModeSelectScreen({
       ctaLabel: done6 ? 'Volver a entrenar →' : 'Entrenar entrevista →',
       contextCard: trackingCards?.length > 0 ? trackingCards[0] : null,
       onClick: () => {
-        trackEvent('roadmap_step', { step: 6, action: done6 ? 'repeat' : 'start' })
+        trackEvent('roadmap_step', { step: 7, action: done6 ? 'repeat' : 'start' })
         resetInterview()
         setStep(STEPS.INTERVIEW_INTRO)
       },
     },
     {
-      num: 7,
+      num: 8,
       icon: '⭐',
       ac: '#0d9488',
       abg: 'rgba(13,148,136,0.08)',
@@ -187,7 +402,7 @@ export default function ModeSelectScreen({
       available: true,
       ctaLabel: 'Entrenar con STAR →',
       onClick: () => {
-        trackEvent('roadmap_step', { step: 7, action: 'start' })
+        trackEvent('roadmap_step', { step: 8, action: 'start' })
         setStarPhase('theory')
         setStep(STEPS.STAR_TRAINING)
       },
@@ -234,6 +449,8 @@ export default function ModeSelectScreen({
                : readinessIndex >= 6 ? 'En preparación activa'
                : 'Iniciando entrenamiento'}
               {streak > 1 && <span style={{ marginLeft: 8, opacity: 0.8 }}>· {streak}d activo</span>}
+              {/* Radar activo badge inline in readiness bar */}
+              {done5radar && <span style={{ marginLeft: 8, opacity: 0.9 }}>· 📡 Radar activo</span>}
             </p>
             <p style={{ fontSize: 10, opacity: 0.5, marginTop: 4, marginBottom: 0 }}>
               Ver informe completo →
@@ -264,17 +481,19 @@ export default function ModeSelectScreen({
           style={{ background: 'rgba(0,119,181,0.05)', border: '1px solid rgba(0,119,181,0.15)', boxShadow: '0 2px 8px rgba(0,119,181,0.06)' }}>
           <div className="flex items-center justify-between">
             <p className="text-xs font-semibold text-slate-600">
-              {completedCount === 7 ? '¡Preparación completa! ✦' : `${completedCount} módulos completados de tu preparación`}
+              {completedCount === 8 ? '¡Preparación completa! ✦' : `${completedCount} módulos completados de tu preparación`}
             </p>
-            <span className="text-xs font-bold" style={{ color: '#0077B5' }}>{Math.round(completedCount / 7 * 100)}%</span>
+            <span className="text-xs font-bold" style={{ color: '#0077B5' }}>{Math.round(completedCount / 8 * 100)}%</span>
           </div>
           <div className="h-1.5 rounded-full overflow-hidden" style={{ background: 'rgba(0,119,181,0.12)' }}>
             <div className="h-full rounded-full transition-all duration-700"
-              style={{ width: `${completedCount / 7 * 100}%`, background: 'linear-gradient(90deg,#0077B5,#0ea5e9)' }} />
+              style={{ width: `${completedCount / 8 * 100}%`, background: 'linear-gradient(90deg,#0077B5,#0ea5e9)' }} />
           </div>
           {nextRec && (
             <p className="text-[11px] text-slate-500">
-              Próxima sesión: <span className="font-semibold text-slate-700">{steps[nextRec - 1].title}</span>
+              Próxima sesión: <span className="font-semibold text-slate-700">
+                {nextRec === 5 ? 'Radar Laboral' : steps.find(s => s.num === nextRec)?.title}
+              </span>
             </p>
           )}
         </div>
@@ -283,9 +502,28 @@ export default function ModeSelectScreen({
       {/* Journey steps */}
       <div className="space-y-2 stagger-in">
         {steps.map(s => {
-          const isRec = s.num === nextRec
+          const isRec    = s.num === nextRec
           const isLocked = !s.available
 
+          // ── Radar Laboral — custom card ──────────────────────────────────
+          if (s.isRadar) {
+            return (
+              <RadarStepCard
+                key={5}
+                isRec={isRec}
+                isLocked={isLocked}
+                hasSavedJobs={done5radar}
+                lastSearchCount={radarLastSearchCount ?? null}
+                savedCount={radarSavedCount ?? 0}
+                onClick={() => {
+                  trackEvent('roadmap_step', { step: 5, action: done5radar ? 'view' : 'start' })
+                  setStep(STEPS.JOB_RECOMMENDATIONS)
+                }}
+              />
+            )
+          }
+
+          // ── Generic step card ────────────────────────────────────────────
           return (
             <div key={s.num}>
               <div
@@ -379,7 +617,7 @@ export default function ModeSelectScreen({
                         <>
                           <button
                             onClick={s.onClick}
-                            disabled={s.num === 5 && jobAdapterCheckLoading}
+                            disabled={s.num === 6 && jobAdapterCheckLoading}
                             className={`mt-3 spring-tap font-semibold text-xs transition-all ${isRec ? 'w-full py-3 rounded-xl text-white' : s.done ? 'py-1.5 px-3 rounded-lg' : 'py-2 px-3.5 rounded-xl'}`}
                             style={isRec
                               ? { background: s.ac, boxShadow: `0 4px 14px ${s.aborder}` }
@@ -388,7 +626,7 @@ export default function ModeSelectScreen({
                                 : { color: s.ac, background: s.abg, border: `1px solid ${s.aborder}` }
                             }
                           >
-                            {s.num === 5 && jobAdapterCheckLoading
+                            {s.num === 6 && jobAdapterCheckLoading
                               ? <span className="flex items-center justify-center gap-2"><Spinner size={3} /> Verificando...</span>
                               : s.ctaLabel
                             }
@@ -408,8 +646,8 @@ export default function ModeSelectScreen({
                 </div>
               </div>
 
-              {/* No-CV error for step 5 */}
-              {s.num === 5 && jobAdapterNoCv && (
+              {/* No-CV error for Adaptación Táctica (now step 6) */}
+              {s.num === 6 && jobAdapterNoCv && (
                 <div className="mt-1.5 rounded-xl px-4 py-3 text-xs leading-relaxed"
                   style={{ background: 'rgba(99,102,241,0.06)', border: '1px solid rgba(99,102,241,0.2)', color: '#6366f1' }}>
                   <strong>Necesitás generar tu CV primero.</strong> Hacé el diagnóstico, generá tu CV, y después podés adaptarlo para cualquier búsqueda.

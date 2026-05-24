@@ -2,7 +2,7 @@ import { useEffect } from 'react'
 import { STEPS, LI_GRADIENT, BTN_BACK_STYLE, BTN_GHOST_STYLE, INPUT_STYLE, INPUT_ALT_STYLE, trackEvent } from '../../constants'
 import { Spinner } from '../ui'
 
-export default function TrackingScreen({ user, setShowPremiumModal, setStep, kanbanListMode, setKanbanListMode, trackingColumnas, trackingCards, trackingLoading, trackingError, showAddCard, setShowAddCard, newCardForm, setNewCardForm, editCard, setEditCard, showAddColumna, setShowAddColumna, newColumnaName, setNewColumnaName, newColumnaColor, setNewColumnaColor, renameColumna, setRenameColumna, createCard, updateCard, deleteCard, createColumna, updateColumna, deleteColumna, moveCard, setInterviewJobContext, resetInterview, cvFinalData, loadTracking }) {
+export default function TrackingScreen({ user, setShowPremiumModal, setStep, kanbanListMode, setKanbanListMode, trackingColumnas, trackingCards, trackingLoading, trackingError, showAddCard, setShowAddCard, newCardForm, setNewCardForm, editCard, setEditCard, showAddColumna, setShowAddColumna, newColumnaName, setNewColumnaName, newColumnaColor, setNewColumnaColor, renameColumna, setRenameColumna, createCard, updateCard, deleteCard, createColumna, updateColumna, deleteColumna, moveCard, setInterviewJobContext, resetInterview, cvFinalData, loadTracking, setShowJobModal, setJobCvForAdapter, setJobPosting }) {
   useEffect(() => {
     if (user?.es_premium && typeof loadTracking === 'function') {
       loadTracking()
@@ -87,12 +87,31 @@ export default function TrackingScreen({ user, setShowPremiumModal, setStep, kan
                             </div>
                           </div>
                           {card.fecha_aplicacion && <p className="text-[10px] mt-0.5" style={{ color: '#94a3b8' }}>{card.fecha_aplicacion}</p>}
-                          <div className="flex gap-2 mt-2">
+                          <div className="flex gap-2 mt-2 flex-wrap">
                             <button onClick={() => setEditCard(card)}
                               className="text-xs px-2.5 py-1 rounded-lg font-medium"
                               style={BTN_GHOST_STYLE}>
                               Editar
                             </button>
+                            {cvFinalData && setShowJobModal && (
+                              <button
+                                onClick={() => {
+                                  setJobCvForAdapter(cvFinalData)
+                                  const posting = [
+                                    card.empresa ? `Empresa: ${card.empresa}` : '',
+                                    card.puesto  ? `Puesto: ${card.puesto}`   : '',
+                                    card.notas   ? `Notas: ${card.notas}`     : '',
+                                    card.job_description ? `\nDescripción:\n${card.job_description.slice(0, 800)}` : '',
+                                  ].filter(Boolean).join('\n')
+                                  setJobPosting(posting)
+                                  trackEvent('kanban_to_cv_adapter', { empresa: card.empresa, puesto: card.puesto })
+                                  setShowJobModal(true)
+                                }}
+                                className="text-xs px-2.5 py-1 rounded-lg font-medium"
+                                style={{ background: 'rgba(5,150,105,0.10)', color: '#059669', border: '1px solid rgba(5,150,105,0.25)' }}>
+                                📄 Adaptar CV
+                              </button>
+                            )}
                             <button
                               onClick={() => {
                                 resetInterview()
@@ -156,17 +175,38 @@ export default function TrackingScreen({ user, setShowPremiumModal, setStep, kan
                                   <p className="text-xs line-clamp-2 italic" style={{ color: '#64748b' }}>{card.notas}</p>
                                 )}
                               </div>
-                              <button
-                                onClick={() => {
-                                  resetInterview()
-                                  setInterviewJobContext({ empresa: card.empresa, puesto: card.puesto, seniority: card.seniority || null, ats_keywords: card.ats_keywords || '', notas: card.notas || '', adaptation_notes: card.adaptation_notes || '', jd_summary: (card.job_description || '').slice(0, 600), card_id: card.id })
-                                  trackEvent('kanban_to_interview', { empresa: card.empresa, puesto: card.puesto })
-                                  setStep(STEPS.INTERVIEW_INTRO)
-                                }}
-                                className="w-full text-[10px] py-1 rounded-md font-medium text-white mt-1"
-                                style={{ background: 'linear-gradient(135deg,#6366f1,#8b5cf6)' }}>
-                                🎙️ Preparar entrevista
-                              </button>
+                              <div className="flex gap-1 mt-1 flex-wrap">
+                                {cvFinalData && setShowJobModal && (
+                                  <button
+                                    onClick={() => {
+                                      setJobCvForAdapter(cvFinalData)
+                                      const posting = [
+                                        card.empresa ? `Empresa: ${card.empresa}` : '',
+                                        card.puesto  ? `Puesto: ${card.puesto}`   : '',
+                                        card.notas   ? `Notas: ${card.notas}`     : '',
+                                        card.job_description ? `\nDescripción:\n${card.job_description.slice(0, 800)}` : '',
+                                      ].filter(Boolean).join('\n')
+                                      setJobPosting(posting)
+                                      trackEvent('kanban_to_cv_adapter', { empresa: card.empresa, puesto: card.puesto })
+                                      setShowJobModal(true)
+                                    }}
+                                    className="flex-1 text-[10px] py-1 rounded-md font-medium"
+                                    style={{ background: 'rgba(5,150,105,0.10)', color: '#059669', border: '1px solid rgba(5,150,105,0.2)' }}>
+                                    📄 Adaptar CV
+                                  </button>
+                                )}
+                                <button
+                                  onClick={() => {
+                                    resetInterview()
+                                    setInterviewJobContext({ empresa: card.empresa, puesto: card.puesto, seniority: card.seniority || null, ats_keywords: card.ats_keywords || '', notas: card.notas || '', adaptation_notes: card.adaptation_notes || '', jd_summary: (card.job_description || '').slice(0, 600), card_id: card.id })
+                                    trackEvent('kanban_to_interview', { empresa: card.empresa, puesto: card.puesto })
+                                    setStep(STEPS.INTERVIEW_INTRO)
+                                  }}
+                                  className="flex-1 text-[10px] py-1 rounded-md font-medium text-white"
+                                  style={{ background: 'linear-gradient(135deg,#6366f1,#8b5cf6)' }}>
+                                  🎙️ Entrevista
+                                </button>
+                              </div>
                             </div>
                           ))}
                           <button onClick={() => { setNewCardForm({ empresa: '', puesto: '', link_aviso: '', fecha_aplicacion: new Date().toISOString().slice(0, 10), notas: '' }); setShowAddCard(col.id) }}
