@@ -2631,7 +2631,7 @@ async function checkJobSearchRateLimit(env, userId, ip, isPremium) {
   // Expires at end of calendar day (UTC)
   const midnight = new Date()
   midnight.setUTCHours(24, 0, 0, 0)
-  const ttlSecs = Math.floor((midnight - Date.now()) / 1000)
+  const ttlSecs = Math.floor((midnight.getTime() - Date.now()) / 1000)
   await env.RATE_LIMIT_KV.put(kvKey, String(current + 1), { expirationTtl: ttlSecs })
 
   return { ok: true, count: current + 1, limit }
