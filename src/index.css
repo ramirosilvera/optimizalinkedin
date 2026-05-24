@@ -394,18 +394,24 @@ body::after {
    - will-change: transform en el input bar activa GPU composite layer → 0 jank.
    ═══════════════════════════════════════════════════════════════════════════════ */
 
-/* ── Raíz del chat — ocupa toda la pantalla ── */
+/* ── Raíz del chat — overlay fullscreen ──
+   position:fixed + inset:0 garantiza fullscreen independientemente del layout padre.
+   Resuelve el bug crítico de iOS Safari: position:fixed children dentro de
+   overflow:hidden pierden touch events. La raíz ES el contenedor fixed, y el
+   input bar es un flex item natural (sin position:fixed propio).
+   El height se controla via inline style (visualViewport.height) para
+   keyboard avoidance en todos los iOS: al abrir el teclado, el chat-root
+   se achica y el input bar (último flex item) sube naturalmente.     ── */
 .chat-root {
-  /* Fallback para browsers sin soporte dvh */
-  height: 100vh;
-  /* dvh = dynamic viewport height: se ajusta al teclado en iOS 15.4+ y Chrome 108+ */
-  height: 100dvh;
+  position: fixed;
+  top: 0;    /* overridden por chatRootStyle via visualViewport.offsetTop */
+  left: 0;
+  right: 0;
+  height: 100dvh; /* fallback; overridden por chatRootStyle via visualViewport.height */
   display: flex;
   flex-direction: column;
-  /* Crítico: overflow hidden para que el contenido no sobresalga */
-  overflow: hidden;
-  position: relative;
   background: #f0f4f8;
+  /* Sin overflow:hidden — no es necesario con position:fixed */
 }
 
 /* ── Header — fixed top con safe-area ── */
@@ -462,22 +468,18 @@ body::after {
   flex: 1;
   overflow-y: auto;
   overflow-x: hidden;
-  /* Momentum scroll en iOS — hace el scroll fluido con deceleration */
+  /* Momentum scroll en iOS */
   -webkit-overflow-scrolling: touch;
-  /* Contiene el overscroll: evita que el body scrollee cuando llega al límite */
-  overscroll-behavior: contain;
+  /* Previene que el body scrollee al llegar al límite */
   overscroll-behavior-y: contain;
-  /* Gestión de gestos: solo pan vertical, sin interferir con gestos del sistema */
+  /* Solo gestos verticales, sin conflicto con swipe horizontal del sistema */
   touch-action: pan-y;
-  /* Padding inferior para que el último mensaje no quede tapado por el input bar */
-  /* Valor calculado: altura del input (~72px) + safe-area-inset-bottom */
-  padding-bottom: calc(80px + env(safe-area-inset-bottom, 0px));
-  /* Padding top/lateral */
+  /* El input bar ya no es position:fixed — no necesitamos padding extra */
+  padding-bottom: 12px;
   padding-top: 12px;
-  /* Scroll suave para auto-scroll programático */
+  /* Scroll programático suave */
   scroll-behavior: smooth;
-  /* Contener el layout para evitar repaints innecesarios */
-  contain: strict;
+  /* Sin contain:strict — puede causar bugs de hit-testing en iOS */
 }
 
 /* Workaround: scroll-behavior: smooth causa problemas con scrollIntoView en iOS 15 */
@@ -490,11 +492,12 @@ body::after {
   padding: 0 12px 4px;
 }
 
-/* ── Badge "nuevo mensaje" — posicionado sobre el chat ── */
+/* ── Badge "nuevo mensaje" — posicionado sobre el input bar ── */
 .chat-new-msg-badge {
-  /* Relativo al chat-root, no al viewport */
+  /* Relativo al chat-root (position:fixed) */
   position: absolute;
-  bottom: calc(80px + env(safe-area-inset-bottom, 0px) + 8px);
+  /* ~72px = altura aprox del input bar + safe-area */
+  bottom: calc(72px + env(safe-area-inset-bottom, 0px) + 8px);
   left: 0;
   right: 0;
   display: flex;
@@ -507,47 +510,23 @@ body::after {
   pointer-events: all;
 }
 
-/* ── Input bar — sticky bottom con manejo del teclado ──
-
-   SOLUCIÓN AL PROBLEMA DEL TECLADO EN iOS:
-
-   position: fixed se posiciona relativo al LAYOUT VIEWPORT (el grande, que no se
-   encoge cuando aparece el teclado). Esto hace que el input quede TAPADO por el
-   teclado en iOS Safari.
-
-   Solución correcta:
-   1. Mantener position: fixed + bottom: 0
-   2. Leer window.visualViewport.height en tiempo real
-   3. Calcular keyboardHeight = window.innerHeight - visualViewport.height
-   4. Aplicar transform: translateY(-keyboardHeight) via inline style en React
-
-   Por qué transform y NO cambiar bottom:
-   - transform es GPU-composited (no genera layout/paint)
-   - bottom genera un reflow completo del layout
-   - transform + will-change crea una GPU layer separada → 0 jank
-
-   Alternativa CSS pura (Chrome 108+ / iOS 15.4+ con meta viewport height=device-height):
-   bottom: env(keyboard-inset-height, 0px); ← aún no disponible universalmente
+/* ── Input bar — flex item natural (sin position:fixed) ──
+   Keyboard avoidance: el chat-root trackea visualViewport.height via JS.
+   Cuando el teclado abre → chat-root se achica → este input (último flex item)
+   sube naturalmente hasta quedar visible sobre el teclado.
+   No hay position:fixed, no hay transform → cero bugs de touch en iOS Safari.
    ── */
 .chat-input-bar {
-  position: fixed;
-  bottom: 0;
-  left: 0;
-  right: 0;
-  z-index: 30;
+  flex-shrink: 0;
+  /* Sin position:fixed — forma parte del flujo flex */
   background: white;
   border-top: 1px solid rgba(0, 119, 181, 0.10);
   box-shadow: 0 -2px 12px rgba(0, 0, 0, 0.06);
   /* Safe area bottom para iPhone (home indicator) */
   padding-bottom: env(safe-area-inset-bottom, 0px);
-  /* Safe areas laterales para iPhone con notch horizontal (landscape) */
+  /* Safe areas laterales */
   padding-left: env(safe-area-inset-left, 0px);
   padding-right: env(safe-area-inset-right, 0px);
-  /* GPU composite layer — CRÍTICO para evitar jank en iOS */
-  will-change: transform;
-  /* backface-visibility: hidden es un hack común para forzar GPU layer en iOS */
-  -webkit-backface-visibility: hidden;
-  backface-visibility: hidden;
 }
 
 .chat-input-inner {
@@ -693,25 +672,15 @@ body::after {
 /* ── Responsive: en desktop, el chat se centra y tiene max-width ── */
 @media (min-width: 640px) {
   .chat-root {
-    /* En desktop, el chat no necesita ser full-screen */
-    max-width: 640px;
-    margin: 0 auto;
-    /* Borde sutil en desktop */
-    box-shadow: 0 0 0 1px rgba(0, 119, 181, 0.10);
-  }
-
-  .chat-input-bar {
-    /* En desktop, el input se limita al ancho del chat */
-    max-width: 640px;
+    /* Centrar el chat-root (position:fixed) en pantallas anchas */
     left: 50%;
+    right: auto;
+    width: min(640px, 100vw);
     transform: translateX(-50%);
-    /* El offset del teclado en desktop se ignora (no hay teclado virtual) */
+    box-shadow: 0 0 0 1px rgba(0, 119, 181, 0.10), 0 4px 24px rgba(0, 0, 0, 0.08);
   }
-
-  /* Sobrescribir con el offset del teclado si está presente */
-  .chat-input-bar[style*="translateY"] {
-    /* El inline style de React sobrescribe esto */
-  }
+  /* .chat-input-bar ya no necesita estilos propios de posicionamiento —
+     es un flex item que hereda el ancho del chat-root */
 }
 
 /* ── Modo landscape en mobile: reducir padding para aprovechar el espacio ── */
@@ -723,7 +692,7 @@ body::after {
   }
 
   .chat-messages {
-    padding-bottom: calc(64px + env(safe-area-inset-bottom, 0px));
+    padding-bottom: 6px;
   }
 
   .chat-input-inner {

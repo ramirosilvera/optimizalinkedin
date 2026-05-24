@@ -124,14 +124,15 @@ function NewMessageBadge({ onPress }) {
   )
 }
 
-// ─── Input area sticky ────────────────────────────────────────────────────────
+// ─── Input area ───────────────────────────────────────────────────────────────
+// NO position:fixed — es un flex item natural del chat-root.
+// El keyboard avoidance lo maneja el chat-root via visualViewport height.
 function ChatInput({
   value,
   onChange,
   onSend,
   disabled,
   placeholder,
-  keyboardOffset,
   textareaRef,
 }) {
   const handleKeyDown = (e) => {
@@ -143,31 +144,7 @@ function ChatInput({
   }
 
   return (
-    /*
-     * position: fixed + bottom: 0 + transform: translateY(offset)
-     *
-     * Por qué transform y no cambiar `bottom`:
-     * - `bottom` relativo al layout viewport → el teclado lo tapa
-     * - transform no genera nuevo layout → no causa reflow
-     * - GPU-composited → sin jank
-     *
-     * iOS Safari gotcha: position:fixed se comporta relativo al
-     * LAYOUT viewport (grande), no al visual viewport (el que encoge
-     * con el teclado). El offset compensa esto via visualViewport.
-     */
-    <div
-      className="chat-input-bar"
-      style={{
-        transform: keyboardOffset !== 0
-          ? `translateY(${keyboardOffset}px)`
-          : undefined,
-        // Transition suave cuando el teclado abre/cierra
-        transition: keyboardOffset !== 0
-          ? 'transform 0.28s cubic-bezier(0.25, 0.46, 0.45, 0.94)'
-          : 'transform 0.22s cubic-bezier(0.25, 0.46, 0.45, 0.94)',
-        willChange: 'transform',
-      }}
-    >
+    <div className="chat-input-bar">
       <div className="chat-input-inner">
         {/* Textarea auto-resize */}
         <textarea
@@ -239,7 +216,7 @@ export default function ChatInterface({
   avatarSrc,
 }) {
   // ── Hooks ──────────────────────────────────────────────────────────────────
-  const { keyboardVisible, getInputOffset } = useMobileViewport()
+  const { chatRootStyle, keyboardVisible } = useMobileViewport()
 
   const { containerRef, sentinelRef, hasNewMessage, scrollToBottom, handleScrollToBottomBtn } =
     useChatScroll({ messagesCount: messages.length, keyboardVisible })
@@ -250,9 +227,6 @@ export default function ChatInterface({
   useEffect(() => {
     scrollToBottom('instant')
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
-
-  // ── Calcular offset del input cuando hay teclado ──────────────────────────
-  const keyboardOffset = getInputOffset()
 
   // ── Handler de envío con focus management ─────────────────────────────────
   const handleSend = useCallback(() => {
@@ -270,7 +244,7 @@ export default function ChatInterface({
      * dvh = dynamic viewport height — se ajusta automáticamente al teclado
      * en Chrome Android y iOS 15.4+. Fallback: 100vh para browsers viejos.
      */
-    <div className="chat-root">
+    <div className="chat-root" style={chatRootStyle}>
       {/* ── Header ── */}
       <div className="chat-header">
         <div className="chat-header-inner">
@@ -372,7 +346,6 @@ export default function ChatInterface({
         onSend={handleSend}
         disabled={sendDisabled}
         placeholder={inputPlaceholder}
-        keyboardOffset={keyboardOffset}
         textareaRef={textareaRef}
       />
     </div>
