@@ -2612,6 +2612,80 @@ Generá el feedback en este JSON exacto:
 
   // ── Render ─────────────────────────────────────────────────
 
+  // Early return for fullscreen mobile chat screens.
+  // Renders ONLY the chat component — no <main>, no user bar, no journey progress,
+  // no min-h-dvh context. This is the definitive fix for iOS Safari:
+  // when <main min-h-dvh> + user bar + journey progress are in the DOM alongside
+  // a position:fixed chat overlay, iOS's UIKit hit-testing considers the document
+  // "scrollable" and routes touch events to the scroll system first, causing the
+  // chat textarea to never receive focus/tap events.
+  if (isMobile && step === STEPS.INTERVIEW) {
+    const interviewIndustria = qaHistory.find(h => h.questionId === 'industria')?.answer
+    const interviewIndustryQs = !dynamicInterviewQs && interviewIndustria
+      ? INTERVIEW_QUESTIONS_BY_INDUSTRY[interviewIndustria]
+      : null
+    const activeQs = dynamicInterviewQs || interviewIndustryQs || INTERVIEW_QUESTIONS
+    const jobCtxStr = interviewJobContext
+      ? `${interviewJobContext.puesto || ''}${interviewJobContext.empresa ? ` en ${interviewJobContext.empresa}` : ''}${interviewJobContext.seniority ? ` (${interviewJobContext.seniority})` : ''}${interviewJobContext.ats_keywords ? ` — skills: ${interviewJobContext.ats_keywords}` : ''}`
+      : ''
+    return (
+      <Suspense fallback={null}>
+        <InterviewChatScreen
+          questions={activeQs}
+          jobContext={jobCtxStr}
+          interviewMode={interviewMode}
+          callInterviewChat={callInterviewChat}
+          onSessionComplete={(summary) => {
+            if (!summary) return
+            const titulo = interviewJobContext
+              ? `${interviewJobContext.puesto || 'Entrevista'}${interviewJobContext.empresa ? ` en ${interviewJobContext.empresa}` : ''}`
+              : 'Sesión de Entrenamiento'
+            saveToHistorial('entrevista', { summary, mode: interviewMode }, titulo, summary.score ?? null)
+            trackEvent('interview_chat_completed', { score: summary.score, nivel: summary.nivel, mode: interviewMode })
+          }}
+          onBack={() => setStep(STEPS.INTERVIEW_INTRO)}
+          onRetrain={interviewJobContext ? (() => {
+            const ctx = interviewJobContext
+            resetInterview()
+            setInterviewJobContext(ctx)
+            setStep(STEPS.INTERVIEW_INTRO)
+          }) : (() => {
+            resetInterview()
+            setStep(STEPS.INTERVIEW_INTRO)
+          })}
+          retrainLabel={interviewJobContext ? (interviewJobContext.empresa || interviewJobContext.puesto) : null}
+        />
+      </Suspense>
+    )
+  }
+
+  if (isMobile && step === STEPS.STAR_TRAINING) {
+    return (
+      <Suspense fallback={null}>
+        <StarChatScreen
+          starPhase={starPhase}
+          setStarPhase={setStarPhase}
+          starQuestionIdx={starQuestionIdx}
+          setStarQuestionIdx={setStarQuestionIdx}
+          starAnswer={starAnswer}
+          setStarAnswer={setStarAnswer}
+          starFeedback={starFeedback}
+          setStarFeedback={setStarFeedback}
+          starLoading={starLoading}
+          starError={starError}
+          setStarError={setStarError}
+          callStarFeedback={callStarFeedback}
+          resetInterview={resetInterview}
+          interviewFeedback={interviewFeedback}
+          user={user}
+          result={result}
+          setStep={setStep}
+          setShowPremiumModal={setShowPremiumModal}
+        />
+      </Suspense>
+    )
+  }
+
   return (
     <Suspense fallback={null}>
     <main
