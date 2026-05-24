@@ -131,7 +131,8 @@ function ChatInput({
   value,
   onChange,
   onSend,
-  disabled,
+  disabled,   // controla el botón enviar
+  locked,     // readOnly en el textarea (preserva focus, a diferencia de disabled)
   placeholder,
   textareaRef,
 }) {
@@ -146,25 +147,27 @@ function ChatInput({
   return (
     <div className="chat-input-bar">
       <div className="chat-input-inner">
-        {/* Textarea auto-resize */}
+        {/* Textarea auto-resize
+            readOnly en vez de disabled: el navegador NO hace blur automático
+            cuando readOnly cambia, preservando el foco y manteniendo el teclado
+            abierto en iOS durante toda la sesión. */}
         <textarea
           ref={textareaRef}
           value={value}
           onChange={e => onChange(e.target.value)}
           onKeyDown={handleKeyDown}
           placeholder={placeholder || 'Escribí tu respuesta...'}
-          disabled={disabled}
+          readOnly={locked}
           rows={1}
           maxLength={1000}
           className="chat-textarea"
-          // inputMode="text" evita que iOS muestre teclado numérico
           inputMode="text"
-          // autoComplete off para evitar sugerencias en iOS que desplazan el layout
           autoComplete="off"
           autoCorrect="on"
           autoCapitalize="sentences"
           spellCheck={true}
           aria-label="Tu respuesta"
+          aria-readonly={locked}
         />
 
         {/* Botón enviar — posicionado para pulgar derecho */}
@@ -194,7 +197,8 @@ function ChatInput({
  * @param {string}   props.inputValue   - Valor del textarea controlado
  * @param {Function} props.onInputChange
  * @param {Function} props.onSend       - Callback al enviar
- * @param {boolean}  props.sendDisabled
+ * @param {boolean}  props.sendDisabled    - Deshabilita el botón enviar (incluye minLength check)
+ * @param {boolean}  props.textareaLocked  - readOnly en el textarea (no cierra teclado iOS)
  * @param {string}   props.inputPlaceholder
  * @param {Function} props.onBack       - Callback del botón atrás en el header
  * @param {React.ReactNode} props.headerRight - Slot para contenido extra en el header (ej: progress bar)
@@ -209,6 +213,7 @@ export default function ChatInterface({
   onInputChange,
   onSend,
   sendDisabled,
+  textareaLocked = false,
   inputPlaceholder,
   onBack,
   headerRight,
@@ -366,6 +371,7 @@ export default function ChatInterface({
         onChange={onInputChange}
         onSend={handleSend}
         disabled={sendDisabled}
+        locked={textareaLocked}
         placeholder={inputPlaceholder}
         textareaRef={textareaRef}
       />

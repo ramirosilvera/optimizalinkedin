@@ -262,6 +262,7 @@ export default function InterviewChatScreen({
       onInputChange={setInputValue}
       onSend={handleSend}
       sendDisabled={inputLocked || sessionDone || inputValue.trim().length < 20}
+      textareaLocked={inputLocked || sessionDone}
       inputPlaceholder={placeholder}
       onBack={onBack}
       headerRight={headerRight}

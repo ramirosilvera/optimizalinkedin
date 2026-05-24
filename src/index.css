@@ -583,9 +583,9 @@ body::after {
   color: #94a3b8;
 }
 
-.chat-textarea:disabled {
+.chat-textarea:read-only {
   opacity: 0.5;
-  cursor: not-allowed;
+  cursor: default;
 }
 
 /* ── Botón Enviar ──

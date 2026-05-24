@@ -263,6 +263,7 @@ export default function StarChatScreen({
       onInputChange={setStarAnswer}
       onSend={handleSend}
       sendDisabled={starLoading}
+      textareaLocked={starLoading}
       inputPlaceholder={placeholder}
       onBack={handleBack}
     />
