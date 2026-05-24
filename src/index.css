@@ -403,18 +403,17 @@ body::after {
    keyboard avoidance en todos los iOS: al abrir el teclado, el chat-root
    se achica y el input bar (último flex item) sube naturalmente.     ── */
 .chat-root {
-  position: fixed;
-  top: 0;    /* overridden por chatRootStyle via visualViewport.offsetTop */
-  left: 0;
-  right: 0;
+  /* position: relative — bloque normal, no fixed overlay.
+     Crea contexto de posicionamiento para .chat-new-msg-badge (position:absolute).
+     El documento se hace no-scrollable via JS (overflow:hidden en html/body +
+     minHeight:0 en #root), eliminando el hit-testing bug de iOS Safari. */
+  position: relative;
+  width: 100%;
   height: 100dvh; /* fallback; overridden por chatRootStyle via visualViewport.height */
-  /* z-index explícito: asegura estar sobre body::before/::after (z-index:0) y
-     cualquier contenido residual en #root. No compite con modales (z-50 = 50). */
   z-index: 1;
   display: flex;
   flex-direction: column;
   background: #f0f4f8;
-  /* Sin overflow:hidden — no es necesario con position:fixed */
 }
 
 /* ── Header — fixed top con safe-area ── */
@@ -675,15 +674,11 @@ body::after {
 /* ── Responsive: en desktop, el chat se centra y tiene max-width ── */
 @media (min-width: 640px) {
   .chat-root {
-    /* Centrar el chat-root (position:fixed) en pantallas anchas */
-    left: 50%;
-    right: auto;
-    width: min(640px, 100vw);
-    transform: translateX(-50%);
+    /* Centrar sin transform (evita stacking context innecesario) */
+    max-width: min(640px, 100vw);
+    margin: 0 auto;
     box-shadow: 0 0 0 1px rgba(0, 119, 181, 0.10), 0 4px 24px rgba(0, 0, 0, 0.08);
   }
-  /* .chat-input-bar ya no necesita estilos propios de posicionamiento —
-     es un flex item que hereda el ancho del chat-root */
 }
 
 /* ── Modo landscape en mobile: reducir padding para aprovechar el espacio ── */
@@ -738,13 +733,3 @@ body::after {
   border-radius: 3px;
 }
 
-/* ── Fix iOS Safari: el input puede quedar detrás del teclado en ciertos
-   casos edge con position:fixed. Este workaround lo mitiga. ── */
-@supports (-webkit-touch-callout: none) {
-  /* iOS only */
-  .chat-root {
-    /* En iOS, usar height: -webkit-fill-available como fallback adicional */
-    /* dvh ya lo resuelve en iOS 15.4+, esto cubre iOS 13-15.3 */
-    min-height: -webkit-fill-available;
-  }
-}

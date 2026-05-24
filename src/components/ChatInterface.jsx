@@ -223,6 +223,27 @@ export default function ChatInterface({
 
   const { textareaRef } = useAutoResizeTextarea(inputValue)
 
+  // ── Document normalization ─────────────────────────────────────────────────
+  // Locks html/body scroll and zeroes #root min-height while chat is mounted.
+  // Prevents iOS Safari UIKit from treating the document as "scrollable" when
+  // the keyboard opens (which intercepts touch events and blocks input focus).
+  useEffect(() => {
+    const html = document.documentElement
+    const body = document.body
+    const root = document.getElementById('root')
+    const prevHtmlOverflow = html.style.overflow
+    const prevBodyOverflow = body.style.overflow
+    const prevRootMinHeight = root ? root.style.minHeight : ''
+    html.style.overflow = 'hidden'
+    body.style.overflow = 'hidden'
+    if (root) root.style.minHeight = '0'
+    return () => {
+      html.style.overflow = prevHtmlOverflow
+      body.style.overflow = prevBodyOverflow
+      if (root) root.style.minHeight = prevRootMinHeight
+    }
+  }, [])
+
   // ── Scroll inicial al montar ───────────────────────────────────────────────
   useEffect(() => {
     scrollToBottom('instant')
