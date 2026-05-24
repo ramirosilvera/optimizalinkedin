@@ -311,6 +311,7 @@ function JobCard({
   const [dismissed, setDismissed]       = useState(false)
   const [saveLoading, setSaveLoading]   = useState(false)
   const [swipeDelta, setSwipeDelta]     = useState(0)
+  const [appliedInline, setAppliedInline] = useState(false)
   const touchStartRef                   = useRef(null)
   const cardRef                         = useRef(null)
 
@@ -321,24 +322,50 @@ function JobCard({
   const c        = scorePct != null ? matchColor(scorePct) : null
 
   // ── Days since posted ──────────────────────────────────────────────────────
-  const daysAgo = (() => {
+  const postedDays = (() => {
     if (!job.posted_at) return null
-    const diff = Date.now() - new Date(job.posted_at).getTime()
-    const days = Math.floor(diff / 86400000)
-    if (days === 0) return 'Hoy'
-    if (days === 1) return 'Ayer'
-    if (days < 7)  return `Hace ${days} días`
-    if (days < 30) return `Hace ${Math.floor(days / 7)} sem.`
-    return `Hace ${Math.floor(days / 30)} mes.`
+    return Math.floor((Date.now() - new Date(job.posted_at).getTime()) / 86400000)
   })()
-  const isStale = (() => {
-    if (!job.posted_at) return false
-    const days = Math.floor((Date.now() - new Date(job.posted_at).getTime()) / 86400000)
-    return days > 14
+  const daysAgo = (() => {
+    if (postedDays === null) return null
+    if (postedDays === 0) return 'today'
+    if (postedDays === 1) return 'Ayer'
+    if (postedDays < 7)  return `Hace ${postedDays} días`
+    if (postedDays < 30) return `Hace ${Math.floor(postedDays / 7)} sem.`
+    return `Hace ${Math.floor(postedDays / 30)} mes.`
   })()
+  const isStale         = postedDays != null && postedDays > 14
+  const isPublishedToday = postedDays === 0
   // Market segment: global remote sources vs. local LATAM aggregators
-  const isGlobalRemote = ['remoteok', 'remotive', 'arbeitnow'].includes(job.source)
+  const isGlobalRemote = ['remoteok', 'remotive', 'jobicy'].includes(job.source)
   const isLocalMarket  = ['jooble', 'adzuna'].includes(job.source)
+  const isDirectAts    = ['greenhouse','lever','smartrecruiters','ashby'].includes(job.source)
+
+  // Deterministic company avatar color for known brands
+  const COMPANY_COLORS = {
+    'mercado libre': { bg: '#FFE600', text: '#333' },
+    'globant':       { bg: '#00B140', text: '#fff' },
+    'uala':          { bg: '#7C3AED', text: '#fff' },
+    'naranja x':     { bg: '#F97316', text: '#fff' },
+    'despegar':      { bg: '#0EA5E9', text: '#fff' },
+    'pedidosya':     { bg: '#E11D48', text: '#fff' },
+    'delivery hero': { bg: '#E11D48', text: '#fff' },
+    'ripio':         { bg: '#1D4ED8', text: '#fff' },
+    'tienda nube':   { bg: '#7C3AED', text: '#fff' },
+    'etermax':       { bg: '#F59E0B', text: '#333' },
+    'mural':         { bg: '#0F172A', text: '#fff' },
+    'satellogic':    { bg: '#1E40AF', text: '#fff' },
+    'rappi':         { bg: '#FF441F', text: '#fff' },
+    'pomelo':        { bg: '#10B981', text: '#fff' },
+    'bitso':         { bg: '#FBBF24', text: '#333' },
+    'auth0':         { bg: '#EB5424', text: '#fff' },
+    'linear':        { bg: '#5B6AD0', text: '#fff' },
+    'vercel':        { bg: '#000', text: '#fff' },
+  }
+  const TOP_EMPLOYERS = new Set(['mercado libre','globant','uala','naranja x','despegar','pedidosya','delivery hero','etermax','rappi','mural','satellogic'])
+  const companyKey    = (job.company || '').toLowerCase().trim()
+  const avatarColors  = COMPANY_COLORS[companyKey] || { bg: 'linear-gradient(135deg,#e2e8f0,#cbd5e1)', text: '#64748b' }
+  const isTopEmployer = TOP_EMPLOYERS.has(companyKey)
 
   // ── Touch swipe handlers ───────────────────────────────────────────────────
   const onTouchStart = (e) => {
@@ -526,13 +553,23 @@ function JobCard({
         </div>
       )}
 
+      {/* Top Employer honor bar — 4px crimson strip for registry companies */}
+      {isTopEmployer && (
+        <div style={{ height: 4, background: 'linear-gradient(90deg,#c2185b,#e91e63)', borderRadius: '16px 16px 0 0' }} />
+      )}
+
       <div className="p-4 space-y-3">
         {/* ── Row 1: Logo + Title + Score ── */}
         <div className="flex items-start gap-3">
-          {/* Company logo placeholder */}
-          <div className="w-10 h-10 rounded-xl shrink-0 flex items-center justify-center text-sm font-bold"
-            style={{ background: 'linear-gradient(135deg,#e2e8f0,#cbd5e1)', color: '#64748b' }}>
+          {/* Company avatar — brand color for known companies, gray for unknown */}
+          <div className="relative w-10 h-10 rounded-xl shrink-0 flex items-center justify-center text-sm font-bold"
+            style={{ background: avatarColors.bg, color: avatarColors.text }}>
             {(job.company || '?')[0].toUpperCase()}
+            {/* "Oferta directa" micro-badge for ATS-sourced jobs */}
+            {isDirectAts && (
+              <div className="absolute -bottom-1 -right-1 w-4 h-4 rounded-full flex items-center justify-center text-[8px]"
+                style={{ background: '#16a34a', border: '1.5px solid white' }}>✓</div>
+            )}
           </div>
 
           <div className="flex-1 min-w-0">
@@ -541,8 +578,9 @@ function JobCard({
             </p>
             <p className="text-xs mt-0.5 truncate" style={{ color: '#64748b' }}>
               {job.company}
+              {isTopEmployer && <span className="ml-1.5 text-[9px] font-bold uppercase tracking-wide" style={{ color: '#c2185b' }}>Top Employer</span>}
             </p>
-            {/* Location + remote badge */}
+            {/* Location + remote + market badges */}
             <div className="flex items-center gap-1.5 mt-1 flex-wrap">
               {job.remote && (
                 <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold"
@@ -550,7 +588,13 @@ function JobCard({
                   Remoto
                 </span>
               )}
-              {isGlobalRemote && (
+              {isDirectAts && (
+                <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold"
+                  style={{ background: 'rgba(22,163,74,0.10)', color: '#15803d', border: '1px solid rgba(22,163,74,0.25)' }}>
+                  ✓ Oferta directa
+                </span>
+              )}
+              {!isDirectAts && isGlobalRemote && (
                 <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold"
                   style={{ background: 'rgba(99,102,241,0.10)', color: '#4f46e5', border: '1px solid rgba(99,102,241,0.2)' }}>
                   Global
@@ -567,9 +611,15 @@ function JobCard({
                   {job.location}
                 </span>
               )}
-              {daysAgo && (
+              {/* Freshness: "Publicado hoy" pill or regular date */}
+              {isPublishedToday ? (
+                <span className="px-2 py-0.5 rounded-full text-[10px] font-bold"
+                  style={{ background: 'rgba(22,197,94,0.15)', color: '#15803d', border: '1px solid rgba(22,163,74,0.30)' }}>
+                  🟢 Publicado hoy
+                </span>
+              ) : daysAgo ? (
                 <span className="text-[10px]" style={{ color: isStale ? '#f59e0b' : '#94a3b8' }}>· {daysAgo}</span>
-              )}
+              ) : null}
             </div>
             {isStale && (
               <p className="text-[10px] mt-1 px-2 py-0.5 rounded-lg"
@@ -731,6 +781,33 @@ function JobCard({
             </button>
           )}
         </div>
+
+        {/* "¿Ya aplicaste?" inline post-save — appears after saving, eliminates context-switch to Kanban */}
+        {saved && !appliedInline && (
+          <div className="flex items-center justify-between pt-1" style={{ animation: 'fadeIn 0.25s ease-out' }}>
+            <span className="text-xs" style={{ color: '#94a3b8' }}>¿Ya aplicaste a este rol?</span>
+            <button
+              onClick={async () => {
+                setAppliedInline(true)
+                if (rec_id) {
+                  try {
+                    await fetch?.('/api/job_update_status', { method: 'POST', body: JSON.stringify({ rec_id, status: 'applied' }) }).catch(() => {})
+                  } catch {}
+                }
+                trackEvent('radar_laboral_applied_inline', { rec_id, company: job.company })
+                addToast?.('✓ Marcado como aplicado — lo verás en tu tablero con la fecha de hoy')
+              }}
+              className="px-3 py-1.5 rounded-xl text-xs font-semibold"
+              style={{ background: 'rgba(99,102,241,0.10)', color: '#6366f1', border: '1px solid rgba(99,102,241,0.20)' }}>
+              Sí, apliqué →
+            </button>
+          </div>
+        )}
+        {appliedInline && (
+          <p className="text-xs text-center py-0.5" style={{ color: '#94a3b8' }}>
+            ✓ Aplicación registrada · {new Date().toLocaleDateString('es-AR', { day: 'numeric', month: 'short' })}
+          </p>
+        )}
 
         {/* Dismiss link */}
         <button onClick={handleDismiss}
@@ -1410,34 +1487,66 @@ export default function JobRecommendationsScreen({
               )
             })}
 
-            {/* Freemium upgrade banner (appears after free cards) */}
-            {/* Quantified: "Quedan N oportunidades más para vos" — not generic "upgrade" */}
-            {!isPremium && recommendations.length > FREE_VISIBLE && (
-              <div className="rounded-2xl p-5 text-center space-y-3"
-                style={{ background: 'linear-gradient(135deg,#0d2137,#0077B5)', boxShadow: '0 8px 32px rgba(0,119,181,0.28)' }}>
-                <p className="text-[10px] font-bold uppercase tracking-widest" style={{ color: 'rgba(255,255,255,0.55)' }}>
-                  Plan Profesional
-                </p>
-                <p className="text-white font-bold text-base leading-snug">
-                  Quedan {recommendations.length - FREE_VISIBLE} oportunidades analizadas para vos
-                </p>
-                <p className="text-sm leading-relaxed" style={{ color: 'rgba(226,232,240,0.78)' }}>
-                  Incluye análisis de fit completo, guardado ilimitado en pipeline y filtros por seniority, salario y ubicación.
-                </p>
-                <button
-                  onClick={() => {
-                    trackEvent('radar_laboral_premium_modal_opened', { trigger: 'radar_upgrade_banner' })
-                    setShowPremiumModal(true)
-                  }}
-                  className="w-full px-6 py-3.5 rounded-2xl text-sm font-bold transition-all active:scale-[0.98]"
-                  style={{ background: 'white', color: '#0d2137', boxShadow: '0 2px 8px rgba(0,0,0,0.20)' }}>
-                  Activar Plan Profesional →
-                </button>
-                <p className="text-[11px]" style={{ color: 'rgba(255,255,255,0.40)' }}>
-                  Las oportunidades son en tiempo real — cada día se actualizan
-                </p>
-              </div>
-            )}
+            {/* Freemium upgrade banner — shows real company names from locked results */}
+            {!isPremium && recommendations.length > FREE_VISIBLE && (() => {
+              const lockedRecs = recommendations.slice(FREE_VISIBLE)
+              const ATS_SOURCES = new Set(['greenhouse','lever','smartrecruiters','ashby'])
+              const hasDirectAts = lockedRecs.some(r => ATS_SOURCES.has(r.job?.source))
+              // Get top 3 unique companies from locked results
+              const lockedCompanies = [...new Map(
+                lockedRecs.map(r => [r.job?.company, r])
+              ).values()].slice(0, 3)
+              const extraCount = Math.max(0, new Set(lockedRecs.map(r => r.job?.company)).size - 3)
+              return (
+                <div className="rounded-2xl overflow-hidden"
+                  style={{ background: 'linear-gradient(135deg,#0d2137,#0077B5)', boxShadow: '0 8px 32px rgba(0,119,181,0.28)' }}>
+                  <div className="p-5 text-center space-y-3">
+                    <p className="text-white font-bold text-base leading-snug">
+                      🔒 +{recommendations.length - FREE_VISIBLE} oportunidades directas para vos
+                    </p>
+                    {/* Company list from locked results */}
+                    <div className="rounded-xl p-3 space-y-2" style={{ background: 'rgba(255,255,255,0.10)' }}>
+                      {lockedCompanies.map((r, i) => (
+                        <div key={i} className="flex items-center justify-between">
+                          <div className="flex items-center gap-2">
+                            <div className="w-5 h-5 rounded-md flex items-center justify-center text-[9px] font-bold"
+                              style={{ background: 'rgba(255,255,255,0.20)', color: 'white' }}>
+                              {(r.job?.company || '?')[0].toUpperCase()}
+                            </div>
+                            <span className="text-xs font-semibold text-white">{r.job?.company}</span>
+                          </div>
+                          <span className="text-[10px]" style={{ color: 'rgba(255,255,255,0.55)' }}>
+                            {r.match_score != null ? `${Math.round(r.match_score * 10)}% match` : ''}
+                          </span>
+                        </div>
+                      ))}
+                      {extraCount > 0 && (
+                        <p className="text-[10px] text-center" style={{ color: 'rgba(255,255,255,0.50)' }}>
+                          + {extraCount} empresa{extraCount > 1 ? 's' : ''} más
+                        </p>
+                      )}
+                    </div>
+                    {hasDirectAts && (
+                      <p className="text-xs leading-relaxed" style={{ color: 'rgba(226,232,240,0.78)' }}>
+                        Estas vacantes vienen directo del portal de la empresa — no están en otros portales
+                      </p>
+                    )}
+                    <button
+                      onClick={() => {
+                        trackEvent('radar_laboral_premium_modal_opened', { trigger: 'radar_upgrade_banner' })
+                        setShowPremiumModal(true)
+                      }}
+                      className="w-full px-6 py-3.5 rounded-2xl text-sm font-bold transition-all active:scale-[0.98]"
+                      style={{ background: 'white', color: '#0d2137', boxShadow: '0 2px 8px rgba(0,0,0,0.20)' }}>
+                      Activar acceso completo →
+                    </button>
+                    <p className="text-[11px]" style={{ color: 'rgba(255,255,255,0.40)' }}>
+                      Las oportunidades se actualizan diariamente desde las empresas
+                    </p>
+                  </div>
+                </div>
+              )
+            })()}
 
             {/* No results after filtering */}
             {filteredRecs.length === 0 && recommendations.length > 0 && (
