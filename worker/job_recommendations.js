@@ -13,8 +13,9 @@
 //   # RATE_LIMIT_KV is reused for job search KV cache (same namespace, different key prefix)
 //
 // ENV VARS to add in Cloudflare dashboard:
-//   ADZUNA_APP_ID     — from developer.adzuna.com
-//   ADZUNA_APP_KEY    — from developer.adzuna.com
+//   JOOBLE_KEY        — from jooble.org/api/about (free, 500 req default)
+//   ADZUNA_APP_ID     — from developer.adzuna.com (optional, V1)
+//   ADZUNA_APP_KEY    — from developer.adzuna.com (optional, V1)
 //   (RemoteOK + Remotive + Arbeitnow are free, no key needed)
 // ══════════════════════════════════════════════════════════════════════════════
 
@@ -151,6 +152,30 @@ function normalizeArbeitnow(raw) {
   }))
 }
 
+// Jooble — https://jooble.org/api/{key}  (POST, requires JOOBLE_KEY env var)
+// Returns: {jobs: [{id, title, snippet, salary, location, company, updated, link}]}
+// Coverage: agrega Bumeran, Computrabajo, ZonaJobs, InfoJobs Argentina — mejor cobertura LATAM local
+function normalizeJooble(raw) {
+  if (!raw?.jobs) return []
+  return raw.jobs.map(j => ({
+    source:          'jooble',
+    external_id:     String(j.id),
+    title:           (j.title   || '').trim(),
+    company:         (j.company || '').trim(),
+    description:     truncateDesc(j.snippet),
+    location:        j.location || null,
+    remote:          /remote|remoto/.test((j.location || j.title || '').toLowerCase()),
+    url:             j.link || '',
+    salary_min:      null,
+    salary_max:      null,
+    currency:        null,
+    skills_required: [],
+    seniority:       normalizeSeniority(j.title),
+    industry:        null,
+    posted_at:       j.updated || null,
+  }))
+}
+
 // Adzuna — https://api.adzuna.com/v1/api/jobs/{country}/search/1
 // Returns: {results: [{id, title, company:{display_name}, description, salary_min, salary_max, location:{display_name}, redirect_url, created, category:{label}}]}
 function normalizeAdzuna(raw) {
@@ -184,6 +209,7 @@ function normalizeJobs(source, rawData) {
     case 'remotive':   return normalizeRemotive(rawData)
     case 'arbeitnow':  return normalizeArbeitnow(rawData)
     case 'adzuna':     return normalizeAdzuna(rawData)
+    case 'jooble':     return normalizeJooble(rawData)
     default:           return []
   }
 }
@@ -248,6 +274,23 @@ async function fetchJobSource(source, query, location, remoteOk, env) {
       return { source, jobs: normalizeJobs(source, raw) }
     }
 
+    if (source === 'jooble') {
+      if (!env.JOOBLE_KEY) {
+        return { source, jobs: [], error: 'jooble_not_configured' }
+      }
+      const r = await fetch(`https://jooble.org/api/${env.JOOBLE_KEY}`, {
+        method:  'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'User-Agent':   'OptimizaLK/2.0 (job-search-bot; https://optimizalinkedin.com)',
+        },
+        body:   JSON.stringify({ keywords: query, location: location || 'Argentina', page: '1' }),
+        signal: ctrl.signal,
+      })
+      raw = await r.json()
+      return { source, jobs: normalizeJobs(source, raw) }
+    }
+
     return { source, jobs: [], error: 'unknown_source' }
 
   } catch (err) {
@@ -263,9 +306,14 @@ async function fetchJobSource(source, query, location, remoteOk, env) {
  */
 async function fetchAllSources(queries, location, remoteOk, env) {
   // Determine which sources to hit based on remoteOk flag
-  const sources = remoteOk
-    ? ['remoteok', 'remotive', 'arbeitnow', 'adzuna']
-    : ['adzuna', 'arbeitnow']  // non-remote: adzuna has office jobs; arbeitnow has some
+  // Jooble is included when JOOBLE_KEY is configured — best coverage for local LATAM jobs
+  const remoteSources = ['remoteok', 'remotive', 'arbeitnow', 'adzuna']
+  const localSources  = ['adzuna', 'arbeitnow']
+  if (env.JOOBLE_KEY) {
+    remoteSources.push('jooble')
+    localSources.push('jooble')
+  }
+  const sources = remoteOk ? remoteSources : localSources
 
   // Fan out: one fetch per (source × query). For 2 queries × 4 sources = 8 parallel fetches.
   const fetchPromises = sources.flatMap(source =>
