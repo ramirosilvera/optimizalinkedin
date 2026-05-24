@@ -42,7 +42,7 @@ function ScoreCard({ icon, title, score, label, note, onClick, ctaLabel, acColor
   )
 }
 
-function buildReportHtml({ readinessIndex, result, cvQuality, interviewFeedback, starFeedback, userName }) {
+function buildReportHtml({ readinessIndex, result, cvQuality, interviewFeedback, starFeedback, radarScore, userName }) {
   const ri = readinessIndex
   const liScore = result?.puntaje_general
   const cvScore = cvQuality?.score
@@ -99,6 +99,7 @@ function buildReportHtml({ readinessIndex, result, cvQuality, interviewFeedback,
   <table style="width:100%;border-collapse:collapse;">
     ${scoreRow('🎯 Diagnóstico de Competitividad', liScore)}
     ${scoreRow('📄 CV Profesional', cvScore)}
+    ${scoreRow('📡 Radar Laboral', radarScore)}
     ${scoreRow('🎙️ Sesión de Entrenamiento', interviewScore)}
     ${scoreRow('⭐ Alto Rendimiento STAR', starScore)}
   </table>
@@ -136,7 +137,7 @@ function buildReportHtml({ readinessIndex, result, cvQuality, interviewFeedback,
 </html>`
 }
 
-export default function ReporteScreen({ setStep, readinessIndex, result, cvQuality, interviewFeedback, starFeedback, user }) {
+export default function ReporteScreen({ setStep, readinessIndex, result, cvQuality, interviewFeedback, starFeedback, radarScore, user }) {
   const [exportState, setExportState] = useState('idle') // 'idle' | 'loading' | 'hint'
   const userName = result?.nombre_titular || user?.nombre || null
   const riLabel = readinessIndex != null ? SCORE_LABEL(readinessIndex) : null
@@ -145,6 +146,7 @@ export default function ReporteScreen({ setStep, readinessIndex, result, cvQuali
   const nextModule = (() => {
     if (!result) return { icon: '🎯', label: 'Diagnóstico de Competitividad', step: STEPS.QUESTIONS, color: '#0077B5', desc: 'Punto de partida del sistema' }
     if (!cvQuality) return { icon: '📄', label: 'CV Profesional', step: STEPS.CV, color: '#059669', desc: 'Construí tu CV desde el diagnóstico' }
+    if (!radarScore) return { icon: '📡', label: 'Radar Laboral', step: STEPS.JOB_RECOMMENDATIONS, color: '#e11d48', desc: 'Encontrá oportunidades compatibles con tu perfil' }
     if (!interviewFeedback) return { icon: '🎙️', label: 'Sesión de Entrenamiento', step: STEPS.INTERVIEW_INTRO, color: '#d97706', desc: '5 preguntas con feedback de IA' }
     if (!starFeedback) return { icon: '⭐', label: 'Alto Rendimiento STAR', step: STEPS.STAR_TRAINING, color: '#0d9488', desc: 'Metodología para respuestas de impacto' }
     return null
@@ -155,7 +157,7 @@ export default function ReporteScreen({ setStep, readinessIndex, result, cvQuali
     setExportState('loading')
     trackEvent('reporte_download')
 
-    const html = buildReportHtml({ readinessIndex, result, cvQuality, interviewFeedback, starFeedback, userName })
+    const html = buildReportHtml({ readinessIndex, result, cvQuality, interviewFeedback, starFeedback, radarScore, userName })
     const filename = `Informe-Preparacion-${userName ? userName.replace(/\s+/g, '-') : 'OptimizaLK'}.html`
 
     try {
@@ -236,11 +238,26 @@ export default function ReporteScreen({ setStep, readinessIndex, result, cvQuali
               <p className="text-xs mt-1 opacity-80 leading-snug">{riLabel}</p>
             </div>
           </div>
-          <div className="px-5 pb-4">
+          <div className="px-5 pb-4 space-y-2">
+            {/* Updated formula: LinkedIn 20% + CV 20% + Radar 20% + Interview 25% + STAR 15% */}
             <div className="rounded-xl px-3 py-2 text-[10px] leading-relaxed"
-              style={{ background: 'rgba(255,255,255,0.1)', color: 'rgba(255,255,255,0.75)' }}>
-              Diagnóstico 25% · CV 25% · Entrevista 30% · STAR 20%
+              style={{ background: 'rgba(255,255,255,0.10)', color: 'rgba(255,255,255,0.70)' }}>
+              LinkedIn 20% · CV 20% · Radar 20% · Entrevista 25% · STAR 15%
             </div>
+            {/* "Radar activo" badge — appears when Radar module is unlocked */}
+            {radarScore != null && (
+              <div className="flex items-center gap-2 px-3 py-1.5 rounded-xl"
+                style={{ background: 'rgba(194,24,91,0.20)', border: '1px solid rgba(194,24,91,0.32)' }}>
+                <span className="relative flex items-center justify-center w-2 h-2 shrink-0">
+                  <span className="absolute inset-0 rounded-full animate-ping"
+                    style={{ background: '#f9a8d4', opacity: 0.55, animationDuration: '1.8s' }} />
+                  <span className="relative w-1.5 h-1.5 rounded-full bg-pink-300" />
+                </span>
+                <p className="text-[10px] font-semibold" style={{ color: 'rgba(255,255,255,0.85)' }}>
+                  📡 Radar activo · oportunidades monitoreadas
+                </p>
+              </div>
+            )}
           </div>
         </div>
       ) : (
@@ -267,6 +284,13 @@ export default function ReporteScreen({ setStep, readinessIndex, result, cvQuali
             ctaLabel={!cvQuality ? 'Construir CV' : null}
             acColor="#059669"
             onClick={!cvQuality ? () => { trackEvent('reporte_start_cv'); setStep(STEPS.CV) } : undefined}
+          />
+          <ScoreCard
+            icon="📡" title="Radar Laboral"
+            score={radarScore}
+            ctaLabel={!radarScore ? 'Explorar oportunidades' : null}
+            acColor="#e11d48"
+            onClick={!radarScore ? () => { trackEvent('reporte_start_radar'); setStep(STEPS.JOB_RECOMMENDATIONS) } : undefined}
           />
           <ScoreCard
             icon="🎙️" title="Sesión de Entrenamiento"
