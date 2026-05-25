@@ -3800,26 +3800,25 @@ async function handleAiJobRecommendations(body, request, env, ctx, corsHeaders, 
       status:      'new',
     }))
 
-    const saveRecs = fetch(`${env.SUPABASE_URL}/rest/v1/job_recommendations`, {
-      method:  'POST',
-      headers: {
-        apikey:         env.SUPABASE_SERVICE_ROLE_KEY,
-        Authorization:  `Bearer ${env.SUPABASE_SERVICE_ROLE_KEY}`,
-        'Content-Type': 'application/json',
-        Prefer:         'return=representation',
-      },
-      body: JSON.stringify(recRows),
-    }).then(async r => {
-      const saved = await r.json()
-      // Backfill rec_id into the response (used by frontend for status updates)
+    // Await insert so rec_id is populated in the response (required by save-to-kanban flow)
+    try {
+      const saveRes = await fetch(`${env.SUPABASE_URL}/rest/v1/job_recommendations`, {
+        method:  'POST',
+        headers: {
+          apikey:         env.SUPABASE_SERVICE_ROLE_KEY,
+          Authorization:  `Bearer ${env.SUPABASE_SERVICE_ROLE_KEY}`,
+          'Content-Type': 'application/json',
+          Prefer:         'return=representation',
+        },
+        body: JSON.stringify(recRows),
+      })
+      const saved = await saveRes.json()
       if (Array.isArray(saved)) {
         saved.forEach((row, i) => {
           if (recommendations[i]) recommendations[i].rec_id = row.id
         })
       }
-    }).catch(() => {})
-
-    if (ctx?.waitUntil) ctx.waitUntil(saveRecs)
+    } catch { /* non-fatal — rec_ids stay null, save falls back to createCard */ }
 
     // Also save to historial for the user's history tab
     const historialRow = {
