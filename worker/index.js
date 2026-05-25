@@ -2107,6 +2107,7 @@ const JOB_SEARCH_TTL_SECS = 7_200  // job_searches row TTL (mirrors KV)
 const ATS_KV_TTL_SECS     = 79_200  // 22-hour KV cache for ATS company boards (date-keyed)
 const ATS_DB_TTL_HOURS    = 40      // ATS boards update slowly — longer DB TTL
 const JREC_KV_TTL_SECS    = 7_200  // 2-hour per-user AI score cache — skips Gemini on re-runs
+const JREC_PROMPT_VERSION = 'v2'   // bump when JOB_MATCHING_SYSTEM_PROMPT changes to bust stale KV
 
 // Rate limits: job searches per user per day.
 // Free users get 5/day, premium get 30/day.
@@ -2934,7 +2935,7 @@ async function putJobsToKV(env, queryHash, jobs) {
 async function getJrecFromKV(env, userId, queryHash) {
   if (!env.RATE_LIMIT_KV || !userId) return null
   try {
-    const raw = await env.RATE_LIMIT_KV.get(`jrec:${userId}:${queryHash}`)
+    const raw = await env.RATE_LIMIT_KV.get(`jrec:${userId}:${queryHash}:${JREC_PROMPT_VERSION}`)
     return raw ? JSON.parse(raw) : null
   } catch { return null }
 }
@@ -2943,7 +2944,7 @@ async function putJrecToKV(env, userId, queryHash, payload) {
   if (!env.RATE_LIMIT_KV || !userId) return
   try {
     await env.RATE_LIMIT_KV.put(
-      `jrec:${userId}:${queryHash}`,
+      `jrec:${userId}:${queryHash}:${JREC_PROMPT_VERSION}`,
       JSON.stringify(payload),
       { expirationTtl: JREC_KV_TTL_SECS }
     )
