@@ -380,11 +380,8 @@ function JobCard({
   index,
   isPremium,
   blurred,
-  hasCv,
   onSave,
   onDismiss,
-  onAdaptCv,
-  onPrepInterview,
   onMarkApplied,
   onGoToKanban,
   onUpgrade,
@@ -396,7 +393,6 @@ function JobCard({
   const [saveLoading, setSaveLoading]   = useState(false)
   const [swipeDelta, setSwipeDelta]     = useState(0)
   const [appliedInline, setAppliedInline] = useState(false)
-  const [prepLoading, setPrepLoading]     = useState(false)
   const touchStartRef                   = useRef(null)
   const touchStartYRef                  = useRef(null)
   const saveAttemptRef                  = useRef(false)
@@ -814,57 +810,36 @@ function JobCard({
           {expanded ? '▲ Ver menos' : '▼ Ver más detalles'}
         </button>
 
-        {/* ── Quick actions row ── */}
-        {/* Touch targets min 44 × 44 px */}
+        {/* ── Actions row — 2 buttons, always visible ── */}
         <div className="flex gap-2 pt-1">
-          {/* Guardar — post-save: green badge with kanban CTA hint */}
+          {/* Guardar en tablero */}
           <button
             onClick={handleSave}
             disabled={saved || saveLoading}
-            className="flex-1 py-2.5 rounded-xl text-xs font-semibold flex items-center justify-center gap-1.5 transition-all duration-200"
+            className="flex-1 py-3 rounded-xl text-xs font-semibold flex items-center justify-center gap-1.5 transition-all duration-200"
             style={saved
               ? { background: 'rgba(22,163,74,0.12)', color: '#15803d', border: '1px solid rgba(22,163,74,0.30)' }
               : { background: LI_GRADIENT, color: 'white' }}>
             {saveLoading
               ? <span className="w-3 h-3 border border-white border-t-transparent rounded-full animate-spin" />
-              : null
-            }
-            {saved ? '✓ En tu tablero' : '🔖 Guardar'}
+              : null}
+            {saved ? '✓ Guardado' : '🔖 Guardar'}
           </button>
 
-          {/* Adaptar CV — dimmed if no CV generated yet */}
-          <button
-            onClick={() => {
-              if (!hasCv) { addToast?.('Primero generá tu CV en el paso anterior para poder adaptarlo', 'error'); return }
-              onAdaptCv?.(rec)
-              trackEvent('job_recommendation_adapt_cv', { rec_id })
-            }}
-            className="flex-1 py-2.5 rounded-xl text-xs font-semibold transition-all"
-            style={hasCv ? BTN_GHOST_STYLE : { ...BTN_GHOST_STYLE, opacity: 0.45 }}
-            title={hasCv ? '' : 'Generá tu CV primero'}>
-            📄 Adaptar CV
-          </button>
-
-          {/* Ver detalles / Aplicar */}
-          {expanded && job.url ? (
+          {/* Aplicar — link to job URL; dimmed when unavailable */}
+          {job.url ? (
             <a href={job.url} target="_blank" rel="noopener noreferrer"
               onClick={() => trackEvent('job_recommendation_apply', { rec_id, company: job.company })}
-              className="flex-1 py-2.5 rounded-xl text-xs font-semibold text-center transition-all"
+              className="flex-1 py-3 rounded-xl text-xs font-semibold text-center transition-all"
               style={{ background: 'rgba(99,102,241,0.10)', color: '#6366f1', border: '1px solid rgba(99,102,241,0.25)' }}>
               Aplicar →
             </a>
           ) : (
             <button
-              onClick={() => {
-                if (prepLoading) return
-                setPrepLoading(true)
-                trackEvent('job_recommendation_prep_interview', { rec_id })
-                setTimeout(() => onPrepInterview?.(rec), 300)
-              }}
-              disabled={prepLoading}
-              className="flex-1 py-2.5 rounded-xl text-xs font-semibold transition-all"
-              style={{ background: 'rgba(99,102,241,0.10)', color: '#6366f1', border: '1px solid rgba(99,102,241,0.25)' }}>
-              {prepLoading ? '⏳ Preparando...' : '🎙️ Practicar'}
+              disabled
+              className="flex-1 py-3 rounded-xl text-xs font-semibold text-center"
+              style={{ background: 'rgba(99,102,241,0.05)', color: '#94a3b8', border: '1px solid rgba(99,102,241,0.10)' }}>
+              Sin enlace
             </button>
           )}
         </div>
@@ -1704,11 +1679,8 @@ export default function JobRecommendationsScreen({
                   index={i}
                   isPremium={isPremium}
                   blurred={isBlurred}
-                  hasCv={!!cvFinalData}
                   onSave={handleSaveToKanban}
                   onDismiss={handleDismiss}
-                  onAdaptCv={handleAdaptCv}
-                  onPrepInterview={handlePrepInterview}
                   onMarkApplied={handleMarkApplied}
                   onGoToKanban={() => setStep(STEPS.TRACKING)}
                   onUpgrade={() => {
