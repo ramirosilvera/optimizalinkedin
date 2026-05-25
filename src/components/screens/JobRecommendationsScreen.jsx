@@ -178,6 +178,87 @@ function LoadingStage({ stage }) {
   )
 }
 
+// ── Brand identity maps (module-scope — shared by JobCard + CompanyMatchBar) ──
+const COMPANY_COLORS = {
+  'mercado libre': { bg: '#FFE600', text: '#333' },
+  'globant':       { bg: '#00B140', text: '#fff' },
+  'uala':          { bg: '#7C3AED', text: '#fff' },
+  'naranja x':     { bg: '#F97316', text: '#fff' },
+  'despegar':      { bg: '#0EA5E9', text: '#fff' },
+  'pedidosya':     { bg: '#E11D48', text: '#fff' },
+  'delivery hero': { bg: '#E11D48', text: '#fff' },
+  'ripio':         { bg: '#1D4ED8', text: '#fff' },
+  'tienda nube':   { bg: '#7C3AED', text: '#fff' },
+  'etermax':       { bg: '#F59E0B', text: '#333' },
+  'mural':         { bg: '#0F172A', text: '#fff' },
+  'satellogic':    { bg: '#1E40AF', text: '#fff' },
+  'rappi':         { bg: '#FF441F', text: '#fff' },
+  'pomelo':        { bg: '#10B981', text: '#fff' },
+  'bitso':         { bg: '#FBBF24', text: '#333' },
+  'auth0':         { bg: '#EB5424', text: '#fff' },
+  'linear':        { bg: '#5B6AD0', text: '#fff' },
+  'vercel':        { bg: '#000', text: '#fff' },
+}
+const TOP_EMPLOYERS = new Set([
+  'mercado libre','globant','uala','naranja x','despegar',
+  'pedidosya','delivery hero','etermax','rappi','mural','satellogic',
+])
+
+// ── CompanyMatchBar ───────────────────────────────────────────────────────────
+// Horizontal scrollable strip: "Empresas con roles para vos".
+// Appears between the count header and job cards when ≥ 2 companies are present.
+const ATS_SOURCES_SET = new Set(['greenhouse','lever','smartrecruiters','ashby'])
+
+function CompanyMatchBar({ recommendations }) {
+  const counts  = {}
+  const details = {}
+  for (const rec of recommendations) {
+    const co = rec.job?.company
+    if (!co) continue
+    counts[co]  = (counts[co]  || 0) + 1
+    details[co] = rec.job
+  }
+  const sorted = Object.entries(counts)
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 8)
+
+  if (sorted.length < 2) return null
+
+  return (
+    <div className="space-y-1.5">
+      <p className="text-[10px] font-semibold uppercase tracking-widest" style={{ color: '#94a3b8' }}>
+        Empresas con roles para vos
+      </p>
+      <div className="flex gap-2 overflow-x-auto pb-1 no-scrollbar">
+        {sorted.map(([company, count]) => {
+          const job      = details[company]
+          const key      = company.toLowerCase().trim()
+          const colors   = COMPANY_COLORS[key] || { bg: 'rgba(0,119,181,0.10)', text: '#0077B5' }
+          const isDirect = ATS_SOURCES_SET.has(job?.source)
+          return (
+            <div key={company}
+              className="shrink-0 flex items-center gap-2 px-2.5 py-1.5 rounded-xl"
+              style={{ background: 'rgba(0,119,181,0.05)', border: '1px solid rgba(0,119,181,0.11)' }}>
+              <div className="w-5 h-5 rounded-md flex items-center justify-center text-[9px] font-bold shrink-0"
+                style={{ background: colors.bg, color: colors.text }}>
+                {company[0].toUpperCase()}
+              </div>
+              <div className="flex flex-col leading-tight min-w-0">
+                <span className="text-xs font-semibold truncate max-w-[72px]" style={{ color: '#0d2137' }}>
+                  {company}
+                </span>
+                <span className="text-[9px] whitespace-nowrap" style={{ color: isDirect ? '#15803d' : '#94a3b8' }}>
+                  {count} rol{count > 1 ? 'es' : ''}{isDirect ? ' · directo' : ''}
+                </span>
+              </div>
+            </div>
+          )
+        })}
+      </div>
+    </div>
+  )
+}
+
 // ── FilterBottomSheet ─────────────────────────────────────────────────────────
 // Mobile-first bottom sheet for filters (NOT a sidebar).
 function FilterBottomSheet({ open, onClose, filters, onChange, onApply }) {
@@ -341,28 +422,6 @@ function JobCard({
   const isLocalMarket  = ['jooble', 'adzuna'].includes(job.source)
   const isDirectAts    = ['greenhouse','lever','smartrecruiters','ashby'].includes(job.source)
 
-  // Deterministic company avatar color for known brands
-  const COMPANY_COLORS = {
-    'mercado libre': { bg: '#FFE600', text: '#333' },
-    'globant':       { bg: '#00B140', text: '#fff' },
-    'uala':          { bg: '#7C3AED', text: '#fff' },
-    'naranja x':     { bg: '#F97316', text: '#fff' },
-    'despegar':      { bg: '#0EA5E9', text: '#fff' },
-    'pedidosya':     { bg: '#E11D48', text: '#fff' },
-    'delivery hero': { bg: '#E11D48', text: '#fff' },
-    'ripio':         { bg: '#1D4ED8', text: '#fff' },
-    'tienda nube':   { bg: '#7C3AED', text: '#fff' },
-    'etermax':       { bg: '#F59E0B', text: '#333' },
-    'mural':         { bg: '#0F172A', text: '#fff' },
-    'satellogic':    { bg: '#1E40AF', text: '#fff' },
-    'rappi':         { bg: '#FF441F', text: '#fff' },
-    'pomelo':        { bg: '#10B981', text: '#fff' },
-    'bitso':         { bg: '#FBBF24', text: '#333' },
-    'auth0':         { bg: '#EB5424', text: '#fff' },
-    'linear':        { bg: '#5B6AD0', text: '#fff' },
-    'vercel':        { bg: '#000', text: '#fff' },
-  }
-  const TOP_EMPLOYERS = new Set(['mercado libre','globant','uala','naranja x','despegar','pedidosya','delivery hero','etermax','rappi','mural','satellogic'])
   const companyKey    = (job.company || '').toLowerCase().trim()
   const avatarColors  = COMPANY_COLORS[companyKey] || { bg: 'linear-gradient(135deg,#e2e8f0,#cbd5e1)', text: '#64748b' }
   const isTopEmployer = TOP_EMPLOYERS.has(companyKey)
@@ -879,6 +938,11 @@ export default function JobRecommendationsScreen({
   // ── Sort ───────────────────────────────────────────────────────────────────
   const [sortBy, setSortBy]               = useState('score')  // 'score'|'recent'
 
+  // ── Refine search (custom keyword override) ────────────────────────────────
+  const [refineQuery, setRefineQuery]     = useState('')
+  const [refineInput, setRefineInput]     = useState('')
+  const [showRefine, setShowRefine]       = useState(false)
+
   // ── Pull to refresh ────────────────────────────────────────────────────────
   const pullStartRef  = useRef(null)
   const [pullDist, setPullDist] = useState(0)
@@ -891,15 +955,15 @@ export default function JobRecommendationsScreen({
   // ── Build search queries from profile ─────────────────────────────────────
   const buildQueries = useCallback(() => {
     if (!profileText) return []
-    // Extract profession/headline from profile text heuristically
     const match = profileText.match(/TITULAR PROFESIONAL:\s*([^\n]+)/i)
       || profileText.match(/^([^\n]{10,80})/m)
     const headline = match?.[1]?.trim() || ''
-    if (!headline) return ['profesional']
-    // Generate 1-3 search terms from headline
+    if (!headline) return refineQuery ? [refineQuery] : ['profesional']
     const words = headline.split(/\s+/).filter(w => w.length > 3)
-    return [headline.slice(0, 60), words.slice(0, 2).join(' ')].filter(Boolean).slice(0, 2)
-  }, [profileText])
+    const base  = [headline.slice(0, 60), words.slice(0, 2).join(' ')].filter(Boolean).slice(0, 2)
+    // Prepend user refinement term so it drives the ATS company selection
+    return refineQuery ? [refineQuery, ...base].slice(0, 3) : base
+  }, [profileText, refineQuery])
 
   // ── Fetch recommendations ──────────────────────────────────────────────────
   const fetchRecommendations = useCallback(async () => {
@@ -1336,7 +1400,57 @@ export default function JobRecommendationsScreen({
                 </button>
               )
             })}
+
+            {/* Afinar búsqueda toggle */}
+            <button
+              onClick={() => setShowRefine(v => !v)}
+              className="shrink-0 px-3 py-1.5 rounded-xl text-xs font-medium transition-all"
+              style={showRefine || refineQuery
+                ? { background: LI_GRADIENT, color: 'white' }
+                : BTN_GHOST_STYLE}>
+              🔍 {refineQuery ? 'Refinando' : 'Afinar'}
+            </button>
           </div>
+        )}
+
+        {/* "Afinar búsqueda" expandable input */}
+        {loadState === 'done' && showRefine && (
+          <form
+            onSubmit={e => {
+              e.preventDefault()
+              const q = refineInput.trim()
+              setRefineQuery(q)
+              setShowRefine(false)
+              if (q !== refineQuery) {
+                trackEvent('radar_laboral_search_refined', { term: q })
+                // Re-fetch with new refine term — buildQueries will pick it up via closure
+                setTimeout(fetchRecommendations, 0)
+              }
+            }}
+            className="flex gap-2 pt-1">
+            <input
+              type="text"
+              value={refineInput}
+              onChange={e => setRefineInput(e.target.value)}
+              placeholder="Ej: React, fintech, remoto LATAM…"
+              autoFocus
+              className="flex-1 px-3 py-2 rounded-xl text-xs outline-none"
+              style={{ background: 'white', border: '1.5px solid rgba(0,119,181,0.25)', color: '#0d2137' }}
+            />
+            <button type="submit"
+              className="px-3 py-2 rounded-xl text-xs font-semibold text-white shrink-0"
+              style={{ background: LI_GRADIENT }}>
+              Buscar
+            </button>
+            {refineQuery && (
+              <button type="button"
+                onClick={() => { setRefineQuery(''); setRefineInput(''); setShowRefine(false); setTimeout(fetchRecommendations, 0) }}
+                className="px-2 py-2 rounded-xl text-xs shrink-0"
+                style={BTN_GHOST_STYLE}>
+                ✕
+              </button>
+            )}
+          </form>
         )}
       </div>
 
@@ -1439,6 +1553,11 @@ export default function JobRecommendationsScreen({
                   </span>
                 )}
               </div>
+            )}
+
+            {/* Company strip — "Empresas con roles para vos" */}
+            {filteredRecs.length > 0 && (
+              <CompanyMatchBar recommendations={filteredRecs} />
             )}
 
             {/* Swipe hint (shown once per session) */}

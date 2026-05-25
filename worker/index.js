@@ -2107,6 +2107,7 @@ const JOB_DB_TTL_HOURS    = 24      // job_cache table TTL (aggregators)
 const JOB_SEARCH_TTL_SECS = 7_200  // job_searches row TTL (mirrors KV)
 const ATS_KV_TTL_SECS     = 79_200  // 22-hour KV cache for ATS company boards (date-keyed)
 const ATS_DB_TTL_HOURS    = 40      // ATS boards update slowly — longer DB TTL
+const JREC_KV_TTL_SECS    = 7_200  // 2-hour per-user AI score cache — skips Gemini on re-runs
 
 // Rate limits: job searches per user per day.
 // Free users get 5/day, premium get 30/day.
@@ -2927,6 +2928,29 @@ async function putJobsToKV(env, queryHash, jobs) {
   } catch { /* non-fatal */ }
 }
 
+// ── jrec: per-user AI score cache ─────────────────────────────────────────────
+// Key: "jrec:{userId}:{queryHash}" — personalised scores keyed by user + query.
+// Prevents repeat Gemini calls when the same user re-runs the same search within 2 h.
+// Stores: { recommendations, total_jobs_analyzed }
+async function getJrecFromKV(env, userId, queryHash) {
+  if (!env.RATE_LIMIT_KV || !userId) return null
+  try {
+    const raw = await env.RATE_LIMIT_KV.get(`jrec:${userId}:${queryHash}`)
+    return raw ? JSON.parse(raw) : null
+  } catch { return null }
+}
+
+async function putJrecToKV(env, userId, queryHash, payload) {
+  if (!env.RATE_LIMIT_KV || !userId) return
+  try {
+    await env.RATE_LIMIT_KV.put(
+      `jrec:${userId}:${queryHash}`,
+      JSON.stringify(payload),
+      { expirationTtl: JREC_KV_TTL_SECS }
+    )
+  } catch { /* non-fatal */ }
+}
+
 /**
  * Layer 2: Upsert fresh jobs into job_cache.
  * Returns an array of { id, source, external_id } objects (the saved rows).
@@ -3343,6 +3367,23 @@ async function handleAiJobRecommendations(body, request, env, ctx, corsHeaders, 
   const preFiltered = applyPreFilter(jobs, String(profile_text), MAX_JOBS_FOR_AI_MATCHING)
   const jobPool     = preFiltered.length > 0 ? preFiltered : jobs.slice(0, MAX_JOBS_FOR_AI_MATCHING)
 
+  // ── jrec: per-user AI score cache (skip Gemini on re-run within 2 h) ──────
+  if (user_id) {
+    const jrecCached = await getJrecFromKV(env, user_id, queryHash)
+    if (jrecCached?.recommendations?.length) {
+      return new Response(
+        JSON.stringify({
+          ok:                  true,
+          recommendations:     jrecCached.recommendations,
+          total_jobs_analyzed: jrecCached.total_jobs_analyzed || 0,
+          from_cache:          true,
+          quota_remaining:     rl.limit - rl.count,
+        }),
+        { status: 200, headers: corsHeaders }
+      )
+    }
+  }
+
   // ── AI Matching via Gemini ─────────────────────────────────────────────────
   const contents   = buildMatchingContents(String(profile_text).slice(0, 3000), jobPool)
   const geminiBody = {
@@ -3512,6 +3553,14 @@ async function handleAiJobRecommendations(body, request, env, ctx, corsHeaders, 
       body: JSON.stringify(historialRow),
     }).catch(() => {})
     if (ctx?.waitUntil) ctx.waitUntil(saveHistorial)
+  }
+
+  // Cache AI scores so re-runs within 2 h skip Gemini entirely
+  if (user_id && ctx?.waitUntil) {
+    ctx.waitUntil(putJrecToKV(env, user_id, queryHash, {
+      recommendations,
+      total_jobs_analyzed: jobPool.length,
+    }))
   }
 
   return new Response(
