@@ -382,21 +382,21 @@ function JobCard({
   blurred,
   onSave,
   onDismiss,
-  onMarkApplied,
   onGoToKanban,
   onUpgrade,
   addToast,
 }) {
-  const [expanded, setExpanded]         = useState(false)
-  const [saved, setSaved]               = useState(false)
-  const [dismissed, setDismissed]       = useState(false)
-  const [saveLoading, setSaveLoading]   = useState(false)
-  const [swipeDelta, setSwipeDelta]     = useState(0)
-  const [appliedInline, setAppliedInline] = useState(false)
-  const touchStartRef                   = useRef(null)
-  const touchStartYRef                  = useRef(null)
-  const saveAttemptRef                  = useRef(false)
-  const cardRef                         = useRef(null)
+  const [expanded, setExpanded]             = useState(false)
+  const [saved, setSaved]                   = useState(false)
+  const [alreadyExists, setAlreadyExists]   = useState(false)
+  const [showSaveConfirm, setShowSaveConfirm] = useState(false)
+  const [dismissed, setDismissed]           = useState(false)
+  const [saveLoading, setSaveLoading]       = useState(false)
+  const [swipeDelta, setSwipeDelta]         = useState(0)
+  const touchStartRef                       = useRef(null)
+  const touchStartYRef                      = useRef(null)
+  const saveAttemptRef                      = useRef(false)
+  const cardRef                             = useRef(null)
 
   const { job, match_score, strengths, gaps, summary, rec_id } = rec
 
@@ -464,8 +464,10 @@ function JobCard({
     saveAttemptRef.current = true
     setSaveLoading(true)
     try {
-      await onSave?.(rec)
+      const result = await onSave?.(rec)
       setSaved(true)
+      setAlreadyExists(result?.alreadyExists || false)
+      setShowSaveConfirm(true)
       trackEvent('job_recommendation_saved', { rec_id, score: scorePct })
     } catch {
       // addToast is called by parent
@@ -844,40 +846,37 @@ function JobCard({
           )}
         </div>
 
-        {/* Post-save section: kanban link + "¿Ya aplicaste?" */}
+        {/* Post-save confirmation */}
         {saved && (
-          <div className="space-y-2 pt-1" style={{ animation: 'fadeIn 0.25s ease-out' }}>
-            {/* Primary: navigate to Kanban */}
-            <div className="flex items-center justify-between">
-              <span className="text-xs" style={{ color: '#64748b' }}>✓ En tu tablero de postulaciones</span>
-              {onGoToKanban && (
-                <button
-                  onClick={onGoToKanban}
-                  className="px-3 py-1.5 rounded-xl text-xs font-semibold"
-                  style={{ background: 'rgba(0,119,181,0.10)', color: '#0077B5', border: '1px solid rgba(0,119,181,0.20)' }}>
-                  Ver tablero →
-                </button>
-              )}
-            </div>
-            {/* Secondary: mark as applied */}
-            {!appliedInline ? (
-              <div className="flex items-center justify-between">
-                <span className="text-xs" style={{ color: '#94a3b8' }}>¿Ya aplicaste a este rol?</span>
-                <button
-                  onClick={() => {
-                    setAppliedInline(true)
-                    onMarkApplied?.(rec_id)
-                    trackEvent('radar_laboral_applied_inline', { rec_id, company: job.company })
-                  }}
-                  className="px-3 py-1.5 rounded-xl text-xs font-semibold"
-                  style={{ background: 'rgba(99,102,241,0.10)', color: '#6366f1', border: '1px solid rgba(99,102,241,0.20)' }}>
-                  Sí, apliqué →
-                </button>
-              </div>
-            ) : (
-              <p className="text-xs text-center py-0.5" style={{ color: '#94a3b8' }}>
-                ✓ Aplicación registrada · {new Date().toLocaleDateString('es-AR', { day: 'numeric', month: 'short' })}
+          <div
+            className="rounded-xl p-3 space-y-2"
+            style={{ background: 'rgba(194,24,91,0.05)', border: '1px solid rgba(194,24,91,0.18)', animation: 'fadeIn 0.25s ease-out' }}>
+            <div className="flex items-center gap-2">
+              <span className="text-sm">📡</span>
+              <p className="text-xs font-semibold" style={{ color: '#0d2137' }}>
+                {alreadyExists ? 'Ya estaba en Radar Laboral' : '✓ Guardado en Radar Laboral'}
               </p>
+            </div>
+            {showSaveConfirm && !alreadyExists && (
+              <>
+                <p className="text-xs" style={{ color: '#64748b' }}>¿Querés ir al tablero o seguir explorando?</p>
+                <div className="flex gap-2">
+                  {onGoToKanban && (
+                    <button
+                      onClick={onGoToKanban}
+                      className="flex-1 py-2 rounded-xl text-xs font-semibold"
+                      style={{ background: 'rgba(194,24,91,0.12)', color: '#c2185b', border: '1px solid rgba(194,24,91,0.25)' }}>
+                      Ir al tablero →
+                    </button>
+                  )}
+                  <button
+                    onClick={() => setShowSaveConfirm(false)}
+                    className="flex-1 py-2 rounded-xl text-xs font-semibold"
+                    style={{ background: 'rgba(13,33,55,0.06)', color: '#64748b', border: '1px solid rgba(13,33,55,0.10)' }}>
+                    Seguir explorando
+                  </button>
+                </div>
+              </>
             )}
           </div>
         )}
@@ -1157,15 +1156,11 @@ export default function JobRecommendationsScreen({
 
   // ── Save to Kanban ─────────────────────────────────────────────────────────
   const handleSaveToKanban = async (rec) => {
-    // Idempotency guard — prevents duplicate saves from double-taps or re-renders
     const saveKey = rec.rec_id || `${rec.job?.source}:${rec.job?.url}`
-    if (saveKey && savedRecsInSessionRef.current.has(saveKey)) {
-      addToast('Esta oportunidad ya está en tu tablero ✓', 'info')
-      return
-    }
 
     // If rec_id exists, use the worker action for clean data persistence
     if (rec.rec_id && authToken) {
+      // Allow re-saves (worker handles dedup server-side and returns already_exists)
       const res = await fetch(WORKER_URL, {
         method: 'POST',
         headers: { ...WORKER_HEADERS, Authorization: `Bearer ${authToken}` },
@@ -1175,30 +1170,38 @@ export default function JobRecommendationsScreen({
         const errData = await res.json().catch(() => ({}))
         throw new Error(errData.error || 'No se pudo guardar')
       }
-      savedRecsInSessionRef.current.add(saveKey)
-      addToast(`✓ Guardado en tu tablero — "${rec.job?.title || 'Oportunidad'}"`, 'success')
-      jobsSavedRef.current += 1
-      trackEvent('radar_laboral_job_saved', {
-        match_score: rec.match_score != null ? Math.round(rec.match_score * 10) : null,
-        source:      rec.job?.source || null,
-        company:     rec.job?.company || null,
-        is_remote:   !!rec.job?.remote,
-        position:    filteredRecs.findIndex(r => r.rec_id === rec.rec_id) + 1,
-        jobs_saved_this_session: jobsSavedRef.current,
-      })
-      return
+      const data = await res.json().catch(() => ({}))
+      const alreadyExists = data.already_exists === true
+
+      if (!alreadyExists) {
+        savedRecsInSessionRef.current.add(saveKey)
+        jobsSavedRef.current += 1
+        trackEvent('radar_laboral_job_saved', {
+          match_score: rec.match_score != null ? Math.round(rec.match_score * 10) : null,
+          source:      rec.job?.source || null,
+          company:     rec.job?.company || null,
+          is_remote:   !!rec.job?.remote,
+          position:    filteredRecs.findIndex(r => r.rec_id === rec.rec_id) + 1,
+          jobs_saved_this_session: jobsSavedRef.current,
+        })
+      }
+      return { alreadyExists }
     }
+
     // Fallback: direct createCard (for non-persisted recs or anon)
     if (!user) {
       addToast('Iniciá sesión para guardar postulaciones', 'error')
       return
     }
-    const primeraColumna = trackingColumnas?.[0]
-    if (!primeraColumna) {
+    if (saveKey && savedRecsInSessionRef.current.has(saveKey)) {
+      return { alreadyExists: true }
+    }
+    const radarCol = trackingColumnas?.find(c => c.nombre === 'Radar Laboral') || trackingColumnas?.[0]
+    if (!radarCol) {
       addToast('Abrí tu tablero primero para guardar', 'error')
       return
     }
-    await createCard(primeraColumna.id, {
+    await createCard(radarCol.id, {
       empresa:          rec.job.company || '',
       puesto:           rec.job.title   || '',
       link_aviso:       rec.job.url     || null,
@@ -1207,8 +1210,6 @@ export default function JobRecommendationsScreen({
       seniority:        rec.job.seniority !== 'No especificado' ? rec.job.seniority : null,
     })
     savedRecsInSessionRef.current.add(saveKey)
-    addToast(`✓ Guardado en tu tablero — "${rec.job?.title || 'Oportunidad'}"`, 'success')
-    // 5. JOB SAVED TO KANBAN (fallback path)
     jobsSavedRef.current += 1
     trackEvent('radar_laboral_job_saved', {
       match_score: rec.match_score != null ? Math.round(rec.match_score * 10) : null,
@@ -1218,6 +1219,7 @@ export default function JobRecommendationsScreen({
       position:    filteredRecs.findIndex(r => r.rec_id === rec.rec_id) + 1,
       jobs_saved_this_session: jobsSavedRef.current,
     })
+    return { alreadyExists: false }
   }
 
   // ── Dismiss ────────────────────────────────────────────────────────────────
@@ -1241,18 +1243,7 @@ export default function JobRecommendationsScreen({
     })
   }
 
-  // ── Mark applied ──────────────────────────────────────────────────────────
-  const handleMarkApplied = useCallback(async (rec_id) => {
-    if (!rec_id || !authToken) return
-    try {
-      await fetch(WORKER_URL, {
-        method:  'POST',
-        headers: { ...WORKER_HEADERS, Authorization: `Bearer ${authToken}` },
-        body:    JSON.stringify({ action: 'job_update_status', rec_id, status: 'applied' }),
-      })
-    } catch { /* non-fatal */ }
-    addToast('✓ Marcado como aplicado — lo verás en tu tablero con la fecha de hoy', 'success')
-  }, [authToken, addToast])
+
 
   // ── Adapt CV ───────────────────────────────────────────────────────────────
   const handleAdaptCv = (rec) => {
@@ -1681,7 +1672,6 @@ export default function JobRecommendationsScreen({
                   blurred={isBlurred}
                   onSave={handleSaveToKanban}
                   onDismiss={handleDismiss}
-                  onMarkApplied={handleMarkApplied}
                   onGoToKanban={() => setStep(STEPS.TRACKING)}
                   onUpgrade={() => {
                     // 7. PREMIUM GATE HIT — user tapped a blurred result card.

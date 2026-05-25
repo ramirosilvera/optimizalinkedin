@@ -3950,30 +3950,55 @@ async function handleJobSaveToKanban(body, request, env, ctx, corsHeaders, verif
     )
   }
 
-  // Resolve columna_id: use provided, or fall back to user's first kanban column
+  // Resolve columna_id: prefer "Radar Laboral" column, fallback to first by orden
   let targetColumnaId = columna_id || null
   if (!targetColumnaId) {
     const colRes = await fetch(
-      `${env.SUPABASE_URL}/rest/v1/kanban_columnas?user_id=eq.${user.id}&order=orden.asc&limit=1&select=id`,
+      `${env.SUPABASE_URL}/rest/v1/kanban_columnas?user_id=eq.${user.id}&order=orden.asc&select=id,nombre`,
       { headers: { apikey: env.SUPABASE_SERVICE_ROLE_KEY, Authorization: `Bearer ${env.SUPABASE_SERVICE_ROLE_KEY}` } }
     )
     const cols = await colRes.json()
-    targetColumnaId = cols?.[0]?.id || null
+    const radarCol = Array.isArray(cols) ? cols.find(c => c.nombre === 'Radar Laboral') : null
+    targetColumnaId = radarCol?.id || cols?.[0]?.id || null
+  }
+
+  // Dedup: if the same URL already exists in postulaciones for this user, return early
+  if (rec.url) {
+    const dupRes = await fetch(
+      `${env.SUPABASE_URL}/rest/v1/postulaciones?user_id=eq.${user.id}&link_aviso=eq.${encodeURIComponent(rec.url)}&select=id&limit=1`,
+      { headers: { apikey: env.SUPABASE_SERVICE_ROLE_KEY, Authorization: `Bearer ${env.SUPABASE_SERVICE_ROLE_KEY}` } }
+    )
+    const dups = await dupRes.json().catch(() => [])
+    if (Array.isArray(dups) && dups[0]?.id) {
+      return new Response(
+        JSON.stringify({ ok: true, already_exists: true, postulacion_id: dups[0].id, columna_id: targetColumnaId }),
+        { status: 200, headers: corsHeaders }
+      )
+    }
   }
 
   // Build postulaciones row — pre-filled from recommendation data
+  const atsKeywords = Array.isArray(rec.strengths) && rec.strengths.length
+    ? rec.strengths.slice(0, 10).join(', ')
+    : null
+  const adaptationNotes = Array.isArray(rec.gaps) && rec.gaps.length
+    ? rec.gaps.join(' | ')
+    : null
+
   const postulacion = {
-    user_id:          user.id,
-    columna_id:       targetColumnaId,
-    empresa:          rec.company.slice(0, 100),
-    puesto:           rec.title.slice(0, 100),
-    link_aviso:       rec.url || null,
-    fecha_aplicacion: new Date().toISOString().slice(0, 10),
-    notas:            rec.summary || null,
-    job_description:  null,  // will be filled if user triggers CV adapter later
-    seniority:        null,
-    cv_data:          null,  // populated when user adapts their CV for this job
-    orden:            0,
+    user_id:           user.id,
+    columna_id:        targetColumnaId,
+    empresa:           (rec.company || '').slice(0, 100),
+    puesto:            (rec.title   || '').slice(0, 100),
+    link_aviso:        rec.url || null,
+    fecha_aplicacion:  new Date().toISOString().slice(0, 10),
+    notas:             rec.summary || null,
+    job_description:   null,
+    seniority:         null,
+    ats_keywords:      atsKeywords,
+    adaptation_notes:  adaptationNotes,
+    cv_data:           null,
+    orden:             0,
   }
 
   try {
@@ -4007,7 +4032,7 @@ async function handleJobSaveToKanban(body, request, env, ctx, corsHeaders, verif
     if (ctx?.waitUntil) ctx.waitUntil(updateRec)
 
     return new Response(
-      JSON.stringify({ ok: true, postulacion_id: postId, columna_id: targetColumnaId }),
+      JSON.stringify({ ok: true, already_exists: false, postulacion_id: postId, columna_id: targetColumnaId }),
       { status: 200, headers: corsHeaders }
     )
   } catch (e) {
