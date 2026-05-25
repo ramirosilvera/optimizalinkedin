@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
-import { LI_GRADIENT, BTN_BACK_STYLE, BTN_GHOST_STYLE, CARD_STYLE, WORKER_URL, WORKER_HEADERS, trackEvent, trackTiming, trackError } from '../../constants'
+import { STEPS, LI_GRADIENT, BTN_BACK_STYLE, BTN_GHOST_STYLE, CARD_STYLE, WORKER_URL, WORKER_HEADERS, trackEvent, trackTiming, trackError } from '../../constants'
 import { Spinner } from '../ui'
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -380,10 +380,13 @@ function JobCard({
   index,
   isPremium,
   blurred,
+  hasCv,
   onSave,
   onDismiss,
   onAdaptCv,
   onPrepInterview,
+  onMarkApplied,
+  onGoToKanban,
   onUpgrade,
   addToast,
 }) {
@@ -393,6 +396,7 @@ function JobCard({
   const [saveLoading, setSaveLoading]   = useState(false)
   const [swipeDelta, setSwipeDelta]     = useState(0)
   const [appliedInline, setAppliedInline] = useState(false)
+  const [prepLoading, setPrepLoading]     = useState(false)
   const touchStartRef                   = useRef(null)
   const touchStartYRef                  = useRef(null)
   const saveAttemptRef                  = useRef(false)
@@ -593,7 +597,7 @@ function JobCard({
               className="text-xs font-bold"
               style={{ color: '#16a34a', opacity: Math.min((swipeDelta - 30) / 25, 1) }}
             >
-              Guardar en pipeline
+              Guardar en tablero
             </span>
           </div>
         </div>
@@ -825,14 +829,19 @@ function JobCard({
               ? <span className="w-3 h-3 border border-white border-t-transparent rounded-full animate-spin" />
               : null
             }
-            {saved ? '✓ En tu pipeline' : '🔖 Guardar'}
+            {saved ? '✓ En tu tablero' : '🔖 Guardar'}
           </button>
 
-          {/* Adaptar CV */}
+          {/* Adaptar CV — dimmed if no CV generated yet */}
           <button
-            onClick={() => { onAdaptCv?.(rec); trackEvent('job_recommendation_adapt_cv', { rec_id }) }}
+            onClick={() => {
+              if (!hasCv) { addToast?.('Primero generá tu CV en el paso anterior para poder adaptarlo', 'error'); return }
+              onAdaptCv?.(rec)
+              trackEvent('job_recommendation_adapt_cv', { rec_id })
+            }}
             className="flex-1 py-2.5 rounded-xl text-xs font-semibold transition-all"
-            style={BTN_GHOST_STYLE}>
+            style={hasCv ? BTN_GHOST_STYLE : { ...BTN_GHOST_STYLE, opacity: 0.45 }}
+            title={hasCv ? '' : 'Generá tu CV primero'}>
             📄 Adaptar CV
           </button>
 
@@ -846,39 +855,56 @@ function JobCard({
             </a>
           ) : (
             <button
-              onClick={() => { onPrepInterview?.(rec); trackEvent('job_recommendation_prep_interview', { rec_id }) }}
+              onClick={() => {
+                if (prepLoading) return
+                setPrepLoading(true)
+                trackEvent('job_recommendation_prep_interview', { rec_id })
+                setTimeout(() => onPrepInterview?.(rec), 300)
+              }}
+              disabled={prepLoading}
               className="flex-1 py-2.5 rounded-xl text-xs font-semibold transition-all"
               style={{ background: 'rgba(99,102,241,0.10)', color: '#6366f1', border: '1px solid rgba(99,102,241,0.25)' }}>
-              🎙️ Practicar
+              {prepLoading ? '⏳ Preparando...' : '🎙️ Practicar'}
             </button>
           )}
         </div>
 
-        {/* "¿Ya aplicaste?" inline post-save — appears after saving, eliminates context-switch to Kanban */}
-        {saved && !appliedInline && (
-          <div className="flex items-center justify-between pt-1" style={{ animation: 'fadeIn 0.25s ease-out' }}>
-            <span className="text-xs" style={{ color: '#94a3b8' }}>¿Ya aplicaste a este rol?</span>
-            <button
-              onClick={async () => {
-                setAppliedInline(true)
-                if (rec_id) {
-                  try {
-                    await fetch?.('/api/job_update_status', { method: 'POST', body: JSON.stringify({ rec_id, status: 'applied' }) }).catch(() => {})
-                  } catch {}
-                }
-                trackEvent('radar_laboral_applied_inline', { rec_id, company: job.company })
-                addToast?.('✓ Marcado como aplicado — lo verás en tu tablero con la fecha de hoy')
-              }}
-              className="px-3 py-1.5 rounded-xl text-xs font-semibold"
-              style={{ background: 'rgba(99,102,241,0.10)', color: '#6366f1', border: '1px solid rgba(99,102,241,0.20)' }}>
-              Sí, apliqué →
-            </button>
+        {/* Post-save section: kanban link + "¿Ya aplicaste?" */}
+        {saved && (
+          <div className="space-y-2 pt-1" style={{ animation: 'fadeIn 0.25s ease-out' }}>
+            {/* Primary: navigate to Kanban */}
+            <div className="flex items-center justify-between">
+              <span className="text-xs" style={{ color: '#64748b' }}>✓ En tu tablero de postulaciones</span>
+              {onGoToKanban && (
+                <button
+                  onClick={onGoToKanban}
+                  className="px-3 py-1.5 rounded-xl text-xs font-semibold"
+                  style={{ background: 'rgba(0,119,181,0.10)', color: '#0077B5', border: '1px solid rgba(0,119,181,0.20)' }}>
+                  Ver tablero →
+                </button>
+              )}
+            </div>
+            {/* Secondary: mark as applied */}
+            {!appliedInline ? (
+              <div className="flex items-center justify-between">
+                <span className="text-xs" style={{ color: '#94a3b8' }}>¿Ya aplicaste a este rol?</span>
+                <button
+                  onClick={() => {
+                    setAppliedInline(true)
+                    onMarkApplied?.(rec_id)
+                    trackEvent('radar_laboral_applied_inline', { rec_id, company: job.company })
+                  }}
+                  className="px-3 py-1.5 rounded-xl text-xs font-semibold"
+                  style={{ background: 'rgba(99,102,241,0.10)', color: '#6366f1', border: '1px solid rgba(99,102,241,0.20)' }}>
+                  Sí, apliqué →
+                </button>
+              </div>
+            ) : (
+              <p className="text-xs text-center py-0.5" style={{ color: '#94a3b8' }}>
+                ✓ Aplicación registrada · {new Date().toLocaleDateString('es-AR', { day: 'numeric', month: 'short' })}
+              </p>
+            )}
           </div>
-        )}
-        {appliedInline && (
-          <p className="text-xs text-center py-0.5" style={{ color: '#94a3b8' }}>
-            ✓ Aplicación registrada · {new Date().toLocaleDateString('es-AR', { day: 'numeric', month: 'short' })}
-          </p>
         )}
 
         {/* Dismiss link */}
@@ -1159,7 +1185,7 @@ export default function JobRecommendationsScreen({
     // Idempotency guard — prevents duplicate saves from double-taps or re-renders
     const saveKey = rec.rec_id || `${rec.job?.source}:${rec.job?.url}`
     if (saveKey && savedRecsInSessionRef.current.has(saveKey)) {
-      addToast('Esta oportunidad ya está en tu pipeline ✓', 'info')
+      addToast('Esta oportunidad ya está en tu tablero ✓', 'info')
       return
     }
 
@@ -1175,7 +1201,7 @@ export default function JobRecommendationsScreen({
         throw new Error(errData.error || 'No se pudo guardar')
       }
       savedRecsInSessionRef.current.add(saveKey)
-      addToast(`✓ Guardado en tu pipeline — "${rec.job?.title || 'Oportunidad'}"`, 'success')
+      addToast(`✓ Guardado en tu tablero — "${rec.job?.title || 'Oportunidad'}"`, 'success')
       jobsSavedRef.current += 1
       trackEvent('radar_laboral_job_saved', {
         match_score: rec.match_score != null ? Math.round(rec.match_score * 10) : null,
@@ -1206,7 +1232,7 @@ export default function JobRecommendationsScreen({
       seniority:        rec.job.seniority !== 'No especificado' ? rec.job.seniority : null,
     })
     savedRecsInSessionRef.current.add(saveKey)
-    addToast(`✓ Guardado en tu pipeline — "${rec.job?.title || 'Oportunidad'}"`, 'success')
+    addToast(`✓ Guardado en tu tablero — "${rec.job?.title || 'Oportunidad'}"`, 'success')
     // 5. JOB SAVED TO KANBAN (fallback path)
     jobsSavedRef.current += 1
     trackEvent('radar_laboral_job_saved', {
@@ -1239,6 +1265,19 @@ export default function JobRecommendationsScreen({
       reason:      null,
     })
   }
+
+  // ── Mark applied ──────────────────────────────────────────────────────────
+  const handleMarkApplied = useCallback(async (rec_id) => {
+    if (!rec_id || !authToken) return
+    try {
+      await fetch(WORKER_URL, {
+        method:  'POST',
+        headers: { ...WORKER_HEADERS, Authorization: `Bearer ${authToken}` },
+        body:    JSON.stringify({ action: 'job_update_status', rec_id, status: 'applied' }),
+      })
+    } catch { /* non-fatal */ }
+    addToast('✓ Marcado como aplicado — lo verás en tu tablero con la fecha de hoy', 'success')
+  }, [authToken, addToast])
 
   // ── Adapt CV ───────────────────────────────────────────────────────────────
   const handleAdaptCv = (rec) => {
@@ -1665,10 +1704,13 @@ export default function JobRecommendationsScreen({
                   index={i}
                   isPremium={isPremium}
                   blurred={isBlurred}
+                  hasCv={!!cvFinalData}
                   onSave={handleSaveToKanban}
                   onDismiss={handleDismiss}
                   onAdaptCv={handleAdaptCv}
                   onPrepInterview={handlePrepInterview}
+                  onMarkApplied={handleMarkApplied}
+                  onGoToKanban={() => setStep(STEPS.TRACKING)}
                   onUpgrade={() => {
                     // 7. PREMIUM GATE HIT — user tapped a blurred result card.
                     trackEvent('radar_laboral_premium_gate_hit', {
