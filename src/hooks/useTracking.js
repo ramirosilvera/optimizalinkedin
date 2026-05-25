@@ -29,10 +29,12 @@ export function useTracking() {
   }
 
   const DEFAULT_COLUMNAS = [
-    { nombre: 'Aplicado',    color: '#64748b', orden: 0 },
-    { nombre: 'Entrevista',  color: '#0077B5', orden: 1 },
-    { nombre: 'Oferta',      color: '#16a34a', orden: 2 },
-    { nombre: 'Rechazado',   color: '#dc2626', orden: 3 },
+    { nombre: 'Radar Laboral',    color: '#c2185b', orden: 0 },
+    { nombre: 'Aplicado',         color: '#64748b', orden: 1 },
+    { nombre: 'Entrevista',       color: '#0077B5', orden: 2 },
+    { nombre: 'Proceso Avanzado', color: '#d97706', orden: 3 },
+    { nombre: 'Oferta',           color: '#16a34a', orden: 4 },
+    { nombre: 'Cerrado',          color: '#dc2626', orden: 5 },
   ]
 
   const loadTracking = async () => {
@@ -45,22 +47,33 @@ export function useTracking() {
         sbUserFetch(`kanban_columnas?user_id=eq.${uid}&order=orden.asc`),
         sbUserFetch(`postulaciones?user_id=eq.${uid}&order=orden.asc,created_at.desc`),
       ])
-      const cols  = await colRes.json().catch(() => [])
+      let cols  = await colRes.json().catch(() => [])
       const cards = await cardRes.json().catch(() => [])
       if (!Array.isArray(cols) || cols.error) throw new Error(cols.message || 'Error cargando columnas')
       if (cols.length === 0) {
-        const uid2 = localStorage.getItem('ol_uid')
-        const seeds = DEFAULT_COLUMNAS.map(c => ({ ...c, user_id: uid2 }))
+        const seeds = DEFAULT_COLUMNAS.map(c => ({ ...c, user_id: uid }))
         const seedRes = await sbUserFetch('kanban_columnas', {
           method: 'POST',
           headers: { Prefer: 'return=representation' },
           body: JSON.stringify(seeds),
         })
         const seeded = await seedRes.json().catch(() => [])
-        setTrackingColumnas(Array.isArray(seeded) ? seeded.sort((a, b) => a.orden - b.orden) : [])
+        cols = Array.isArray(seeded) ? seeded.sort((a, b) => a.orden - b.orden) : []
       } else {
-        setTrackingColumnas(cols)
+        // Migration: insert "Radar Laboral" for users who signed up before this column existed
+        const hasRadar = cols.some(c => c.nombre === 'Radar Laboral')
+        if (!hasRadar) {
+          const seedRes = await sbUserFetch('kanban_columnas', {
+            method: 'POST',
+            headers: { Prefer: 'return=representation' },
+            body: JSON.stringify({ user_id: uid, nombre: 'Radar Laboral', color: '#c2185b', orden: -1 }),
+          })
+          const seeded = await seedRes.json().catch(() => null)
+          const newCol = Array.isArray(seeded) ? seeded[0] : seeded
+          if (newCol?.id) cols = [newCol, ...cols].sort((a, b) => a.orden - b.orden)
+        }
       }
+      setTrackingColumnas(cols)
       setTrackingCards(Array.isArray(cards) ? cards : [])
     } catch (e) {
       setTrackingError(e.message || 'Error cargando postulaciones')
