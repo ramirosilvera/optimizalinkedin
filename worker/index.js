@@ -405,11 +405,11 @@ async function callGeminiApi(env, ctx, geminiBody, corsHeaders, { feature = 'unk
       retryCount, apiKeyAlias: `key_${usedKeyIndex + 1}`,
     })
     const msg = isTimeout ? 'El servicio de IA tardó demasiado. Intentá de nuevo.' : 'Error de conexión con el servicio de IA.'
-    return new Response(JSON.stringify({ error: { message: msg } }), { status: 504, headers: corsHeaders })
+    return new Response(JSON.stringify({ error: msg }), { status: 504, headers: corsHeaders })
   }
 
   // Parse body before clearing timeout so abort protection covers the full response
-  const data = await res.json().catch(() => ({ error: { message: 'Respuesta inválida del servicio de IA.' } }))
+  const data = await res.json().catch(() => ({ error: 'Respuesta inválida del servicio de IA.' }))
   clearTimeout(timeoutId)
 
   if (res.status === 200) {
@@ -445,8 +445,7 @@ async function callGeminiApi(env, ctx, geminiBody, corsHeaders, { feature = 'unk
     })
     // Surface quota type to client so frontend can show an informative message
     if (res.status === 429 && quotaType === 'daily') {
-      const dailyMsg = { error: { message: 'Cuota diaria de IA agotada. El servicio se restablece a medianoche (hora de Argentina). Volvé mañana.' } }
-      return new Response(JSON.stringify(dailyMsg), { status: 429, headers: corsHeaders })
+      return new Response(JSON.stringify({ error: 'Cuota diaria de IA agotada. El servicio se restablece a medianoche (hora de Argentina). Volvé mañana.' }), { status: 429, headers: corsHeaders })
     }
   }
   return new Response(JSON.stringify(data), { status: res.status, headers: corsHeaders })
@@ -3542,16 +3541,49 @@ async function handleAiJobRecommendations(body, request, env, ctx, corsHeaders, 
         generated_at:  new Date().toISOString(),
       },
     }
-    const saveHistorial = fetch(`${env.SUPABASE_URL}/rest/v1/historial`, {
-      method:  'POST',
-      headers: {
-        apikey:         env.SUPABASE_SERVICE_ROLE_KEY,
-        Authorization:  `Bearer ${env.SUPABASE_SERVICE_ROLE_KEY}`,
-        'Content-Type': 'application/json',
-        Prefer:         'return=minimal',
-      },
-      body: JSON.stringify(historialRow),
-    }).catch(() => {})
+    // Dedup: if a job_recommendations historial row already exists today for this user,
+    // update it instead of inserting a new one — prevents "noisy history" on re-searches.
+    const saveHistorial = (async () => {
+      try {
+        const today = new Date().toISOString().slice(0, 10)
+        const existRes = await fetch(
+          `${env.SUPABASE_URL}/rest/v1/historial`
+          + `?user_id=eq.${user_id}&tipo=eq.job_recommendations`
+          + `&created_at=gte.${today}T00:00:00Z`
+          + `&order=created_at.desc&limit=1&select=id`,
+          { headers: { apikey: env.SUPABASE_SERVICE_ROLE_KEY, Authorization: `Bearer ${env.SUPABASE_SERVICE_ROLE_KEY}` } }
+        )
+        const existing = await existRes.json().catch(() => [])
+        if (Array.isArray(existing) && existing[0]?.id) {
+          // Row exists today — patch it with fresh data
+          await fetch(
+            `${env.SUPABASE_URL}/rest/v1/historial?id=eq.${existing[0].id}`,
+            {
+              method: 'PATCH',
+              headers: {
+                apikey: env.SUPABASE_SERVICE_ROLE_KEY,
+                Authorization: `Bearer ${env.SUPABASE_SERVICE_ROLE_KEY}`,
+                'Content-Type': 'application/json',
+                Prefer: 'return=minimal',
+              },
+              body: JSON.stringify({ titulo: historialRow.titulo, datos: historialRow.datos }),
+            }
+          )
+        } else {
+          // No row today — create new
+          await fetch(`${env.SUPABASE_URL}/rest/v1/historial`, {
+            method:  'POST',
+            headers: {
+              apikey: env.SUPABASE_SERVICE_ROLE_KEY,
+              Authorization: `Bearer ${env.SUPABASE_SERVICE_ROLE_KEY}`,
+              'Content-Type': 'application/json',
+              Prefer: 'return=minimal',
+            },
+            body: JSON.stringify(historialRow),
+          })
+        }
+      } catch { /* non-fatal */ }
+    })()
     if (ctx?.waitUntil) ctx.waitUntil(saveHistorial)
   }
 

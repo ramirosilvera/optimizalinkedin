@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from 'react'
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import { LI_GRADIENT, BTN_BACK_STYLE, BTN_GHOST_STYLE, CARD_STYLE, WORKER_URL, WORKER_HEADERS, trackEvent, trackTiming, trackError } from '../../constants'
 import { Spinner } from '../ui'
 
@@ -394,6 +394,8 @@ function JobCard({
   const [swipeDelta, setSwipeDelta]     = useState(0)
   const [appliedInline, setAppliedInline] = useState(false)
   const touchStartRef                   = useRef(null)
+  const touchStartYRef                  = useRef(null)
+  const saveAttemptRef                  = useRef(false)
   const cardRef                         = useRef(null)
 
   const { job, match_score, strengths, gaps, summary, rec_id } = rec
@@ -428,13 +430,21 @@ function JobCard({
 
   // ── Touch swipe handlers ───────────────────────────────────────────────────
   const onTouchStart = (e) => {
-    touchStartRef.current = e.touches[0].clientX
+    touchStartRef.current  = e.touches[0].clientX
+    touchStartYRef.current = e.touches[0].clientY
   }
   const onTouchMove = (e) => {
     if (touchStartRef.current === null) return
-    const delta = e.touches[0].clientX - touchStartRef.current
-    // Only horizontal swipe — ignore if likely vertical scroll
-    setSwipeDelta(Math.max(-80, Math.min(80, delta)))
+    const deltaX = e.touches[0].clientX - touchStartRef.current
+    const deltaY = e.touches[0].clientY - touchStartYRef.current
+    // Cancel swipe if gesture is primarily vertical — let native scroll handle it
+    if (Math.abs(deltaY) > Math.abs(deltaX) + 8) {
+      setSwipeDelta(0)
+      touchStartRef.current  = null
+      touchStartYRef.current = null
+      return
+    }
+    setSwipeDelta(Math.max(-80, Math.min(80, deltaX)))
   }
   const onTouchEnd = () => {
     if (swipeDelta > 55) {
@@ -443,13 +453,15 @@ function JobCard({
       handleDismiss()
     }
     setSwipeDelta(0)
-    touchStartRef.current = null
+    touchStartRef.current  = null
+    touchStartYRef.current = null
   }
 
   // ── Actions ────────────────────────────────────────────────────────────────
   const handleSave = async () => {
-    if (saved || saveLoading) return
+    if (saved || saveLoading || saveAttemptRef.current) return
     if (!isPremium && blurred) { onUpgrade?.(); return }
+    saveAttemptRef.current = true
     setSaveLoading(true)
     try {
       await onSave?.(rec)
@@ -459,6 +471,7 @@ function JobCard({
       // addToast is called by parent
     } finally {
       setSaveLoading(false)
+      saveAttemptRef.current = false
     }
   }
 
@@ -792,7 +805,7 @@ function JobCard({
             }
             trackEvent('job_card_expanded', { expanded: nextExpanded })
           }}
-          className="text-xs w-full text-center py-0.5"
+          className="text-xs w-full text-center py-2.5"
           style={{ color: '#0077B5' }}>
           {expanded ? '▲ Ver menos' : '▼ Ver más detalles'}
         </button>
@@ -870,7 +883,7 @@ function JobCard({
 
         {/* Dismiss link */}
         <button onClick={handleDismiss}
-          className="w-full text-center text-[11px] py-1"
+          className="w-full text-center text-[11px] py-3"
           style={{ color: '#cbd5e1' }}>
           No me interesa
         </button>
@@ -920,8 +933,9 @@ export default function JobRecommendationsScreen({
   // ── Analytics session refs ─────────────────────────────────────────────────
   // Track how many cards the user has seen and saved in this session
   // so we can report on back-navigation
-  const jobsSeenRef  = useRef(0)
-  const jobsSavedRef = useRef(0)
+  const jobsSeenRef           = useRef(0)
+  const jobsSavedRef          = useRef(0)
+  const savedRecsInSessionRef = useRef(new Set())  // idempotency: prevents duplicate saves
   // Wall-clock stamp for session duration reporting
   const screenOpenedAtRef = useRef(Date.now())
 
@@ -943,10 +957,21 @@ export default function JobRecommendationsScreen({
   const [refineInput, setRefineInput]     = useState('')
   const [showRefine, setShowRefine]       = useState(false)
 
+  // ── Refine search input focus ─────────────────────────────────────────────
+  const refineInputRef = useRef(null)
+  useEffect(() => {
+    if (showRefine && refineInputRef.current) {
+      // Delayed focus: gives iOS time to position the keyboard without a jump
+      const t = setTimeout(() => refineInputRef.current?.focus(), 120)
+      return () => clearTimeout(t)
+    }
+  }, [showRefine])
+
   // ── Pull to refresh ────────────────────────────────────────────────────────
-  const pullStartRef  = useRef(null)
+  const pullStartRef     = useRef(null)
+  const pullStartTimeRef = useRef(null)   // for velocity detection
   const [pullDist, setPullDist] = useState(0)
-  const scrollRef     = useRef(null)
+  const scrollRef        = useRef(null)
 
   // ── Free tier gate: 3 results visible, rest blurred ───────────────────────
   const FREE_VISIBLE = 3
@@ -1028,9 +1053,13 @@ export default function JobRecommendationsScreen({
       if (res.status === 429) {
         const data = await res.json().catch(() => ({}))
         const isDaily = data?.quota_remaining === 0
+        // Normalize error to string — worker can return {message:} objects in some paths
+        const rawErr = data?.error
+        const errStr = typeof rawErr === 'string' ? rawErr
+          : (rawErr?.message ? String(rawErr.message) : 'Límite de búsquedas alcanzado. Intentá en unos minutos.')
         setError(isDaily
           ? 'Usaste todas tus búsquedas de hoy. Volvé mañana para nuevas recomendaciones.'
-          : data?.error || 'Límite de búsquedas alcanzado. Intentá en unos minutos.')
+          : errStr)
         setLoadState('error')
         trackEvent('job_recommendations_rate_limited')
         return
@@ -1109,8 +1138,8 @@ export default function JobRecommendationsScreen({
     }
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
-  // ── Filter + sort logic ────────────────────────────────────────────────────
-  const filteredRecs = recommendations
+  // ── Filter + sort logic (memoized — avoids recalculation on every swipe/hover) ─
+  const filteredRecs = useMemo(() => recommendations
     .filter(rec => {
       if (activeFilters.remoteOnly && !rec.job.remote) return false
       if (activeFilters.seniority && rec.job.seniority !== activeFilters.seniority) return false
@@ -1123,10 +1152,17 @@ export default function JobRecommendationsScreen({
       const da = a.job.posted_at ? new Date(a.job.posted_at).getTime() : 0
       const db = b.job.posted_at ? new Date(b.job.posted_at).getTime() : 0
       return db - da
-    })
+    }), [recommendations, activeFilters, sortBy])
 
   // ── Save to Kanban ─────────────────────────────────────────────────────────
   const handleSaveToKanban = async (rec) => {
+    // Idempotency guard — prevents duplicate saves from double-taps or re-renders
+    const saveKey = rec.rec_id || `${rec.job?.source}:${rec.job?.url}`
+    if (saveKey && savedRecsInSessionRef.current.has(saveKey)) {
+      addToast('Esta oportunidad ya está en tu pipeline ✓', 'info')
+      return
+    }
+
     // If rec_id exists, use the worker action for clean data persistence
     if (rec.rec_id && authToken) {
       const res = await fetch(WORKER_URL, {
@@ -1134,13 +1170,12 @@ export default function JobRecommendationsScreen({
         headers: { ...WORKER_HEADERS, Authorization: `Bearer ${authToken}` },
         body: JSON.stringify({ action: 'job_save_to_kanban', rec_id: rec.rec_id }),
       })
-      if (!res.ok) throw new Error('No se pudo guardar')
-      // Toast copy: action-confirmation + immediate next step.
-      // "Guardado en tu pipeline" → professional framing, not "added to list".
-      // The toast system supports a 'cta' field for an inline button.
-      addToast('Guardado en tu pipeline de postulaciones ✓', 'success')
-      // 5. JOB SAVED TO KANBAN — primary engagement conversion.
-      //    This is the "job saved" funnel step and retention loop anchor.
+      if (!res.ok) {
+        const errData = await res.json().catch(() => ({}))
+        throw new Error(errData.error || 'No se pudo guardar')
+      }
+      savedRecsInSessionRef.current.add(saveKey)
+      addToast(`✓ Guardado en tu pipeline — "${rec.job?.title || 'Oportunidad'}"`, 'success')
       jobsSavedRef.current += 1
       trackEvent('radar_laboral_job_saved', {
         match_score: rec.match_score != null ? Math.round(rec.match_score * 10) : null,
@@ -1170,7 +1205,8 @@ export default function JobRecommendationsScreen({
       fecha_aplicacion: new Date().toISOString().slice(0, 10),
       seniority:        rec.job.seniority !== 'No especificado' ? rec.job.seniority : null,
     })
-    addToast('Guardado en tu pipeline de postulaciones ✓', 'success')
+    savedRecsInSessionRef.current.add(saveKey)
+    addToast(`✓ Guardado en tu pipeline — "${rec.job?.title || 'Oportunidad'}"`, 'success')
     // 5. JOB SAVED TO KANBAN (fallback path)
     jobsSavedRef.current += 1
     trackEvent('radar_laboral_job_saved', {
@@ -1212,13 +1248,21 @@ export default function JobRecommendationsScreen({
       return
     }
     setJobCvForAdapter(cv)
-    // Pre-fill the job posting textarea with the job description
+    // Full context for the CV adapter — more fields = better adaptation quality
     const posting = [
-      `Empresa: ${rec.job.company}`,
-      `Puesto: ${rec.job.title}`,
+      `Empresa: ${rec.job.company || ''}`,
+      `Puesto: ${rec.job.title || ''}`,
       rec.job.seniority && rec.job.seniority !== 'No especificado' ? `Seniority: ${rec.job.seniority}` : '',
+      rec.job.location ? `Ubicación: ${rec.job.remote ? 'Remoto' : rec.job.location}` : rec.job.remote ? 'Modalidad: Remoto' : '',
+      rec.job.industry  ? `Industria: ${rec.job.industry}` : '',
+      (rec.job.salary_min || rec.job.salary_max)
+        ? `Salario: ${rec.job.salary_min ? `${rec.job.currency || 'USD'} ${rec.job.salary_min.toLocaleString()}` : ''}${rec.job.salary_max ? ` – ${rec.job.salary_max.toLocaleString()}` : ''}`.trim()
+        : '',
       rec.job.skills_required?.length ? `Skills requeridas: ${rec.job.skills_required.join(', ')}` : '',
-      rec.job.description ? `\nDescripción:\n${rec.job.description.slice(0, 800)}` : '',
+      rec.job.description ? `\nDescripción:\n${rec.job.description.slice(0, 1000)}` : '',
+      rec.strengths?.length  ? `\nFortalezas detectadas (a destacar en el CV):\n${rec.strengths.join('\n')}` : '',
+      rec.gaps?.length       ? `\nBrechas a cubrir (adaptar el lenguaje del CV para abordarlas):\n${rec.gaps.join('\n')}` : '',
+      rec.job.url ? `\nAviso original: ${rec.job.url}` : '',
     ].filter(Boolean).join('\n')
     setJobPosting(posting)
     setJobResult(null)
@@ -1238,13 +1282,18 @@ export default function JobRecommendationsScreen({
   const handlePrepInterview = (rec) => {
     resetInterview()
     const ctx = {
-      empresa:          rec.job.company,
-      puesto:           rec.job.title,
-      seniority:        rec.job.seniority !== 'No especificado' ? rec.job.seniority : '',
-      ats_keywords:     rec.job.skills_required?.slice(0, 8).join(', ') || '',
-      notas:            rec.summary || '',
-      jd_summary:       rec.job.description?.slice(0, 400) || '',
-      adaptation_notes: rec.gaps?.join(' | ') || '',
+      empresa:               rec.job.company,
+      puesto:                rec.job.title,
+      seniority:             rec.job.seniority !== 'No especificado' ? rec.job.seniority : '',
+      ats_keywords:          rec.job.skills_required?.slice(0, 8).join(', ') || '',
+      notas:                 rec.summary || '',
+      jd_summary:            rec.job.description?.slice(0, 800) || '',   // was 400 — more context = better Qs
+      adaptation_notes:      rec.gaps?.join(' | ') || '',
+      strengths_to_reinforce: rec.strengths?.slice(0, 3).join(' | ') || '',  // NEW: prep strengths too
+      match_score:           rec.match_score ?? null,                    // NEW: AI difficulty calibration
+      location:              rec.job.remote ? 'Remoto' : (rec.job.location || ''),
+      industry:              rec.job.industry || '',
+      link_aviso:            rec.job.url || '',
     }
     setInterviewJobContext(ctx)
     generatePersonalizedInterviewQs(ctx)
@@ -1260,24 +1309,54 @@ export default function JobRecommendationsScreen({
   }
 
   // ── Pull to refresh handlers ───────────────────────────────────────────────
+  // Guards against accidental refresh:
+  //   • scrollTop check prevents mid-list triggers (iOS Safari bounce check below)
+  //   • velocity check: slow drag (<1px/ms) = intentional pull; fast = momentum scroll
+  //   • threshold raised to 64 px (iOS standard) — 48 px was too easy to hit
+  //   • NO filter reset — that was a side-effect, not intentional behavior
+  //   • touchCancel cleanup in useEffect to handle system gesture interruptions
   const onScrollTouchStart = (e) => {
-    if (scrollRef.current?.scrollTop === 0) {
-      pullStartRef.current = e.touches[0].clientY
+    const el = scrollRef.current
+    // Use Math.abs to handle iOS negative scrollTop during bounce
+    if (el && Math.abs(el.scrollTop) < 2 && loadState !== 'loading') {
+      pullStartRef.current     = e.touches[0].clientY
+      pullStartTimeRef.current = Date.now()
     }
   }
   const onScrollTouchMove = (e) => {
     if (pullStartRef.current === null) return
-    const dist = e.touches[0].clientY - pullStartRef.current
-    if (dist > 0) setPullDist(Math.min(dist, 64))
+    const dist     = e.touches[0].clientY - pullStartRef.current
+    const elapsed  = Date.now() - (pullStartTimeRef.current || Date.now())
+    // Discard momentum scrolls (velocity > 1.5 px/ms = fast flick, not intentional pull)
+    const velocity = elapsed > 0 ? dist / elapsed : Infinity
+    if (dist > 0 && velocity < 1.5) {
+      setPullDist(Math.min(dist, 72))
+    } else if (dist <= 0) {
+      setPullDist(0)
+    }
   }
   const onScrollTouchEnd = () => {
-    if (pullDist > 48) {
-      setActiveFilters({ ...filters })
-      fetchRecommendations()
+    if (pullDist > 64) {
+      fetchRecommendations()  // Intentional refresh — does NOT reset user's filters
     }
     setPullDist(0)
-    pullStartRef.current = null
+    pullStartRef.current     = null
+    pullStartTimeRef.current = null
   }
+
+  // Clean up pullStartRef on system gesture interruptions (notification swipe, etc.)
+  useEffect(() => {
+    const el = scrollRef.current
+    if (!el) return
+    const cleanup = () => {
+      pullStartRef.current     = null
+      pullStartTimeRef.current = null
+      setPullDist(0)
+    }
+    el.addEventListener('touchcancel', cleanup)
+    return () => el.removeEventListener('touchcancel', cleanup)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [loadState])
 
   // ── Active filter count for badge ─────────────────────────────────────────
   const activeFilterCount = [
@@ -1429,11 +1508,11 @@ export default function JobRecommendationsScreen({
             }}
             className="flex gap-2 pt-1">
             <input
+              ref={refineInputRef}
               type="text"
               value={refineInput}
               onChange={e => setRefineInput(e.target.value)}
               placeholder="Ej: React, fintech, remoto LATAM…"
-              autoFocus
               className="flex-1 px-3 py-2 rounded-xl text-xs outline-none"
               style={{ background: 'white', border: '1.5px solid rgba(0,119,181,0.25)', color: '#0d2137' }}
             />
@@ -1499,35 +1578,38 @@ export default function JobRecommendationsScreen({
         )}
 
         {/* ── ERROR STATE ── */}
-        {loadState === 'error' && (
-          <div className="text-center py-12 px-6 space-y-4">
-            <span className="text-4xl">
-              {error.includes('mañana') || error.includes('búsquedas') ? '⏳' : '⚠️'}
-            </span>
-            <h3 className="font-bold text-base" style={{ color: '#0d2137' }}>
-              {error.includes('mañana') ? 'Límite diario alcanzado' : 'Algo salió mal'}
-            </h3>
-            <p className="text-sm max-w-xs mx-auto leading-relaxed" style={{ color: '#64748b' }}>
-              {error}
-            </p>
-            {!error.includes('mañana') && (
-              <button
-                onClick={fetchRecommendations}
-                className="px-6 py-3 rounded-2xl text-sm font-semibold text-white"
-                style={{ background: LI_GRADIENT }}>
-                Intentar de nuevo
-              </button>
-            )}
-            {/* Quota info */}
-            {quotaRemaining !== null && (
-              <p className="text-xs" style={{ color: '#94a3b8' }}>
-                {isPremium
-                  ? `Límite diario Premium: 30 búsquedas/día`
-                  : `Plan gratuito: 5 búsquedas/día · Actualizá a Premium para 30/día`}
+        {loadState === 'error' && (() => {
+          // Normalize defensively — error must be string for .includes() calls
+          const errStr = typeof error === 'string' ? error : String(error?.message || error || '')
+          return (
+            <div className="text-center py-12 px-6 space-y-4">
+              <span className="text-4xl">
+                {errStr.includes('mañana') || errStr.includes('búsquedas') ? '⏳' : '⚠️'}
+              </span>
+              <h3 className="font-bold text-base" style={{ color: '#0d2137' }}>
+                {errStr.includes('mañana') ? 'Límite diario alcanzado' : 'Algo salió mal'}
+              </h3>
+              <p className="text-sm max-w-xs mx-auto leading-relaxed" style={{ color: '#64748b' }}>
+                {errStr || 'Ocurrió un error inesperado. Intentá de nuevo.'}
               </p>
-            )}
-          </div>
-        )}
+              {!errStr.includes('mañana') && (
+                <button
+                  onClick={fetchRecommendations}
+                  className="px-6 py-3 rounded-2xl text-sm font-semibold text-white"
+                  style={{ background: LI_GRADIENT }}>
+                  Intentar de nuevo
+                </button>
+              )}
+              {quotaRemaining !== null && (
+                <p className="text-xs" style={{ color: '#94a3b8' }}>
+                  {isPremium
+                    ? `Límite diario Premium: 30 búsquedas/día`
+                    : `Plan gratuito: 5 búsquedas/día · Actualizá a Premium para 30/día`}
+                </p>
+              )}
+            </div>
+          )
+        })()}
 
         {/* ── DONE: RESULTS ── */}
         {loadState === 'done' && (
