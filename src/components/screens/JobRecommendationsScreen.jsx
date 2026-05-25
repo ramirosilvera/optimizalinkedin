@@ -1244,7 +1244,6 @@ export default function JobRecommendationsScreen({
   }
 
 
-
   // ── Adapt CV ───────────────────────────────────────────────────────────────
   const handleAdaptCv = (rec) => {
     const cv = cvFinalData || null
