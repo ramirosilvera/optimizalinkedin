@@ -3389,9 +3389,16 @@ Generá el feedback en este JSON exacto:
             cvFinalData={cvFinalData}
             trackingColumnas={trackingColumnas}
             createCard={createCard}
+            loadTracking={loadTracking}
+            addToast={addToast}
             setStep={setStep}
             setShowPremiumModal={setShowPremiumModal}
             setShowJobModal={setShowJobModal}
+            setJobCvForAdapter={setJobCvForAdapter}
+            setJobPosting={setJobPosting}
+            setJobResult={setJobResult}
+            setJobError={setJobError}
+            resetInterview={resetInterview}
             setInterviewJobContext={setInterviewJobContext}
             generatePersonalizedInterviewQs={generatePersonalizedInterviewQs}
             onBack={() => setStep(STEPS.MODE_SELECT)}

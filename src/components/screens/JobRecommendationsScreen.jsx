@@ -386,17 +386,18 @@ function JobCard({
   onUpgrade,
   addToast,
 }) {
-  const [expanded, setExpanded]             = useState(false)
-  const [saved, setSaved]                   = useState(false)
-  const [alreadyExists, setAlreadyExists]   = useState(false)
+  const [expanded, setExpanded]               = useState(false)
+  const [saved, setSaved]                     = useState(false)
+  const [alreadyExists, setAlreadyExists]     = useState(false)
   const [showSaveConfirm, setShowSaveConfirm] = useState(false)
-  const [dismissed, setDismissed]           = useState(false)
-  const [saveLoading, setSaveLoading]       = useState(false)
-  const [swipeDelta, setSwipeDelta]         = useState(0)
-  const touchStartRef                       = useRef(null)
-  const touchStartYRef                      = useRef(null)
-  const saveAttemptRef                      = useRef(false)
-  const cardRef                             = useRef(null)
+  const [saveError, setSaveError]             = useState(false)
+  const [dismissed, setDismissed]             = useState(false)
+  const [saveLoading, setSaveLoading]         = useState(false)
+  const [swipeDelta, setSwipeDelta]           = useState(0)
+  const touchStartRef                         = useRef(null)
+  const touchStartYRef                        = useRef(null)
+  const saveAttemptRef                        = useRef(false)
+  const cardRef                               = useRef(null)
 
   const { job, match_score, strengths, gaps, summary, rec_id } = rec
 
@@ -463,14 +464,20 @@ function JobCard({
     if (!isPremium && blurred) { onUpgrade?.(); return }
     saveAttemptRef.current = true
     setSaveLoading(true)
+    setSaveError(false)
     try {
       const result = await onSave?.(rec)
-      setSaved(true)
-      setAlreadyExists(result?.alreadyExists || false)
-      setShowSaveConfirm(true)
-      trackEvent('job_recommendation_saved', { rec_id, score: scorePct })
-    } catch {
-      // addToast is called by parent
+      if (result !== undefined) {
+        setSaved(true)
+        setAlreadyExists(result?.alreadyExists || false)
+        setShowSaveConfirm(!result?.alreadyExists)
+        trackEvent('job_recommendation_saved', { rec_id, score: scorePct })
+      } else {
+        setSaveError(true)
+      }
+    } catch (err) {
+      console.error('[Radar] Save error:', err?.message || err)
+      setSaveError(true)
     } finally {
       setSaveLoading(false)
       saveAttemptRef.current = false
@@ -821,11 +828,13 @@ function JobCard({
             className="flex-1 py-3 rounded-xl text-xs font-semibold flex items-center justify-center gap-1.5 transition-all duration-200"
             style={saved
               ? { background: 'rgba(22,163,74,0.12)', color: '#15803d', border: '1px solid rgba(22,163,74,0.30)' }
-              : { background: LI_GRADIENT, color: 'white' }}>
+              : saveError
+                ? { background: 'rgba(239,68,68,0.10)', color: '#dc2626', border: '1px solid rgba(239,68,68,0.25)' }
+                : { background: LI_GRADIENT, color: 'white' }}>
             {saveLoading
               ? <span className="w-3 h-3 border border-white border-t-transparent rounded-full animate-spin" />
               : null}
-            {saved ? '✓ Guardado' : '🔖 Guardar'}
+            {saved ? '✓ Guardado' : saveError ? '↺ Reintentar' : '🔖 Guardar'}
           </button>
 
           {/* Aplicar — link to job URL; dimmed when unavailable */}
@@ -845,6 +854,16 @@ function JobCard({
             </button>
           )}
         </div>
+
+        {/* Save error feedback */}
+        {saveError && !saved && (
+          <div
+            className="rounded-xl p-3 flex items-center justify-between gap-2"
+            style={{ background: 'rgba(239,68,68,0.05)', border: '1px solid rgba(239,68,68,0.18)', animation: 'fadeIn 0.2s ease-out' }}>
+            <p className="text-xs font-medium" style={{ color: '#dc2626' }}>❌ No se pudo guardar — tocá Reintentar</p>
+          </div>
+        )}
+
 
         {/* Post-save confirmation */}
         {saved && (
@@ -904,6 +923,7 @@ export default function JobRecommendationsScreen({
   cvFinalData,
   trackingColumnas,
   createCard,
+  loadTracking,
   addToast,
   setStep,
   setShowPremiumModal,
@@ -1136,6 +1156,11 @@ export default function JobRecommendationsScreen({
     } else if (!profileText || profileText.length < 50) {
       setLoadState('no_profile')
     }
+
+    // Pre-load kanban columns so the fallback save path works without visiting the Kanban first
+    if (user && loadTracking && (!trackingColumnas || trackingColumnas.length === 0)) {
+      loadTracking().catch(() => {})
+    }
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Filter + sort logic (memoized — avoids recalculation on every swipe/hover) ─
@@ -1190,16 +1215,16 @@ export default function JobRecommendationsScreen({
 
     // Fallback: direct createCard (for non-persisted recs or anon)
     if (!user) {
-      addToast('Iniciá sesión para guardar postulaciones', 'error')
-      return
+      addToast?.('Iniciá sesión para guardar postulaciones', 'error')
+      throw new Error('not_authenticated')
     }
     if (saveKey && savedRecsInSessionRef.current.has(saveKey)) {
       return { alreadyExists: true }
     }
     const radarCol = trackingColumnas?.find(c => c.nombre === 'Radar Laboral') || trackingColumnas?.[0]
     if (!radarCol) {
-      addToast('Abrí tu tablero primero para guardar', 'error')
-      return
+      addToast?.('Tablero no cargado — intentá de nuevo', 'error')
+      throw new Error('no_kanban_column')
     }
     await createCard(radarCol.id, {
       empresa:          rec.job.company || '',
