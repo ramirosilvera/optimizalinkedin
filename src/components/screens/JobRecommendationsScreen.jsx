@@ -130,23 +130,28 @@ function SkeletonCard() {
 const LOADING_STAGES = [
   {
     icon: '📡',
-    msg: 'Escaneando el mercado con tu perfil...',
-    sub: 'Cada competidor tiene un perfil. Estamos buscando dónde el tuyo es diferencial.',
+    msg: 'Conectando con 400+ fuentes laborales...',
+    sub: 'ATS directos de empresas, bolsas globales y portales activos en simultáneo.',
   },
   {
     icon: '🔬',
-    msg: 'Identificando roles donde tu experiencia pesa más...',
-    sub: 'No todos los roles son iguales — buscamos los que valoran exactamente lo que traés.',
+    msg: 'Analizando tu perfil profesional...',
+    sub: 'La IA identifica tu área, nivel y especialidad para descartar matches irrelevantes.',
+  },
+  {
+    icon: '🧭',
+    msg: 'Evaluando compatibilidad geográfica y modalidad...',
+    sub: 'Priorizamos lo viable para tu ubicación — presencial, híbrido o remoto.',
   },
   {
     icon: '⚡',
-    msg: 'Calculando compatibilidad real, no solo palabras clave...',
-    sub: 'La IA compara trayectoria, industria y seniority — no solo el título del puesto.',
+    msg: 'Calculando matching contextual en tiempo real...',
+    sub: 'No buscamos palabras clave. Analizamos coherencia profesional real.',
   },
   {
     icon: '🏆',
-    msg: 'Clasificando oportunidades por tu potencial competitivo...',
-    sub: 'Las mejores oportunidades llegan primero. Preparate para ver tu radar.',
+    msg: 'Clasificando por potencial competitivo...',
+    sub: 'Tus mejores oportunidades están a punto de aparecer.',
   },
 ]
 
@@ -399,7 +404,7 @@ function JobCard({
   const saveAttemptRef                        = useRef(false)
   const cardRef                               = useRef(null)
 
-  const { job, match_score, strengths, gaps, summary, rec_id } = rec
+  const { job, match_score, strengths, gaps, summary, rec_id, geo_score, from_expansion } = rec
 
   // Convert 0–10 scale from API to 0–100 percentage
   const scorePct = match_score != null ? Math.round(match_score * 10) : null
@@ -703,8 +708,8 @@ function JobCard({
                 <span className="text-[10px]" style={{ color: isStale ? '#f59e0b' : '#94a3b8' }}>· {daysAgo}</span>
               ) : null}
             </div>
-            {/* Seniority + industry quick-view (collapsed only) */}
-            {!expanded && (job.seniority && job.seniority !== 'No especificado' || job.industry) && (
+            {/* Seniority + industry + geo + expansion badges */}
+            {!expanded && (
               <div className="flex gap-1.5 mt-1 flex-wrap">
                 {job.seniority && job.seniority !== 'No especificado' && (
                   <span className="px-1.5 py-0.5 rounded text-[10px] font-medium"
@@ -716,6 +721,20 @@ function JobCard({
                   <span className="px-1.5 py-0.5 rounded text-[10px] font-medium"
                     style={{ background: 'rgba(100,116,139,0.08)', color: '#475569' }}>
                     {job.industry}
+                  </span>
+                )}
+                {/* Geo badge — shown when we confirmed it's near the candidate */}
+                {!job.remote && geo_score != null && geo_score >= 0.85 && (
+                  <span className="px-1.5 py-0.5 rounded text-[10px] font-medium"
+                    style={{ background: 'rgba(16,185,129,0.09)', color: '#059669' }}>
+                    🧭 Tu zona
+                  </span>
+                )}
+                {/* AI discovery badge — shown for expansion-layer results */}
+                {from_expansion && (
+                  <span className="px-1.5 py-0.5 rounded text-[10px] font-medium"
+                    style={{ background: 'rgba(14,165,233,0.09)', color: '#0284c7' }}>
+                    ✨ Hallazgo IA
                   </span>
                 )}
               </div>
@@ -969,9 +988,10 @@ export default function JobRecommendationsScreen({
   const [fromCache, setFromCache]         = useState(false)
   const [cachedToday, setCachedToday]     = useState(false)
   const [cacheTimestamp, setCacheTs]      = useState(null)
-  const [expansionAvail, setExpansionAvail] = useState(false)
-  const [expansionUsed, setExpansionUsed]   = useState(false)
-  const [expansionCount, setExpansionCount] = useState(0)
+  const [expansionAvail, setExpansionAvail]   = useState(false)
+  const [expansionUsed, setExpansionUsed]     = useState(false)
+  const [expansionCount, setExpansionCount]   = useState(0)
+  const [candidateLoc, setCandidateLoc]       = useState(null)
 
   // ── Analytics session refs ─────────────────────────────────────────────────
   // Track how many cards the user has seen and saved in this session
@@ -1128,6 +1148,7 @@ export default function JobRecommendationsScreen({
       setExpansionAvail(data.expansion_available || false)
       setExpansionUsed(data.expansion_used || false)
       setExpansionCount(data.expansion_count || 0)
+      setCandidateLoc(data.candidate_location || null)
       setLoadState('done')
 
       // 3. SEARCH COMPLETED — rich params enable source-level attribution and
@@ -1685,12 +1706,20 @@ export default function JobRecommendationsScreen({
                     </p>
                   )}
                 </div>
-                {quotaRemaining !== null && (
-                  <span className="text-[10px] shrink-0 px-2 py-1 rounded-lg"
-                    style={{ background: 'rgba(0,119,181,0.10)', color: '#0077B5' }}>
-                    {quotaRemaining} restantes hoy
-                  </span>
-                )}
+                <div className="flex items-center gap-1.5 shrink-0">
+                  {candidateLoc && (
+                    <span className="text-[10px] px-1.5 py-0.5 rounded"
+                      style={{ background: 'rgba(16,185,129,0.08)', color: '#059669' }}>
+                      📍 {candidateLoc}
+                    </span>
+                  )}
+                  {quotaRemaining !== null && (
+                    <span className="text-[10px] px-2 py-1 rounded-lg"
+                      style={{ background: 'rgba(0,119,181,0.10)', color: '#0077B5' }}>
+                      {quotaRemaining} restantes hoy
+                    </span>
+                  )}
+                </div>
               </div>
             )}
 
