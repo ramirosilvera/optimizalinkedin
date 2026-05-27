@@ -3961,10 +3961,15 @@ async function handleJobSaveToKanban(body, request, env, ctx, corsHeaders, verif
     targetColumnaId = radarCol?.id || cols?.[0]?.id || null
   }
 
-  // Dedup: if the same URL already exists in postulaciones for this user, return early
-  if (rec.url) {
+  // Dedup: check by URL first, fall back to company+title for URL-less jobs
+  {
+    const normalizedEmpresa = (rec.company || '').slice(0, 100).trim()
+    const normalizedPuesto  = (rec.title   || '').slice(0, 100).trim()
+    const dupQuery = rec.url
+      ? `user_id=eq.${user.id}&link_aviso=eq.${encodeURIComponent(rec.url)}&select=id&limit=1`
+      : `user_id=eq.${user.id}&empresa=eq.${encodeURIComponent(normalizedEmpresa)}&puesto=eq.${encodeURIComponent(normalizedPuesto)}&select=id&limit=1`
     const dupRes = await fetch(
-      `${env.SUPABASE_URL}/rest/v1/postulaciones?user_id=eq.${user.id}&link_aviso=eq.${encodeURIComponent(rec.url)}&select=id&limit=1`,
+      `${env.SUPABASE_URL}/rest/v1/postulaciones?${dupQuery}`,
       { headers: { apikey: env.SUPABASE_SERVICE_ROLE_KEY, Authorization: `Bearer ${env.SUPABASE_SERVICE_ROLE_KEY}` } }
     )
     const dups = await dupRes.json().catch(() => [])

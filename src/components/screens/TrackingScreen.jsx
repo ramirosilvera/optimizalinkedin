@@ -1,19 +1,37 @@
 import { useEffect } from 'react'
-import { STEPS, LI_GRADIENT, BTN_BACK_STYLE, BTN_GHOST_STYLE, INPUT_STYLE, INPUT_ALT_STYLE, trackEvent } from '../../constants'
-import { Spinner } from '../ui'
+import { STEPS, LI_GRADIENT, BTN_BACK_STYLE, BTN_GHOST_STYLE, INPUT_STYLE, trackEvent } from '../../constants'
 
-export default function TrackingScreen({ user, setShowPremiumModal, setStep, kanbanListMode, setKanbanListMode, trackingColumnas, trackingCards, trackingLoading, trackingError, showAddCard, setShowAddCard, newCardForm, setNewCardForm, editCard, setEditCard, showAddColumna, setShowAddColumna, newColumnaName, setNewColumnaName, newColumnaColor, setNewColumnaColor, renameColumna, setRenameColumna, createCard, updateCard, deleteCard, createColumna, updateColumna, deleteColumna, moveCard, setInterviewJobContext, resetInterview, cvFinalData, loadTracking, setShowJobModal, setJobCvForAdapter, setJobPosting }) {
+export default function TrackingScreen({
+  user, setShowPremiumModal, setStep, kanbanListMode, setKanbanListMode,
+  trackingColumnas, trackingCards, trackingLoading, trackingError,
+  showAddCard, setShowAddCard, newCardForm, setNewCardForm,
+  editCard, setEditCard, showAddColumna, setShowAddColumna,
+  newColumnaName, setNewColumnaName, newColumnaColor, setNewColumnaColor,
+  renameColumna, setRenameColumna,
+  createCard, updateCard, deleteCard, createColumna, updateColumna, deleteColumna, moveCard,
+  setInterviewJobContext, resetInterview, cvFinalData, loadTracking,
+  setShowJobModal, setJobCvForAdapter, setJobPosting, addToast,
+}) {
   useEffect(() => {
     if (user?.es_premium && typeof loadTracking === 'function') {
       loadTracking()
     }
   }, [])
 
+  const aplicadoCol = trackingColumnas.find(c => c.nombre === 'Aplicado')
+
+  const handleAplicar = async (card) => {
+    if (!aplicadoCol) return
+    if (card.link_aviso) window.open(card.link_aviso, '_blank', 'noopener,noreferrer')
+    await moveCard(card.id, aplicadoCol.id).catch(() => {})
+    addToast?.('✓ Movido a Aplicado', 'success')
+    trackEvent('kanban_aplicar_clicked', { empresa: card.empresa, puesto: card.puesto })
+  }
+
   return (
     <>
       <div className="step-transition w-full" style={{ minHeight: '70vh' }}>
         {!user?.es_premium ? (
-          /* Non-premium teaser */
           <div className="text-center space-y-5 py-12 px-4">
             <div className="text-5xl">📍</div>
             <h2 className="text-xl font-bold" style={{ color: '#0d2137' }}>Seguimiento de Postulaciones</h2>
@@ -64,13 +82,14 @@ export default function TrackingScreen({ user, setShowPremiumModal, setStep, kan
                 <p className="text-xs mt-2" style={{ color: '#64748b' }}>Cargando tablero...</p>
               </div>
             ) : kanbanListMode ? (
-              /* ── Lista view (mobile-friendly) ── */
+              /* ── Lista view ── */
               <div className="space-y-2">
                 {trackingCards.length === 0 ? (
                   <p className="text-center text-sm py-10" style={{ color: '#94a3b8' }}>No hay postulaciones cargadas aún.</p>
                 ) : (
                   trackingCards.map(card => {
                     const col = trackingColumnas.find(c => c.id === card.columna_id)
+                    const isRadar = col?.nombre === 'Radar Laboral'
                     return (
                       <div key={card.id} className="rounded-xl p-3 flex items-start gap-3"
                         style={{ background: 'white', border: '1px solid rgba(0,0,0,0.08)', boxShadow: '0 1px 4px rgba(0,0,0,0.04)' }}>
@@ -88,6 +107,14 @@ export default function TrackingScreen({ user, setShowPremiumModal, setStep, kan
                           </div>
                           {card.fecha_aplicacion && <p className="text-[10px] mt-0.5" style={{ color: '#94a3b8' }}>{card.fecha_aplicacion}</p>}
                           <div className="flex gap-2 mt-2 flex-wrap">
+                            {isRadar && aplicadoCol && (
+                              <button
+                                onClick={() => handleAplicar(card)}
+                                className="text-xs px-2.5 py-1 rounded-lg font-semibold text-white"
+                                style={{ background: 'linear-gradient(135deg,#0d2137,#0077B5)' }}>
+                                Aplicar →
+                              </button>
+                            )}
                             <button onClick={() => setEditCard(card)}
                               className="text-xs px-2.5 py-1 rounded-lg font-medium"
                               style={BTN_GHOST_STYLE}>
@@ -121,7 +148,7 @@ export default function TrackingScreen({ user, setShowPremiumModal, setStep, kan
                               }}
                               className="text-xs px-2.5 py-1 rounded-lg font-medium text-white"
                               style={{ background: 'linear-gradient(135deg,#6366f1,#8b5cf6)' }}>
-                              🎙️ Preparar entrevista
+                              🎙️ Entrevista
                             </button>
                           </div>
                         </div>
@@ -132,12 +159,13 @@ export default function TrackingScreen({ user, setShowPremiumModal, setStep, kan
               </div>
             ) : (
               /* ── Kanban board — horizontal scroll ── */
-              <div className="overflow-x-auto pb-4">
-                <div className="flex gap-4" style={{ minWidth: `${Math.max(trackingColumnas.length, 1) * 260}px` }}>
+              <div className="overflow-x-auto pb-4 -mx-4 px-4">
+                <div className="flex gap-3" style={{ minWidth: `${Math.max(trackingColumnas.length, 1) * 232}px` }}>
                   {trackingColumnas.map(col => {
                     const cards = trackingCards.filter(c => c.columna_id === col.id)
+                    const isRadarCol = col.nombre === 'Radar Laboral'
                     return (
-                      <div key={col.id} className="flex-shrink-0 rounded-xl flex flex-col" style={{ width: 248, background: '#f8fafc', border: '1px solid rgba(0,0,0,0.07)' }}>
+                      <div key={col.id} className="flex-shrink-0 rounded-xl flex flex-col" style={{ width: 220, background: '#f8fafc', border: '1px solid rgba(0,0,0,0.07)' }}>
                         {/* Column header */}
                         <div className="flex items-center justify-between px-3 py-2.5 rounded-t-xl"
                           style={{ background: col.color + '18', borderBottom: `2px solid ${col.color}` }}>
@@ -159,23 +187,33 @@ export default function TrackingScreen({ user, setShowPremiumModal, setStep, kan
                           </div>
                         </div>
                         {/* Cards */}
-                        <div className="flex flex-col gap-2 p-2 flex-1 overflow-y-auto" style={{ maxHeight: 480 }}>
+                        <div className="flex flex-col gap-2 p-2 flex-1 overflow-y-auto" style={{ maxHeight: 520 }}>
                           {cards.map(card => (
-                            <div key={card.id} className="rounded-lg p-3 space-y-1"
+                            <div key={card.id} className="rounded-lg p-3 space-y-1.5"
                               style={{ background: 'white', border: '1px solid rgba(0,0,0,0.08)' }}>
                               <div className="cursor-pointer" onClick={() => setEditCard(card)}>
                                 <p className="text-xs font-bold truncate" style={{ color: '#0d2137' }}>{card.empresa}</p>
                                 <p className="text-xs truncate" style={{ color: '#0077B5' }}>{card.puesto}</p>
-                                <p className="text-xs" style={{ color: '#94a3b8' }}>{card.fecha_aplicacion}</p>
+                                {card.fecha_aplicacion && (
+                                  <p className="text-[10px]" style={{ color: '#94a3b8' }}>{card.fecha_aplicacion}</p>
+                                )}
                                 {card.cv_data && (
-                                  <span className="inline-block text-xs px-1.5 py-0.5 rounded"
+                                  <span className="inline-block text-[10px] px-1.5 py-0.5 rounded"
                                     style={{ background: 'rgba(0,119,181,0.08)', color: '#0077B5' }}>📄 CV</span>
                                 )}
                                 {card.notas && (
-                                  <p className="text-xs line-clamp-2 italic" style={{ color: '#64748b' }}>{card.notas}</p>
+                                  <p className="text-[10px] line-clamp-2 italic" style={{ color: '#64748b' }}>{card.notas}</p>
                                 )}
                               </div>
                               <div className="flex gap-1 mt-1 flex-wrap">
+                                {isRadarCol && aplicadoCol && (
+                                  <button
+                                    onClick={() => handleAplicar(card)}
+                                    className="w-full py-1.5 rounded-md text-[10px] font-semibold text-white"
+                                    style={{ background: 'linear-gradient(135deg,#0d2137,#0077B5)' }}>
+                                    Aplicar →
+                                  </button>
+                                )}
                                 {cvFinalData && setShowJobModal && (
                                   <button
                                     onClick={() => {
@@ -192,7 +230,7 @@ export default function TrackingScreen({ user, setShowPremiumModal, setStep, kan
                                     }}
                                     className="flex-1 text-[10px] py-1 rounded-md font-medium"
                                     style={{ background: 'rgba(5,150,105,0.10)', color: '#059669', border: '1px solid rgba(5,150,105,0.2)' }}>
-                                    📄 Adaptar CV
+                                    📄 CV
                                   </button>
                                 )}
                                 <button
@@ -204,7 +242,7 @@ export default function TrackingScreen({ user, setShowPremiumModal, setStep, kan
                                   }}
                                   className="flex-1 text-[10px] py-1 rounded-md font-medium text-white"
                                   style={{ background: 'linear-gradient(135deg,#6366f1,#8b5cf6)' }}>
-                                  🎙️ Entrevista
+                                  🎙️
                                 </button>
                               </div>
                             </div>
@@ -212,7 +250,7 @@ export default function TrackingScreen({ user, setShowPremiumModal, setStep, kan
                           <button onClick={() => { setNewCardForm({ empresa: '', puesto: '', link_aviso: '', fecha_aplicacion: new Date().toISOString().slice(0, 10), notas: '' }); setShowAddCard(col.id) }}
                             className="w-full py-2 rounded-lg text-xs font-medium text-center transition-colors hover:bg-slate-100"
                             style={{ border: '1px dashed rgba(0,0,0,0.15)', color: '#94a3b8' }}>
-                            + Agregar postulación
+                            + Agregar
                           </button>
                         </div>
                       </div>
@@ -233,11 +271,12 @@ export default function TrackingScreen({ user, setShowPremiumModal, setStep, kan
 
       {/* ── Modal: Agregar columna ── */}
       {showAddColumna && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center px-4"
+        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center"
           style={{ background: 'rgba(0,0,0,0.5)', backdropFilter: 'blur(4px)' }}
           onClick={e => { if (e.target === e.currentTarget) setShowAddColumna(false) }}>
-          <div className="w-full max-w-xs rounded-2xl p-6 space-y-4"
-            style={{ background: 'white', boxShadow: '0 20px 60px rgba(0,0,0,0.2)' }}>
+          <div className="w-full sm:max-w-xs rounded-t-2xl sm:rounded-2xl p-6 space-y-4"
+            style={{ background: 'white', boxShadow: '0 -4px 40px rgba(0,0,0,0.18)', paddingBottom: 'max(1.5rem, env(safe-area-inset-bottom))' }}>
+            <div className="w-10 h-1 bg-slate-200 rounded-full mx-auto sm:hidden mb-2" />
             <h3 className="text-base font-bold" style={{ color: '#0d2137' }}>Nueva columna</h3>
             <div className="space-y-3">
               <input
@@ -245,7 +284,7 @@ export default function TrackingScreen({ user, setShowPremiumModal, setStep, kan
                 placeholder="Nombre de la columna"
                 value={newColumnaName}
                 onChange={e => setNewColumnaName(e.target.value)}
-                className="w-full px-3 py-2.5 rounded-xl text-sm outline-none"
+                className="w-full px-3 py-3 rounded-xl text-sm outline-none"
                 style={INPUT_STYLE}
                 maxLength={50}
                 onKeyDown={e => e.key === 'Enter' && newColumnaName.trim() && createColumna(newColumnaName.trim(), newColumnaColor).then(() => { setShowAddColumna(false); setNewColumnaName(''); setNewColumnaColor('#64748b') }).catch(() => {})}
@@ -253,22 +292,22 @@ export default function TrackingScreen({ user, setShowPremiumModal, setStep, kan
               <div className="flex items-center gap-3">
                 <label className="text-xs font-medium" style={{ color: '#475569' }}>Color:</label>
                 <input type="color" value={newColumnaColor} onChange={e => setNewColumnaColor(e.target.value)} className="w-8 h-8 rounded cursor-pointer border-0" />
-                <div className="flex gap-1.5 flex-wrap">
-                  {['#64748b','#0077B5','#16a34a','#dc2626','#d97706','#7c3aed'].map(c => (
+                <div className="flex gap-2 flex-wrap">
+                  {['#64748b','#0077B5','#16a34a','#dc2626','#d97706','#7c3aed','#c2185b'].map(c => (
                     <button key={c} onClick={() => setNewColumnaColor(c)}
-                      className="w-5 h-5 rounded-full border-2 transition-transform hover:scale-110"
+                      className="w-6 h-6 rounded-full border-2 transition-transform active:scale-110"
                       style={{ background: c, borderColor: newColumnaColor === c ? '#0d2137' : 'transparent' }} />
                   ))}
                 </div>
               </div>
             </div>
-            <div className="flex gap-2">
+            <div className="flex gap-2 pt-1">
               <button onClick={() => setShowAddColumna(false)}
-                className="flex-1 py-2 rounded-xl text-sm" style={BTN_BACK_STYLE}>Cancelar</button>
+                className="flex-1 py-3 rounded-xl text-sm font-medium" style={BTN_BACK_STYLE}>Cancelar</button>
               <button
                 disabled={!newColumnaName.trim()}
                 onClick={() => createColumna(newColumnaName.trim(), newColumnaColor).then(() => { setShowAddColumna(false); setNewColumnaName(''); setNewColumnaColor('#64748b') }).catch(() => {})}
-                className="flex-1 py-2 rounded-xl text-sm font-semibold text-white"
+                className="flex-1 py-3 rounded-xl text-sm font-semibold text-white"
                 style={{ background: newColumnaName.trim() ? LI_GRADIENT : 'rgba(0,0,0,0.2)' }}>
                 Crear
               </button>
@@ -279,40 +318,41 @@ export default function TrackingScreen({ user, setShowPremiumModal, setStep, kan
 
       {/* ── Modal: Renombrar columna ── */}
       {renameColumna && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center px-4"
+        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center"
           style={{ background: 'rgba(0,0,0,0.5)', backdropFilter: 'blur(4px)' }}
           onClick={e => { if (e.target === e.currentTarget) setRenameColumna(null) }}>
-          <div className="w-full max-w-xs rounded-2xl p-6 space-y-4"
-            style={{ background: 'white', boxShadow: '0 20px 60px rgba(0,0,0,0.2)' }}>
+          <div className="w-full sm:max-w-xs rounded-t-2xl sm:rounded-2xl p-6 space-y-4"
+            style={{ background: 'white', boxShadow: '0 -4px 40px rgba(0,0,0,0.18)', paddingBottom: 'max(1.5rem, env(safe-area-inset-bottom))' }}>
+            <div className="w-10 h-1 bg-slate-200 rounded-full mx-auto sm:hidden mb-2" />
             <h3 className="text-base font-bold" style={{ color: '#0d2137' }}>Editar columna</h3>
             <div className="space-y-3">
               <input
                 autoFocus
                 value={renameColumna.nombre}
                 onChange={e => setRenameColumna(prev => ({ ...prev, nombre: e.target.value }))}
-                className="w-full px-3 py-2.5 rounded-xl text-sm outline-none"
+                className="w-full px-3 py-3 rounded-xl text-sm outline-none"
                 style={INPUT_STYLE}
                 maxLength={50}
               />
               <div className="flex items-center gap-3">
                 <label className="text-xs font-medium" style={{ color: '#475569' }}>Color:</label>
                 <input type="color" value={renameColumna.color} onChange={e => setRenameColumna(prev => ({ ...prev, color: e.target.value }))} className="w-8 h-8 rounded cursor-pointer border-0" />
-                <div className="flex gap-1.5 flex-wrap">
-                  {['#64748b','#0077B5','#16a34a','#dc2626','#d97706','#7c3aed'].map(c => (
+                <div className="flex gap-2 flex-wrap">
+                  {['#64748b','#0077B5','#16a34a','#dc2626','#d97706','#7c3aed','#c2185b'].map(c => (
                     <button key={c} onClick={() => setRenameColumna(prev => ({ ...prev, color: c }))}
-                      className="w-5 h-5 rounded-full border-2 transition-transform hover:scale-110"
+                      className="w-6 h-6 rounded-full border-2 transition-transform active:scale-110"
                       style={{ background: c, borderColor: renameColumna.color === c ? '#0d2137' : 'transparent' }} />
                   ))}
                 </div>
               </div>
             </div>
-            <div className="flex gap-2">
+            <div className="flex gap-2 pt-1">
               <button onClick={() => setRenameColumna(null)}
-                className="flex-1 py-2 rounded-xl text-sm" style={BTN_BACK_STYLE}>Cancelar</button>
+                className="flex-1 py-3 rounded-xl text-sm font-medium" style={BTN_BACK_STYLE}>Cancelar</button>
               <button
                 disabled={!renameColumna.nombre.trim()}
                 onClick={() => updateColumna(renameColumna.id, { nombre: renameColumna.nombre.trim(), color: renameColumna.color }).then(() => setRenameColumna(null)).catch(() => {})}
-                className="flex-1 py-2 rounded-xl text-sm font-semibold text-white"
+                className="flex-1 py-3 rounded-xl text-sm font-semibold text-white"
                 style={{ background: renameColumna.nombre.trim() ? LI_GRADIENT : 'rgba(0,0,0,0.2)' }}>
                 Guardar
               </button>
@@ -323,13 +363,16 @@ export default function TrackingScreen({ user, setShowPremiumModal, setStep, kan
 
       {/* ── Modal: Agregar postulación ── */}
       {showAddCard && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center px-4 py-6 overflow-y-auto"
+        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center"
           style={{ background: 'rgba(0,0,0,0.5)', backdropFilter: 'blur(4px)' }}
           onClick={e => { if (e.target === e.currentTarget) setShowAddCard(null) }}>
-          <div className="w-full max-w-sm rounded-2xl p-6 space-y-4"
-            style={{ background: 'white', boxShadow: '0 20px 60px rgba(0,0,0,0.2)' }}>
-            <h3 className="text-base font-bold" style={{ color: '#0d2137' }}>Nueva postulación</h3>
-            <div className="space-y-3">
+          <div className="w-full sm:max-w-sm flex flex-col rounded-t-2xl sm:rounded-2xl"
+            style={{ background: 'white', boxShadow: '0 -4px 40px rgba(0,0,0,0.18)', maxHeight: '92dvh' }}>
+            <div className="w-10 h-1 bg-slate-200 rounded-full mx-auto mt-3 mb-1 sm:hidden shrink-0" />
+            <div className="px-5 pt-4 pb-2 shrink-0">
+              <h3 className="text-base font-bold" style={{ color: '#0d2137' }}>Nueva postulación</h3>
+            </div>
+            <div className="flex-1 overflow-y-auto px-5 pb-2 space-y-3">
               {[
                 { label: 'Empresa *', key: 'empresa', type: 'text', placeholder: 'Ej: Mercado Libre', max: 100 },
                 { label: 'Puesto *', key: 'puesto', type: 'text', placeholder: 'Ej: Product Manager', max: 100 },
@@ -344,7 +387,7 @@ export default function TrackingScreen({ user, setShowPremiumModal, setStep, kan
                     onChange={e => setNewCardForm(prev => ({ ...prev, [key]: e.target.value }))}
                     placeholder={placeholder}
                     maxLength={max}
-                    className="w-full px-3 py-2.5 rounded-xl text-sm outline-none"
+                    className="w-full px-3 py-3 rounded-xl text-sm outline-none"
                     style={INPUT_STYLE}
                   />
                 </div>
@@ -356,21 +399,22 @@ export default function TrackingScreen({ user, setShowPremiumModal, setStep, kan
                   onChange={e => setNewCardForm(prev => ({ ...prev, notas: e.target.value }))}
                   placeholder="Requisitos, contacto, estado..."
                   rows={3}
-                  className="w-full px-3 py-2.5 rounded-xl text-sm outline-none resize-none"
+                  className="w-full px-3 py-3 rounded-xl text-sm outline-none resize-none"
                   style={INPUT_STYLE}
                 />
               </div>
             </div>
-            <div className="flex gap-2">
+            <div className="px-5 pt-3 shrink-0 flex gap-2 border-t border-slate-100"
+              style={{ paddingBottom: 'max(1.25rem, env(safe-area-inset-bottom))' }}>
               <button onClick={() => setShowAddCard(null)}
-                className="flex-1 py-2 rounded-xl text-sm" style={BTN_BACK_STYLE}>Cancelar</button>
+                className="flex-1 py-3 rounded-xl text-sm font-medium" style={BTN_BACK_STYLE}>Cancelar</button>
               <button
                 disabled={!newCardForm.empresa.trim() || !newCardForm.puesto.trim()}
                 onClick={() => {
                   if (!newCardForm.empresa.trim() || !newCardForm.puesto.trim()) return
                   createCard(showAddCard, newCardForm).then(() => setShowAddCard(null)).catch(() => {})
                 }}
-                className="flex-1 py-2.5 rounded-xl text-sm font-semibold text-white"
+                className="flex-1 py-3 rounded-xl text-sm font-semibold text-white"
                 style={{ background: newCardForm.empresa.trim() && newCardForm.puesto.trim() ? LI_GRADIENT : 'rgba(0,0,0,0.2)' }}>
                 Agregar
               </button>
@@ -379,26 +423,30 @@ export default function TrackingScreen({ user, setShowPremiumModal, setStep, kan
         </div>
       )}
 
-      {/* ── Modal: Editar postulación ── */}
+      {/* ── Modal: Editar postulación — mobile-first bottom sheet ── */}
       {editCard && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center px-4 py-6 overflow-y-auto"
+        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center"
           style={{ background: 'rgba(0,0,0,0.5)', backdropFilter: 'blur(4px)' }}
           onClick={e => { if (e.target === e.currentTarget) setEditCard(null) }}>
-          <div className="w-full max-w-sm rounded-2xl p-6 space-y-4"
-            style={{ background: 'white', boxShadow: '0 20px 60px rgba(0,0,0,0.2)' }}>
-            <div className="flex items-center justify-between">
+          <div className="w-full sm:max-w-sm flex flex-col rounded-t-2xl sm:rounded-2xl"
+            style={{ background: 'white', boxShadow: '0 -4px 40px rgba(0,0,0,0.18)', maxHeight: '92dvh' }}>
+            {/* Drag handle — mobile only */}
+            <div className="w-10 h-1 bg-slate-200 rounded-full mx-auto mt-3 mb-1 sm:hidden shrink-0" />
+            {/* Header */}
+            <div className="flex items-center justify-between px-5 pt-4 pb-2 shrink-0">
               <h3 className="text-base font-bold" style={{ color: '#0d2137' }}>Editar postulación</h3>
               <button onClick={async () => {
                 if (confirm(`¿Eliminar "${editCard.empresa} — ${editCard.puesto}"?`)) {
                   await deleteCard(editCard.id)
                   setEditCard(null)
                 }
-              }} className="text-xs px-2 py-1 rounded-lg hover:bg-red-50 transition-colors"
+              }} className="text-xs px-2.5 py-1.5 rounded-lg"
                 style={{ color: '#dc2626', border: '1px solid rgba(220,38,38,0.2)' }}>
                 🗑 Eliminar
               </button>
             </div>
-            <div className="space-y-3">
+            {/* Scrollable body */}
+            <div className="flex-1 overflow-y-auto px-5 pb-2 space-y-3">
               {[
                 { label: 'Empresa *', key: 'empresa', type: 'text', max: 100 },
                 { label: 'Puesto *', key: 'puesto', type: 'text', max: 100 },
@@ -412,7 +460,7 @@ export default function TrackingScreen({ user, setShowPremiumModal, setStep, kan
                     value={editCard[key] || ''}
                     onChange={e => setEditCard(prev => ({ ...prev, [key]: e.target.value }))}
                     maxLength={max}
-                    className="w-full px-3 py-2.5 rounded-xl text-sm outline-none"
+                    className="w-full px-3 py-3 rounded-xl text-sm outline-none"
                     style={INPUT_STYLE}
                   />
                 </div>
@@ -422,7 +470,7 @@ export default function TrackingScreen({ user, setShowPremiumModal, setStep, kan
                 <select
                   value={editCard.columna_id || ''}
                   onChange={e => setEditCard(prev => ({ ...prev, columna_id: e.target.value || null }))}
-                  className="w-full px-3 py-2.5 rounded-xl text-sm outline-none"
+                  className="w-full px-3 py-3 rounded-xl text-sm outline-none"
                   style={INPUT_STYLE}>
                   <option value="">Sin columna</option>
                   {trackingColumnas.map(col => (
@@ -436,7 +484,7 @@ export default function TrackingScreen({ user, setShowPremiumModal, setStep, kan
                   value={editCard.notas || ''}
                   onChange={e => setEditCard(prev => ({ ...prev, notas: e.target.value }))}
                   rows={3}
-                  className="w-full px-3 py-2.5 rounded-xl text-sm outline-none resize-none"
+                  className="w-full px-3 py-3 rounded-xl text-sm outline-none resize-none"
                   style={INPUT_STYLE}
                 />
               </div>
@@ -450,17 +498,17 @@ export default function TrackingScreen({ user, setShowPremiumModal, setStep, kan
                       CV de <strong>{editCard.cv_data.nombreCompleto || 'candidato'}</strong> vinculado
                     </p>
                     <button onClick={() => setEditCard(prev => ({ ...prev, cv_data: null }))}
-                      className="text-xs px-2 py-1 rounded-lg"
+                      className="text-xs px-2.5 py-1.5 rounded-lg"
                       style={{ color: '#dc2626', border: '1px solid rgba(220,38,38,0.2)' }}>
                       Desvincular CV
                     </button>
                   </div>
                 ) : (
-                  <div className="space-y-1">
+                  <div className="space-y-1.5">
                     <p className="text-xs" style={{ color: '#94a3b8' }}>No hay CV vinculado a esta postulación.</p>
                     {cvFinalData && (
                       <button onClick={() => setEditCard(prev => ({ ...prev, cv_data: cvFinalData }))}
-                        className="text-xs px-2 py-1 rounded-lg font-medium"
+                        className="text-xs px-2.5 py-1.5 rounded-lg font-medium"
                         style={{ background: 'rgba(0,119,181,0.08)', color: '#0077B5', border: '1px solid rgba(0,119,181,0.2)' }}>
                         Vincular CV actual ({cvFinalData.nombreCompleto || 'sin nombre'})
                       </button>
@@ -469,9 +517,11 @@ export default function TrackingScreen({ user, setShowPremiumModal, setStep, kan
                 )}
               </div>
             </div>
-            <div className="flex gap-2">
+            {/* Sticky footer */}
+            <div className="px-5 pt-3 shrink-0 flex gap-2 border-t border-slate-100"
+              style={{ paddingBottom: 'max(1.25rem, env(safe-area-inset-bottom))' }}>
               <button onClick={() => setEditCard(null)}
-                className="flex-1 py-2 rounded-xl text-sm" style={BTN_BACK_STYLE}>Cancelar</button>
+                className="flex-1 py-3 rounded-xl text-sm font-medium" style={BTN_BACK_STYLE}>Cancelar</button>
               <button
                 disabled={!editCard.empresa?.trim() || !editCard.puesto?.trim()}
                 onClick={async () => {
@@ -480,7 +530,7 @@ export default function TrackingScreen({ user, setShowPremiumModal, setStep, kan
                   await updateCard(id, patch).catch(() => {})
                   setEditCard(null)
                 }}
-                className="flex-1 py-2.5 rounded-xl text-sm font-semibold text-white"
+                className="flex-1 py-3 rounded-xl text-sm font-semibold text-white"
                 style={{ background: editCard.empresa?.trim() && editCard.puesto?.trim() ? LI_GRADIENT : 'rgba(0,0,0,0.2)' }}>
                 Guardar
               </button>
