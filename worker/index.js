@@ -2106,14 +2106,14 @@ const JOB_DB_TTL_HOURS    = 24      // job_cache table TTL (aggregators)
 const JOB_SEARCH_TTL_SECS = 7_200  // job_searches row TTL (mirrors KV)
 const ATS_KV_TTL_SECS     = 79_200  // 22-hour KV cache for ATS company boards (date-keyed)
 const ATS_DB_TTL_HOURS    = 40      // ATS boards update slowly — longer DB TTL
-const JREC_KV_TTL_SECS    = 7_200  // 2-hour per-user AI score cache — skips Gemini on re-runs
-const JREC_PROMPT_VERSION = 'v2'   // bump when JOB_MATCHING_SYSTEM_PROMPT changes to bust stale KV
+const JREC_KV_TTL_SECS    = 86_400  // 24-hour per-user AI score cache — skips Gemini on re-runs
+const JREC_PROMPT_VERSION = 'v3'    // bump when JOB_MATCHING_SYSTEM_PROMPT changes to bust stale KV
 
-// Rate limits: job searches per user per day.
-// Free users get 5/day, premium get 30/day.
-// Key format: "jrl:{user_id_or_ip}:{YYYY-MM-DD}"
-const JOB_SEARCH_LIMIT_FREE    = 5
-const JOB_SEARCH_LIMIT_PREMIUM = 30
+// Rate limits for *new* (fresh) searches — cached re-visits bypass these entirely.
+// Premium: 1 new search/day  (cached same-day results shown for free)
+// Free:    1 new search/month
+const JOB_SEARCH_LIMIT_FREE    = 1
+const JOB_SEARCH_LIMIT_PREMIUM = 1
 
 // Max jobs to send to Gemini in a single matching call (token budget guard).
 // At ~500 tokens/job snippet, 40 jobs ≈ 20 K tokens input — well within Flash Lite limits.
@@ -2121,6 +2121,13 @@ const MAX_JOBS_FOR_AI_MATCHING = 40
 
 // Max description length stored in job_cache (chars). Prevents >8 KB JSONB blobs.
 const MAX_DESC_CHARS = 6_000
+
+// Sprint 5: Adaptive Expansion — Premium-only second-pass search layer.
+// Triggers when the initial AI scoring returns weak matches.
+const EXPANSION_THRESHOLD  = 7.5   // expand if top match_score < this (0–10 scale)
+const EXPANSION_MIN_HQ     = 3     // expand if fewer than N jobs score ≥ 7.0
+const EXPANSION_TIMEOUT_MS = 5_500 // hard cap on total expansion time (ms)
+const EXPANSION_GEMINI_MS  = 3_500 // Gemini timeout for expansion scoring pass
 
 // ══════════════════════════════════════════════════════════════════════════════
 // SECTION 1 — Job Data Normalization
@@ -2671,7 +2678,7 @@ async function fetchAtsCompanyBoard(atsType, company, env) {
   const slugOverride = await getAtsSlugOverride(atsType, company.slug, env)
   const slug = slugOverride || company.slug
   const ctrl = new AbortController()
-  const tid  = setTimeout(() => ctrl.abort(), 8_000)
+  const tid  = setTimeout(() => ctrl.abort(), 4_000)
   const UA   = 'OptimizaLK/2.0 (job-aggregator; https://optimizalinkedin.com)'
 
   let jobs = []
@@ -2951,11 +2958,199 @@ async function putJrecToKV(env, userId, queryHash, payload) {
   } catch { /* non-fatal */ }
 }
 
+// ── Profile hash — identifies same profile across searches (16 hex chars) ────
+async function computeProfileHash(profileText) {
+  const normalized = (profileText || '')
+    .toLowerCase()
+    .replace(/[^a-z0-9\s]/g, '')
+    .split(/\s+/)
+    .filter(w => w.length > 3)
+    .sort()
+    .join('|')
+    .slice(0, 2000)
+  const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(normalized))
+  return Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2, '0')).join('').slice(0, 16)
+}
+
+// ── radar_search_history helpers ─────────────────────────────────────────────
+async function getRadarCache(env, userId, profileHash, queryHash) {
+  if (!userId || !env.SUPABASE_SERVICE_ROLE_KEY) return null
+  try {
+    const res = await fetch(
+      `${env.SUPABASE_URL}/rest/v1/radar_search_history`
+      + `?user_id=eq.${userId}&profile_hash=eq.${profileHash}&query_hash=eq.${queryHash}`
+      + `&expires_at=gte.${new Date().toISOString()}&select=results,top_score,match_count,created_at&limit=1`,
+      { headers: { apikey: env.SUPABASE_SERVICE_ROLE_KEY, Authorization: `Bearer ${env.SUPABASE_SERVICE_ROLE_KEY}` } }
+    )
+    const rows = await res.json().catch(() => [])
+    return Array.isArray(rows) && rows[0]?.results ? rows[0] : null
+  } catch { return null }
+}
+
+async function putRadarCache(env, ctx, userId, profileHash, queryHash, recommendations, isPremium) {
+  if (!userId || !recommendations.length || !env.SUPABASE_SERVICE_ROLE_KEY) return
+  const ttlMs   = isPremium ? 86_400_000 : 30 * 86_400_000
+  const expires = new Date(Date.now() + ttlMs).toISOString()
+  const row = {
+    user_id:      userId,
+    profile_hash: profileHash,
+    query_hash:   queryHash,
+    results:      recommendations,
+    top_score:    Math.max(...recommendations.map(r => r.match_score || 0)),
+    match_count:  recommendations.length,
+    search_type:  'fresh',
+    expires_at:   expires,
+  }
+  const upsert = fetch(`${env.SUPABASE_URL}/rest/v1/radar_search_history`, {
+    method:  'POST',
+    headers: {
+      apikey:          env.SUPABASE_SERVICE_ROLE_KEY,
+      Authorization:   `Bearer ${env.SUPABASE_SERVICE_ROLE_KEY}`,
+      'Content-Type':  'application/json',
+      Prefer:          'resolution=merge-duplicates',
+    },
+    body: JSON.stringify(row),
+  }).catch(() => {})
+  if (ctx?.waitUntil) ctx.waitUntil(upsert)
+  else upsert
+}
+
 /**
  * Layer 2: Upsert fresh jobs into job_cache.
  * Returns an array of { id, source, external_id } objects (the saved rows).
  * Uses ON CONFLICT DO UPDATE to refresh fetched_at + expires_at on re-fetch.
  */
+// ── Sprint 5: Adaptive Expansion helpers ─────────────────────────────────────
+
+// Returns true when initial results are too weak to satisfy a user.
+function shouldTriggerExpansion(recommendations) {
+  if (!recommendations.length) return true
+  const topScore = recommendations[0]?.match_score ?? 0
+  const hqCount  = recommendations.filter(r => (r.match_score ?? 0) >= 7.0).length
+  return topScore < EXPANSION_THRESHOLD || hqCount < EXPANSION_MIN_HQ
+}
+
+// Lightweight Gemini call (50–80 output tokens) that suggests 1–2 alternative
+// search terms not covered by the user's initial queries.
+async function expandSearchTerms(env, profileText, existingQueries) {
+  const geminiKeys = (env.GEMINI_API_KEYS || env.GEMINI_API_KEY || '')
+    .split(',').map(k => k.trim()).filter(Boolean)
+  if (!geminiKeys.length) return []
+
+  const prompt =
+    `Profile: "${(profileText || '').slice(0, 350)}"\n` +
+    `Current searches: ${JSON.stringify(existingQueries)}\n` +
+    `Suggest 2 alternative job-title search terms that surface compatible roles NOT covered above. ` +
+    `Each term must be short (2–4 words). Respond ONLY with a JSON array. Example: ["Growth Manager","Head of CRM"]`
+
+  try {
+    const controller = new AbortController()
+    const tid = setTimeout(() => controller.abort(), 2_500)
+    const res = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/${DEFAULT_MODEL}:generateContent?key=${geminiKeys[0]}`,
+      {
+        method:  'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          contents:          [{ role: 'user', parts: [{ text: prompt }] }],
+          generationConfig:  { temperature: 0.4, maxOutputTokens: 60 },
+        }),
+        signal: controller.signal,
+      }
+    )
+    clearTimeout(tid)
+    if (!res.ok) return []
+    const d   = await res.json()
+    const raw = d?.candidates?.[0]?.content?.parts?.[0]?.text || ''
+    const arr = JSON.parse(raw.replace(/^```json\n?|\n?```$/g, '').trim())
+    return Array.isArray(arr) ? arr.slice(0, 2).filter(s => typeof s === 'string' && s.trim()) : []
+  } catch { return [] }
+}
+
+// Full expansion pass: generate new terms → fetch jobs → deduplicate → AI score.
+// Returns { recommendations: [...], count: N } or null if nothing new found.
+async function expandWithSearch(env, ctx, cleanQueries, location, remoteOk, profileText, existingHashes, requestedN) {
+  const newTerms = await expandSearchTerms(env, profileText, cleanQueries)
+  if (!newTerms.length) return null
+
+  const { jobs: rawExpanded } = await fetchAllSources(
+    newTerms.slice(0, 1), location, remoteOk, env, String(profileText)
+  )
+  const newJobs = rawExpanded
+    .filter(j => !existingHashes.has(canonicalJobHash(j)))
+    .slice(0, 15)
+  if (!newJobs.length) return null
+
+  const batchJobs  = newJobs.slice(0, 12)
+  const contents   = buildMatchingContents(String(profileText).slice(0, 2000), batchJobs)
+  const geminiKeys = (env.GEMINI_API_KEYS || env.GEMINI_API_KEY || '')
+    .split(',').map(k => k.trim()).filter(Boolean)
+  if (!geminiKeys.length) return null
+
+  let aiResult = null
+  try {
+    const controller = new AbortController()
+    const tid = setTimeout(() => controller.abort(), EXPANSION_GEMINI_MS)
+    const aiRes = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/${DEFAULT_MODEL}:generateContent?key=${geminiKeys[0]}`,
+      {
+        method:  'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          system_instruction: { parts: [{ text: JOB_MATCHING_SYSTEM_PROMPT }] },
+          contents,
+          generationConfig:   { temperature: 0.2, maxOutputTokens: 1024 },
+        }),
+        signal: controller.signal,
+      }
+    )
+    clearTimeout(tid)
+    if (aiRes.ok) {
+      const d   = await aiRes.json()
+      const raw = d?.candidates?.[0]?.content?.parts?.[0]?.text || ''
+      aiResult = JSON.parse(raw.replace(/^```json\n?|\n?```$/g, '').trim())
+    }
+  } catch { return null }
+
+  if (!aiResult?.matches) return null
+
+  const expandedRecs = (aiResult.matches || [])
+    .sort((a, b) => b.match_score - a.match_score)
+    .slice(0, requestedN)
+    .map(m => {
+      const job = batchJobs[m.job_index]
+      if (!job) return null
+      return {
+        job,
+        match_score:    Number((m.match_score || 0).toFixed(2)),
+        strengths:      Array.isArray(m.strengths) ? m.strengths.slice(0, 3) : [],
+        gaps:           Array.isArray(m.gaps)       ? m.gaps.slice(0, 2)     : [],
+        summary:        String(m.summary || ''),
+        rec_id:         null,
+        from_expansion: true,
+      }
+    }).filter(Boolean)
+
+  if (batchJobs.length) {
+    upsertJobsRaw(env, ctx, batchJobs)
+    upsertJobsNormalized(env, ctx, batchJobs)
+    upsertJobsAiEnriched(env, ctx, aiResult.matches || [], batchJobs)
+  }
+
+  return { recommendations: expandedRecs, count: expandedRecs.length }
+}
+
+// ── Sprint 3: canonical hash for cross-source deduplication ──────────────────
+// Normalizes company + title + location → stable key regardless of source.
+function canonicalJobHash(job) {
+  const norm = s => (s || '')
+    .toLowerCase()
+    .replace(/\b(sr|jr|senior|junior|semi\s*senior|ssr|lead|staff|principal)\b/gi, '')
+    .replace(/\b(s\.a\.|s\.r\.l\.|inc\.?|corp\.?|ltd\.?|gmbh)\b/gi, '')
+    .replace(/[^a-z0-9]/g, '')
+  return `${norm(job.company)}|${norm(job.title)}|${norm(job.location || 'remote')}`
+}
+
 async function upsertJobsToSupabase(env, ctx, jobs) {
   if (!jobs.length) return []
   const ATS_SOURCES = new Set(['greenhouse','lever','smartrecruiters','ashby'])
@@ -2966,6 +3161,7 @@ async function upsertJobsToSupabase(env, ctx, jobs) {
     return {
       source:          j.source,
       external_id:     j.external_id,
+      canonical_hash:  canonicalJobHash(j),
       title:           j.title,
       company:         j.company,
       description:     j.description,
@@ -3004,6 +3200,124 @@ async function upsertJobsToSupabase(env, ctx, jobs) {
   // Return the input jobs directly so we can proceed with AI matching immediately
   // without waiting for Supabase confirmation (optimistic path)
   return jobs
+}
+
+// ── Sprint 4: profession family inference (no AI call needed) ────────────────
+function inferProfessionFamily(title) {
+  const t = (title || '').toLowerCase()
+  if (/\b(rrhh|hrbp|recursos humanos|talent|people ops|hr |learning|capacitac|relaciones laborales|compensaciones|beneficios|cultura organizacional)\b/.test(t)) return 'HR/Personas'
+  if (/\b(financ|finanzas|contabilidad|contador|tesoreria|treasury|fp.a|controller|cfo|presupuesto|auditoria|impuestos|tax)\b/.test(t)) return 'Finanzas'
+  if (/\b(developer|engineer|frontend|backend|full.?stack|devops|data |cloud|mobile|software|ios|android|qa |testing|sre|platform|machine learning|data scien|analytics engineer|mlops|infra)\b/.test(t)) return 'Tecnología'
+  if (/\b(marketing|brand|growth|seo|sem|performance|social media|content|crm |digital|ecommerce|e-commerce|paid media|influencer|community)\b/.test(t)) return 'Marketing/Growth'
+  if (/\b(operat|operaciones|supply chain|logistic|logística|procurement|compras|produccion|manufactura|lean|calidad|quality|warehouse|almacen|distribucion)\b/.test(t)) return 'Operaciones'
+  if (/\b(sales|ventas|account executive|business development|comercial|key account|channel|revenue|inside sales|preventa)\b/.test(t)) return 'Ventas/BD'
+  if (/\b(legal|counsel|abogado|compliance|regulatory|juridic|contrato|contratos|privacidad|gdpr)\b/.test(t)) return 'Legal/Compliance'
+  if (/\b(country manager|general manager|director general|gm |ceo|coo|president|head of|vp |vice president|gerente general|managing director)\b/.test(t)) return 'Management General'
+  return null
+}
+
+// ── Sprint 4: write to jobs_raw (source provenance) ──────────────────────────
+async function upsertJobsRaw(env, ctx, jobs) {
+  if (!jobs.length) return
+  const now = new Date().toISOString()
+  const rows = jobs.map(j => ({
+    source:         j.source,
+    source_id:      String(j.external_id || j.id || ''),
+    company_slug:   j.company_slug || null,
+    canonical_hash: canonicalJobHash(j),
+    title:          j.title,
+    company:        j.company,
+    location:       j.location || null,
+    remote_ok:      j.remote || false,
+    url:            j.url,
+    posted_at:      j.posted_at || null,
+    fetched_at:     now,
+  })).filter(r => r.source_id)
+  if (!rows.length) return
+  const p = fetch(`${env.SUPABASE_URL}/rest/v1/jobs_raw`, {
+    method:  'POST',
+    headers: {
+      apikey:         env.SUPABASE_SERVICE_ROLE_KEY,
+      Authorization:  `Bearer ${env.SUPABASE_SERVICE_ROLE_KEY}`,
+      'Content-Type': 'application/json',
+      Prefer:         'resolution=ignore-duplicates,return=minimal',
+    },
+    body: JSON.stringify(rows),
+  }).catch(() => null)
+  if (ctx?.waitUntil) ctx.waitUntil(p)
+}
+
+// ── Sprint 4: upsert to jobs_normalized (deduplicated index) ─────────────────
+async function upsertJobsNormalized(env, ctx, jobs) {
+  if (!jobs.length) return
+  const now = new Date()
+  const ATS_SOURCES = new Set(['greenhouse','lever','smartrecruiters','ashby'])
+  const rows = jobs.map(j => {
+    const ttlHours = ATS_SOURCES.has(j.source) ? ATS_DB_TTL_HOURS : JOB_DB_TTL_HOURS
+    return {
+      canonical_hash:  canonicalJobHash(j),
+      title:           j.title,
+      company:         j.company,
+      location:        j.location || null,
+      remote_ok:       j.remote   || false,
+      description_md:  (j.description || '').slice(0, 1000),
+      url:             j.url,
+      apply_url:       j.apply_url || null,
+      salary_min:      j.salary_min      || null,
+      salary_max:      j.salary_max      || null,
+      salary_currency: j.currency        || null,
+      source:          j.source,
+      posted_at:       j.posted_at       || null,
+      last_seen_at:    now.toISOString(),
+      expires_at:      new Date(now.getTime() + ttlHours * 3_600_000).toISOString(),
+      active:          true,
+    }
+  })
+  const p = fetch(`${env.SUPABASE_URL}/rest/v1/jobs_normalized`, {
+    method:  'POST',
+    headers: {
+      apikey:         env.SUPABASE_SERVICE_ROLE_KEY,
+      Authorization:  `Bearer ${env.SUPABASE_SERVICE_ROLE_KEY}`,
+      'Content-Type': 'application/json',
+      Prefer:         'resolution=merge-duplicates,return=minimal',
+    },
+    body: JSON.stringify(rows),
+  }).catch(() => null)
+  if (ctx?.waitUntil) ctx.waitUntil(p)
+}
+
+// ── Sprint 4: upsert AI enrichment after scoring ──────────────────────────────
+async function upsertJobsAiEnriched(env, ctx, topMatches, jobPool) {
+  if (!topMatches.length) return
+  const now = new Date().toISOString()
+  const rows = topMatches.map(m => {
+    const job = jobPool[m.job_index]
+    if (!job) return null
+    const family = inferProfessionFamily(job.title)
+    if (!family && !job.seniority && !job.industry && !(job.skills_required?.length)) return null
+    return {
+      canonical_hash:    canonicalJobHash(job),
+      seniority:         job.seniority   || null,
+      profession_family: family          || null,
+      industry:          job.industry    || null,
+      skills_required:   job.skills_required || [],
+      skills_nice:       [],
+      enriched_at:       now,
+      model_version:     JREC_PROMPT_VERSION,
+    }
+  }).filter(Boolean)
+  if (!rows.length) return
+  const p = fetch(`${env.SUPABASE_URL}/rest/v1/jobs_ai_enriched`, {
+    method:  'POST',
+    headers: {
+      apikey:         env.SUPABASE_SERVICE_ROLE_KEY,
+      Authorization:  `Bearer ${env.SUPABASE_SERVICE_ROLE_KEY}`,
+      'Content-Type': 'application/json',
+      Prefer:         'resolution=merge-duplicates,return=minimal',
+    },
+    body: JSON.stringify(rows),
+  }).catch(() => null)
+  if (ctx?.waitUntil) ctx.waitUntil(p)
 }
 
 /**
@@ -3131,101 +3445,114 @@ Lista numerada de avisos laborales.
 TU TAREA
 ━━━━━━━━━━━━━━━━━━━━━━━
 
-Calcular:
-match_score:
-0-10
+PASO 1 — CLASIFICAR AL CANDIDATO:
+Identificá la familia profesional del candidato
+basándote en su rol más reciente y trayectoria.
 
-Priorizando:
+FAMILIAS PROFESIONALES (8):
+
+HR/Personas: RRHH, HRBP, Talent Manager, People Lead, Compensaciones, DO, Recruiting, HR Operations
+Finanzas: Finance Manager, FP&A, Controller, Tesorería, Contabilidad, CFO, Cost Analyst
+Tecnología: Backend, Frontend, Full Stack, DevOps, QA, Data Engineer, Tech Lead, CTO, Platform
+Marketing/Growth: Brand Manager, Performance, Growth, Community, Content, Marketing Manager
+Operaciones: Operations Manager, Supply Chain, Logística, Procurement, Facilities, Process
+Ventas/BD: Sales Manager, Account Executive, BD Manager, Key Account, Sales Engineer
+Legal/Compliance: Counsel, Compliance Officer, Legal Manager, Paralegal
+Management General: Country Manager, GM, BU Head, CEO, Dirección General, Regional Director
+
+━━━━━━━━━━━━━━━━━━━━━━━
+
+PASO 2 — CALCULAR match_score (0-10):
 
 1.
-FUNCIÓN / PROFESIÓN / ÁREA
-(35%)
+FAMILIA PROFESIONAL / FUNCIÓN
+(40%)
 
-La coincidencia funcional:
+La coincidencia de familia profesional:
 es el criterio MÁS importante.
 
-Evaluá:
-si el rol:
-pertenece:
-a la misma disciplina profesional.
+Misma familia exacta: puntaje completo (4.0/4.0)
+Familia adyacente: hasta 2.5/4.0
+Familia diferente: hasta 1.0/4.0
 
-Ejemplos:
-
-✅ RRHH → HRBP / Talent / People / HR Manager
+Ejemplos de misma familia:
+✅ HR/Personas → HRBP / Talent / People / HR Manager
 ✅ Finanzas → FP&A / Controller / Finance Manager
 ✅ Marketing → Brand / Growth / Performance
 ✅ Legal → Compliance / Corporate Legal
-
-Penalizá:
-cambios de función fuertes
-aunque existan skills compartidas.
+✅ Tecnología → Backend / Full Stack / DevOps / Data Eng
 
 ━━━━━━━━━━━━━━━━━━━━━━━
 2.
 SENIORITY Y EXPERIENCIA
-(25%)
+(20%)
 
-Evaluá:
-coherencia de seniority.
-
-Tolerancia:
-±1 nivel.
-
-Ejemplo:
-SSR puede aplicar Senior
-si el resto alinea.
-
-Penalizar:
-roles muy junior
-para perfiles gerenciales.
+Evaluá coherencia de seniority.
+Tolerancia: ±1 nivel.
+SSR puede aplicar Senior si el resto alinea.
+Penalizar: roles muy junior para perfiles gerenciales.
 
 ━━━━━━━━━━━━━━━━━━━━━━━
 3.
 HABILIDADES TÉCNICAS Y FUNCIONALES
-(20%)
+(12%)
 
-Evaluar:
-skills reales relevantes.
+Evaluar: skills ESPECÍFICAS del rol.
 
-IMPORTANTE:
-No sobreponderar:
-skills genéricas como:
+NO sobreponderar skills genéricas:
 - liderazgo
 - Excel
 - comunicación
 - analytics
 - gestión
 
-porque aparecen:
-en muchísimos roles distintos.
+Solo pesan las skills técnicas y funcionales
+específicas del dominio profesional.
 
-“Nice to have”
-NO penaliza.
+“Nice to have” NO penaliza.
 
 ━━━━━━━━━━━━━━━━━━━━━━━
 4.
 INDUSTRIA Y CONTEXTO
-(10%)
+(8%)
 
-Valorar:
-transferibilidad razonable
-entre industrias afines.
-
-Ejemplo:
-HR Tech → Fintech → SaaS
-puede transferir bien.
+Transferibilidad razonable entre industrias afines.
+Ejemplo: HR Tech → Fintech → SaaS puede transferir.
 
 ━━━━━━━━━━━━━━━━━━━━━━━
 5.
 CONDICIONES LABORALES
-(10%)
+(8%)
 
-Para roles:
-100% remotos internacionales:
-
-si requiere inglés fluido
-y el candidato no lo tiene:
+Para roles 100% remotos internacionales:
+si requiere inglés fluido y el candidato no lo tiene:
 restar hasta 1.5 puntos.
+
+━━━━━━━━━━━━━━━━━━━━━━━
+VETOS DUROS POR FAMILIA
+━━━━━━━━━━━━━━━━━━━━━━━
+
+Aplicar caps máximos cuando las familias son incompatibles:
+
+Misma familia o adyacente directa:
+→ Sin cap (score libre hasta 10)
+
+Familia moderadamente diferente
+(ej: Marketing↔Operaciones, HR↔Finanzas sin evidencia):
+→ Score máximo: 6.0
+
+Familia muy diferente
+(ej: HR→Marketing, Finanzas→Ventas):
+→ Score máximo: 5.5
+
+Familia completamente diferente
+(ej: HR→Backend, Finanzas→Diseño, RRHH→Product Manager):
+→ Score máximo: 5.0
+→ Solo si el perfil muestra evidencia EXPLÍCITA de transición
+
+Si el perfil muestra evidencia clara de transición
+(bootcamp, portfolio, objetivo explícito, roles híbridos recientes):
+→ Cap puede subir hasta 1.5 puntos sobre lo indicado
 
 ━━━━━━━━━━━━━━━━━━━━━━━
 REGLAS CRÍTICAS
@@ -3371,7 +3698,7 @@ Formato exacto:
 function buildMatchingContents(profileText, jobs) {
   const jobList = jobs.slice(0, MAX_JOBS_FOR_AI_MATCHING).map((j, i) => {
     const desc = j.description
-      ? extractRelevantSection(j.description, 500)
+      ? extractRelevantSection(j.description, 350)
       : '(sin descripción)'
     const isAts = ['greenhouse','lever','smartrecruiters','ashby'].includes(j.source)
     return `[${i}] ${j.title} | ${j.company}${isAts ? ' ✓' : ''} | ${j.location || 'No especificado'} | ${j.remote ? 'Remoto' : 'Presencial'}
@@ -3393,29 +3720,46 @@ Descripción: ${desc}`
 
 /**
  * Check and increment job search rate limit.
- * Free users: 5/day | Premium users: 30/day
- * Key format: "jrl:{user_id_or_ip}:{YYYY-MM-DD}"
+ * Premium users: 1 fresh search/day (cached re-visits bypass this entirely)
+ * Free/anonymous: 1 fresh search/month
+ * Key format:
+ *   premium → "jrl:p:{identity}:{YYYY-MM-DD}"
+ *   free    → "jrl:f:{identity}:{YYYY-MM}"
  *
- * Returns { ok: boolean, count: number, limit: number }
+ * Returns { ok: boolean, count: number, limit: number, nextReset: string }
  */
 async function checkJobSearchRateLimit(env, userId, ip, isPremium) {
-  if (!env.RATE_LIMIT_KV) return { ok: true, count: 0, limit: 99 }
+  if (!env.RATE_LIMIT_KV) return { ok: true, count: 0, limit: 99, nextReset: null }
 
-  const today     = new Date().toISOString().slice(0, 10)   // 'YYYY-MM-DD'
-  const identity  = userId || ip                             // user_id preferred; IP fallback
-  const kvKey     = `jrl:${identity}:${today}`
-  const limit     = isPremium ? JOB_SEARCH_LIMIT_PREMIUM : JOB_SEARCH_LIMIT_FREE
+  const identity = userId || ip
+  const now      = new Date()
 
-  const current = parseInt((await env.RATE_LIMIT_KV.get(kvKey)) || '0', 10)
-  if (current >= limit) return { ok: false, count: current, limit }
-
-  // Expires at end of calendar day (UTC)
-  const midnight = new Date()
-  midnight.setUTCHours(24, 0, 0, 0)
-  const ttlSecs = Math.floor((midnight.getTime() - Date.now()) / 1000)
-  await env.RATE_LIMIT_KV.put(kvKey, String(current + 1), { expirationTtl: ttlSecs })
-
-  return { ok: true, count: current + 1, limit }
+  if (isPremium) {
+    const day    = now.toISOString().slice(0, 10)
+    const kvKey  = `jrl:p:${identity}:${day}`
+    const current = parseInt((await env.RATE_LIMIT_KV.get(kvKey)) || '0', 10)
+    if (current >= JOB_SEARCH_LIMIT_PREMIUM) {
+      const midnight = new Date(); midnight.setUTCHours(24, 0, 0, 0)
+      return { ok: false, count: current, limit: JOB_SEARCH_LIMIT_PREMIUM, nextReset: midnight.toISOString() }
+    }
+    const midnight = new Date(); midnight.setUTCHours(24, 0, 0, 0)
+    const ttlSecs = Math.floor((midnight.getTime() - Date.now()) / 1000)
+    await env.RATE_LIMIT_KV.put(kvKey, String(current + 1), { expirationTtl: ttlSecs })
+    return { ok: true, count: current + 1, limit: JOB_SEARCH_LIMIT_PREMIUM, nextReset: midnight.toISOString() }
+  } else {
+    // Free users: 1/month
+    const month   = now.toISOString().slice(0, 7)  // 'YYYY-MM'
+    const kvKey   = `jrl:f:${identity}:${month}`
+    const current = parseInt((await env.RATE_LIMIT_KV.get(kvKey)) || '0', 10)
+    if (current >= JOB_SEARCH_LIMIT_FREE) {
+      const firstNextMonth = new Date(now.getFullYear(), now.getMonth() + 1, 1)
+      return { ok: false, count: current, limit: JOB_SEARCH_LIMIT_FREE, nextReset: firstNextMonth.toISOString() }
+    }
+    const firstNextMonth = new Date(now.getFullYear(), now.getMonth() + 1, 1)
+    const ttlSecs = Math.floor((firstNextMonth.getTime() - Date.now()) / 1000)
+    await env.RATE_LIMIT_KV.put(kvKey, String(current + 1), { expirationTtl: ttlSecs })
+    return { ok: true, count: current + 1, limit: JOB_SEARCH_LIMIT_FREE, nextReset: firstNextMonth.toISOString() }
+  }
 }
 
 
@@ -3611,15 +3955,41 @@ async function handleAiJobRecommendations(body, request, env, ctx, corsHeaders, 
     } catch { /* default false */ }
   }
 
+  // ── radar_search_history: daily persistence check ────────────────────────
+  // If the user already ran a fresh search today (premium) or this month (free),
+  // serve the stored results immediately — no Gemini call, no rate limit decrement.
+  const profileHash = user_id ? await computeProfileHash(String(profile_text)) : null
+  const cleanQueriesForHash = queries.map(q => String(q).trim().slice(0, 100)).filter(Boolean).slice(0, 3)
+  const queryHashEarly = user_id ? await hashQueryParams(cleanQueriesForHash, location, remote_ok) : null
+
+  if (user_id && profileHash && queryHashEarly) {
+    const radarCache = await getRadarCache(env, user_id, profileHash, queryHashEarly)
+    if (radarCache?.results?.length) {
+      return new Response(
+        JSON.stringify({
+          ok:                  true,
+          recommendations:     radarCache.results,
+          total_jobs_analyzed: radarCache.match_count || radarCache.results.length,
+          from_cache:          true,
+          cached_today:        true,
+          cache_timestamp:     radarCache.created_at,
+          quota_remaining:     0,
+        }),
+        { status: 200, headers: corsHeaders }
+      )
+    }
+  }
+
   // ── Rate limit ─────────────────────────────────────────────────────────────
   const rl = await checkJobSearchRateLimit(env, user_id, ip, isPremium)
   if (!rl.ok) {
     return new Response(
       JSON.stringify({
         error: isPremium
-          ? `Límite diario de recomendaciones alcanzado (${rl.limit}/día para Premium).`
-          : `Límite diario alcanzado (${rl.limit}/día para usuarios gratuitos). Actualizá a Premium para ${JOB_SEARCH_LIMIT_PREMIUM} búsquedas/día.`,
+          ? `Tu búsqueda de hoy ya fue utilizada. Se renueva a las 00:00 UTC.`
+          : `Usaste tu búsqueda de este mes. Se renueva el 1 del próximo mes.`,
         quota_remaining: 0,
+        next_reset:      rl.nextReset,
       }),
       { status: 429, headers: corsHeaders }
     )
@@ -3642,6 +4012,8 @@ async function handleAiJobRecommendations(body, request, env, ctx, corsHeaders, 
       jobs = freshJobs
       await putJobsToKV(env, queryHash, freshJobs)
       await upsertJobsToSupabase(env, ctx, freshJobs)
+      upsertJobsRaw(env, ctx, freshJobs)
+      upsertJobsNormalized(env, ctx, freshJobs)
     }
   }
 
@@ -3770,7 +4142,7 @@ async function handleAiJobRecommendations(body, request, env, ctx, corsHeaders, 
     .sort((a, b) => b.match_score - a.match_score)
     .slice(0, requestedN)
 
-  const recommendations = topMatches.map(m => {
+  let recommendations = topMatches.map(m => {
     const job = jobPool[m.job_index]
     if (!job) return null
     return {
@@ -3882,12 +4254,54 @@ async function handleAiJobRecommendations(body, request, env, ctx, corsHeaders, 
     if (ctx?.waitUntil) ctx.waitUntil(saveHistorial)
   }
 
-  // Cache AI scores so re-runs within 2 h skip Gemini entirely
+  // Sprint 4: persist initial AI enrichment (fire-and-forget)
+  upsertJobsAiEnriched(env, ctx, topMatches, jobPool)
+
+  // Sprint 5: Adaptive Expansion — Premium-only second-pass search
+  let expansionAvailable = false
+  let expansionUsed      = false
+  let expansionCount     = 0
+
+  const needsExpansion = shouldTriggerExpansion(recommendations)
+  if (needsExpansion) {
+    if (isPremium) {
+      try {
+        const existingHashes = new Set(jobPool.map(j => canonicalJobHash(j)))
+        const expandResult   = await Promise.race([
+          expandWithSearch(env, ctx, cleanQueries, location, remote_ok, String(profile_text), existingHashes, requestedN),
+          new Promise(r => setTimeout(() => r(null), EXPANSION_TIMEOUT_MS)),
+        ])
+        if (expandResult?.recommendations?.length) {
+          // Merge: union of original + expansion, re-rank by match_score
+          const seenHashes = new Set()
+          const merged = [...recommendations, ...expandResult.recommendations]
+            .sort((a, b) => (b.match_score || 0) - (a.match_score || 0))
+            .filter(r => {
+              const h = canonicalJobHash(r.job)
+              if (seenHashes.has(h)) return false
+              seenHashes.add(h)
+              return true
+            })
+            .slice(0, requestedN)
+          recommendations  = merged
+          expansionUsed    = true
+          expansionCount   = expandResult.count
+        }
+      } catch { /* non-fatal — serve initial results */ }
+    } else {
+      expansionAvailable = true   // tells frontend to show upsell
+    }
+  }
+
+  // Cache AI scores in KV (24h) and radar_search_history (Supabase, cross-device)
   if (user_id && ctx?.waitUntil) {
     ctx.waitUntil(putJrecToKV(env, user_id, queryHash, {
       recommendations,
       total_jobs_analyzed: jobPool.length,
     }))
+    if (profileHash) {
+      putRadarCache(env, ctx, user_id, profileHash, queryHash, recommendations, isPremium)
+    }
   }
 
   return new Response(
@@ -3896,7 +4310,12 @@ async function handleAiJobRecommendations(body, request, env, ctx, corsHeaders, 
       recommendations,
       total_jobs_analyzed: jobPool.length,
       from_cache:          fromCache,
+      cached_today:        false,
+      cache_timestamp:     new Date().toISOString(),
       quota_remaining:     rl.limit - rl.count,
+      expansion_available: expansionAvailable,
+      expansion_used:      expansionUsed,
+      expansion_count:     expansionCount,
     }),
     { status: 200, headers: corsHeaders }
   )
