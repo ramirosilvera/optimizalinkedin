@@ -2106,8 +2106,8 @@ const JOB_DB_TTL_HOURS    = 24      // job_cache table TTL (aggregators)
 const JOB_SEARCH_TTL_SECS = 7_200  // job_searches row TTL (mirrors KV)
 const ATS_KV_TTL_SECS     = 79_200  // 22-hour KV cache for ATS company boards (date-keyed)
 const ATS_DB_TTL_HOURS    = 40      // ATS boards update slowly — longer DB TTL
-const JREC_KV_TTL_SECS    = 7_200  // 2-hour per-user AI score cache — skips Gemini on re-runs
-const JREC_PROMPT_VERSION = 'v2'   // bump when JOB_MATCHING_SYSTEM_PROMPT changes to bust stale KV
+const JREC_KV_TTL_SECS    = 86_400  // 24-hour per-user AI score cache — skips Gemini on re-runs
+const JREC_PROMPT_VERSION = 'v3'    // bump when JOB_MATCHING_SYSTEM_PROMPT changes to bust stale KV
 
 // Rate limits: job searches per user per day.
 // Free users get 5/day, premium get 30/day.
@@ -2671,7 +2671,7 @@ async function fetchAtsCompanyBoard(atsType, company, env) {
   const slugOverride = await getAtsSlugOverride(atsType, company.slug, env)
   const slug = slugOverride || company.slug
   const ctrl = new AbortController()
-  const tid  = setTimeout(() => ctrl.abort(), 8_000)
+  const tid  = setTimeout(() => ctrl.abort(), 4_000)
   const UA   = 'OptimizaLK/2.0 (job-aggregator; https://optimizalinkedin.com)'
 
   let jobs = []
@@ -3131,101 +3131,114 @@ Lista numerada de avisos laborales.
 TU TAREA
 ━━━━━━━━━━━━━━━━━━━━━━━
 
-Calcular:
-match_score:
-0-10
+PASO 1 — CLASIFICAR AL CANDIDATO:
+Identificá la familia profesional del candidato
+basándote en su rol más reciente y trayectoria.
 
-Priorizando:
+FAMILIAS PROFESIONALES (8):
+
+HR/Personas: RRHH, HRBP, Talent Manager, People Lead, Compensaciones, DO, Recruiting, HR Operations
+Finanzas: Finance Manager, FP&A, Controller, Tesorería, Contabilidad, CFO, Cost Analyst
+Tecnología: Backend, Frontend, Full Stack, DevOps, QA, Data Engineer, Tech Lead, CTO, Platform
+Marketing/Growth: Brand Manager, Performance, Growth, Community, Content, Marketing Manager
+Operaciones: Operations Manager, Supply Chain, Logística, Procurement, Facilities, Process
+Ventas/BD: Sales Manager, Account Executive, BD Manager, Key Account, Sales Engineer
+Legal/Compliance: Counsel, Compliance Officer, Legal Manager, Paralegal
+Management General: Country Manager, GM, BU Head, CEO, Dirección General, Regional Director
+
+━━━━━━━━━━━━━━━━━━━━━━━
+
+PASO 2 — CALCULAR match_score (0-10):
 
 1.
-FUNCIÓN / PROFESIÓN / ÁREA
-(35%)
+FAMILIA PROFESIONAL / FUNCIÓN
+(40%)
 
-La coincidencia funcional:
+La coincidencia de familia profesional:
 es el criterio MÁS importante.
 
-Evaluá:
-si el rol:
-pertenece:
-a la misma disciplina profesional.
+Misma familia exacta: puntaje completo (4.0/4.0)
+Familia adyacente: hasta 2.5/4.0
+Familia diferente: hasta 1.0/4.0
 
-Ejemplos:
-
-✅ RRHH → HRBP / Talent / People / HR Manager
+Ejemplos de misma familia:
+✅ HR/Personas → HRBP / Talent / People / HR Manager
 ✅ Finanzas → FP&A / Controller / Finance Manager
 ✅ Marketing → Brand / Growth / Performance
 ✅ Legal → Compliance / Corporate Legal
-
-Penalizá:
-cambios de función fuertes
-aunque existan skills compartidas.
+✅ Tecnología → Backend / Full Stack / DevOps / Data Eng
 
 ━━━━━━━━━━━━━━━━━━━━━━━
 2.
 SENIORITY Y EXPERIENCIA
-(25%)
+(20%)
 
-Evaluá:
-coherencia de seniority.
-
-Tolerancia:
-±1 nivel.
-
-Ejemplo:
-SSR puede aplicar Senior
-si el resto alinea.
-
-Penalizar:
-roles muy junior
-para perfiles gerenciales.
+Evaluá coherencia de seniority.
+Tolerancia: ±1 nivel.
+SSR puede aplicar Senior si el resto alinea.
+Penalizar: roles muy junior para perfiles gerenciales.
 
 ━━━━━━━━━━━━━━━━━━━━━━━
 3.
 HABILIDADES TÉCNICAS Y FUNCIONALES
-(20%)
+(12%)
 
-Evaluar:
-skills reales relevantes.
+Evaluar: skills ESPECÍFICAS del rol.
 
-IMPORTANTE:
-No sobreponderar:
-skills genéricas como:
+NO sobreponderar skills genéricas:
 - liderazgo
 - Excel
 - comunicación
 - analytics
 - gestión
 
-porque aparecen:
-en muchísimos roles distintos.
+Solo pesan las skills técnicas y funcionales
+específicas del dominio profesional.
 
-“Nice to have”
-NO penaliza.
+“Nice to have” NO penaliza.
 
 ━━━━━━━━━━━━━━━━━━━━━━━
 4.
 INDUSTRIA Y CONTEXTO
-(10%)
+(8%)
 
-Valorar:
-transferibilidad razonable
-entre industrias afines.
-
-Ejemplo:
-HR Tech → Fintech → SaaS
-puede transferir bien.
+Transferibilidad razonable entre industrias afines.
+Ejemplo: HR Tech → Fintech → SaaS puede transferir.
 
 ━━━━━━━━━━━━━━━━━━━━━━━
 5.
 CONDICIONES LABORALES
-(10%)
+(8%)
 
-Para roles:
-100% remotos internacionales:
-
-si requiere inglés fluido
-y el candidato no lo tiene:
+Para roles 100% remotos internacionales:
+si requiere inglés fluido y el candidato no lo tiene:
 restar hasta 1.5 puntos.
+
+━━━━━━━━━━━━━━━━━━━━━━━
+VETOS DUROS POR FAMILIA
+━━━━━━━━━━━━━━━━━━━━━━━
+
+Aplicar caps máximos cuando las familias son incompatibles:
+
+Misma familia o adyacente directa:
+→ Sin cap (score libre hasta 10)
+
+Familia moderadamente diferente
+(ej: Marketing↔Operaciones, HR↔Finanzas sin evidencia):
+→ Score máximo: 6.0
+
+Familia muy diferente
+(ej: HR→Marketing, Finanzas→Ventas):
+→ Score máximo: 5.5
+
+Familia completamente diferente
+(ej: HR→Backend, Finanzas→Diseño, RRHH→Product Manager):
+→ Score máximo: 5.0
+→ Solo si el perfil muestra evidencia EXPLÍCITA de transición
+
+Si el perfil muestra evidencia clara de transición
+(bootcamp, portfolio, objetivo explícito, roles híbridos recientes):
+→ Cap puede subir hasta 1.5 puntos sobre lo indicado
 
 ━━━━━━━━━━━━━━━━━━━━━━━
 REGLAS CRÍTICAS
@@ -3371,7 +3384,7 @@ Formato exacto:
 function buildMatchingContents(profileText, jobs) {
   const jobList = jobs.slice(0, MAX_JOBS_FOR_AI_MATCHING).map((j, i) => {
     const desc = j.description
-      ? extractRelevantSection(j.description, 500)
+      ? extractRelevantSection(j.description, 350)
       : '(sin descripción)'
     const isAts = ['greenhouse','lever','smartrecruiters','ashby'].includes(j.source)
     return `[${i}] ${j.title} | ${j.company}${isAts ? ' ✓' : ''} | ${j.location || 'No especificado'} | ${j.remote ? 'Remoto' : 'Presencial'}

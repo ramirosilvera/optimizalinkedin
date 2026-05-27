@@ -574,7 +574,6 @@ function JobCard({
         ...CARD_STYLE,
         transform: `translateX(${swipeDelta}px) scale(${Math.abs(swipeDelta) > 20 ? 0.98 : 1})`,
         opacity: Math.abs(swipeDelta) > 60 ? 0.7 : 1,
-        // Swipe hint colours
         background: swipeDelta > 30
           ? 'rgba(34,197,94,0.05)'
           : swipeDelta < -30
@@ -582,6 +581,8 @@ function JobCard({
             : 'white',
         outline: showCelebration ? '2px solid #22c55e' : 'none',
         transition: swipeDelta === 0 ? 'all 0.25s' : 'none',
+        touchAction: 'pan-y',
+        userSelect: 'none',
       }}
       onTouchStart={onTouchStart}
       onTouchMove={onTouchMove}
@@ -702,6 +703,23 @@ function JobCard({
                 <span className="text-[10px]" style={{ color: isStale ? '#f59e0b' : '#94a3b8' }}>· {daysAgo}</span>
               ) : null}
             </div>
+            {/* Seniority + industry quick-view (collapsed only) */}
+            {!expanded && (job.seniority && job.seniority !== 'No especificado' || job.industry) && (
+              <div className="flex gap-1.5 mt-1 flex-wrap">
+                {job.seniority && job.seniority !== 'No especificado' && (
+                  <span className="px-1.5 py-0.5 rounded text-[10px] font-medium"
+                    style={{ background: 'rgba(0,119,181,0.08)', color: '#0077B5' }}>
+                    {job.seniority}
+                  </span>
+                )}
+                {job.industry && (
+                  <span className="px-1.5 py-0.5 rounded text-[10px] font-medium"
+                    style={{ background: 'rgba(100,116,139,0.08)', color: '#475569' }}>
+                    {job.industry}
+                  </span>
+                )}
+              </div>
+            )}
             {isStale && (
               <p className="text-[10px] mt-1 px-2 py-0.5 rounded-lg"
                 style={{ background: 'rgba(245,158,11,0.08)', color: '#92400e', border: '1px solid rgba(245,158,11,0.2)' }}>
@@ -1801,22 +1819,31 @@ export default function JobRecommendationsScreen({
               <div className="text-center py-14 px-6 space-y-4">
                 <span className="text-5xl">🧭</span>
                 <h3 className="font-bold text-base" style={{ color: '#0d2137' }}>
-                  No encontramos coincidencias exactas
+                  Radar sin resultados por ahora
                 </h3>
                 <p className="text-sm max-w-xs mx-auto leading-relaxed" style={{ color: '#64748b' }}>
-                  No hay roles que coincidan plenamente hoy. Aquí van algunos pasos para mejorar tus resultados:
+                  No encontramos roles compatibles hoy. Probá expandir la búsqueda:
                 </p>
-                <ul className="text-sm text-left max-w-xs mx-auto space-y-2" style={{ color: '#475569' }}>
-                  <li className="flex items-start gap-2"><span>→</span> Actualizá tu perfil con más habilidades</li>
-                  <li className="flex items-start gap-2"><span>→</span> Activá la opción "Solo remoto" para más opciones</li>
-                  <li className="flex items-start gap-2"><span>→</span> Intentá buscar de nuevo mañana</li>
-                </ul>
-                <button
-                  onClick={fetchRecommendations}
-                  className="px-6 py-3 rounded-2xl text-sm font-semibold text-white"
-                  style={{ background: LI_GRADIENT }}>
-                  Buscar de nuevo
-                </button>
+                <div className="flex flex-wrap gap-2 justify-center">
+                  <button
+                    onClick={() => { setFilters(f => ({ ...f, remoteOnly: true })); fetchRecommendations() }}
+                    className="px-3 py-1.5 rounded-xl text-xs font-medium"
+                    style={{ background: 'rgba(0,119,181,0.08)', color: '#0077B5', border: '1px solid rgba(0,119,181,0.2)' }}>
+                    🌐 Activar Remoto
+                  </button>
+                  <button
+                    onClick={() => { setFilters(f => ({ ...f, seniority: '' })); fetchRecommendations() }}
+                    className="px-3 py-1.5 rounded-xl text-xs font-medium"
+                    style={{ background: 'rgba(0,119,181,0.08)', color: '#0077B5', border: '1px solid rgba(0,119,181,0.2)' }}>
+                    🔓 Todos los niveles
+                  </button>
+                  <button
+                    onClick={fetchRecommendations}
+                    className="px-3 py-1.5 rounded-xl text-xs font-medium"
+                    style={{ background: 'rgba(0,119,181,0.08)', color: '#0077B5', border: '1px solid rgba(0,119,181,0.2)' }}>
+                    🔄 Buscar de nuevo
+                  </button>
+                </div>
               </div>
             )}
 
@@ -1824,8 +1851,8 @@ export default function JobRecommendationsScreen({
             {quotaRemaining !== null && filteredRecs.length > 0 && (
               <p className="text-xs text-center py-4" style={{ color: '#cbd5e1' }}>
                 {isPremium
-                  ? `Búsquedas de hoy: ${30 - quotaRemaining}/30`
-                  : `Búsquedas gratuitas de hoy: ${5 - quotaRemaining}/5`}
+                  ? `${quotaRemaining} búsquedas disponibles hoy`
+                  : `${quotaRemaining} búsquedas gratuitas disponibles`}
                 {!isPremium && (
                   <button
                     onClick={() => setShowPremiumModal(true)}
