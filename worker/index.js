@@ -3075,6 +3075,124 @@ async function upsertJobsToSupabase(env, ctx, jobs) {
   return jobs
 }
 
+// ── Sprint 4: profession family inference (no AI call needed) ────────────────
+function inferProfessionFamily(title) {
+  const t = (title || '').toLowerCase()
+  if (/\b(rrhh|hrbp|recursos humanos|talent|people ops|hr |learning|capacitac|relaciones laborales|compensaciones|beneficios|cultura organizacional)\b/.test(t)) return 'HR/Personas'
+  if (/\b(financ|finanzas|contabilidad|contador|tesoreria|treasury|fp.a|controller|cfo|presupuesto|auditoria|impuestos|tax)\b/.test(t)) return 'Finanzas'
+  if (/\b(developer|engineer|frontend|backend|full.?stack|devops|data |cloud|mobile|software|ios|android|qa |testing|sre|platform|machine learning|data scien|analytics engineer|mlops|infra)\b/.test(t)) return 'Tecnología'
+  if (/\b(marketing|brand|growth|seo|sem|performance|social media|content|crm |digital|ecommerce|e-commerce|paid media|influencer|community)\b/.test(t)) return 'Marketing/Growth'
+  if (/\b(operat|operaciones|supply chain|logistic|logística|procurement|compras|produccion|manufactura|lean|calidad|quality|warehouse|almacen|distribucion)\b/.test(t)) return 'Operaciones'
+  if (/\b(sales|ventas|account executive|business development|comercial|key account|channel|revenue|inside sales|preventa)\b/.test(t)) return 'Ventas/BD'
+  if (/\b(legal|counsel|abogado|compliance|regulatory|juridic|contrato|contratos|privacidad|gdpr)\b/.test(t)) return 'Legal/Compliance'
+  if (/\b(country manager|general manager|director general|gm |ceo|coo|president|head of|vp |vice president|gerente general|managing director)\b/.test(t)) return 'Management General'
+  return null
+}
+
+// ── Sprint 4: write to jobs_raw (source provenance) ──────────────────────────
+async function upsertJobsRaw(env, ctx, jobs) {
+  if (!jobs.length) return
+  const now = new Date().toISOString()
+  const rows = jobs.map(j => ({
+    source:         j.source,
+    source_id:      String(j.external_id || j.id || ''),
+    company_slug:   j.company_slug || null,
+    canonical_hash: canonicalJobHash(j),
+    title:          j.title,
+    company:        j.company,
+    location:       j.location || null,
+    remote_ok:      j.remote || false,
+    url:            j.url,
+    posted_at:      j.posted_at || null,
+    fetched_at:     now,
+  })).filter(r => r.source_id)
+  if (!rows.length) return
+  const p = fetch(`${env.SUPABASE_URL}/rest/v1/jobs_raw`, {
+    method:  'POST',
+    headers: {
+      apikey:         env.SUPABASE_SERVICE_ROLE_KEY,
+      Authorization:  `Bearer ${env.SUPABASE_SERVICE_ROLE_KEY}`,
+      'Content-Type': 'application/json',
+      Prefer:         'resolution=ignore-duplicates,return=minimal',
+    },
+    body: JSON.stringify(rows),
+  }).catch(() => null)
+  if (ctx?.waitUntil) ctx.waitUntil(p)
+}
+
+// ── Sprint 4: upsert to jobs_normalized (deduplicated index) ─────────────────
+async function upsertJobsNormalized(env, ctx, jobs) {
+  if (!jobs.length) return
+  const now = new Date()
+  const ATS_SOURCES = new Set(['greenhouse','lever','smartrecruiters','ashby'])
+  const rows = jobs.map(j => {
+    const ttlHours = ATS_SOURCES.has(j.source) ? ATS_DB_TTL_HOURS : JOB_DB_TTL_HOURS
+    return {
+      canonical_hash:  canonicalJobHash(j),
+      title:           j.title,
+      company:         j.company,
+      location:        j.location || null,
+      remote_ok:       j.remote   || false,
+      description_md:  (j.description || '').slice(0, 1000),
+      url:             j.url,
+      apply_url:       j.apply_url || null,
+      salary_min:      j.salary_min      || null,
+      salary_max:      j.salary_max      || null,
+      salary_currency: j.currency        || null,
+      source:          j.source,
+      posted_at:       j.posted_at       || null,
+      last_seen_at:    now.toISOString(),
+      expires_at:      new Date(now.getTime() + ttlHours * 3_600_000).toISOString(),
+      active:          true,
+    }
+  })
+  const p = fetch(`${env.SUPABASE_URL}/rest/v1/jobs_normalized`, {
+    method:  'POST',
+    headers: {
+      apikey:         env.SUPABASE_SERVICE_ROLE_KEY,
+      Authorization:  `Bearer ${env.SUPABASE_SERVICE_ROLE_KEY}`,
+      'Content-Type': 'application/json',
+      Prefer:         'resolution=merge-duplicates,return=minimal',
+    },
+    body: JSON.stringify(rows),
+  }).catch(() => null)
+  if (ctx?.waitUntil) ctx.waitUntil(p)
+}
+
+// ── Sprint 4: upsert AI enrichment after scoring ──────────────────────────────
+async function upsertJobsAiEnriched(env, ctx, topMatches, jobPool) {
+  if (!topMatches.length) return
+  const now = new Date().toISOString()
+  const rows = topMatches.map(m => {
+    const job = jobPool[m.job_index]
+    if (!job) return null
+    const family = inferProfessionFamily(job.title)
+    if (!family && !job.seniority && !job.industry && !(job.skills_required?.length)) return null
+    return {
+      canonical_hash:    canonicalJobHash(job),
+      seniority:         job.seniority   || null,
+      profession_family: family          || null,
+      industry:          job.industry    || null,
+      skills_required:   job.skills_required || [],
+      skills_nice:       [],
+      enriched_at:       now,
+      model_version:     JREC_PROMPT_VERSION,
+    }
+  }).filter(Boolean)
+  if (!rows.length) return
+  const p = fetch(`${env.SUPABASE_URL}/rest/v1/jobs_ai_enriched`, {
+    method:  'POST',
+    headers: {
+      apikey:         env.SUPABASE_SERVICE_ROLE_KEY,
+      Authorization:  `Bearer ${env.SUPABASE_SERVICE_ROLE_KEY}`,
+      'Content-Type': 'application/json',
+      Prefer:         'resolution=merge-duplicates,return=minimal',
+    },
+    body: JSON.stringify(rows),
+  }).catch(() => null)
+  if (ctx?.waitUntil) ctx.waitUntil(p)
+}
+
 /**
  * Persist job_searches row (dedup check: if same queryHash within TTL, skip).
  * Returns the search row id.
@@ -3767,6 +3885,8 @@ async function handleAiJobRecommendations(body, request, env, ctx, corsHeaders, 
       jobs = freshJobs
       await putJobsToKV(env, queryHash, freshJobs)
       await upsertJobsToSupabase(env, ctx, freshJobs)
+      upsertJobsRaw(env, ctx, freshJobs)
+      upsertJobsNormalized(env, ctx, freshJobs)
     }
   }
 
@@ -4006,6 +4126,9 @@ async function handleAiJobRecommendations(body, request, env, ctx, corsHeaders, 
     })()
     if (ctx?.waitUntil) ctx.waitUntil(saveHistorial)
   }
+
+  // Sprint 4: persist AI enrichment (profession_family, seniority, skills) to index
+  upsertJobsAiEnriched(env, ctx, topMatches, jobPool)
 
   // Cache AI scores in KV (24h) and radar_search_history (Supabase, cross-device)
   if (user_id && ctx?.waitUntil) {
