@@ -3376,6 +3376,7 @@ Generá el feedback en este JSON exacto:
             setShowJobModal={setShowJobModal}
             setJobCvForAdapter={setJobCvForAdapter}
             setJobPosting={setJobPosting}
+            addToast={addToast}
           />
         )}
 
