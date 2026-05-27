@@ -2109,11 +2109,11 @@ const ATS_DB_TTL_HOURS    = 40      // ATS boards update slowly — longer DB TT
 const JREC_KV_TTL_SECS    = 86_400  // 24-hour per-user AI score cache — skips Gemini on re-runs
 const JREC_PROMPT_VERSION = 'v3'    // bump when JOB_MATCHING_SYSTEM_PROMPT changes to bust stale KV
 
-// Rate limits: job searches per user per day.
-// Free users get 5/day, premium get 30/day.
-// Key format: "jrl:{user_id_or_ip}:{YYYY-MM-DD}"
-const JOB_SEARCH_LIMIT_FREE    = 5
-const JOB_SEARCH_LIMIT_PREMIUM = 30
+// Rate limits for *new* (fresh) searches — cached re-visits bypass these entirely.
+// Premium: 1 new search/day  (cached same-day results shown for free)
+// Free:    1 new search/month
+const JOB_SEARCH_LIMIT_FREE    = 1
+const JOB_SEARCH_LIMIT_PREMIUM = 1
 
 // Max jobs to send to Gemini in a single matching call (token budget guard).
 // At ~500 tokens/job snippet, 40 jobs ≈ 20 K tokens input — well within Flash Lite limits.
@@ -2951,11 +2951,79 @@ async function putJrecToKV(env, userId, queryHash, payload) {
   } catch { /* non-fatal */ }
 }
 
+// ── Profile hash — identifies same profile across searches (16 hex chars) ────
+async function computeProfileHash(profileText) {
+  const normalized = (profileText || '')
+    .toLowerCase()
+    .replace(/[^a-z0-9\s]/g, '')
+    .split(/\s+/)
+    .filter(w => w.length > 3)
+    .sort()
+    .join('|')
+    .slice(0, 2000)
+  const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(normalized))
+  return Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2, '0')).join('').slice(0, 16)
+}
+
+// ── radar_search_history helpers ─────────────────────────────────────────────
+async function getRadarCache(env, userId, profileHash, queryHash) {
+  if (!userId || !env.SUPABASE_SERVICE_ROLE_KEY) return null
+  try {
+    const res = await fetch(
+      `${env.SUPABASE_URL}/rest/v1/radar_search_history`
+      + `?user_id=eq.${userId}&profile_hash=eq.${profileHash}&query_hash=eq.${queryHash}`
+      + `&expires_at=gte.${new Date().toISOString()}&select=results,top_score,match_count,created_at&limit=1`,
+      { headers: { apikey: env.SUPABASE_SERVICE_ROLE_KEY, Authorization: `Bearer ${env.SUPABASE_SERVICE_ROLE_KEY}` } }
+    )
+    const rows = await res.json().catch(() => [])
+    return Array.isArray(rows) && rows[0]?.results ? rows[0] : null
+  } catch { return null }
+}
+
+async function putRadarCache(env, ctx, userId, profileHash, queryHash, recommendations, isPremium) {
+  if (!userId || !recommendations.length || !env.SUPABASE_SERVICE_ROLE_KEY) return
+  const ttlMs   = isPremium ? 86_400_000 : 30 * 86_400_000
+  const expires = new Date(Date.now() + ttlMs).toISOString()
+  const row = {
+    user_id:      userId,
+    profile_hash: profileHash,
+    query_hash:   queryHash,
+    results:      recommendations,
+    top_score:    Math.max(...recommendations.map(r => r.match_score || 0)),
+    match_count:  recommendations.length,
+    search_type:  'fresh',
+    expires_at:   expires,
+  }
+  const upsert = fetch(`${env.SUPABASE_URL}/rest/v1/radar_search_history`, {
+    method:  'POST',
+    headers: {
+      apikey:          env.SUPABASE_SERVICE_ROLE_KEY,
+      Authorization:   `Bearer ${env.SUPABASE_SERVICE_ROLE_KEY}`,
+      'Content-Type':  'application/json',
+      Prefer:          'resolution=merge-duplicates',
+    },
+    body: JSON.stringify(row),
+  }).catch(() => {})
+  if (ctx?.waitUntil) ctx.waitUntil(upsert)
+  else upsert
+}
+
 /**
  * Layer 2: Upsert fresh jobs into job_cache.
  * Returns an array of { id, source, external_id } objects (the saved rows).
  * Uses ON CONFLICT DO UPDATE to refresh fetched_at + expires_at on re-fetch.
  */
+// ── Sprint 3: canonical hash for cross-source deduplication ──────────────────
+// Normalizes company + title + location → stable key regardless of source.
+function canonicalJobHash(job) {
+  const norm = s => (s || '')
+    .toLowerCase()
+    .replace(/\b(sr|jr|senior|junior|semi\s*senior|ssr|lead|staff|principal)\b/gi, '')
+    .replace(/\b(s\.a\.|s\.r\.l\.|inc\.?|corp\.?|ltd\.?|gmbh)\b/gi, '')
+    .replace(/[^a-z0-9]/g, '')
+  return `${norm(job.company)}|${norm(job.title)}|${norm(job.location || 'remote')}`
+}
+
 async function upsertJobsToSupabase(env, ctx, jobs) {
   if (!jobs.length) return []
   const ATS_SOURCES = new Set(['greenhouse','lever','smartrecruiters','ashby'])
@@ -2966,6 +3034,7 @@ async function upsertJobsToSupabase(env, ctx, jobs) {
     return {
       source:          j.source,
       external_id:     j.external_id,
+      canonical_hash:  canonicalJobHash(j),
       title:           j.title,
       company:         j.company,
       description:     j.description,
@@ -3406,29 +3475,46 @@ Descripción: ${desc}`
 
 /**
  * Check and increment job search rate limit.
- * Free users: 5/day | Premium users: 30/day
- * Key format: "jrl:{user_id_or_ip}:{YYYY-MM-DD}"
+ * Premium users: 1 fresh search/day (cached re-visits bypass this entirely)
+ * Free/anonymous: 1 fresh search/month
+ * Key format:
+ *   premium → "jrl:p:{identity}:{YYYY-MM-DD}"
+ *   free    → "jrl:f:{identity}:{YYYY-MM}"
  *
- * Returns { ok: boolean, count: number, limit: number }
+ * Returns { ok: boolean, count: number, limit: number, nextReset: string }
  */
 async function checkJobSearchRateLimit(env, userId, ip, isPremium) {
-  if (!env.RATE_LIMIT_KV) return { ok: true, count: 0, limit: 99 }
+  if (!env.RATE_LIMIT_KV) return { ok: true, count: 0, limit: 99, nextReset: null }
 
-  const today     = new Date().toISOString().slice(0, 10)   // 'YYYY-MM-DD'
-  const identity  = userId || ip                             // user_id preferred; IP fallback
-  const kvKey     = `jrl:${identity}:${today}`
-  const limit     = isPremium ? JOB_SEARCH_LIMIT_PREMIUM : JOB_SEARCH_LIMIT_FREE
+  const identity = userId || ip
+  const now      = new Date()
 
-  const current = parseInt((await env.RATE_LIMIT_KV.get(kvKey)) || '0', 10)
-  if (current >= limit) return { ok: false, count: current, limit }
-
-  // Expires at end of calendar day (UTC)
-  const midnight = new Date()
-  midnight.setUTCHours(24, 0, 0, 0)
-  const ttlSecs = Math.floor((midnight.getTime() - Date.now()) / 1000)
-  await env.RATE_LIMIT_KV.put(kvKey, String(current + 1), { expirationTtl: ttlSecs })
-
-  return { ok: true, count: current + 1, limit }
+  if (isPremium) {
+    const day    = now.toISOString().slice(0, 10)
+    const kvKey  = `jrl:p:${identity}:${day}`
+    const current = parseInt((await env.RATE_LIMIT_KV.get(kvKey)) || '0', 10)
+    if (current >= JOB_SEARCH_LIMIT_PREMIUM) {
+      const midnight = new Date(); midnight.setUTCHours(24, 0, 0, 0)
+      return { ok: false, count: current, limit: JOB_SEARCH_LIMIT_PREMIUM, nextReset: midnight.toISOString() }
+    }
+    const midnight = new Date(); midnight.setUTCHours(24, 0, 0, 0)
+    const ttlSecs = Math.floor((midnight.getTime() - Date.now()) / 1000)
+    await env.RATE_LIMIT_KV.put(kvKey, String(current + 1), { expirationTtl: ttlSecs })
+    return { ok: true, count: current + 1, limit: JOB_SEARCH_LIMIT_PREMIUM, nextReset: midnight.toISOString() }
+  } else {
+    // Free users: 1/month
+    const month   = now.toISOString().slice(0, 7)  // 'YYYY-MM'
+    const kvKey   = `jrl:f:${identity}:${month}`
+    const current = parseInt((await env.RATE_LIMIT_KV.get(kvKey)) || '0', 10)
+    if (current >= JOB_SEARCH_LIMIT_FREE) {
+      const firstNextMonth = new Date(now.getFullYear(), now.getMonth() + 1, 1)
+      return { ok: false, count: current, limit: JOB_SEARCH_LIMIT_FREE, nextReset: firstNextMonth.toISOString() }
+    }
+    const firstNextMonth = new Date(now.getFullYear(), now.getMonth() + 1, 1)
+    const ttlSecs = Math.floor((firstNextMonth.getTime() - Date.now()) / 1000)
+    await env.RATE_LIMIT_KV.put(kvKey, String(current + 1), { expirationTtl: ttlSecs })
+    return { ok: true, count: current + 1, limit: JOB_SEARCH_LIMIT_FREE, nextReset: firstNextMonth.toISOString() }
+  }
 }
 
 
@@ -3624,15 +3710,41 @@ async function handleAiJobRecommendations(body, request, env, ctx, corsHeaders, 
     } catch { /* default false */ }
   }
 
+  // ── radar_search_history: daily persistence check ────────────────────────
+  // If the user already ran a fresh search today (premium) or this month (free),
+  // serve the stored results immediately — no Gemini call, no rate limit decrement.
+  const profileHash = user_id ? await computeProfileHash(String(profile_text)) : null
+  const cleanQueriesForHash = queries.map(q => String(q).trim().slice(0, 100)).filter(Boolean).slice(0, 3)
+  const queryHashEarly = user_id ? await hashQueryParams(cleanQueriesForHash, location, remote_ok) : null
+
+  if (user_id && profileHash && queryHashEarly) {
+    const radarCache = await getRadarCache(env, user_id, profileHash, queryHashEarly)
+    if (radarCache?.results?.length) {
+      return new Response(
+        JSON.stringify({
+          ok:                  true,
+          recommendations:     radarCache.results,
+          total_jobs_analyzed: radarCache.match_count || radarCache.results.length,
+          from_cache:          true,
+          cached_today:        true,
+          cache_timestamp:     radarCache.created_at,
+          quota_remaining:     0,
+        }),
+        { status: 200, headers: corsHeaders }
+      )
+    }
+  }
+
   // ── Rate limit ─────────────────────────────────────────────────────────────
   const rl = await checkJobSearchRateLimit(env, user_id, ip, isPremium)
   if (!rl.ok) {
     return new Response(
       JSON.stringify({
         error: isPremium
-          ? `Límite diario de recomendaciones alcanzado (${rl.limit}/día para Premium).`
-          : `Límite diario alcanzado (${rl.limit}/día para usuarios gratuitos). Actualizá a Premium para ${JOB_SEARCH_LIMIT_PREMIUM} búsquedas/día.`,
+          ? `Tu búsqueda de hoy ya fue utilizada. Se renueva a las 00:00 UTC.`
+          : `Usaste tu búsqueda de este mes. Se renueva el 1 del próximo mes.`,
         quota_remaining: 0,
+        next_reset:      rl.nextReset,
       }),
       { status: 429, headers: corsHeaders }
     )
@@ -3895,12 +4007,15 @@ async function handleAiJobRecommendations(body, request, env, ctx, corsHeaders, 
     if (ctx?.waitUntil) ctx.waitUntil(saveHistorial)
   }
 
-  // Cache AI scores so re-runs within 2 h skip Gemini entirely
+  // Cache AI scores in KV (24h) and radar_search_history (Supabase, cross-device)
   if (user_id && ctx?.waitUntil) {
     ctx.waitUntil(putJrecToKV(env, user_id, queryHash, {
       recommendations,
       total_jobs_analyzed: jobPool.length,
     }))
+    if (profileHash) {
+      putRadarCache(env, ctx, user_id, profileHash, queryHash, recommendations, isPremium)
+    }
   }
 
   return new Response(
@@ -3909,6 +4024,8 @@ async function handleAiJobRecommendations(body, request, env, ctx, corsHeaders, 
       recommendations,
       total_jobs_analyzed: jobPool.length,
       from_cache:          fromCache,
+      cached_today:        false,
+      cache_timestamp:     new Date().toISOString(),
       quota_remaining:     rl.limit - rl.count,
     }),
     { status: 200, headers: corsHeaders }

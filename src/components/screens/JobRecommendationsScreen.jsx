@@ -967,6 +967,8 @@ export default function JobRecommendationsScreen({
   const [quotaRemaining, setQuotaRem]     = useState(null)
   const [totalAnalyzed, setTotalAnalyzed] = useState(0)
   const [fromCache, setFromCache]         = useState(false)
+  const [cachedToday, setCachedToday]     = useState(false)
+  const [cacheTimestamp, setCacheTs]      = useState(null)
 
   // ── Analytics session refs ─────────────────────────────────────────────────
   // Track how many cards the user has seen and saved in this session
@@ -1118,6 +1120,8 @@ export default function JobRecommendationsScreen({
       setQuotaRem(data.quota_remaining ?? null)
       setTotalAnalyzed(data.total_jobs_analyzed || 0)
       setFromCache(data.from_cache || false)
+      setCachedToday(data.cached_today || false)
+      setCacheTs(data.cache_timestamp || null)
       setLoadState('done')
 
       // 3. SEARCH COMPLETED — rich params enable source-level attribution and
@@ -1681,6 +1685,24 @@ export default function JobRecommendationsScreen({
                     {quotaRemaining} restantes hoy
                   </span>
                 )}
+              </div>
+            )}
+
+            {/* Cached-today banner */}
+            {cachedToday && cacheTimestamp && filteredRecs.length > 0 && (
+              <div className="flex items-center gap-2 px-3 py-2 rounded-xl"
+                style={{ background: 'rgba(22,163,74,0.07)', border: '1px solid rgba(22,163,74,0.18)' }}>
+                <span className="text-xs shrink-0" style={{ color: '#16a34a' }}>✓</span>
+                <p className="text-xs flex-1" style={{ color: '#15803d' }}>
+                  Radar listo desde las{' '}
+                  {new Date(cacheTimestamp).toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' })}
+                </p>
+                <button
+                  onClick={() => { setCachedToday(false); setCacheTs(null); fetchRecommendations() }}
+                  className="text-[11px] font-semibold shrink-0 px-2 py-0.5 rounded-lg"
+                  style={{ color: '#0077B5', background: 'rgba(0,119,181,0.08)' }}>
+                  Actualizar
+                </button>
               </div>
             )}
 
