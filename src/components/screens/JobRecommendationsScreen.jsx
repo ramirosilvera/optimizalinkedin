@@ -969,6 +969,9 @@ export default function JobRecommendationsScreen({
   const [fromCache, setFromCache]         = useState(false)
   const [cachedToday, setCachedToday]     = useState(false)
   const [cacheTimestamp, setCacheTs]      = useState(null)
+  const [expansionAvail, setExpansionAvail] = useState(false)
+  const [expansionUsed, setExpansionUsed]   = useState(false)
+  const [expansionCount, setExpansionCount] = useState(0)
 
   // ── Analytics session refs ─────────────────────────────────────────────────
   // Track how many cards the user has seen and saved in this session
@@ -1122,6 +1125,9 @@ export default function JobRecommendationsScreen({
       setFromCache(data.from_cache || false)
       setCachedToday(data.cached_today || false)
       setCacheTs(data.cache_timestamp || null)
+      setExpansionAvail(data.expansion_available || false)
+      setExpansionUsed(data.expansion_used || false)
+      setExpansionCount(data.expansion_count || 0)
       setLoadState('done')
 
       // 3. SEARCH COMPLETED — rich params enable source-level attribution and
@@ -1706,6 +1712,17 @@ export default function JobRecommendationsScreen({
               </div>
             )}
 
+            {/* Expansion badge — Premium: tells user they got extra search results */}
+            {expansionUsed && expansionCount > 0 && filteredRecs.length > 0 && (
+              <div className="flex items-center gap-2 px-3 py-2 rounded-xl"
+                style={{ background: 'rgba(14,165,233,0.07)', border: '1px solid rgba(14,165,233,0.16)' }}>
+                <span className="text-xs shrink-0">✨</span>
+                <p className="text-xs flex-1" style={{ color: '#0284c7' }}>
+                  Radar Activo encontró <span className="font-semibold">{expansionCount} roles adicionales</span> vía búsqueda IA
+                </p>
+              </div>
+            )}
+
             {/* Company strip — "Empresas con roles para vos" */}
             {filteredRecs.length > 0 && (
               <CompanyMatchBar recommendations={filteredRecs} />
@@ -1816,6 +1833,61 @@ export default function JobRecommendationsScreen({
                 </div>
               )
             })()}
+
+            {/* Expansion upsell — Free: show when expansion would have helped */}
+            {expansionAvail && !isPremium && filteredRecs.length > 0 && (
+              <div className="rounded-2xl overflow-hidden"
+                style={{ background: 'linear-gradient(160deg,#0d2137 0%,#0f3a5e 60%,#0077B5 100%)' }}>
+                <div className="p-5 space-y-4">
+                  {/* Header */}
+                  <div className="flex items-start gap-3">
+                    <div className="shrink-0 w-9 h-9 rounded-xl flex items-center justify-center text-lg"
+                      style={{ background: 'rgba(255,255,255,0.12)' }}>
+                      📡
+                    </div>
+                    <div>
+                      <p className="text-white font-bold text-sm leading-snug">
+                        Búsqueda Activa disponible
+                      </p>
+                      <p className="text-xs mt-0.5 leading-relaxed" style={{ color: 'rgba(226,232,240,0.75)' }}>
+                        El Radar detectó que hay más roles compatibles para tu perfil — pero no están en los portales habituales.
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* Benefits */}
+                  <div className="space-y-2 rounded-xl p-3" style={{ background: 'rgba(255,255,255,0.08)' }}>
+                    {[
+                      ['🌐', 'Búsqueda en tiempo real', 'El Radar escanea toda la web cuando los resultados iniciales son bajos'],
+                      ['🎯', 'Términos de búsqueda adaptativos', 'IA que identifica variaciones de tu rol que no sabías que existían'],
+                      ['⚡', 'Resultados sin espera', 'Integrados automáticamente junto a tus matches habituales'],
+                    ].map(([icon, title, desc]) => (
+                      <div key={title} className="flex items-start gap-2.5">
+                        <span className="text-sm shrink-0 mt-0.5">{icon}</span>
+                        <div>
+                          <p className="text-xs font-semibold text-white">{title}</p>
+                          <p className="text-[11px] leading-snug" style={{ color: 'rgba(203,213,225,0.70)' }}>{desc}</p>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+
+                  {/* CTA */}
+                  <button
+                    onClick={() => {
+                      trackEvent('radar_laboral_premium_modal_opened', { trigger: 'expansion_upsell' })
+                      setShowPremiumModal(true)
+                    }}
+                    className="w-full py-3.5 rounded-2xl text-sm font-bold transition-all active:scale-[0.98]"
+                    style={{ background: 'white', color: '#0d2137', boxShadow: '0 2px 12px rgba(0,0,0,0.25)' }}>
+                    Activar Búsqueda Activa →
+                  </button>
+                  <p className="text-center text-[10px]" style={{ color: 'rgba(255,255,255,0.35)' }}>
+                    Premium · Cancelás cuando quieras
+                  </p>
+                </div>
+              </div>
+            )}
 
             {/* No results after filtering */}
             {filteredRecs.length === 0 && recommendations.length > 0 && (

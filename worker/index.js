@@ -2122,6 +2122,13 @@ const MAX_JOBS_FOR_AI_MATCHING = 40
 // Max description length stored in job_cache (chars). Prevents >8 KB JSONB blobs.
 const MAX_DESC_CHARS = 6_000
 
+// Sprint 5: Adaptive Expansion — Premium-only second-pass search layer.
+// Triggers when the initial AI scoring returns weak matches.
+const EXPANSION_THRESHOLD  = 7.5   // expand if top match_score < this (0–10 scale)
+const EXPANSION_MIN_HQ     = 3     // expand if fewer than N jobs score ≥ 7.0
+const EXPANSION_TIMEOUT_MS = 5_500 // hard cap on total expansion time (ms)
+const EXPANSION_GEMINI_MS  = 3_500 // Gemini timeout for expansion scoring pass
+
 // ══════════════════════════════════════════════════════════════════════════════
 // SECTION 1 — Job Data Normalization
 // ══════════════════════════════════════════════════════════════════════════════
@@ -3013,6 +3020,126 @@ async function putRadarCache(env, ctx, userId, profileHash, queryHash, recommend
  * Returns an array of { id, source, external_id } objects (the saved rows).
  * Uses ON CONFLICT DO UPDATE to refresh fetched_at + expires_at on re-fetch.
  */
+// ── Sprint 5: Adaptive Expansion helpers ─────────────────────────────────────
+
+// Returns true when initial results are too weak to satisfy a user.
+function shouldTriggerExpansion(recommendations) {
+  if (!recommendations.length) return true
+  const topScore = recommendations[0]?.match_score ?? 0
+  const hqCount  = recommendations.filter(r => (r.match_score ?? 0) >= 7.0).length
+  return topScore < EXPANSION_THRESHOLD || hqCount < EXPANSION_MIN_HQ
+}
+
+// Lightweight Gemini call (50–80 output tokens) that suggests 1–2 alternative
+// search terms not covered by the user's initial queries.
+async function expandSearchTerms(env, profileText, existingQueries) {
+  const geminiKeys = (env.GEMINI_API_KEYS || env.GEMINI_API_KEY || '')
+    .split(',').map(k => k.trim()).filter(Boolean)
+  if (!geminiKeys.length) return []
+
+  const prompt =
+    `Profile: "${(profileText || '').slice(0, 350)}"\n` +
+    `Current searches: ${JSON.stringify(existingQueries)}\n` +
+    `Suggest 2 alternative job-title search terms that surface compatible roles NOT covered above. ` +
+    `Each term must be short (2–4 words). Respond ONLY with a JSON array. Example: ["Growth Manager","Head of CRM"]`
+
+  try {
+    const controller = new AbortController()
+    const tid = setTimeout(() => controller.abort(), 2_500)
+    const res = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/${DEFAULT_MODEL}:generateContent?key=${geminiKeys[0]}`,
+      {
+        method:  'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          contents:          [{ role: 'user', parts: [{ text: prompt }] }],
+          generationConfig:  { temperature: 0.4, maxOutputTokens: 60 },
+        }),
+        signal: controller.signal,
+      }
+    )
+    clearTimeout(tid)
+    if (!res.ok) return []
+    const d   = await res.json()
+    const raw = d?.candidates?.[0]?.content?.parts?.[0]?.text || ''
+    const arr = JSON.parse(raw.replace(/^```json\n?|\n?```$/g, '').trim())
+    return Array.isArray(arr) ? arr.slice(0, 2).filter(s => typeof s === 'string' && s.trim()) : []
+  } catch { return [] }
+}
+
+// Full expansion pass: generate new terms → fetch jobs → deduplicate → AI score.
+// Returns { recommendations: [...], count: N } or null if nothing new found.
+async function expandWithSearch(env, ctx, cleanQueries, location, remoteOk, profileText, existingHashes, requestedN) {
+  const newTerms = await expandSearchTerms(env, profileText, cleanQueries)
+  if (!newTerms.length) return null
+
+  const { jobs: rawExpanded } = await fetchAllSources(
+    newTerms.slice(0, 1), location, remoteOk, env, String(profileText)
+  )
+  const newJobs = rawExpanded
+    .filter(j => !existingHashes.has(canonicalJobHash(j)))
+    .slice(0, 15)
+  if (!newJobs.length) return null
+
+  const batchJobs  = newJobs.slice(0, 12)
+  const contents   = buildMatchingContents(String(profileText).slice(0, 2000), batchJobs)
+  const geminiKeys = (env.GEMINI_API_KEYS || env.GEMINI_API_KEY || '')
+    .split(',').map(k => k.trim()).filter(Boolean)
+  if (!geminiKeys.length) return null
+
+  let aiResult = null
+  try {
+    const controller = new AbortController()
+    const tid = setTimeout(() => controller.abort(), EXPANSION_GEMINI_MS)
+    const aiRes = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/${DEFAULT_MODEL}:generateContent?key=${geminiKeys[0]}`,
+      {
+        method:  'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          system_instruction: { parts: [{ text: JOB_MATCHING_SYSTEM_PROMPT }] },
+          contents,
+          generationConfig:   { temperature: 0.2, maxOutputTokens: 1024 },
+        }),
+        signal: controller.signal,
+      }
+    )
+    clearTimeout(tid)
+    if (aiRes.ok) {
+      const d   = await aiRes.json()
+      const raw = d?.candidates?.[0]?.content?.parts?.[0]?.text || ''
+      aiResult = JSON.parse(raw.replace(/^```json\n?|\n?```$/g, '').trim())
+    }
+  } catch { return null }
+
+  if (!aiResult?.matches) return null
+
+  const expandedRecs = (aiResult.matches || [])
+    .sort((a, b) => b.match_score - a.match_score)
+    .slice(0, requestedN)
+    .map(m => {
+      const job = batchJobs[m.job_index]
+      if (!job) return null
+      return {
+        job,
+        match_score:    Number((m.match_score || 0).toFixed(2)),
+        strengths:      Array.isArray(m.strengths) ? m.strengths.slice(0, 3) : [],
+        gaps:           Array.isArray(m.gaps)       ? m.gaps.slice(0, 2)     : [],
+        summary:        String(m.summary || ''),
+        rec_id:         null,
+        from_expansion: true,
+      }
+    }).filter(Boolean)
+
+  if (batchJobs.length) {
+    upsertJobsRaw(env, ctx, batchJobs)
+    upsertJobsNormalized(env, ctx, batchJobs)
+    upsertJobsAiEnriched(env, ctx, aiResult.matches || [], batchJobs)
+  }
+
+  return { recommendations: expandedRecs, count: expandedRecs.length }
+}
+
 // ── Sprint 3: canonical hash for cross-source deduplication ──────────────────
 // Normalizes company + title + location → stable key regardless of source.
 function canonicalJobHash(job) {
@@ -4015,7 +4142,7 @@ async function handleAiJobRecommendations(body, request, env, ctx, corsHeaders, 
     .sort((a, b) => b.match_score - a.match_score)
     .slice(0, requestedN)
 
-  const recommendations = topMatches.map(m => {
+  let recommendations = topMatches.map(m => {
     const job = jobPool[m.job_index]
     if (!job) return null
     return {
@@ -4127,8 +4254,44 @@ async function handleAiJobRecommendations(body, request, env, ctx, corsHeaders, 
     if (ctx?.waitUntil) ctx.waitUntil(saveHistorial)
   }
 
-  // Sprint 4: persist AI enrichment (profession_family, seniority, skills) to index
+  // Sprint 4: persist initial AI enrichment (fire-and-forget)
   upsertJobsAiEnriched(env, ctx, topMatches, jobPool)
+
+  // Sprint 5: Adaptive Expansion — Premium-only second-pass search
+  let expansionAvailable = false
+  let expansionUsed      = false
+  let expansionCount     = 0
+
+  const needsExpansion = shouldTriggerExpansion(recommendations)
+  if (needsExpansion) {
+    if (isPremium) {
+      try {
+        const existingHashes = new Set(jobPool.map(j => canonicalJobHash(j)))
+        const expandResult   = await Promise.race([
+          expandWithSearch(env, ctx, cleanQueries, location, remote_ok, String(profile_text), existingHashes, requestedN),
+          new Promise(r => setTimeout(() => r(null), EXPANSION_TIMEOUT_MS)),
+        ])
+        if (expandResult?.recommendations?.length) {
+          // Merge: union of original + expansion, re-rank by match_score
+          const seenHashes = new Set()
+          const merged = [...recommendations, ...expandResult.recommendations]
+            .sort((a, b) => (b.match_score || 0) - (a.match_score || 0))
+            .filter(r => {
+              const h = canonicalJobHash(r.job)
+              if (seenHashes.has(h)) return false
+              seenHashes.add(h)
+              return true
+            })
+            .slice(0, requestedN)
+          recommendations  = merged
+          expansionUsed    = true
+          expansionCount   = expandResult.count
+        }
+      } catch { /* non-fatal — serve initial results */ }
+    } else {
+      expansionAvailable = true   // tells frontend to show upsell
+    }
+  }
 
   // Cache AI scores in KV (24h) and radar_search_history (Supabase, cross-device)
   if (user_id && ctx?.waitUntil) {
@@ -4150,6 +4313,9 @@ async function handleAiJobRecommendations(body, request, env, ctx, corsHeaders, 
       cached_today:        false,
       cache_timestamp:     new Date().toISOString(),
       quota_remaining:     rl.limit - rl.count,
+      expansion_available: expansionAvailable,
+      expansion_used:      expansionUsed,
+      expansion_count:     expansionCount,
     }),
     { status: 200, headers: corsHeaders }
   )
