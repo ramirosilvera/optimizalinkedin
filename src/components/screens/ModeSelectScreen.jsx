@@ -87,7 +87,7 @@ function RadarStepCard({
         </div>
       )}
 
-      <div className="p-4">
+      <div className="p-4 sm:p-6">
         <div className="flex items-start gap-3">
           {/* Icon + step number */}
           <div className="shrink-0 text-center w-10">
@@ -410,12 +410,12 @@ export default function ModeSelectScreen({
   ]
 
   return (
-    <div className="step-transition space-y-4">
+    <div className="step-transition space-y-4 max-w-4xl mx-auto">
       <Logo />
 
       {/* Header */}
-      <div className="space-y-1 pb-1">
-        <h2 className="text-xl font-bold text-slate-900 leading-tight">
+      <div className="space-y-1 pb-1 max-w-2xl">
+        <h2 className="text-xl sm:text-2xl lg:text-3xl font-bold text-slate-900 leading-tight">
           {firstName ? `Hola, ${firstName} 👋` : 'Centro de Alto Rendimiento'}
         </h2>
         <p className="text-sm text-slate-500 leading-snug">
@@ -477,7 +477,7 @@ export default function ModeSelectScreen({
 
       {/* Progress */}
       {completedCount > 0 && (
-        <div className="rounded-2xl px-4 py-3.5 space-y-2"
+        <div className="rounded-2xl px-4 py-3.5 sm:px-5 sm:py-4 space-y-2"
           style={{ background: 'rgba(0,119,181,0.05)', border: '1px solid rgba(0,119,181,0.15)', boxShadow: '0 2px 8px rgba(0,119,181,0.06)' }}>
           <div className="flex items-center justify-between">
             <p className="text-xs font-semibold text-slate-600">
@@ -500,7 +500,7 @@ export default function ModeSelectScreen({
       )}
 
       {/* Journey steps */}
-      <div className="space-y-2 stagger-in">
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-2 stagger-in">
         {steps.map(s => {
           const isRec    = s.num === nextRec
           const isLocked = !s.available
@@ -563,7 +563,7 @@ export default function ModeSelectScreen({
                   </div>
                 )}
 
-                <div className="p-4">
+                <div className="p-4 sm:p-6">
                   <div className="flex items-start gap-3">
                     {/* Icon + step number */}
                     <div className="shrink-0 text-center w-10">
@@ -665,7 +665,7 @@ export default function ModeSelectScreen({
 
       {/* Daily STAR challenge */}
       {dailyStarQuestion && (
-        <div className="rounded-2xl p-4 space-y-3 card-depth"
+        <div className="rounded-2xl p-4 sm:p-6 space-y-3 card-depth"
           style={{ background: 'linear-gradient(135deg,rgba(13,148,136,0.06),rgba(5,150,105,0.04))', border: '1px solid rgba(13,148,136,0.2)' }}>
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
