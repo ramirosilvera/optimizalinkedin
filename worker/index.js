@@ -3185,7 +3185,7 @@ async function fetchJobSource(source, query, location, remoteOk, env) {
       const r = await fetch('https://google.serper.dev/jobs', {
         method:  'POST',
         headers: { 'X-API-KEY': env.SERPER_API_KEY, 'Content-Type': 'application/json', 'User-Agent': UA },
-        body:    JSON.stringify({ q: query, gl: 'ar', hl: 'es', location: 'Argentina', num: 10 }),
+        body:    JSON.stringify({ q: query, gl: 'ar', hl: 'es', location: 'Argentina', num: 20 }),
         signal:  ctrl.signal,
       })
       raw = await r.json()
@@ -3406,18 +3406,25 @@ async function expandSearchTerms(env, profileText, existingQueries) {
   try {
     const controller = new AbortController()
     const tid = setTimeout(() => controller.abort(), 2_500)
-    const res = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/${DEFAULT_MODEL}:generateContent?key=${geminiKeys[0]}`,
-      {
-        method:  'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({
-          contents:          [{ role: 'user', parts: [{ text: prompt }] }],
-          generationConfig:  { temperature: 0.4, maxOutputTokens: 120 },
-        }),
-        signal: controller.signal,
-      }
-    )
+    // Rotate through keys on 429 (same as callGeminiApi) so a rate-limited first key
+    // doesn't silently kill the expansion pass.
+    let res = null
+    for (let ki = 0; ki < geminiKeys.length; ki++) {
+      res = await fetch(
+        `https://generativelanguage.googleapis.com/v1beta/models/${DEFAULT_MODEL}:generateContent?key=${geminiKeys[ki]}`,
+        {
+          method:  'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({
+            contents:          [{ role: 'user', parts: [{ text: prompt }] }],
+            generationConfig:  { temperature: 0.4, maxOutputTokens: 120 },
+          }),
+          signal: controller.signal,
+        }
+      )
+      if (res.status !== 429) break
+      console.warn(`[RADAR:expansion] expandSearchTerms key_${ki+1} returned 429 — trying next key`)
+    }
     clearTimeout(tid)
     if (!res.ok) {
       console.warn(`[RADAR:expansion] expandSearchTerms Gemini HTTP ${res.status}`)
@@ -3458,19 +3465,25 @@ async function expandWithSearch(env, ctx, cleanQueries, location, remoteOk, prof
   try {
     const controller = new AbortController()
     const tid = setTimeout(() => controller.abort(), EXPANSION_GEMINI_MS)
-    const aiRes = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/${DEFAULT_MODEL}:generateContent?key=${geminiKeys[0]}`,
-      {
-        method:  'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({
-          system_instruction: { parts: [{ text: JOB_MATCHING_SYSTEM_PROMPT }] },
-          contents,
-          generationConfig:   { temperature: 0.2, maxOutputTokens: 1024 },
-        }),
-        signal: controller.signal,
-      }
-    )
+    // Rotate through keys on 429 so a rate-limited first key doesn't kill expansion scoring.
+    let aiRes = null
+    for (let ki = 0; ki < geminiKeys.length; ki++) {
+      aiRes = await fetch(
+        `https://generativelanguage.googleapis.com/v1beta/models/${DEFAULT_MODEL}:generateContent?key=${geminiKeys[ki]}`,
+        {
+          method:  'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({
+            system_instruction: { parts: [{ text: JOB_MATCHING_SYSTEM_PROMPT }] },
+            contents,
+            generationConfig:   { temperature: 0.2, maxOutputTokens: 1024 },
+          }),
+          signal: controller.signal,
+        }
+      )
+      if (aiRes.status !== 429) break
+      console.warn(`[RADAR:expansion] scoring key_${ki+1} returned 429 — trying next key`)
+    }
     clearTimeout(tid)
     if (aiRes.ok) {
       const d   = await aiRes.json()
