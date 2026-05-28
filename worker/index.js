@@ -2558,6 +2558,112 @@ function normalizeTeamtailor(raw, companyMeta) {
   })
 }
 
+// Recruitee — https://{slug}.recruitee.com/api/offers/ (per-company public JSON, no auth)
+// Returns: {offers: [{id, slug, title, city, location, remote, careers_url, careers_apply_url, description, department, created_at}]}
+function normalizeRecruitee(raw, companyMeta) {
+  const offers = raw?.offers || []
+  return offers.map(j => {
+    const descText = truncateDesc(stripHtml(j.description || ''))
+    return {
+      source:          'recruitee',
+      external_id:     String(j.id || Math.random()),
+      title:           j.title || '',
+      company:         companyMeta.name,
+      description:     descText,
+      location:        j.city || j.location || null,
+      remote:          j.remote === true,
+      url:             j.careers_url || `https://${companyMeta.slug}.recruitee.com/o/${j.slug}`,
+      apply_url:       j.careers_apply_url || null,
+      salary_min:      null, salary_max: null, currency: null,
+      skills_required: extractSkillsFromText(descText),
+      seniority:       normalizeSeniority(j.title || ''),
+      industry:        j.department || companyMeta.industries?.[0] || null,
+      posted_at:       j.created_at || null,
+      company_slug:    companyMeta.slug,
+      ats_type:        'recruitee',
+    }
+  })
+}
+
+// Personio — https://{slug}.jobs.personio.com/search.json (public careers endpoint, no auth)
+// Returns: {data:{positions:[{id, name, department:{name}, office:{name}, url, application_url, created_at}]}}
+function normalizePersonio(raw, companyMeta) {
+  const positions = raw?.data?.positions || raw?.positions || raw?.jobs || []
+  return positions.map(j => ({
+    source:          'personio',
+    external_id:     String(j.id || Math.random()),
+    title:           j.name || j.title || '',
+    company:         companyMeta.name,
+    description:     truncateDesc(stripHtml(j.description || '')),
+    location:        j.office?.name || j.location || null,
+    remote:          /remot|teletrabajo/i.test(j.office?.name || j.location || ''),
+    url:             j.url || j.application_url || `https://${companyMeta.slug}.jobs.personio.com/${j.id}`,
+    apply_url:       j.application_url || null,
+    salary_min:      null, salary_max: null, currency: null,
+    skills_required: [],
+    seniority:       normalizeSeniority(j.name || j.title || ''),
+    industry:        j.department?.name || companyMeta.industries?.[0] || null,
+    posted_at:       j.created_at || null,
+    company_slug:    companyMeta.slug,
+    ats_type:        'personio',
+  }))
+}
+
+// Workday CXS — POST https://{tenant}.{instance}.myworkdayjobs.com/wday/cxs/{tenant}/{site}/jobs
+// Returns: {jobPostings:[{title, locationsText, externalPath, postedOn, briefDescription, bulletFields:[]}]}
+// Each company entry requires cxsUrl: the full POST endpoint URL
+function normalizeWorkday(raw, companyMeta) {
+  const postings = raw?.jobPostings || []
+  const boardBase = (companyMeta.cxsUrl || '')
+    .replace('/wday/cxs/', '/')
+    .replace(/\/jobs$/, '')
+  return postings.map(j => {
+    const extPath = j.externalPath || ''
+    return {
+      source:          'workday',
+      external_id:     extPath.split('/').pop() || String(Math.random()),
+      title:           j.title || '',
+      company:         companyMeta.name,
+      description:     truncateDesc(j.briefDescription || (j.bulletFields || []).join(' ')),
+      location:        j.locationsText || null,
+      remote:          /remot/i.test(j.locationsText || ''),
+      url:             boardBase ? `${boardBase}${extPath}` : '',
+      apply_url:       null,
+      salary_min:      null, salary_max: null, currency: null,
+      skills_required: [],
+      seniority:       normalizeSeniority(j.title || ''),
+      industry:        companyMeta.industries?.[0] || null,
+      posted_at:       j.postedOn || null,
+      company_slug:    companyMeta.slug,
+      ats_type:        'workday',
+    }
+  })
+}
+
+// Serper — Google Jobs via serper.dev (Argentine local jobs, paid API ~$2-5/mo)
+// Returns: {jobs:[{title, companyName, location, link, applyLink, datePosted, highlights:{items:[]}}]}
+function normalizeSerper(raw) {
+  const jobs = raw?.jobs || []
+  return jobs.map(j => ({
+    source:          'serper',
+    external_id:     j.jobId || String(Math.random()),
+    title:           j.title || '',
+    company:         j.companyName || '',
+    description:     truncateDesc((j.highlights?.items || []).join(' ') || j.description || ''),
+    location:        j.location || null,
+    remote:          /remot/i.test(j.location || ''),
+    url:             j.applyLink || j.link || '',
+    apply_url:       j.applyLink || null,
+    salary_min:      null, salary_max: null, currency: null,
+    skills_required: [],
+    seniority:       normalizeSeniority(j.title || ''),
+    industry:        null,
+    posted_at:       j.datePosted || null,
+    company_slug:    null,
+    ats_type:        null,
+  }))
+}
+
 // Greenhouse — GET boards-api.greenhouse.io/v1/boards/{slug}/jobs?content=true
 // Returns: {jobs: [{id, title, location:{name}, absolute_url, updated_at, departments, content(HTML)}]}
 function normalizeGreenhouse(rawJobs, companyMeta) {
@@ -2690,6 +2796,10 @@ function normalizeJobs(source, rawData, companyMeta = null) {
     case 'himalayas':       return normalizeHimalayas(rawData)
     case 'workable':        return normalizeWorkable(rawData, companyMeta)
     case 'teamtailor':      return normalizeTeamtailor(rawData, companyMeta)
+    case 'recruitee':       return normalizeRecruitee(rawData, companyMeta)
+    case 'personio':        return normalizePersonio(rawData, companyMeta)
+    case 'workday':         return normalizeWorkday(rawData, companyMeta)
+    case 'serper':          return normalizeSerper(rawData)
     case 'greenhouse':      return normalizeGreenhouse(rawData, companyMeta)
     case 'lever':           return normalizeLever(rawData, companyMeta)
     case 'smartrecruiters': return normalizeSmartRecruiters(rawData, companyMeta)
@@ -2745,6 +2855,21 @@ const ATS_COMPANIES = {
     { slug: 'global66',           name: 'Global66',          country: 'CL', industries: ['fintech'],     tags: ['backend','mobile','data'] },
     { slug: 'knauf-south-america', name: 'Knauf South Am.',  country: 'AR', industries: ['manufacturing'], tags: ['backend','data','devops'] },
     { slug: 'quala',              name: 'Quala',             country: 'CO', industries: ['fmcg'],         tags: ['data','backend','marketing'] },
+  ],
+  recruitee: [
+    { slug: 'baufest',    name: 'Baufest',      country: 'AR', industries: ['tech','consulting'], tags: ['backend','frontend','qa','devops'] },
+    { slug: 'n5now',      name: 'N5',           country: 'AR', industries: ['fintech','tech'],    tags: ['backend','data','mobile'] },
+    { slug: 'practia',    name: 'Practia',      country: 'AR', industries: ['tech','consulting'], tags: ['backend','devops','data','frontend'] },
+  ],
+  personio: [
+    { slug: 'factorial',  name: 'Factorial HR', country: 'ES', industries: ['tech','hr'],         tags: ['backend','frontend','devops','data'] },
+    { slug: 'typeform',   name: 'Typeform',     country: 'ES', industries: ['tech','saas'],       tags: ['backend','frontend','data'] },
+    { slug: 'jobandtalent', name: 'Job&Talent', country: 'ES', industries: ['hr','tech'],         tags: ['backend','data','mobile'] },
+  ],
+  workday: [
+    { slug: 'accenture', name: 'Accenture',  country: 'AR', industries: ['tech','consulting'],  tags: ['backend','frontend','data','devops','qa'],    cxsUrl: 'https://accenture.wd3.myworkdayjobs.com/wday/cxs/accenture/AccentureCareers/jobs' },
+    { slug: 'sap',       name: 'SAP',        country: 'AR', industries: ['tech','enterprise'],  tags: ['backend','data','devops','frontend'],         cxsUrl: 'https://sap.wd3.myworkdayjobs.com/wday/cxs/sap/SAP_Global/jobs' },
+    { slug: 'pwc-ar',    name: 'PwC',        country: 'AR', industries: ['consulting','fintech'], tags: ['data','backend','fintech'],                 cxsUrl: 'https://pwc.wd3.myworkdayjobs.com/wday/cxs/pwc/Global_Campus_Experienced/jobs' },
   ],
 }
 
@@ -2863,6 +2988,35 @@ async function fetchAtsCompanyBoard(atsType, company, env) {
       })
       if (r.ok) { raw = await r.json(); jobs = normalizeTeamtailor(raw, { ...company, slug }) }
       else console.warn(`[teamtailor] HTTP ${r.status} for ${slug}`)
+    }
+    else if (atsType === 'recruitee') {
+      r = await fetch(`https://${slug}.recruitee.com/api/offers/`, {
+        headers: { 'User-Agent': UA, Accept: 'application/json' }, signal: ctrl.signal,
+      })
+      if (r.ok) { raw = await r.json(); jobs = normalizeRecruitee(raw, { ...company, slug }) }
+      else console.warn(`[recruitee] HTTP ${r.status} for ${slug}`)
+    }
+    else if (atsType === 'personio') {
+      const tld = company.personioTld || 'com'
+      r = await fetch(`https://${slug}.jobs.personio.${tld}/search.json`, {
+        headers: { 'User-Agent': UA, Accept: 'application/json' }, signal: ctrl.signal,
+      })
+      if (r.ok) { raw = await r.json(); jobs = normalizePersonio(raw, { ...company, slug }) }
+      else console.warn(`[personio] HTTP ${r.status} for ${slug}`)
+    }
+    else if (atsType === 'workday') {
+      const cxsUrl = company.cxsUrl
+      if (!cxsUrl) { console.warn(`[workday] missing cxsUrl for ${slug}`) }
+      else {
+        r = await fetch(cxsUrl, {
+          method:  'POST',
+          headers: { 'Content-Type': 'application/json', 'User-Agent': UA },
+          body:    JSON.stringify({ appliedFacets: {}, limit: 50, offset: 0, searchText: '' }),
+          signal:  ctrl.signal,
+        })
+        if (r.ok) { raw = await r.json(); jobs = normalizeWorkday(raw, { ...company, slug, cxsUrl }) }
+        else console.warn(`[workday] HTTP ${r.status} for ${slug}`)
+      }
     }
     if (jobs.length) await putAtsBoardToKV(env, atsType, slug, jobs)
   } catch (err) {
@@ -3017,6 +3171,18 @@ async function fetchJobSource(source, query, location, remoteOk, env) {
       return { source, jobs: normalizeJobs(source, raw) }
     }
 
+    if (source === 'serper') {
+      if (!env.SERPER_API_KEY) return { source, jobs: [], error: 'serper_not_configured' }
+      const r = await fetch('https://google.serper.dev/jobs', {
+        method:  'POST',
+        headers: { 'X-API-KEY': env.SERPER_API_KEY, 'Content-Type': 'application/json', 'User-Agent': UA },
+        body:    JSON.stringify({ q: query, gl: 'ar', hl: 'es', location: 'Argentina', num: 10 }),
+        signal:  ctrl.signal,
+      })
+      raw = await r.json()
+      return { source, jobs: normalizeJobs(source, raw) }
+    }
+
     return { source, jobs: [], error: 'unknown_source' }
 
   } catch (err) {
@@ -3034,7 +3200,8 @@ async function fetchJobSource(source, query, location, remoteOk, env) {
 async function fetchAllSources(queries, location, remoteOk, env, userProfile = '') {
   const remoteSources = ['remoteok', 'remotive', 'jobicy', 'adzuna', 'getonboard', 'himalayas']
   const localSources  = ['adzuna', 'jobicy', 'getonboard', 'himalayas']
-  if (env.JOOBLE_KEY) { remoteSources.push('jooble'); localSources.push('jooble') }
+  if (env.JOOBLE_KEY)    { remoteSources.push('jooble'); localSources.push('jooble') }
+  if (env.SERPER_API_KEY) { localSources.push('serper') }
   const sources = remoteOk ? remoteSources : localSources
 
   // Run aggregators + ATS boards in parallel
