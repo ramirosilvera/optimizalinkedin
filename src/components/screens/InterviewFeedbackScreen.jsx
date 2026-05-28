@@ -21,7 +21,7 @@ function ScoreDot({ score }) {
 
 export default function InterviewFeedbackScreen({ interviewLoading, rateLimitEvento, rateLimitSecs, waitlistEmail, setWaitlistEmail, waitlistSent, waitlistLoading, handleWaitlist, interviewError, setInterviewError, callInterviewFeedback, interviewAnswers, interviewFeedback, user, leadSaving, leadSent, setShowLeadModal, setShowPremiumModal, subscriptionLoading, setShowStarModal, result, setStep, onRetrain, retrainLabel }) {
   return (
-    <div className="step-transition space-y-6">
+    <div className="step-transition space-y-6 max-w-3xl mx-auto">
       <Logo />
 
       {interviewLoading ? (

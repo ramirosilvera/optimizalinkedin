@@ -5,7 +5,7 @@ import RateLimitUI from '../RateLimitUI'
 
 export default function StarTrainingScreen({ starPhase, setStarPhase, starQuestionIdx, setStarQuestionIdx, starAnswer, setStarAnswer, starFeedback, setStarFeedback, starLoading, starError, setStarError, rateLimitEvento, rateLimitSecs, waitlistEmail, setWaitlistEmail, waitlistSent, waitlistLoading, handleWaitlist, callStarFeedback, resetInterview, interviewFeedback, user, result, setStep, setShowPremiumModal }) {
   return (
-    <div className="step-transition space-y-6">
+    <div className="step-transition space-y-6 max-w-3xl mx-auto">
       <Logo />
 
       {starPhase === 'theory' && (
