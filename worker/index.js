@@ -2100,7 +2100,7 @@ const JOB_SEARCH_TTL_SECS = 7_200  // job_searches row TTL (mirrors KV)
 const ATS_KV_TTL_SECS     = 79_200  // 22-hour KV cache for ATS company boards (date-keyed)
 const ATS_DB_TTL_HOURS    = 40      // ATS boards update slowly — longer DB TTL
 const JREC_KV_TTL_SECS    = 86_400  // 24-hour per-user AI score cache — skips Gemini on re-runs
-const JREC_PROMPT_VERSION = 'v5'    // bump when JOB_MATCHING_SYSTEM_PROMPT changes to bust stale KV
+const JREC_PROMPT_VERSION = 'v6'    // bump when JOB_MATCHING_SYSTEM_PROMPT changes to bust stale KV
 
 // Rate limits for *new* (fresh) searches — cached re-visits bypass these entirely.
 // Premium: 1 new search/day  (cached same-day results shown for free)
@@ -2328,9 +2328,13 @@ function applyPreFilter(jobs, profileText, maxCandidates = 25) {
     return s
   }
 
-  return jobs
-    .map(j => ({ job: j, s: score(j) }))
-    .filter(x => x.s > 0 || jobs.length <= maxCandidates)
+  const scored = jobs.map(j => ({ job: j, s: score(j) }))
+  const positive = scored.filter(x => x.s > 0)
+  // When fewer than maxCandidates jobs have any relevance signal, pad with the
+  // zero-score jobs sorted by recency rather than discarding them entirely.
+  // This avoids sending an empty pool to Gemini when the taxonomy doesn't match.
+  const base = positive.length >= Math.ceil(maxCandidates / 2) ? positive : scored
+  return base
     .sort((a, b) => b.s - a.s)
     .slice(0, maxCandidates)
     .map(x => x.job)
@@ -3263,7 +3267,10 @@ async function getJobsFromKV(env, queryHash) {
   try {
     const raw = await env.RATE_LIMIT_KV.get(`jobs:${queryHash}`)
     return raw ? JSON.parse(raw) : null
-  } catch { return null }
+  } catch (err) {
+    console.warn(`[KV] getJobsFromKV parse error for hash ${queryHash}: ${err.message}`)
+    return null
+  }
 }
 
 async function putJobsToKV(env, queryHash, jobs) {
@@ -3286,7 +3293,10 @@ async function getJrecFromKV(env, userId, queryHash) {
   try {
     const raw = await env.RATE_LIMIT_KV.get(`jrec:${userId}:${queryHash}:${JREC_PROMPT_VERSION}`)
     return raw ? JSON.parse(raw) : null
-  } catch { return null }
+  } catch (err) {
+    console.warn(`[KV] getJrecFromKV parse error for user ${userId}: ${err.message}`)
+    return null
+  }
 }
 
 async function putJrecToKV(env, userId, queryHash, payload) {
@@ -3326,7 +3336,10 @@ async function getRadarCache(env, userId, profileHash, queryHash) {
     )
     const rows = await res.json().catch(() => [])
     return Array.isArray(rows) && rows[0]?.results ? rows[0] : null
-  } catch { return null }
+  } catch (err) {
+    console.warn(`[DB] getRadarCache error for user ${userId}: ${err.message}`)
+    return null
+  }
 }
 
 async function putRadarCache(env, ctx, userId, profileHash, queryHash, recommendations, isPremium) {
@@ -3398,13 +3411,19 @@ async function expandSearchTerms(env, profileText, existingQueries) {
       }
     )
     clearTimeout(tid)
-    if (!res.ok) return []
+    if (!res.ok) {
+      console.warn(`[RADAR:expansion] expandSearchTerms Gemini HTTP ${res.status}`)
+      return []
+    }
     const d   = await res.json()
     const raw = d?.candidates?.[0]?.content?.parts?.[0]?.text || ''
     const parsed = JSON.parse(raw.replace(/^```json\n?|\n?```$/g, '').trim())
     const arr = parsed?.terms || (Array.isArray(parsed) ? parsed : [])
     return Array.isArray(arr) ? arr.slice(0, 3).filter(s => typeof s === 'string' && s.trim()) : []
-  } catch { return [] }
+  } catch (err) {
+    console.warn(`[RADAR:expansion] expandSearchTerms failed: ${err.message}`)
+    return []
+  }
 }
 
 // Full expansion pass: generate new terms → fetch jobs → deduplicate → AI score.
@@ -3449,8 +3468,13 @@ async function expandWithSearch(env, ctx, cleanQueries, location, remoteOk, prof
       const d   = await aiRes.json()
       const raw = d?.candidates?.[0]?.content?.parts?.[0]?.text || ''
       aiResult = JSON.parse(raw.replace(/^```json\n?|\n?```$/g, '').trim())
+    } else {
+      console.warn(`[RADAR:expansion] scoring Gemini HTTP ${aiRes.status}`)
     }
-  } catch { return null }
+  } catch (err) {
+    console.warn(`[RADAR:expansion] scoring failed: ${err.message}`)
+    return null
+  }
 
   if (!aiResult?.matches) return null
 
@@ -4439,6 +4463,12 @@ async function handleAiJobRecommendations(body, request, env, ctx, corsHeaders, 
     const radarCache = await getRadarCache(env, user_id, profileHash, queryHashEarly)
     if (radarCache?.results?.length) {
       console.log(`[RADAR] radarCache HIT — returning ${radarCache.results.length} cached recs`)
+      // Recover sourcesUsed from the KV metadata written at fetch time.
+      let radarCachedSources = []
+      try {
+        const metaRaw = env.RATE_LIMIT_KV ? await env.RATE_LIMIT_KV.get(`jobs_meta:${queryHashEarly}`) : null
+        if (metaRaw) radarCachedSources = JSON.parse(metaRaw)
+      } catch { /* non-fatal */ }
       return new Response(
         JSON.stringify({
           ok:                  true,
@@ -4448,7 +4478,11 @@ async function handleAiJobRecommendations(body, request, env, ctx, corsHeaders, 
           cached_today:        true,
           cache_timestamp:     radarCache.created_at,
           quota_remaining:     0,
-          pipeline_stats:      { cache_hit: 'radar', premium_mode: isPremium },
+          pipeline_stats: {
+            cache_hit:    'radar',
+            premium_mode: isPremium,
+            sources_used: radarCachedSources,
+          },
         }),
         { status: 200, headers: corsHeaders }
       )
@@ -4476,12 +4510,21 @@ async function handleAiJobRecommendations(body, request, env, ctx, corsHeaders, 
   let   jobs         = []
   let   fromCache    = false
 
+  // KV_SOURCES_KEY stores the sourcesUsed alongside jobs so cache hits can report it accurately.
+  // Format stored in KV: { jobs: NormalizedJob[], sourcesUsed: string[] }
+  const KV_SOURCES_KEY = `jobs_meta:${queryHash}`
+
   let sourcesUsed = []
   const kvCached = await getJobsFromKV(env, queryHash)
   if (kvCached) {
     jobs      = kvCached
     fromCache = true
-    console.log(`[RADAR] jobsCache HIT — ${jobs.length} jobs from KV`)
+    // Attempt to recover persisted sourcesUsed so pipeline_stats is not empty on cache hits.
+    try {
+      const metaRaw = env.RATE_LIMIT_KV ? await env.RATE_LIMIT_KV.get(KV_SOURCES_KEY) : null
+      if (metaRaw) sourcesUsed = JSON.parse(metaRaw)
+    } catch { /* non-fatal — sourcesUsed stays [] which is preferable to crashing */ }
+    console.log(`[RADAR] jobsCache HIT — ${jobs.length} jobs from KV, sources=${sourcesUsed.length}`)
   } else {
     // Live fetch — pass profile_text so ATS companies are selected by relevance
     const fetchResult = await fetchAllSources(cleanQueries, location, remote_ok, env, String(profile_text))
@@ -4489,11 +4532,17 @@ async function handleAiJobRecommendations(body, request, env, ctx, corsHeaders, 
     if (fetchResult.jobs.length) {
       jobs = fetchResult.jobs
       await putJobsToKV(env, queryHash, jobs)
+      // Persist sourcesUsed alongside the job TTL so future cache hits can report it.
+      if (env.RATE_LIMIT_KV && sourcesUsed.length) {
+        env.RATE_LIMIT_KV.put(KV_SOURCES_KEY, JSON.stringify(sourcesUsed), { expirationTtl: JOB_KV_TTL_SECS }).catch(() => {})
+      }
       await upsertJobsToSupabase(env, ctx, jobs)
       upsertJobsRaw(env, ctx, jobs)
       upsertJobsNormalized(env, ctx, jobs)
+    } else if (fetchResult.sourceErrors && Object.keys(fetchResult.sourceErrors).length) {
+      console.warn(`[RADAR] live fetch returned 0 jobs. Source errors: ${JSON.stringify(fetchResult.sourceErrors)}`)
     }
-    console.log(`[RADAR] jobsCache MISS — fetched ${jobs.length} live jobs`)
+    console.log(`[RADAR] jobsCache MISS — fetched ${jobs.length} live jobs, sources=[${sourcesUsed.join(',')}]`)
   }
 
   if (!jobs.length) {
@@ -4519,6 +4568,7 @@ async function handleAiJobRecommendations(body, request, env, ctx, corsHeaders, 
     const jrecCached = await getJrecFromKV(env, user_id, queryHash)
     if (jrecCached?.recommendations?.length) {
       console.log(`[RADAR] jrecCache HIT — ${jrecCached.recommendations.length} recs, skipping Gemini`)
+      // sourcesUsed is already populated above (either from KV_SOURCES_KEY or live fetch path)
       return new Response(
         JSON.stringify({
           ok:                  true,
@@ -4526,7 +4576,12 @@ async function handleAiJobRecommendations(body, request, env, ctx, corsHeaders, 
           total_jobs_analyzed: jrecCached.total_jobs_analyzed || 0,
           from_cache:          true,
           quota_remaining:     rl.limit - rl.count,
-          pipeline_stats:      { cache_hit: 'jrec', premium_mode: isPremium },
+          pipeline_stats: {
+            cache_hit:       'jrec',
+            premium_mode:    isPremium,
+            sources_used:    sourcesUsed,
+            from_jobs_cache: fromCache,
+          },
         }),
         { status: 200, headers: corsHeaders }
       )
