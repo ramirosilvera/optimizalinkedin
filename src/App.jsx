@@ -724,6 +724,7 @@ export default function App() {
         setInterviewAnswers(item.datos?.respuestas || [])
         setStep(STEPS.INTERVIEW_FEEDBACK)
         break
+      }
       default:
         break
     }
