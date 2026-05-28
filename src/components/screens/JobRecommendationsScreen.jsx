@@ -1688,35 +1688,6 @@ export default function JobRecommendationsScreen({
               </div>
             )}
 
-            {/* Cached-today banner */}
-            {cachedToday && cacheTimestamp && filteredRecs.length > 0 && (
-              <div className="flex items-center gap-2 px-3 py-2 rounded-xl"
-                style={{ background: 'rgba(22,163,74,0.07)', border: '1px solid rgba(22,163,74,0.18)' }}>
-                <span className="text-xs shrink-0" style={{ color: '#16a34a' }}>✓</span>
-                <p className="text-xs flex-1" style={{ color: '#15803d' }}>
-                  Radar listo desde las{' '}
-                  {new Date(cacheTimestamp).toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' })}
-                </p>
-                <button
-                  onClick={() => { setCachedToday(false); setCacheTs(null); fetchRecommendations() }}
-                  className="text-[11px] font-semibold shrink-0 px-2 py-0.5 rounded-lg"
-                  style={{ color: '#0077B5', background: 'rgba(0,119,181,0.08)' }}>
-                  Actualizar
-                </button>
-              </div>
-            )}
-
-            {/* Expansion badge — Premium: tells user they got extra search results */}
-            {expansionUsed && expansionCount > 0 && filteredRecs.length > 0 && (
-              <div className="flex items-center gap-2 px-3 py-2 rounded-xl"
-                style={{ background: 'rgba(14,165,233,0.07)', border: '1px solid rgba(14,165,233,0.16)' }}>
-                <span className="text-xs shrink-0">✨</span>
-                <p className="text-xs flex-1" style={{ color: '#0284c7' }}>
-                  Radar Activo encontró <span className="font-semibold">{expansionCount} roles adicionales</span> vía búsqueda IA
-                </p>
-              </div>
-            )}
-
             {/* Company strip — "Empresas con roles para vos" */}
             {filteredRecs.length > 0 && (
               <CompanyMatchBar recommendations={filteredRecs} />
