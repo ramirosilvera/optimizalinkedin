@@ -2100,7 +2100,7 @@ const JOB_SEARCH_TTL_SECS = 7_200  // job_searches row TTL (mirrors KV)
 const ATS_KV_TTL_SECS     = 79_200  // 22-hour KV cache for ATS company boards (date-keyed)
 const ATS_DB_TTL_HOURS    = 40      // ATS boards update slowly — longer DB TTL
 const JREC_KV_TTL_SECS    = 86_400  // 24-hour per-user AI score cache — skips Gemini on re-runs
-const JREC_PROMPT_VERSION = 'v4'    // bump when JOB_MATCHING_SYSTEM_PROMPT changes to bust stale KV
+const JREC_PROMPT_VERSION = 'v5'    // bump when JOB_MATCHING_SYSTEM_PROMPT changes to bust stale KV
 
 // Rate limits for *new* (fresh) searches — cached re-visits bypass these entirely.
 // Premium: 1 new search/day  (cached same-day results shown for free)
@@ -2481,6 +2481,83 @@ function normalizeGetOnBoard(raw) {
   })
 }
 
+// Himalayas — https://himalayas.app/jobs/api (global remote, free, no auth)
+// Returns: {jobs: [{id, title, company:{name,slug}, location, remote, url, description, publishedAt, salary:{min,max,currency}, category}]}
+function normalizeHimalayas(raw) {
+  const jobs = raw?.jobs || []
+  return jobs.map(j => ({
+    source:          'himalayas',
+    external_id:     String(j.id || Math.random()),
+    title:           j.title || '',
+    company:         j.company?.name || '',
+    description:     truncateDesc(j.description || ''),
+    location:        j.location || j.country || null,
+    remote:          !!(j.remote ?? true),
+    url:             j.url || `https://himalayas.app/jobs/${j.id}`,
+    apply_url:       j.applyUrl || null,
+    salary_min:      j.salary?.min || null,
+    salary_max:      j.salary?.max || null,
+    currency:        j.salary?.currency || null,
+    skills_required: [],
+    seniority:       normalizeSeniority(j.title || ''),
+    industry:        j.category || null,
+    posted_at:       j.publishedAt || null,
+    company_slug:    j.company?.slug || null,
+    ats_type:        null,
+  }))
+}
+
+// Workable — https://apply.workable.com/api/v1/widget/accounts/{slug} (per-company public widget, no auth)
+// Returns: {results: [{shortcode, title, department, city, country, state, remote, url, description}]}
+function normalizeWorkable(raw, companyMeta) {
+  const jobs = raw?.results || []
+  return jobs.map(j => ({
+    source:          'workable',
+    external_id:     j.shortcode || String(Math.random()),
+    title:           j.title || '',
+    company:         companyMeta.name,
+    description:     truncateDesc(j.description || ''),
+    location:        [j.city, j.country].filter(Boolean).join(', ') || null,
+    remote:          j.remote === true,
+    url:             j.url || `https://apply.workable.com/${companyMeta.slug}/j/${j.shortcode}`,
+    apply_url:       j.url || null,
+    salary_min:      null, salary_max: null, currency: null,
+    skills_required: [],
+    seniority:       normalizeSeniority(j.title || ''),
+    industry:        j.department || companyMeta.industries?.[0] || null,
+    posted_at:       null,
+    company_slug:    companyMeta.slug,
+    ats_type:        'workable',
+  }))
+}
+
+// Teamtailor — https://{slug}.teamtailor.com/jobs.json (per-company public careers JSON, no auth)
+// Returns JSON:API: {data: [{type:"jobs", id, attributes:{title, "body-text", city, country, "remote-status", "apply-url", "career-page-url", "created-at"}}]}
+function normalizeTeamtailor(raw, companyMeta) {
+  const jobs = raw?.data || []
+  return jobs.map(j => {
+    const a = j.attributes || {}
+    return {
+      source:          'teamtailor',
+      external_id:     String(j.id || Math.random()),
+      title:           a.title || '',
+      company:         companyMeta.name,
+      description:     truncateDesc(a['body-text'] || a.pitch || ''),
+      location:        a.city || a.country || null,
+      remote:          ['fully', 'hybrid'].includes(a['remote-status']),
+      url:             a['career-page-url'] || `https://${companyMeta.slug}.teamtailor.com`,
+      apply_url:       a['apply-url'] || null,
+      salary_min:      null, salary_max: null, currency: null,
+      skills_required: [],
+      seniority:       normalizeSeniority(a.title || ''),
+      industry:        companyMeta.industries?.[0] || null,
+      posted_at:       a['created-at'] || null,
+      company_slug:    companyMeta.slug,
+      ats_type:        'teamtailor',
+    }
+  })
+}
+
 // Greenhouse — GET boards-api.greenhouse.io/v1/boards/{slug}/jobs?content=true
 // Returns: {jobs: [{id, title, location:{name}, absolute_url, updated_at, departments, content(HTML)}]}
 function normalizeGreenhouse(rawJobs, companyMeta) {
@@ -2610,6 +2687,9 @@ function normalizeJobs(source, rawData, companyMeta = null) {
     case 'jooble':          return normalizeJooble(rawData)
     case 'adzuna':          return normalizeAdzuna(rawData)
     case 'getonboard':      return normalizeGetOnBoard(rawData)
+    case 'himalayas':       return normalizeHimalayas(rawData)
+    case 'workable':        return normalizeWorkable(rawData, companyMeta)
+    case 'teamtailor':      return normalizeTeamtailor(rawData, companyMeta)
     case 'greenhouse':      return normalizeGreenhouse(rawData, companyMeta)
     case 'lever':           return normalizeLever(rawData, companyMeta)
     case 'smartrecruiters': return normalizeSmartRecruiters(rawData, companyMeta)
@@ -2653,6 +2733,18 @@ const ATS_COMPANIES = {
     // US tech companies actively hiring LATAM remote — include salary data (Ashby exposes it)
     { slug: 'linear',   name: 'Linear',   country: 'US', industries: ['tech','saas'],    tags: ['backend','frontend'] },
     { slug: 'vercel',   name: 'Vercel',   country: 'US', industries: ['tech','devtools'], tags: ['backend','devops','frontend'] },
+  ],
+  workable: [
+    { slug: 'uala',      name: 'Ualá',      country: 'AR', industries: ['fintech'],           tags: ['backend','mobile','data','security'] },
+    { slug: 'aivo',      name: 'Aivo',      country: 'AR', industries: ['tech','ai'],          tags: ['backend','frontend','ml','data'] },
+    { slug: 'lemontech', name: 'Lemontech', country: 'CL', industries: ['tech','legaltech'],   tags: ['backend','frontend','devops'] },
+    { slug: 'modo',      name: 'MODO',      country: 'AR', industries: ['fintech'],            tags: ['backend','mobile'] },
+    { slug: 'mango-dsp', name: 'Mango DSP', country: 'AR', industries: ['tech','marketing'],   tags: ['backend','data','devops'] },
+  ],
+  teamtailor: [
+    { slug: 'global66',           name: 'Global66',          country: 'CL', industries: ['fintech'],     tags: ['backend','mobile','data'] },
+    { slug: 'knauf-south-america', name: 'Knauf South Am.',  country: 'AR', industries: ['manufacturing'], tags: ['backend','data','devops'] },
+    { slug: 'quala',              name: 'Quala',             country: 'CO', industries: ['fmcg'],         tags: ['data','backend','marketing'] },
   ],
 }
 
@@ -2757,6 +2849,20 @@ async function fetchAtsCompanyBoard(atsType, company, env) {
       })
       if (r.ok) { raw = await r.json(); jobs = normalizeAshby(raw, { ...company, slug }) }
       else console.warn(`[ashby] HTTP ${r.status} for ${slug}`)
+    }
+    else if (atsType === 'workable') {
+      r = await fetch(`https://apply.workable.com/api/v1/widget/accounts/${slug}`, {
+        headers: { 'User-Agent': UA, Accept: 'application/json' }, signal: ctrl.signal,
+      })
+      if (r.ok) { raw = await r.json(); jobs = normalizeWorkable(raw, { ...company, slug }) }
+      else console.warn(`[workable] HTTP ${r.status} for ${slug}`)
+    }
+    else if (atsType === 'teamtailor') {
+      r = await fetch(`https://${slug}.teamtailor.com/jobs.json`, {
+        headers: { 'User-Agent': UA, Accept: 'application/json' }, signal: ctrl.signal,
+      })
+      if (r.ok) { raw = await r.json(); jobs = normalizeTeamtailor(raw, { ...company, slug }) }
+      else console.warn(`[teamtailor] HTTP ${r.status} for ${slug}`)
     }
     if (jobs.length) await putAtsBoardToKV(env, atsType, slug, jobs)
   } catch (err) {
@@ -2903,6 +3009,14 @@ async function fetchJobSource(source, query, location, remoteOk, env) {
       return { source, jobs: normalizeJobs(source, raw) }
     }
 
+    if (source === 'himalayas') {
+      const base = `https://himalayas.app/jobs/api?q=${q}&limit=20`
+      url = remoteOk ? base : `${base}&countries=argentina`
+      const r = await fetch(url, { headers: { 'Accept': 'application/json', 'User-Agent': UA }, signal: ctrl.signal })
+      raw = await r.json()
+      return { source, jobs: normalizeJobs(source, raw) }
+    }
+
     return { source, jobs: [], error: 'unknown_source' }
 
   } catch (err) {
@@ -2918,8 +3032,8 @@ async function fetchJobSource(source, query, location, remoteOk, env) {
  * @param {string} userProfile - Used to select relevant ATS companies (no AI cost)
  */
 async function fetchAllSources(queries, location, remoteOk, env, userProfile = '') {
-  const remoteSources = ['remoteok', 'remotive', 'jobicy', 'adzuna', 'getonboard']
-  const localSources  = ['adzuna', 'jobicy', 'getonboard']
+  const remoteSources = ['remoteok', 'remotive', 'jobicy', 'adzuna', 'getonboard', 'himalayas']
+  const localSources  = ['adzuna', 'jobicy', 'getonboard', 'himalayas']
   if (env.JOOBLE_KEY) { remoteSources.push('jooble'); localSources.push('jooble') }
   const sources = remoteOk ? remoteSources : localSources
 
