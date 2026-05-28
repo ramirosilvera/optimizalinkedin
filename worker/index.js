@@ -3231,6 +3231,7 @@ function inferProfessionFamily(title) {
 // Used as geo context when scoring jobs — helps Gemini penalize inviable on-site roles.
 function extractCandidateLocation(profileText) {
   const t = (profileText || '').slice(0, 2000).toLowerCase()
+  /** @type {[RegExp, string][]} */
   const PATTERNS = [
     [/\b(caba|capital federal|ciudad de buenos aires|ciudad aut[oó]noma)\b/, 'CABA'],
     [/\b(palermo|belgrano|villa crespo|san telmo|recoleta|microcentro|barracas|flores|villa urquiza)\b/, 'CABA'],
@@ -4332,71 +4333,6 @@ async function handleAiJobRecommendations(body, request, env, ctx, corsHeaders, 
       }
     } catch { /* non-fatal — rec_ids stay null, save falls back to createCard */ }
 
-    // Also save to historial for the user's history tab
-    const historialRow = {
-      user_id,
-      tipo:      'job_recommendations',
-      titulo:    `Recomendaciones para: ${cleanQueries.join(', ')}`,
-      datos:     {
-        queries:       cleanQueries,
-        location:      location || null,
-        remote_ok:     !!remote_ok,
-        match_count:   recommendations.length,
-        top_match:          recommendations[0]
-          ? { title: recommendations[0].job.title, company: recommendations[0].job.company, score: recommendations[0].match_score }
-          : null,
-        candidate_location: candidateLocation || null,
-        expansion_triggered: needsExpansion,
-        expansion_applied:  expansionUsed,
-        geo_filter_applied: !!candidateLocation,
-        total_jobs_analyzed: jobPool.length,
-        generated_at:       new Date().toISOString(),
-      },
-    }
-    // Dedup: if a job_recommendations historial row already exists today for this user,
-    // update it instead of inserting a new one — prevents "noisy history" on re-searches.
-    const saveHistorial = (async () => {
-      try {
-        const today = new Date().toISOString().slice(0, 10)
-        const existRes = await fetch(
-          `${env.SUPABASE_URL}/rest/v1/historial`
-          + `?user_id=eq.${user_id}&tipo=eq.job_recommendations`
-          + `&created_at=gte.${today}T00:00:00Z`
-          + `&order=created_at.desc&limit=1&select=id`,
-          { headers: { apikey: env.SUPABASE_SERVICE_ROLE_KEY, Authorization: `Bearer ${env.SUPABASE_SERVICE_ROLE_KEY}` } }
-        )
-        const existing = await existRes.json().catch(() => [])
-        if (Array.isArray(existing) && existing[0]?.id) {
-          // Row exists today — patch it with fresh data
-          await fetch(
-            `${env.SUPABASE_URL}/rest/v1/historial?id=eq.${existing[0].id}`,
-            {
-              method: 'PATCH',
-              headers: {
-                apikey: env.SUPABASE_SERVICE_ROLE_KEY,
-                Authorization: `Bearer ${env.SUPABASE_SERVICE_ROLE_KEY}`,
-                'Content-Type': 'application/json',
-                Prefer: 'return=minimal',
-              },
-              body: JSON.stringify({ titulo: historialRow.titulo, datos: historialRow.datos }),
-            }
-          )
-        } else {
-          // No row today — create new
-          await fetch(`${env.SUPABASE_URL}/rest/v1/historial`, {
-            method:  'POST',
-            headers: {
-              apikey: env.SUPABASE_SERVICE_ROLE_KEY,
-              Authorization: `Bearer ${env.SUPABASE_SERVICE_ROLE_KEY}`,
-              'Content-Type': 'application/json',
-              Prefer: 'return=minimal',
-            },
-            body: JSON.stringify(historialRow),
-          })
-        }
-      } catch { /* non-fatal */ }
-    })()
-    if (ctx?.waitUntil) ctx.waitUntil(saveHistorial)
   }
 
   // Sprint 4: persist initial AI enrichment (fire-and-forget)
@@ -4436,6 +4372,72 @@ async function handleAiJobRecommendations(body, request, env, ctx, corsHeaders, 
     } else {
       expansionAvailable = true   // tells frontend to show upsell
     }
+  }
+
+  // Build historialRow here — after expansion — so needsExpansion + expansionUsed are final
+  const historialRow = {
+    user_id,
+    tipo:   'job_recommendations',
+    titulo: `Recomendaciones para: ${cleanQueries.join(', ')}`,
+    datos:  {
+      queries:             cleanQueries,
+      location:            location || null,
+      remote_ok:           !!remote_ok,
+      match_count:         recommendations.length,
+      top_match:           recommendations[0]
+        ? { title: recommendations[0].job.title, company: recommendations[0].job.company, score: recommendations[0].match_score }
+        : null,
+      candidate_location:  candidateLocation || null,
+      expansion_triggered: needsExpansion,
+      expansion_applied:   expansionUsed,
+      geo_filter_applied:  !!candidateLocation,
+      total_jobs_analyzed: jobPool.length,
+      generated_at:        new Date().toISOString(),
+    },
+  }
+
+  // Persist historial (dedup: patch today's row if exists, else insert)
+  if (user_id && ctx?.waitUntil) {
+    const saveHistorial = (async () => {
+      try {
+        const today = new Date().toISOString().slice(0, 10)
+        const existRes = await fetch(
+          `${env.SUPABASE_URL}/rest/v1/historial`
+          + `?user_id=eq.${user_id}&tipo=eq.job_recommendations`
+          + `&created_at=gte.${today}T00:00:00Z`
+          + `&order=created_at.desc&limit=1&select=id`,
+          { headers: { apikey: env.SUPABASE_SERVICE_ROLE_KEY, Authorization: `Bearer ${env.SUPABASE_SERVICE_ROLE_KEY}` } }
+        )
+        const existing = await existRes.json().catch(() => [])
+        if (Array.isArray(existing) && existing[0]?.id) {
+          await fetch(
+            `${env.SUPABASE_URL}/rest/v1/historial?id=eq.${existing[0].id}`,
+            {
+              method: 'PATCH',
+              headers: {
+                apikey: env.SUPABASE_SERVICE_ROLE_KEY,
+                Authorization: `Bearer ${env.SUPABASE_SERVICE_ROLE_KEY}`,
+                'Content-Type': 'application/json',
+                Prefer: 'return=minimal',
+              },
+              body: JSON.stringify({ titulo: historialRow.titulo, datos: historialRow.datos }),
+            }
+          )
+        } else {
+          await fetch(`${env.SUPABASE_URL}/rest/v1/historial`, {
+            method:  'POST',
+            headers: {
+              apikey: env.SUPABASE_SERVICE_ROLE_KEY,
+              Authorization: `Bearer ${env.SUPABASE_SERVICE_ROLE_KEY}`,
+              'Content-Type': 'application/json',
+              Prefer: 'return=minimal',
+            },
+            body: JSON.stringify(historialRow),
+          })
+        }
+      } catch { /* non-fatal */ }
+    })()
+    ctx.waitUntil(saveHistorial)
   }
 
   // Cache AI scores in KV (24h) and radar_search_history (Supabase, cross-device)
