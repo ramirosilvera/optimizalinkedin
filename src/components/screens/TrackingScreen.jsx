@@ -30,7 +30,7 @@ export default function TrackingScreen({
 
   return (
     <>
-      <div className="step-transition w-full" style={{ minHeight: '70vh' }}>
+      <div className="step-transition w-full max-w-6xl mx-auto" style={{ minHeight: '70vh' }}>
         {!user?.es_premium ? (
           <div className="text-center space-y-5 py-12 px-4">
             <div className="text-5xl">📍</div>

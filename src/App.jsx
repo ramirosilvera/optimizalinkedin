@@ -2893,7 +2893,7 @@ Generá el feedback en este JSON exacto:
         )}
       </div>
 
-      <div className="w-full max-w-xl">
+      <div className="w-full max-w-5xl">
 
         {/* ── Journey progress indicator ── */}
         {step > STEPS.WELCOME && step !== STEPS.MODE_SELECT && step !== STEPS.REPORT && step !== STEPS.JOB_RECOMMENDATIONS && (() => {

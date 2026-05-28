@@ -1453,7 +1453,7 @@ export default function JobRecommendationsScreen({
   // RENDER
   // ─────────────────────────────────────────────────────────────────────────
   return (
-    <div className="step-transition w-full">
+    <div className="step-transition w-full max-w-4xl mx-auto">
 
       {/* ══ STICKY HEADER ══ */}
       <div className="sticky top-0 z-30 pt-2 pb-3 px-0"
