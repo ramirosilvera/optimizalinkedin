@@ -129,34 +129,55 @@ function SkeletonCard() {
 // just the technology. Cycles at 2 s intervals.
 const LOADING_STAGES = [
   {
-    icon: '📡',
-    msg: 'Conectando con 400+ fuentes laborales...',
-    sub: 'ATS directos de empresas, bolsas globales y portales activos en simultáneo.',
+    icon: '🌐',
+    msg: 'Conectando con ATS corporativos',
+    sub: 'Accediendo a Greenhouse, Lever, Ashby y 400+ portales directos de empresas.',
   },
   {
-    icon: '🔬',
-    msg: 'Analizando tu perfil profesional...',
-    sub: 'La IA identifica tu área, nivel y especialidad para descartar matches irrelevantes.',
+    icon: '🔍',
+    msg: 'Escaneando bolsas laborales activas',
+    sub: 'RemoteOK, Remotive, Jooble, GetOnBoard y fuentes regionales LATAM en simultáneo.',
   },
   {
-    icon: '🧭',
-    msg: 'Evaluando compatibilidad geográfica y modalidad...',
-    sub: 'Priorizamos lo viable para tu ubicación — presencial, híbrido o remoto.',
+    icon: '🧬',
+    msg: 'Analizando tu perfil profesional',
+    sub: 'Extrayendo área, nivel, industria y señales de diferenciación de tu experiencia.',
   },
   {
-    icon: '⚡',
-    msg: 'Calculando matching contextual en tiempo real...',
-    sub: 'No buscamos palabras clave. Analizamos coherencia profesional real.',
+    icon: '📍',
+    msg: 'Evaluando compatibilidad geográfica',
+    sub: 'Priorizando presencial e híbrido accesibles, más remoto con zona horaria compatible.',
+  },
+  {
+    icon: '🤖',
+    msg: 'Calculando matching semántico',
+    sub: 'No comparamos palabras clave — analizamos coherencia de carrera real con cada aviso.',
+  },
+  {
+    icon: '✨',
+    msg: 'Activando búsqueda expandida',
+    sub: 'El Radar explora títulos alternativos y variantes de tu rol que los filtros normales no cubren.',
+    premiumOnly: true,
+  },
+  {
+    icon: '📊',
+    msg: 'Calculando puntuaciones de match',
+    sub: 'Cada vacante recibe un score basado en trayectoria, industria y brecha de skills.',
   },
   {
     icon: '🏆',
-    msg: 'Clasificando por potencial competitivo...',
-    sub: 'Tus mejores oportunidades están a punto de aparecer.',
+    msg: 'Clasificando tus mejores oportunidades',
+    sub: 'Las posiciones donde sos candidato/a diferenciador/a aparecen primero.',
   },
 ]
 
-function LoadingStage({ stage }) {
-  const s = LOADING_STAGES[Math.min(stage, LOADING_STAGES.length - 1)]
+function getVisibleStages(isPremiumUser) {
+  return LOADING_STAGES.filter(s => !s.premiumOnly || isPremiumUser)
+}
+
+function LoadingStage({ stage, isPremium }) {
+  const visibleStages = getVisibleStages(isPremium)
+  const s = visibleStages[Math.min(stage, visibleStages.length - 1)]
   return (
     <div className="flex flex-col items-center gap-4 py-12 px-4">
       {/* Animated pulse ring — crimson matches Radar Laboral brand color */}
@@ -174,7 +195,7 @@ function LoadingStage({ stage }) {
       </div>
       {/* Progress dots */}
       <div className="flex gap-1.5 mt-1">
-        {LOADING_STAGES.map((_, i) => (
+        {visibleStages.map((_, i) => (
           <span key={i} className="w-2 h-2 rounded-full transition-all duration-500"
             style={{ background: i <= stage ? '#c2185b' : 'rgba(194,24,91,0.18)' }} />
         ))}
@@ -623,7 +644,7 @@ function JobCard({
               className="text-xs font-bold"
               style={{ color: '#dc2626', opacity: Math.min((Math.abs(swipeDelta) - 30) / 25, 1) }}
             >
-              No me interesa
+              Ya la vi
             </span>
             <span className="text-xl" style={{ opacity: Math.min((Math.abs(swipeDelta) - 30) / 25, 1) }}>✕</span>
           </div>
@@ -678,7 +699,7 @@ function JobCard({
               {isDirectAts && (
                 <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold"
                   style={{ background: 'rgba(22,163,74,0.10)', color: '#15803d', border: '1px solid rgba(22,163,74,0.25)' }}>
-                  ✓ Oferta directa
+                  ✓ Directo de la empresa
                 </span>
               )}
               {!isDirectAts && isGlobalRemote && (
@@ -941,7 +962,7 @@ function JobCard({
         <button onClick={handleDismiss}
           className="w-full text-center text-[11px] py-3"
           style={{ color: '#cbd5e1' }}>
-          No me interesa
+          Ya la vi
         </button>
       </div>
     </div>
@@ -1585,7 +1606,7 @@ export default function JobRecommendationsScreen({
         {/* ── LOADING STATE ── */}
         {loadState === 'loading' && (
           <>
-            <LoadingStage stage={loadStage} />
+            <LoadingStage stage={loadStage} isPremium={isPremium} />
             {/* Skeleton cards appear progressively after 2 s */}
             {loadStage >= 1 && [1, 2, 3].map(i => <SkeletonCard key={i} />)}
           </>
@@ -1634,11 +1655,16 @@ export default function JobRecommendationsScreen({
                 style={{ background: 'rgba(0,119,181,0.05)', border: '1px solid rgba(0,119,181,0.12)' }}>
                 <div className="flex-1 min-w-0">
                   <p className="text-sm font-semibold" style={{ color: '#0d2137' }}>
-                    {filteredRecs.length} oportunidade{filteredRecs.length !== 1 ? 's' : ''} compatibles
+                    {filteredRecs.length} oportunidad{filteredRecs.length !== 1 ? 'es' : ''} altamente compatible{filteredRecs.length !== 1 ? 's' : ''}
                   </p>
                   {result?.resumen_diagnostico && (
                     <p className="text-xs mt-0.5 truncate" style={{ color: '#64748b' }}>
                       {result.resumen_diagnostico.slice(0, 70)}...
+                    </p>
+                  )}
+                  {totalAnalyzed > filteredRecs.length && (
+                    <p className="text-xs" style={{ color: '#64748b' }}>
+                      Seleccionadas de {totalAnalyzed} avisos analizados
                     </p>
                   )}
                 </div>
