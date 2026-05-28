@@ -2156,10 +2156,14 @@ function truncateDesc(text) {
 
 function normalizeSeniority(raw = '') {
   const s = (raw || '').toLowerCase()
-  if (s.includes('junior') || s.includes('jr') || s.includes('entry'))       return 'Junior'
-  if (s.includes('semi senior') || s.includes('ssr') || s.includes('mid'))   return 'Semi Senior'
-  if (s.includes('senior') || s.includes('sr'))                               return 'Senior'
-  if (s.includes('lead') || s.includes('manager') || s.includes('head'))     return 'Lead'
+  if (/junior|jr\b|entry|trainee|pasante|aprendiz/.test(s))                    return 'Junior'
+  if (/analista\s+(jr|i\b)/.test(s))                                           return 'Junior'
+  if (/semi.?senior|ssr\b|mid.?level|pleno|analista\s+(sr|ii\b)/.test(s))     return 'Semi Senior'
+  if (/senior|sr\b/.test(s))                                                   return 'Senior'
+  if (/jefe|coordinador|team.?lead|lead\b|supervisor/.test(s))                 return 'Lead'
+  if (/gerente|manager|head\s+of|director|vp\b|vice\s+president|cto|cfo|coo|ceo/.test(s)) return 'Management'
+  if (/analista(?!\s*(jr|sr|i{1,3}))/.test(s))                                 return 'Semi Senior'
+  if (/intern|practice/.test(s))                                               return 'Junior'
   return 'No especificado'
 }
 
@@ -2308,6 +2312,19 @@ function applyPreFilter(jobs, profileText, maxCandidates = 25) {
       if (daysOld <= 1) s += 2
       else if (daysOld <= 7) s += 1
     }
+    // Description quality
+    if ((job.description || '').length > 300) s += 1
+    // Has salary information
+    if (job.salary_min || job.salary_max) s += 2
+    // Has distinct apply URL (= not just a homepage link)
+    if (job.apply_url && job.apply_url !== job.url) s += 1
+    // Company has ATS slug (= verified employer)
+    if (job.company_slug) s += 1
+    // Stale penalty for old jobs
+    if (job.posted_at) {
+      const daysOld2 = (Date.now() - new Date(job.posted_at).getTime()) / 86_400_000
+      if (daysOld2 > 30) s -= 2
+    }
     return s
   }
 
@@ -2438,6 +2455,32 @@ function normalizeAdzuna(raw) {
   }))
 }
 
+// GetOnBoard — https://www.getonbrd.com/api/v0/jobs (LATAM tech focus, free)
+function normalizeGetOnBoard(raw) {
+  if (!raw?.data) return []
+  return raw.data.map(j => {
+    const a = j.attributes || {}
+    return {
+      source:          'getonboard',
+      external_id:     String(j.id || Math.random()),
+      title:           a.title || '',
+      company:         a.company?.data?.attributes?.name || a.company?.name || '',
+      description:     truncateDesc(a.functions || a.description || ''),
+      location:        a.country || null,
+      remote:          !!(a.remote_friendly),
+      url:             `https://www.getonbrd.com/jobs/${j.id}`,
+      apply_url:       a.applications_url || null,
+      salary_min:      null, salary_max: null, currency: null,
+      skills_required: [],
+      seniority:       normalizeSeniority(a.title || ''),
+      industry:        null,
+      posted_at:       a.published_at || null,
+      company_slug:    null,
+      ats_type:        null,
+    }
+  })
+}
+
 // Greenhouse — GET boards-api.greenhouse.io/v1/boards/{slug}/jobs?content=true
 // Returns: {jobs: [{id, title, location:{name}, absolute_url, updated_at, departments, content(HTML)}]}
 function normalizeGreenhouse(rawJobs, companyMeta) {
@@ -2566,6 +2609,7 @@ function normalizeJobs(source, rawData, companyMeta = null) {
     case 'jobicy':          return normalizeJobicy(rawData)
     case 'jooble':          return normalizeJooble(rawData)
     case 'adzuna':          return normalizeAdzuna(rawData)
+    case 'getonboard':      return normalizeGetOnBoard(rawData)
     case 'greenhouse':      return normalizeGreenhouse(rawData, companyMeta)
     case 'lever':           return normalizeLever(rawData, companyMeta)
     case 'smartrecruiters': return normalizeSmartRecruiters(rawData, companyMeta)
@@ -2852,6 +2896,13 @@ async function fetchJobSource(source, query, location, remoteOk, env) {
       return { source, jobs: normalizeJobs(source, raw) }
     }
 
+    if (source === 'getonboard') {
+      url = `https://www.getonbrd.com/api/v0/jobs?query=${q}&per_page=30`
+      const r = await fetch(url, { headers: { 'Accept': 'application/json' }, signal: ctrl.signal })
+      raw = await r.json()
+      return { source, jobs: normalizeJobs(source, raw) }
+    }
+
     return { source, jobs: [], error: 'unknown_source' }
 
   } catch (err) {
@@ -2867,8 +2918,8 @@ async function fetchJobSource(source, query, location, remoteOk, env) {
  * @param {string} userProfile - Used to select relevant ATS companies (no AI cost)
  */
 async function fetchAllSources(queries, location, remoteOk, env, userProfile = '') {
-  const remoteSources = ['remoteok', 'remotive', 'jobicy', 'adzuna']
-  const localSources  = ['adzuna', 'jobicy']
+  const remoteSources = ['remoteok', 'remotive', 'jobicy', 'adzuna', 'getonboard']
+  const localSources  = ['adzuna', 'jobicy', 'getonboard']
   if (env.JOOBLE_KEY) { remoteSources.push('jooble'); localSources.push('jooble') }
   const sources = remoteOk ? remoteSources : localSources
 
@@ -3040,10 +3091,7 @@ async function expandSearchTerms(env, profileText, existingQueries) {
   if (!geminiKeys.length) return []
 
   const prompt =
-    `Profile: "${(profileText || '').slice(0, 350)}"\n` +
-    `Current searches: ${JSON.stringify(existingQueries)}\n` +
-    `Suggest 2 alternative job-title search terms that surface compatible roles NOT covered above. ` +
-    `Each term must be short (2–4 words). Respond ONLY with a JSON array. Example: ["Growth Manager","Head of CRM"]`
+    `Profile: "${(profileText || '').slice(0, 600)}"\nCurrent searches: ${JSON.stringify(existingQueries)}\n\nThe candidate belongs to one of these 8 families:\nHR/Personas | Finanzas | Tecnología | Marketing/Growth | Operaciones | Ventas/BD | Legal/Compliance | Management General\n\nStep 1: Identify which family best matches this profile.\nStep 2: Generate 3 alternative job titles WITHIN that same family that:\n- Use different Spanish/English naming conventions (e.g., "HRBP" vs "Talent Partner")\n- Cover adjacent seniority framing for the profile level\n- Are searchable on LinkedIn/Bumeran Argentina\n\nRespond ONLY with JSON: {"family":"HR/Personas","terms":["HRBP","People Manager","HR Business Partner"]}`
 
   try {
     const controller = new AbortController()
@@ -3055,7 +3103,7 @@ async function expandSearchTerms(env, profileText, existingQueries) {
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({
           contents:          [{ role: 'user', parts: [{ text: prompt }] }],
-          generationConfig:  { temperature: 0.4, maxOutputTokens: 60 },
+          generationConfig:  { temperature: 0.4, maxOutputTokens: 120 },
         }),
         signal: controller.signal,
       }
@@ -3064,8 +3112,9 @@ async function expandSearchTerms(env, profileText, existingQueries) {
     if (!res.ok) return []
     const d   = await res.json()
     const raw = d?.candidates?.[0]?.content?.parts?.[0]?.text || ''
-    const arr = JSON.parse(raw.replace(/^```json\n?|\n?```$/g, '').trim())
-    return Array.isArray(arr) ? arr.slice(0, 2).filter(s => typeof s === 'string' && s.trim()) : []
+    const parsed = JSON.parse(raw.replace(/^```json\n?|\n?```$/g, '').trim())
+    const arr = parsed?.terms || (Array.isArray(parsed) ? parsed : [])
+    return Array.isArray(arr) ? arr.slice(0, 3).filter(s => typeof s === 'string' && s.trim()) : []
   } catch { return [] }
 }
 
@@ -3076,7 +3125,7 @@ async function expandWithSearch(env, ctx, cleanQueries, location, remoteOk, prof
   if (!newTerms.length) return null
 
   const { jobs: rawExpanded } = await fetchAllSources(
-    newTerms.slice(0, 1), location, remoteOk, env, String(profileText)
+    newTerms.slice(0, 2), location, remoteOk, env, String(profileText)
   )
   const newJobs = rawExpanded
     .filter(j => !existingHashes.has(canonicalJobHash(j)))
@@ -4196,11 +4245,16 @@ async function handleAiJobRecommendations(body, request, env, ctx, corsHeaders, 
   let   aiResult = null
   let   aiError  = null
 
+  // 12s local timeout — Flash Lite responds in 3-5s; 12s prevents Worker CPU exhaustion
+  const geminiMatchTimeout = new Promise((_, reject) =>
+    setTimeout(() => reject(new Error('gemini_match_timeout')), 12_000)
+  )
+
   try {
-    const aiRes = await callGeminiApi(env, ctx, geminiBody, corsHeaders, {
-      feature: 'job_matching_batch',
-      userId:  user_id || null,
-    })
+    const aiRes = await Promise.race([
+      callGeminiApi(env, ctx, geminiBody, corsHeaders, { feature: 'job_matching_batch', userId: user_id || null }),
+      geminiMatchTimeout,
+    ])
     // callGeminiApi returns a Response; we need to parse it for our logic
     if (aiRes.status === 200) {
       const aiData = await aiRes.clone().json()
@@ -4306,25 +4360,21 @@ async function handleAiJobRecommendations(body, request, env, ctx, corsHeaders, 
       status:      'new',
     }))
 
-    // Await insert so rec_id is populated in the response (required by save-to-kanban flow)
-    try {
-      const saveRes = await fetch(`${env.SUPABASE_URL}/rest/v1/job_recommendations`, {
-        method:  'POST',
-        headers: {
-          apikey:         env.SUPABASE_SERVICE_ROLE_KEY,
-          Authorization:  `Bearer ${env.SUPABASE_SERVICE_ROLE_KEY}`,
-          'Content-Type': 'application/json',
-          Prefer:         'return=representation',
-        },
-        body: JSON.stringify(recRows),
-      })
-      const saved = await saveRes.json()
-      if (Array.isArray(saved)) {
-        saved.forEach((row, i) => {
-          if (recommendations[i]) recommendations[i].rec_id = row.id
-        })
-      }
-    } catch { /* non-fatal — rec_ids stay null, save falls back to createCard */ }
+    // Fire-and-forget: rec_ids will be null on first render (save-to-kanban falls back to createCard)
+    if (ctx?.waitUntil) {
+      ctx.waitUntil(
+        fetch(`${env.SUPABASE_URL}/rest/v1/job_recommendations`, {
+          method:  'POST',
+          headers: {
+            apikey:         env.SUPABASE_SERVICE_ROLE_KEY,
+            Authorization:  `Bearer ${env.SUPABASE_SERVICE_ROLE_KEY}`,
+            'Content-Type': 'application/json',
+            Prefer:         'return=minimal',
+          },
+          body: JSON.stringify(recRows),
+        }).catch(() => {})
+      )
+    }
 
   }
 
