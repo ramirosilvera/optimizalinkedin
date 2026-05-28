@@ -1030,11 +1030,7 @@ export default function JobRecommendationsScreen({
     }
   }, [showRefine])
 
-  // ── Pull to refresh ────────────────────────────────────────────────────────
-  const pullStartRef     = useRef(null)
-  const pullStartTimeRef = useRef(null)   // for velocity detection
-  const [pullDist, setPullDist] = useState(0)
-  const scrollRef        = useRef(null)
+  const scrollRef = useRef(null)
 
   // ── Free tier gate: 3 results visible, rest blurred ───────────────────────
   const FREE_VISIBLE = 3
@@ -1064,7 +1060,7 @@ export default function JobRecommendationsScreen({
     if (!queries.length) { setLoadState('no_profile'); return }
 
     // 2. SEARCH INITIATED — fires every time the user triggers a search,
-    //    including manual refresh, pull-to-refresh, and filter changes.
+    //    including manual refresh and filter changes.
     trackEvent('radar_laboral_search_started', {
       query_terms_count: queries.length,
       remote_ok:         activeFilters.remoteOnly,
@@ -1386,55 +1382,6 @@ export default function JobRecommendationsScreen({
     })
   }
 
-  // ── Pull to refresh handlers ───────────────────────────────────────────────
-  // Guards against accidental refresh:
-  //   • scrollTop check prevents mid-list triggers (iOS Safari bounce check below)
-  //   • velocity check: slow drag (<1px/ms) = intentional pull; fast = momentum scroll
-  //   • threshold raised to 64 px (iOS standard) — 48 px was too easy to hit
-  //   • NO filter reset — that was a side-effect, not intentional behavior
-  //   • touchCancel cleanup in useEffect to handle system gesture interruptions
-  const onScrollTouchStart = (e) => {
-    const el = scrollRef.current
-    // Use Math.abs to handle iOS negative scrollTop during bounce
-    if (el && Math.abs(el.scrollTop) < 2 && loadState !== 'loading') {
-      pullStartRef.current     = e.touches[0].clientY
-      pullStartTimeRef.current = Date.now()
-    }
-  }
-  const onScrollTouchMove = (e) => {
-    if (pullStartRef.current === null) return
-    const dist     = e.touches[0].clientY - pullStartRef.current
-    const elapsed  = Date.now() - (pullStartTimeRef.current || Date.now())
-    // Discard momentum scrolls (velocity > 1.5 px/ms = fast flick, not intentional pull)
-    const velocity = elapsed > 0 ? dist / elapsed : Infinity
-    if (dist > 0 && velocity < 1.5) {
-      setPullDist(Math.min(dist, 72))
-    } else if (dist <= 0) {
-      setPullDist(0)
-    }
-  }
-  const onScrollTouchEnd = () => {
-    if (pullDist > 64) {
-      fetchRecommendations()  // Intentional refresh — does NOT reset user's filters
-    }
-    setPullDist(0)
-    pullStartRef.current     = null
-    pullStartTimeRef.current = null
-  }
-
-  // Clean up pullStartRef on system gesture interruptions (notification swipe, etc.)
-  useEffect(() => {
-    const el = scrollRef.current
-    if (!el) return
-    const cleanup = () => {
-      pullStartRef.current     = null
-      pullStartTimeRef.current = null
-      setPullDist(0)
-    }
-    el.addEventListener('touchcancel', cleanup)
-    return () => el.removeEventListener('touchcancel', cleanup)
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [loadState])
 
   // ── Active filter count for badge ─────────────────────────────────────────
   const activeFilterCount = [
@@ -1611,21 +1558,10 @@ export default function JobRecommendationsScreen({
         )}
       </div>
 
-      {/* ══ PULL TO REFRESH INDICATOR ══ */}
-      {pullDist > 10 && (
-        <div className="flex items-center justify-center py-2 text-xs"
-          style={{ color: '#0077B5', opacity: pullDist / 64 }}>
-          {pullDist > 48 ? '↑ Soltar para actualizar' : '↓ Arrastrá para actualizar'}
-        </div>
-      )}
-
       {/* ══ MAIN CONTENT AREA ══ */}
       <div
         ref={scrollRef}
-        className="pb-32 pt-2 space-y-4"
-        onTouchStart={onScrollTouchStart}
-        onTouchMove={onScrollTouchMove}
-        onTouchEnd={onScrollTouchEnd}>
+        className="pb-32 pt-2 space-y-4">
 
         {/* ── NO PROFILE STATE ── */}
         {loadState === 'no_profile' && (
