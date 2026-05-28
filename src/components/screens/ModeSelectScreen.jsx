@@ -61,7 +61,7 @@ function RadarStepCard({
 
   return (
     <div
-      className={`rounded-2xl transition-all duration-200 overflow-hidden step-card card-depth ${isRec ? 'shadow-md' : ''}`}
+      className={`rounded-2xl transition-all duration-200 overflow-hidden step-card card-depth md:h-full md:flex md:flex-col ${isRec ? 'shadow-md' : ''}`}
       style={{
         border: cardBorder,
         background: cardBg,
@@ -87,8 +87,8 @@ function RadarStepCard({
         </div>
       )}
 
-      <div className="p-4 sm:p-6">
-        <div className="flex items-start gap-3">
+      <div className="p-4 sm:p-6 md:flex-1 md:flex md:flex-col">
+        <div className="flex items-start md:items-stretch gap-3 md:flex-1">
           {/* Icon + step number */}
           <div className="shrink-0 text-center w-10">
             <div
@@ -116,7 +116,7 @@ function RadarStepCard({
           </div>
 
           {/* Content */}
-          <div className="flex-1 min-w-0">
+          <div className="flex-1 min-w-0 md:flex md:flex-col">
             <div className="flex items-start justify-between gap-1.5">
               <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-2 flex-wrap">
@@ -180,7 +180,7 @@ function RadarStepCard({
             {!isLocked ? (
               <button
                 onClick={onClick}
-                className={`mt-3 spring-tap font-semibold text-xs transition-all ${isRec ? 'w-full py-3 rounded-xl text-white' : hasSavedJobs ? 'py-1.5 px-3 rounded-lg' : 'py-2 px-3.5 rounded-xl'}`}
+                className={`mt-3 md:mt-auto spring-tap font-semibold text-xs transition-all ${isRec ? 'w-full py-3 rounded-xl text-white' : hasSavedJobs ? 'py-1.5 px-3 rounded-lg' : 'py-2 px-3.5 rounded-xl'}`}
                 style={isRec
                   ? { background: `linear-gradient(135deg, #c2185b, #ad1457)`, boxShadow: `0 4px 16px rgba(194,24,91,0.30)` }
                   : hasSavedJobs
@@ -196,7 +196,7 @@ function RadarStepCard({
                 }
               </button>
             ) : (
-              <p className="text-[10px] text-slate-400 mt-2">🔒 Disponible cuando tengas tu CV</p>
+              <p className="text-[10px] text-slate-400 mt-2 md:mt-auto">🔒 Disponible cuando tengas tu CV</p>
             )}
           </div>
         </div>
@@ -500,7 +500,7 @@ export default function ModeSelectScreen({
       )}
 
       {/* Journey steps */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-2 stagger-in">
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-3 stagger-in">
         {steps.map(s => {
           const isRec    = s.num === nextRec
           const isLocked = !s.available
@@ -525,9 +525,9 @@ export default function ModeSelectScreen({
 
           // ── Generic step card ────────────────────────────────────────────
           return (
-            <div key={s.num}>
+            <div key={s.num} className="flex flex-col">
               <div
-                className={`rounded-2xl transition-all duration-200 overflow-hidden step-card card-depth ${isRec ? 'shadow-md' : ''}`}
+                className={`rounded-2xl transition-all duration-200 overflow-hidden step-card card-depth md:flex-1 md:flex md:flex-col ${isRec ? 'shadow-md' : ''}`}
                 style={{
                   border: isRec
                     ? `1.5px solid ${s.ac}`
@@ -563,8 +563,8 @@ export default function ModeSelectScreen({
                   </div>
                 )}
 
-                <div className="p-4 sm:p-6">
-                  <div className="flex items-start gap-3">
+                <div className="p-4 sm:p-6 md:flex-1 md:flex md:flex-col">
+                  <div className="flex items-start md:items-stretch gap-3 md:flex-1">
                     {/* Icon + step number */}
                     <div className="shrink-0 text-center w-10">
                       <div className="w-10 h-10 rounded-xl flex items-center justify-center text-xl"
@@ -578,7 +578,7 @@ export default function ModeSelectScreen({
                     </div>
 
                     {/* Content */}
-                    <div className="flex-1 min-w-0">
+                    <div className="flex-1 min-w-0 md:flex md:flex-col">
                       <div className="flex items-start justify-between gap-1.5">
                         <div className="flex-1 min-w-0">
                           <div className="flex items-center gap-2 flex-wrap">
@@ -618,7 +618,7 @@ export default function ModeSelectScreen({
                           <button
                             onClick={s.onClick}
                             disabled={s.num === 6 && jobAdapterCheckLoading}
-                            className={`mt-3 spring-tap font-semibold text-xs transition-all ${isRec ? 'w-full py-3 rounded-xl text-white' : s.done ? 'py-1.5 px-3 rounded-lg' : 'py-2 px-3.5 rounded-xl'}`}
+                            className={`mt-3 md:mt-auto spring-tap font-semibold text-xs transition-all ${isRec ? 'w-full py-3 rounded-xl text-white' : s.done ? 'py-1.5 px-3 rounded-lg' : 'py-2 px-3.5 rounded-xl'}`}
                             style={isRec
                               ? { background: s.ac, boxShadow: `0 4px 14px ${s.aborder}` }
                               : s.done
@@ -639,7 +639,7 @@ export default function ModeSelectScreen({
                           )}
                         </>
                       ) : (
-                        <p className="text-[10px] text-slate-400 mt-2">🔒 {s.lockedLabel}</p>
+                        <p className="text-[10px] text-slate-400 mt-2 md:mt-auto">🔒 {s.lockedLabel}</p>
                       )}
                     </div>
                   </div>
