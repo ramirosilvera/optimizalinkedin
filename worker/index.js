@@ -332,7 +332,6 @@ const RATE_LIMITS = {
   _raw_proxy:          5,  // PDF extraction proxy — large inputs, protect quota
   // Radar Laboral — job recommendations
   job_search:             10,
-  job_recommendations:     5,
   job_save_to_kanban:     20,
   job_update_status:      60,
 }
@@ -2012,12 +2011,6 @@ export default {
         const appToken = request.headers.get('X-App-Token')
         if (appToken !== env.APP_TOKEN) return new Response(JSON.stringify({ error: { message: 'Unauthorized' } }), { status: 401, headers: corsHeaders })
       }
-      const ip = request.headers.get('CF-Connecting-IP') || 'unknown'
-      const rl = await checkRateLimit(env, ip, 'job_recommendations')
-      if (!rl.ok) return new Response(
-        JSON.stringify({ error: { message: `Límite de IA alcanzado (${rl.limit}/hora). Intentá en 60 minutos.` } }),
-        { status: 429, headers: corsHeaders }
-      )
       return handleAiJobRecommendations(body, request, env, ctx, corsHeaders, callGeminiApi, logAiUsage)
     }
 
