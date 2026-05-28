@@ -2,11 +2,15 @@ import { STEPS, LI_GRADIENT, RAMIRO_LINKEDIN_URL, trackEvent } from '../../const
 import { Logo, LinkedInIcon } from '../ui'
 import CommentsSection from '../CommentsSection'
 
-export default function WelcomeScreen({ setStep, result, latestAnalisis, historialLoading, hasCV, hasInterview, onResumePreparation, restoreFromHistorial }) {
+export default function WelcomeScreen({ setStep, result, latestAnalisis, historialLoading, hasCV, hasInterview, onResumePreparation, restoreFromHistorial, sessionChecked }) {
   const sessionData = result || latestAnalisis?.datos || null
   const hasActiveSession = !!sessionData
 
-  const showSkeleton = historialLoading && !hasActiveSession
+  // Show skeleton when:
+  // - historialLoading is in progress, OR
+  // - sessionChecked is false (stored tokens exist but auth not yet verified — user likely has history)
+  // This prevents flashing "Empezá tu diagnóstico" for returning users on page load and after login.
+  const showSkeleton = !hasActiveSession && (historialLoading || !sessionChecked)
 
   const progressItems = sessionData ? [
     { done: true, label: 'Diagnóstico' },
