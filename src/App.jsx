@@ -397,6 +397,7 @@ export default function App() {
         premium_hasta: perfil?.premium_hasta || null,
       }
       applySession(data.access_token, data.refresh_token, userData)
+      loadHistorial()  // populate WelcomeScreen "Seguí con tu preparación" on login
       checkAdminStatus(data.access_token)
       setAuthEmail('')
       setAuthPassword('')
@@ -1016,8 +1017,8 @@ export default function App() {
         // Fire side-effects in parallel — they don't affect the skeleton gate
         checkAdminStatus(data.access_token)
         loadLinkedinProfile()
-        // Await historial for PRO users: skeleton stays until data is ready
-        if (userData.es_premium) await loadHistorial()
+        // Await historial for all logged-in users so WelcomeScreen shows "Seguí con tu preparación"
+        await loadHistorial()
         setSessionChecked(true)
       })
       .catch(() => { clearSession(); setSessionChecked(true) })
@@ -1063,6 +1064,7 @@ export default function App() {
           applySession(accessToken, refreshToken || '', userObj)
           setAuthSuccess('linkedin_needs_premium')
         }
+        loadHistorial()  // populate WelcomeScreen "Seguí con tu preparación" on login
         checkAdminStatus(accessToken)
         setShowAuthModal(true)
         trackEvent('auth_linkedin_supabase', { type })

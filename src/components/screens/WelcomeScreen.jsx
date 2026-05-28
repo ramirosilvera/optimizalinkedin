@@ -2,13 +2,11 @@ import { STEPS, LI_GRADIENT, RAMIRO_LINKEDIN_URL, trackEvent } from '../../const
 import { Logo, LinkedInIcon } from '../ui'
 import CommentsSection from '../CommentsSection'
 
-export default function WelcomeScreen({ setStep, result, latestAnalisis, historialLoading, hasCV, hasInterview, onResumePreparation, restoreFromHistorial, sessionChecked }) {
-  const isPremiumHint = localStorage.getItem('ol_premium') === '1'
-
+export default function WelcomeScreen({ setStep, result, latestAnalisis, historialLoading, hasCV, hasInterview, onResumePreparation, restoreFromHistorial }) {
   const sessionData = result || latestAnalisis?.datos || null
   const hasActiveSession = !!sessionData
 
-  const showSkeleton = isPremiumHint && !hasActiveSession && !sessionChecked
+  const showSkeleton = historialLoading && !hasActiveSession
 
   const progressItems = sessionData ? [
     { done: true, label: 'Diagnóstico' },
