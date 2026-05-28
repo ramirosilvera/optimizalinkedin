@@ -34,7 +34,7 @@ export default function ResultsScreen({
   const [showFullOptimize, setShowFullOptimize] = useState(false)
 
   return (
-    <div className="step-transition space-y-5">
+    <div className="step-transition space-y-5 max-w-3xl mx-auto">
       <Logo />
 
       {/* ══ BLOQUE 1 — Score Hero ══ */}
@@ -47,9 +47,9 @@ export default function ResultsScreen({
               ✓ Paso 1 — Diagnóstico
             </span>
           </div>
-          <div className="px-6 pt-6 pb-5 flex flex-col items-center gap-4 text-center">
+          <div className="px-6 pt-6 pb-5 flex flex-col sm:flex-row sm:items-center sm:gap-8 sm:text-left gap-4 text-center">
             {/* Score ring — grande y central */}
-            <div className="relative">
+            <div className="relative shrink-0">
               <ScoreRing score={result.puntaje_general ?? 0} size={100} />
               {result.puntaje_general === null && (
                 <div className="absolute inset-0 flex items-center justify-center w-24 h-24 rounded-full text-3xl"
@@ -68,7 +68,7 @@ export default function ResultsScreen({
               </span>
             )}
             {/* Diagnóstico breve */}
-            <p className="text-sm leading-relaxed max-w-xs" style={{ color: 'rgba(226,232,240,0.90)' }}>
+            <p className="text-sm leading-relaxed max-w-xs sm:max-w-none" style={{ color: 'rgba(226,232,240,0.90)' }}>
               {result.resumen_diagnostico || 'Análisis completado.'}
             </p>
             {result.puntaje_general === null && (
@@ -96,8 +96,8 @@ export default function ResultsScreen({
           <div className="px-5 pt-4 pb-1 border-b" style={{ borderColor: 'rgba(0,119,181,0.08)' }}>
             <p className="text-xs font-bold uppercase tracking-wide" style={{ color: '#0077B5' }}>Diagnóstico estratégico</p>
           </div>
-          <div className="grid sm:grid-cols-2 gap-0 divide-y sm:divide-y-0 sm:divide-x divide-slate-100">
-            <div className="px-5 py-4 space-y-2">
+          <div className="grid sm:grid-cols-2 gap-0 divide-y sm:divide-y-0 sm:divide-x divide-slate-100 md:text-base">
+            <div className="px-5 py-4 sm:py-5 lg:py-6 space-y-2">
               <p className="text-[10px] font-bold uppercase tracking-wide mb-2" style={{ color: '#16a34a' }}>✅ Ventajas competitivas</p>
               {(result.fortalezas || []).map((f, i) => (
                 <div key={i} className="flex items-start gap-2">
@@ -106,7 +106,7 @@ export default function ResultsScreen({
                 </div>
               ))}
             </div>
-            <div className="px-5 py-4 space-y-2">
+            <div className="px-5 py-4 sm:py-5 lg:py-6 space-y-2">
               <p className="text-[10px] font-bold uppercase tracking-wide mb-2" style={{ color: '#d97706' }}>⚠️ Brechas a cerrar</p>
               {(result.areas_de_mejora || []).map((a, i) => (
                 <div key={i} className="flex items-start gap-2">

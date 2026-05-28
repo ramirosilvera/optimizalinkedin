@@ -22,24 +22,24 @@ export default function WelcomeScreen({ setStep, result, latestAnalisis, histori
   const sessionScore = sessionData?.puntaje_general ?? null
 
   return (
-    <div className="step-transition text-center space-y-8">
+    <div className="step-transition text-center space-y-8 max-w-4xl mx-auto">
       <Logo />
 
       {/* Hero */}
-      <div className="space-y-5">
+      <div className="space-y-5 md:space-y-6">
         <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full text-xs font-semibold tracking-wide badge-shimmer"
           style={{ border: '1px solid rgba(0,119,181,0.4)', color: '#0077B5' }}>
           ✦ &nbsp;Sistema de Empleabilidad Profesional
         </div>
-        <h1 className="text-3xl sm:text-4xl font-bold leading-tight tracking-tight" style={{ letterSpacing: '-0.02em' }}>
+        <h1 className="text-3xl sm:text-4xl lg:text-5xl font-bold leading-tight tracking-tight" style={{ letterSpacing: '-0.02em' }}>
           <span className="text-slate-900">El sistema para conseguir</span><br />
           <span className="gradient-text-pro">el trabajo que buscás.</span>
         </h1>
         <div className="space-y-2">
-          <p className="text-slate-500 text-sm max-w-xs mx-auto leading-relaxed">
+          <p className="text-slate-500 text-sm max-w-xs sm:max-w-md mx-auto leading-relaxed">
             Diagnóstico · CV · Radar Laboral · Entrevistas · Kanban
           </p>
-          <p className="text-slate-400 text-xs max-w-xs mx-auto">
+          <p className="text-slate-400 text-xs max-w-xs sm:max-w-sm mx-auto">
             Con criterio de headhunter real. Sin registro. Gratuito.
           </p>
         </div>
@@ -164,8 +164,8 @@ export default function WelcomeScreen({ setStep, result, latestAnalisis, histori
 
         {/* Cómo funciona */}
         <section>
-          <h2 className="text-xl font-bold text-slate-900 mb-4">Cómo funciona</h2>
-          <div className="space-y-3">
+          <h2 className="text-xl sm:text-2xl font-bold text-slate-900 mb-4">Cómo funciona</h2>
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
             {[
               {
                 num: '1', color: '#0077B5',
@@ -183,7 +183,7 @@ export default function WelcomeScreen({ setStep, result, latestAnalisis, histori
                 desc: 'El Radar Laboral te muestra empleos compatibles con tu perfil actualizado. Simulás entrevistas reales con IA, dominás la metodología STAR y adaptás tu candidatura para cada oferta.',
               },
             ].map(stepItem => (
-              <div key={stepItem.num} className="flex items-start gap-4 rounded-2xl p-4"
+              <div key={stepItem.num} className="flex sm:flex-col items-start gap-4 rounded-2xl p-4 sm:p-5"
                 style={{ background: 'white', border: '1px solid rgba(0,119,181,0.10)' }}>
                 <div className="w-8 h-8 rounded-full flex items-center justify-center text-white text-sm font-bold shrink-0"
                   style={{ background: stepItem.color }}>{stepItem.num}</div>

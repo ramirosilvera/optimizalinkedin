@@ -26,7 +26,7 @@ export default function ProfileInputScreen({
   handleBack, setStep,
 }) {
   return (
-    <div className="step-transition space-y-5">
+    <div className="step-transition space-y-5 max-w-2xl mx-auto">
       <Logo />
       <div>
         <p className="text-slate-500 text-sm mb-1">Último paso</p>
