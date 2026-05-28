@@ -2827,7 +2827,7 @@ Generá el feedback en este JSON exacto:
       />}
 
       {/* ── Barra de usuario ── */}
-      <div className="w-full max-w-xl mb-2 flex justify-end items-center gap-1.5 flex-wrap">
+      <div className="w-full max-w-5xl mb-2 flex justify-end items-center gap-1.5 flex-wrap">
         {checkingPremium && (
           <span className="text-xs font-medium px-2.5 py-1 rounded-full animate-pulse"
             style={{ background: 'rgba(0,119,181,0.10)', color: '#0077B5' }}>
