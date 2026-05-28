@@ -1681,8 +1681,8 @@ export default function JobRecommendationsScreen({
               {quotaRemaining !== null && (
                 <p className="text-xs" style={{ color: '#94a3b8' }}>
                   {isPremium
-                    ? `Límite diario Premium: 30 búsquedas/día`
-                    : `Plan gratuito: 5 búsquedas/día · Actualizá a Premium para 30/día`}
+                    ? `Premium: 1 búsqueda nueva por día · Los resultados del día se guardan`
+                    : `Plan gratuito: 1 búsqueda/mes · Actualizá a Premium para buscar diariamente`}
                 </p>
               )}
             </div>
