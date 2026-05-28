@@ -4426,7 +4426,7 @@ async function handleAiJobRecommendations(body, request, env, ctx, corsHeaders, 
     } catch { /* default false */ }
   }
 
-  console.log(`[RADAR] START user=${user_id||'anon'} premium=${isPremium} remoteOk=${!!remote_ok} queries=${JSON.stringify(cleanQueries.slice(0,3))} location=${location||'—'}`)
+  console.log(`[RADAR] START user=${user_id||'anon'} premium=${isPremium} remoteOk=${!!remote_ok} queries=${JSON.stringify(queries.slice(0,3))} location=${location||'—'}`)
 
   // ── radar_search_history: daily persistence check ────────────────────────
   // If the user already ran a fresh search today (premium) or this month (free),
