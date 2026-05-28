@@ -2395,7 +2395,7 @@ function normalizeJobicy(raw) {
   if (!raw?.jobs) return []
   return raw.jobs.map(j => ({
     source:          'jobicy',
-    external_id:     String(j.id || j.jobId || Math.random()),
+    external_id:     String(j.id || j.jobId || `${j.companyName||''}::${j.jobTitle||''}::${j.pubDate||''}`),
     title:           j.jobTitle       || '',
     company:         j.companyName    || '',
     description:     truncateDesc(j.jobDescription),
@@ -2549,7 +2549,7 @@ function normalizeTeamtailor(raw, companyMeta) {
       description:     truncateDesc(a['body-text'] || a.pitch || ''),
       location:        a.city || a.country || null,
       remote:          ['fully', 'hybrid'].includes(a['remote-status']),
-      url:             a['career-page-url'] || `https://${companyMeta.slug}.teamtailor.com`,
+      url:             a['career-page-url'] || `https://${companyMeta.slug}.teamtailor.com/jobs/${j.id}`,
       apply_url:       a['apply-url'] || null,
       salary_min:      null, salary_max: null, currency: null,
       skills_required: [],
@@ -2654,7 +2654,7 @@ function normalizeSerper(raw) {
   const jobs = raw?.jobs || []
   return jobs.map(j => ({
     source:          'serper',
-    external_id:     j.jobId || String(Math.random()),
+    external_id:     j.jobId || `${j.companyName||''}::${j.title||''}::${j.datePosted||''}`,
     title:           j.title || '',
     company:         j.companyName || '',
     description:     truncateDesc((j.highlights?.items || []).join(' ') || j.description || ''),
@@ -2844,8 +2844,10 @@ const ATS_COMPANIES = {
     { slug: 'lemon',       name: 'Lemon',        country: 'AR', industries: ['fintech','crypto'],      tags: ['backend','mobile'] },
   ],
   smartrecruiters: [
-    { slug: 'Globant2',      name: 'Globant',                country: 'AR', industries: ['tech','consulting'], tags: ['backend','frontend','data','devops','qa'] },
-    { slug: 'DeliveryHero',  name: 'PedidosYa / DH',        country: 'AR', industries: ['tech','delivery'],   tags: ['backend','data','mobile','devops'] },
+    // Note: SmartRecruiters company identifiers are case-sensitive — verify slugs at
+    // https://api.smartrecruiters.com/v1/companies/{slug}/postings
+    { slug: 'globant',       name: 'Globant',                country: 'AR', industries: ['tech','consulting'], tags: ['backend','frontend','data','devops','qa'] },
+    { slug: 'deliveryhero',  name: 'PedidosYa / DH',        country: 'AR', industries: ['tech','delivery'],   tags: ['backend','data','mobile','devops'] },
   ],
   ashby: [
     // US tech companies actively hiring LATAM remote — include salary data (Ashby exposes it)
@@ -3116,7 +3118,7 @@ async function fetchJobSource(source, query, location, remoteOk, env) {
     let url, raw
 
     if (source === 'remoteok') {
-      const tag = encodeURIComponent(query.split(' ')[0].toLowerCase())
+      const tag = encodeURIComponent(query.split(' ').slice(0, 2).join('-').toLowerCase())
       url = `https://remoteok.com/api?tags=${tag}&limit=30`
       const r = await fetch(url, { headers: { 'User-Agent': UA }, signal: ctrl.signal })
       raw = await r.json()
@@ -3142,7 +3144,9 @@ async function fetchJobSource(source, query, location, remoteOk, env) {
       if (!env.ADZUNA_APP_ID || !env.ADZUNA_APP_KEY) {
         return { source, jobs: [], error: 'adzuna_not_configured' }
       }
-      const country = location?.toLowerCase().includes('arg') ? 'ar' : 'us'
+      // Adzuna doesn't support 'ar' (Argentina) — closest LATAM coverage is 'br' (Brazil)
+      // Fallback to 'us' for remote-only searches where geo doesn't matter
+      const country = location?.toLowerCase().includes('arg') ? 'br' : 'us'
       url = `https://api.adzuna.com/v1/api/jobs/${country}/search/1`
         + `?app_id=${env.ADZUNA_APP_ID}&app_key=${env.ADZUNA_APP_KEY}`
         + `&what=${q}&results_per_page=30&content-type=application/json`
