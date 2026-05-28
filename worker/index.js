@@ -2100,7 +2100,7 @@ const JOB_SEARCH_TTL_SECS = 7_200  // job_searches row TTL (mirrors KV)
 const ATS_KV_TTL_SECS     = 79_200  // 22-hour KV cache for ATS company boards (date-keyed)
 const ATS_DB_TTL_HOURS    = 40      // ATS boards update slowly — longer DB TTL
 const JREC_KV_TTL_SECS    = 86_400  // 24-hour per-user AI score cache — skips Gemini on re-runs
-const JREC_PROMPT_VERSION = 'v5'    // bump when JOB_MATCHING_SYSTEM_PROMPT changes to bust stale KV
+const JREC_PROMPT_VERSION = 'v7'    // bump when JOB_MATCHING_SYSTEM_PROMPT changes to bust stale KV
 
 // Rate limits for *new* (fresh) searches — cached re-visits bypass these entirely.
 // Premium: 1 new search/day  (cached same-day results shown for free)
@@ -2119,8 +2119,8 @@ const MAX_DESC_CHARS = 6_000
 // Triggers when the initial AI scoring returns weak matches.
 const EXPANSION_THRESHOLD  = 8.0   // expand if top match_score < this (0–10 scale)
 const EXPANSION_MIN_HQ     = 3     // expand if fewer than N jobs score ≥ 7.0
-const EXPANSION_TIMEOUT_MS = 5_500 // hard cap on total expansion time (ms)
-const EXPANSION_GEMINI_MS  = 3_500 // Gemini timeout for expansion scoring pass
+const EXPANSION_TIMEOUT_MS = 12_000 // hard cap on total expansion time (ms) — pipeline needs 4-16s; 5500ms timed out ~60% of runs
+const EXPANSION_GEMINI_MS  = 3_500  // Gemini timeout for expansion scoring pass
 
 // ══════════════════════════════════════════════════════════════════════════════
 // SECTION 1 — Job Data Normalization
@@ -2295,7 +2295,7 @@ function applyPreFilter(jobs, profileText, maxCandidates = 25) {
   const profileLower = (profileText || '').toLowerCase()
   const expanded = expandProfileSkills(profileLower)
 
-  const ATS_SOURCES = new Set(['greenhouse','lever','smartrecruiters','ashby'])
+  const ATS_SOURCES = new Set(['greenhouse','lever','smartrecruiters','ashby','workable','teamtailor','recruitee','personio','workday'])
   function score(job) {
     const jobText = `${job.title} ${job.description || ''} ${(job.skills_required || []).join(' ')}`.toLowerCase()
     const titleText = job.title.toLowerCase()
@@ -2328,9 +2328,13 @@ function applyPreFilter(jobs, profileText, maxCandidates = 25) {
     return s
   }
 
-  return jobs
-    .map(j => ({ job: j, s: score(j) }))
-    .filter(x => x.s > 0 || jobs.length <= maxCandidates)
+  const scored = jobs.map(j => ({ job: j, s: score(j) }))
+  const positive = scored.filter(x => x.s > 0)
+  // When fewer than maxCandidates jobs have any relevance signal, pad with the
+  // zero-score jobs sorted by recency rather than discarding them entirely.
+  // This avoids sending an empty pool to Gemini when the taxonomy doesn't match.
+  const base = positive.length >= Math.ceil(maxCandidates / 2) ? positive : scored
+  return base
     .sort((a, b) => b.s - a.s)
     .slice(0, maxCandidates)
     .map(x => x.job)
@@ -2391,7 +2395,7 @@ function normalizeJobicy(raw) {
   if (!raw?.jobs) return []
   return raw.jobs.map(j => ({
     source:          'jobicy',
-    external_id:     String(j.id || j.jobId || Math.random()),
+    external_id:     String(j.id || j.jobId || `${j.companyName||''}::${j.jobTitle||''}::${j.pubDate||''}`),
     title:           j.jobTitle       || '',
     company:         j.companyName    || '',
     description:     truncateDesc(j.jobDescription),
@@ -2545,7 +2549,7 @@ function normalizeTeamtailor(raw, companyMeta) {
       description:     truncateDesc(a['body-text'] || a.pitch || ''),
       location:        a.city || a.country || null,
       remote:          ['fully', 'hybrid'].includes(a['remote-status']),
-      url:             a['career-page-url'] || `https://${companyMeta.slug}.teamtailor.com`,
+      url:             a['career-page-url'] || `https://${companyMeta.slug}.teamtailor.com/jobs/${j.id}`,
       apply_url:       a['apply-url'] || null,
       salary_min:      null, salary_max: null, currency: null,
       skills_required: [],
@@ -2614,9 +2618,13 @@ function normalizePersonio(raw, companyMeta) {
 // Each company entry requires cxsUrl: the full POST endpoint URL
 function normalizeWorkday(raw, companyMeta) {
   const postings = raw?.jobPostings || []
-  const boardBase = (companyMeta.cxsUrl || '')
-    .replace('/wday/cxs/', '/')
-    .replace(/\/jobs$/, '')
+  // boardBase must be just the origin (e.g. https://accenture.wd3.myworkdayjobs.com)
+  // because externalPath from the CXS API already contains the full tenant+site path
+  // (e.g. /accenture/AccentureCareers/job/Buenos-Aires/Tech-Lead_12345).
+  // Previous code kept tenant/site in boardBase which caused doubled paths in the URL.
+  const boardBase = companyMeta.cxsUrl
+    ? (() => { try { return new URL(companyMeta.cxsUrl).origin } catch { return '' } })()
+    : ''
   return postings.map(j => {
     const extPath = j.externalPath || ''
     return {
@@ -2646,7 +2654,7 @@ function normalizeSerper(raw) {
   const jobs = raw?.jobs || []
   return jobs.map(j => ({
     source:          'serper',
-    external_id:     j.jobId || String(Math.random()),
+    external_id:     j.jobId || `${j.companyName||''}::${j.title||''}::${j.datePosted||''}`,
     title:           j.title || '',
     company:         j.companyName || '',
     description:     truncateDesc((j.highlights?.items || []).join(' ') || j.description || ''),
@@ -2836,8 +2844,10 @@ const ATS_COMPANIES = {
     { slug: 'lemon',       name: 'Lemon',        country: 'AR', industries: ['fintech','crypto'],      tags: ['backend','mobile'] },
   ],
   smartrecruiters: [
-    { slug: 'Globant2',      name: 'Globant',                country: 'AR', industries: ['tech','consulting'], tags: ['backend','frontend','data','devops','qa'] },
-    { slug: 'DeliveryHero',  name: 'PedidosYa / DH',        country: 'AR', industries: ['tech','delivery'],   tags: ['backend','data','mobile','devops'] },
+    // Note: SmartRecruiters company identifiers are case-sensitive — verify slugs at
+    // https://api.smartrecruiters.com/v1/companies/{slug}/postings
+    { slug: 'globant',       name: 'Globant',                country: 'AR', industries: ['tech','consulting'], tags: ['backend','frontend','data','devops','qa'] },
+    { slug: 'deliveryhero',  name: 'PedidosYa / DH',        country: 'AR', industries: ['tech','delivery'],   tags: ['backend','data','mobile','devops'] },
   ],
   ashby: [
     // US tech companies actively hiring LATAM remote — include salary data (Ashby exposes it)
@@ -2930,7 +2940,7 @@ async function putAtsBoardToKV(env, atsType, slug, jobs) {
   const date = new Date().toISOString().slice(0, 10)
   try {
     await env.RATE_LIMIT_KV.put(`ats:${atsType}:${slug}:${date}`, JSON.stringify(jobs), { expirationTtl: ATS_KV_TTL_SECS })
-  } catch { /* non-fatal */ }
+  } catch (e) { console.warn(`[KV] putAtsBoardToKV failed for ${atsType}:${slug}: ${e?.message}`) }
 }
 
 // Fetch a single ATS company board (KV-cached, date-keyed)
@@ -3065,7 +3075,7 @@ function deduplicateJobs(allJobs) {
   let deduped = [...byKey.values()]
 
   // Level 2: URL dedup — ATS version wins over aggregator version
-  const ATS_SOURCES = new Set(['greenhouse','lever','smartrecruiters','ashby'])
+  const ATS_SOURCES = new Set(['greenhouse','lever','smartrecruiters','ashby','workable','teamtailor','recruitee','personio','workday'])
   const byUrl = new Map()
   for (const job of deduped) {
     const url = normalizeJobUrl(job.url)
@@ -3108,7 +3118,7 @@ async function fetchJobSource(source, query, location, remoteOk, env) {
     let url, raw
 
     if (source === 'remoteok') {
-      const tag = encodeURIComponent(query.split(' ')[0].toLowerCase())
+      const tag = encodeURIComponent(query.split(' ').slice(0, 2).join('-').toLowerCase())
       url = `https://remoteok.com/api?tags=${tag}&limit=30`
       const r = await fetch(url, { headers: { 'User-Agent': UA }, signal: ctrl.signal })
       raw = await r.json()
@@ -3134,7 +3144,9 @@ async function fetchJobSource(source, query, location, remoteOk, env) {
       if (!env.ADZUNA_APP_ID || !env.ADZUNA_APP_KEY) {
         return { source, jobs: [], error: 'adzuna_not_configured' }
       }
-      const country = location?.toLowerCase().includes('arg') ? 'ar' : 'us'
+      // Adzuna doesn't support 'ar' (Argentina) — closest LATAM coverage is 'br' (Brazil)
+      // Fallback to 'us' for remote-only searches where geo doesn't matter
+      const country = location?.toLowerCase().includes('arg') ? 'br' : 'us'
       url = `https://api.adzuna.com/v1/api/jobs/${country}/search/1`
         + `?app_id=${env.ADZUNA_APP_ID}&app_key=${env.ADZUNA_APP_KEY}`
         + `&what=${q}&results_per_page=30&content-type=application/json`
@@ -3177,7 +3189,7 @@ async function fetchJobSource(source, query, location, remoteOk, env) {
       const r = await fetch('https://google.serper.dev/jobs', {
         method:  'POST',
         headers: { 'X-API-KEY': env.SERPER_API_KEY, 'Content-Type': 'application/json', 'User-Agent': UA },
-        body:    JSON.stringify({ q: query, gl: 'ar', hl: 'es', location: 'Argentina', num: 10 }),
+        body:    JSON.stringify({ q: query, gl: 'ar', hl: 'es', location: 'Argentina', num: 20 }),
         signal:  ctrl.signal,
       })
       raw = await r.json()
@@ -3263,7 +3275,10 @@ async function getJobsFromKV(env, queryHash) {
   try {
     const raw = await env.RATE_LIMIT_KV.get(`jobs:${queryHash}`)
     return raw ? JSON.parse(raw) : null
-  } catch { return null }
+  } catch (err) {
+    console.warn(`[KV] getJobsFromKV parse error for hash ${queryHash}: ${err.message}`)
+    return null
+  }
 }
 
 async function putJobsToKV(env, queryHash, jobs) {
@@ -3274,7 +3289,9 @@ async function putJobsToKV(env, queryHash, jobs) {
       JSON.stringify(jobs),
       { expirationTtl: JOB_KV_TTL_SECS }
     )
-  } catch { /* non-fatal */ }
+  } catch (err) {
+    console.warn(`[KV] putJobsToKV failed for hash ${queryHash}: ${err.message}`)
+  }
 }
 
 // ── jrec: per-user AI score cache ─────────────────────────────────────────────
@@ -3286,7 +3303,10 @@ async function getJrecFromKV(env, userId, queryHash) {
   try {
     const raw = await env.RATE_LIMIT_KV.get(`jrec:${userId}:${queryHash}:${JREC_PROMPT_VERSION}`)
     return raw ? JSON.parse(raw) : null
-  } catch { return null }
+  } catch (err) {
+    console.warn(`[KV] getJrecFromKV parse error for user ${userId}: ${err.message}`)
+    return null
+  }
 }
 
 async function putJrecToKV(env, userId, queryHash, payload) {
@@ -3297,7 +3317,9 @@ async function putJrecToKV(env, userId, queryHash, payload) {
       JSON.stringify(payload),
       { expirationTtl: JREC_KV_TTL_SECS }
     )
-  } catch { /* non-fatal */ }
+  } catch (err) {
+    console.warn(`[KV] putJrecToKV failed for user ${userId}: ${err.message}`)
+  }
 }
 
 // ── Profile hash — identifies same profile across searches (16 hex chars) ────
@@ -3326,7 +3348,10 @@ async function getRadarCache(env, userId, profileHash, queryHash) {
     )
     const rows = await res.json().catch(() => [])
     return Array.isArray(rows) && rows[0]?.results ? rows[0] : null
-  } catch { return null }
+  } catch (err) {
+    console.warn(`[DB] getRadarCache error for user ${userId}: ${err.message}`)
+    return null
+  }
 }
 
 async function putRadarCache(env, ctx, userId, profileHash, queryHash, recommendations, isPremium) {
@@ -3385,26 +3410,39 @@ async function expandSearchTerms(env, profileText, existingQueries) {
   try {
     const controller = new AbortController()
     const tid = setTimeout(() => controller.abort(), 2_500)
-    const res = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/${DEFAULT_MODEL}:generateContent?key=${geminiKeys[0]}`,
-      {
-        method:  'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({
-          contents:          [{ role: 'user', parts: [{ text: prompt }] }],
-          generationConfig:  { temperature: 0.4, maxOutputTokens: 120 },
-        }),
-        signal: controller.signal,
-      }
-    )
+    // Rotate through keys on 429 (same as callGeminiApi) so a rate-limited first key
+    // doesn't silently kill the expansion pass.
+    let res = null
+    for (let ki = 0; ki < geminiKeys.length; ki++) {
+      res = await fetch(
+        `https://generativelanguage.googleapis.com/v1beta/models/${DEFAULT_MODEL}:generateContent?key=${geminiKeys[ki]}`,
+        {
+          method:  'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({
+            contents:          [{ role: 'user', parts: [{ text: prompt }] }],
+            generationConfig:  { temperature: 0.4, maxOutputTokens: 120 },
+          }),
+          signal: controller.signal,
+        }
+      )
+      if (res.status !== 429) break
+      console.warn(`[RADAR:expansion] expandSearchTerms key_${ki+1} returned 429 — trying next key`)
+    }
     clearTimeout(tid)
-    if (!res.ok) return []
+    if (!res.ok) {
+      console.warn(`[RADAR:expansion] expandSearchTerms Gemini HTTP ${res.status}`)
+      return []
+    }
     const d   = await res.json()
     const raw = d?.candidates?.[0]?.content?.parts?.[0]?.text || ''
     const parsed = JSON.parse(raw.replace(/^```json\n?|\n?```$/g, '').trim())
     const arr = parsed?.terms || (Array.isArray(parsed) ? parsed : [])
     return Array.isArray(arr) ? arr.slice(0, 3).filter(s => typeof s === 'string' && s.trim()) : []
-  } catch { return [] }
+  } catch (err) {
+    console.warn(`[RADAR:expansion] expandSearchTerms failed: ${err.message}`)
+    return []
+  }
 }
 
 // Full expansion pass: generate new terms → fetch jobs → deduplicate → AI score.
@@ -3431,31 +3469,50 @@ async function expandWithSearch(env, ctx, cleanQueries, location, remoteOk, prof
   try {
     const controller = new AbortController()
     const tid = setTimeout(() => controller.abort(), EXPANSION_GEMINI_MS)
-    const aiRes = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/${DEFAULT_MODEL}:generateContent?key=${geminiKeys[0]}`,
-      {
-        method:  'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({
-          system_instruction: { parts: [{ text: JOB_MATCHING_SYSTEM_PROMPT }] },
-          contents,
-          generationConfig:   { temperature: 0.2, maxOutputTokens: 1024 },
-        }),
-        signal: controller.signal,
-      }
-    )
+    // Rotate through keys on 429 so a rate-limited first key doesn't kill expansion scoring.
+    let aiRes = null
+    for (let ki = 0; ki < geminiKeys.length; ki++) {
+      aiRes = await fetch(
+        `https://generativelanguage.googleapis.com/v1beta/models/${DEFAULT_MODEL}:generateContent?key=${geminiKeys[ki]}`,
+        {
+          method:  'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({
+            system_instruction: { parts: [{ text: JOB_MATCHING_SYSTEM_PROMPT }] },
+            contents,
+            generationConfig:   { temperature: 0.2, maxOutputTokens: 1024 },
+          }),
+          signal: controller.signal,
+        }
+      )
+      if (aiRes.status !== 429) break
+      console.warn(`[RADAR:expansion] scoring key_${ki+1} returned 429 — trying next key`)
+    }
     clearTimeout(tid)
     if (aiRes.ok) {
       const d   = await aiRes.json()
       const raw = d?.candidates?.[0]?.content?.parts?.[0]?.text || ''
       aiResult = JSON.parse(raw.replace(/^```json\n?|\n?```$/g, '').trim())
+    } else {
+      console.warn(`[RADAR:expansion] scoring Gemini HTTP ${aiRes.status}`)
     }
-  } catch { return null }
+  } catch (err) {
+    console.warn(`[RADAR:expansion] scoring failed: ${err.message}`)
+    return null
+  }
 
   if (!aiResult?.matches) return null
 
   const expandedRecs = (aiResult.matches || [])
-    .sort((a, b) => b.match_score - a.match_score)
+    .map(m => {
+      const job = batchJobs[m.job_index]
+      if (!job) return null
+      const gs = geoCompatibilityScore(job.location, job.remote, candidateLocation)
+      const geoPenalty = (!candidateLocation || job.remote || gs >= 0.9) ? 0 : Math.min(0.5, (0.9 - gs) * 1.25)
+      return { ...m, _adjusted: (m.match_score || 0) - geoPenalty, _geo_score: gs }
+    })
+    .filter(Boolean)
+    .sort((a, b) => b._adjusted - a._adjusted)
     .slice(0, requestedN)
     .map(m => {
       const job = batchJobs[m.job_index]
@@ -3468,7 +3525,7 @@ async function expandWithSearch(env, ctx, cleanQueries, location, remoteOk, prof
         summary:        String(m.summary || ''),
         rec_id:         null,
         from_expansion: true,
-        geo_score:      geoCompatibilityScore(job.location, job.remote, candidateLocation),
+        geo_score:      m._geo_score,
       }
     }).filter(Boolean)
 
@@ -3494,7 +3551,7 @@ function canonicalJobHash(job) {
 
 async function upsertJobsToSupabase(env, ctx, jobs) {
   if (!jobs.length) return []
-  const ATS_SOURCES = new Set(['greenhouse','lever','smartrecruiters','ashby'])
+  const ATS_SOURCES = new Set(['greenhouse','lever','smartrecruiters','ashby','workable','teamtailor','recruitee','personio','workday'])
   const now = new Date()
   const rows = jobs.map(j => {
     const isAts   = ATS_SOURCES.has(j.source)
@@ -3666,7 +3723,7 @@ async function upsertJobsRaw(env, ctx, jobs) {
 async function upsertJobsNormalized(env, ctx, jobs) {
   if (!jobs.length) return
   const now = new Date()
-  const ATS_SOURCES = new Set(['greenhouse','lever','smartrecruiters','ashby'])
+  const ATS_SOURCES = new Set(['greenhouse','lever','smartrecruiters','ashby','workable','teamtailor','recruitee','personio','workday'])
   const rows = jobs.map(j => {
     const ttlHours = ATS_SOURCES.has(j.source) ? ATS_DB_TTL_HOURS : JOB_DB_TTL_HOURS
     return {
@@ -3790,82 +3847,45 @@ NO hagas matching solo por coincidencia de skills.
 OBJETIVO PRINCIPAL
 ━━━━━━━━━━━━━━━━━━━━━━━
 
-Priorizar:
-la COHERENCIA PROFESIONAL REAL.
+Producir scores DISCRIMINATIVOS. La distribución esperada debe ser amplia: pocos jobs en rango 8-10, varios en 6-8, muchos descartados por debajo de 5.0. Si todos los scores quedan entre 6 y 8.5, el matching no es útil — revisá los caps.
 
-La mayoría de las personas:
-quieren seguir trabajando:
-en su profesión,
-especialidad
-y área de incumbencia.
+Priorizar la COHERENCIA PROFESIONAL REAL. La mayoría de las personas quieren seguir trabajando en su profesión, especialidad y área de incumbencia.
 
-Por lo tanto:
-el matching debe priorizar:
+El matching debe priorizar:
+✅ función principal y familia profesional
+✅ trayectoria y continuidad de carrera
+✅ seniority real (penalizar desfasajes grandes)
+✅ tipo de rol e identidad laboral
 
-✅ función principal
-✅ trayectoria profesional
-✅ identidad laboral
-✅ seniority real
-✅ tipo de rol
-✅ continuidad de carrera
-
-ANTES que:
-coincidencias aisladas de skills.
+ANTES que coincidencias aisladas de skills.
 
 ━━━━━━━━━━━━━━━━━━━━━━━
 EJEMPLO CRÍTICO
 ━━━━━━━━━━━━━━━━━━━━━━━
 
-Si un candidato:
-es Gerente de RRHH
-con skills como:
+Candidato: Gerente de RRHH con skills de liderazgo, analytics, transformación digital, gestión de proyectos.
 
-- liderazgo
-- analytics
-- transformación digital
-- gestión proyectos
+❌ NO recomendar: Product Manager, Operations Manager, Data Analyst, Scrum Master
+→ Aunque comparte skills transferibles, SON FAMILIAS DISTINTAS. Score máximo: 3.5. EXCLUIR del output.
 
-NO recomendar:
-roles:
-- Product Manager
-- Operations Manager
-- Data Analyst
-- Scrum Master
-
-SOLO porque comparte skills transferibles.
-
-Esas coincidencias:
-deben penalizarse
-si rompen:
-la coherencia profesional principal.
+✅ SÍ recomendar: HR Business Partner, Talent Manager, People Operations Lead, Compensaciones, DO
+→ Misma familia. Score puede llegar a 9-10 si el seniority y condiciones alinean.
 
 ━━━━━━━━━━━━━━━━━━━━━━━
 RECIBÍS
 ━━━━━━━━━━━━━━━━━━━━━━━
 
-1.
-Perfil candidato:
-- experiencia
-- habilidades
-- seniority
-- trayectoria
-- objetivo profesional
-- rubros
-- idiomas
-
-2.
-Lista numerada de avisos laborales.
+1. Perfil candidato: experiencia, habilidades, seniority, trayectoria, objetivo profesional, rubros, idiomas.
+2. Lista numerada de avisos laborales.
 
 ━━━━━━━━━━━━━━━━━━━━━━━
 TU TAREA
 ━━━━━━━━━━━━━━━━━━━━━━━
 
 PASO 1 — CLASIFICAR AL CANDIDATO:
-Identificá la familia profesional del candidato
-basándote en su rol más reciente y trayectoria.
+Identificá la familia profesional basándote en el rol más reciente y la trayectoria completa.
 
 FAMILIAS PROFESIONALES (8):
-
 HR/Personas: RRHH, HRBP, Talent Manager, People Lead, Compensaciones, DO, Recruiting, HR Operations
 Finanzas: Finance Manager, FP&A, Controller, Tesorería, Contabilidad, CFO, Cost Analyst
 Tecnología: Backend, Frontend, Full Stack, DevOps, QA, Data Engineer, Tech Lead, CTO, Platform
@@ -3876,281 +3896,149 @@ Legal/Compliance: Counsel, Compliance Officer, Legal Manager, Paralegal
 Management General: Country Manager, GM, BU Head, CEO, Dirección General, Regional Director
 
 ━━━━━━━━━━━━━━━━━━━━━━━
-
 PASO 2 — CALCULAR match_score (0-10):
+━━━━━━━━━━━━━━━━━━━━━━━
 
-1.
-FAMILIA PROFESIONAL / FUNCIÓN
-(40%)
+COMPONENTE 1 — FAMILIA PROFESIONAL / FUNCIÓN (peso 40%, máx 4.0 puntos)
 
-La coincidencia de familia profesional:
-es el criterio MÁS importante.
-
-Misma familia exacta: puntaje completo (4.0/4.0)
-Familia adyacente: hasta 2.5/4.0
-Familia diferente: hasta 1.0/4.0
+Misma familia exacta: 4.0 puntos
+Familia adyacente con transferencia real documentada: 2.0–2.5 puntos
+  Adyacentes válidos: HR↔Management General | Finanzas↔Operaciones | Ventas↔Marketing | Legal↔Finanzas
+Familia diferente: 0.5–1.0 puntos
+Familia completamente incompatible: 0.0–0.3 puntos
+  Incompatibles ejemplos: HR↔Tecnología | Finanzas↔Diseño | RRHH↔Product Manager | Marketing↔Backend
 
 Ejemplos de misma familia:
-✅ HR/Personas → HRBP / Talent / People / HR Manager
-✅ Finanzas → FP&A / Controller / Finance Manager
-✅ Marketing → Brand / Growth / Performance
-✅ Legal → Compliance / Corporate Legal
-✅ Tecnología → Backend / Full Stack / DevOps / Data Eng
+✅ HR/Personas → HRBP / Talent / People / HR Manager / Compensaciones / DO
+✅ Finanzas → FP&A / Controller / Finance Manager / Tesorería / Contabilidad
+✅ Marketing → Brand / Growth / Performance / Community / Content
+✅ Legal → Compliance / Corporate Legal / Regulatory / Paralegal
+✅ Tecnología → Backend / Full Stack / DevOps / Data Eng / QA / Mobile
 
 ━━━━━━━━━━━━━━━━━━━━━━━
-2.
-SENIORITY Y EXPERIENCIA
-(20%)
 
-Evaluá coherencia de seniority.
-Tolerancia: ±1 nivel.
-SSR puede aplicar Senior si el resto alinea.
-Penalizar: roles muy junior para perfiles gerenciales.
+COMPONENTE 2 — SENIORITY Y EXPERIENCIA (peso 20%, máx 2.0 puntos)
 
-━━━━━━━━━━━━━━━━━━━━━━━
-3.
-HABILIDADES TÉCNICAS Y FUNCIONALES
-(12%)
+Escala de seniority (de menor a mayor):
+  Nivel 1: Junior / Trainee / Pasante / Entry Level
+  Nivel 2: Semi Senior / SSR / Analista / Mid-Level
+  Nivel 3: Senior / Especialista / Analista Sr
+  Nivel 4: Lead / Jefe / Coordinador / Team Lead / Supervisor
+  Nivel 5: Gerente / Manager / Director de área
+  Nivel 6: VP / C-Level / Head of / Country Manager / Director General
 
-Evaluar: skills ESPECÍFICAS del rol.
+Coherencia de seniority — puntaje sobre 2.0:
+  Diferencia 0 niveles (match exacto): 2.0
+  Diferencia 1 nivel (±1): 1.5 — aceptable (SSR aplica Senior, Gerente aplica Head of pequeño equipo)
+  Diferencia 2 niveles (±2): 0.8 — brecha significativa, penalizar
+  Diferencia 3+ niveles (±3 o más): 0.2 — muy poco realista
 
-NO sobreponderar skills genéricas:
-- liderazgo
-- Excel
-- comunicación
-- analytics
-- gestión
-
-Solo pesan las skills técnicas y funcionales
-específicas del dominio profesional.
-
-“Nice to have” NO penaliza.
+CASOS DUROS:
+- Director/Gerente (Nivel 5-6) aplicando a Junior/SSR (Nivel 1-2): puntaje máximo 0.3 en este componente. No tiene sentido operativo.
+- Junior/Trainee (Nivel 1) aplicando a Director/Gerente (Nivel 5-6): puntaje máximo 0.3 en este componente.
+- Estos casos deben reflejarse en el score final bajo (6.0 o menos aunque la familia coincida).
 
 ━━━━━━━━━━━━━━━━━━━━━━━
-4.
-INDUSTRIA Y CONTEXTO
-(8%)
+
+COMPONENTE 3 — HABILIDADES TÉCNICAS Y FUNCIONALES (peso 12%, máx 1.2 puntos)
+
+Evaluar skills ESPECÍFICAS del dominio profesional.
+NO sobreponderar skills genéricas: liderazgo, Excel, comunicación, analytics, gestión de proyectos.
+Solo pesan las skills técnicas y funcionales específicas del área (ej: para HR: HRIS, SAP HCM, Workday, gestión de nómina; para Finanzas: IFRS, consolidación, SAP FI, cash flow modeling).
+"Nice to have" ausente NO penaliza. Solo penalizar si un requisito MANDATORIO clave está ausente.
+
+━━━━━━━━━━━━━━━━━━━━━━━
+
+COMPONENTE 4 — INDUSTRIA Y CONTEXTO (peso 8%, máx 0.8 puntos)
 
 Transferibilidad razonable entre industrias afines.
-Ejemplo: HR Tech → Fintech → SaaS puede transferir.
+HR en Fintech puede transferir a HR en SaaS o Ecommerce sin penalización.
+Finanzas en industria puede transferir a Finanzas en servicios con penalización mínima.
+Distancia muy grande (ej: Finanzas en sector público → startup tecnológica) penalizar 0.3-0.5.
 
 ━━━━━━━━━━━━━━━━━━━━━━━
-5.
-CONDICIONES LABORALES Y VIABILIDAD GEOGRÁFICA
-(12%)
 
-Para roles 100% remotos internacionales:
-si requiere inglés fluido y el candidato no lo tiene:
-restar hasta 1.0 punto.
+COMPONENTE 5 — CONDICIONES LABORALES Y GEO (peso 8%, máx 0.8 puntos, puede ser negativo)
 
-━━━━━━━━━━━━━━━━━━━━━━━
-VIABILIDAD GEOGRÁFICA:
+Idioma:
+- Rol 100% remoto internacional que requiere inglés fluido y el candidato no lo menciona: -0.5
 
-Si en el PERFIL DEL CANDIDATO se indica una ubicación detectada,
-evaluá viabilidad de movilidad según modalidad del aviso:
-
-Puesto REMOTO 100%:
-→ Sin penalización geográfica. Todos los candidatos aplican igual.
-
-Puesto HÍBRIDO — misma ciudad o región:
-→ Sin penalización.
-
-Puesto HÍBRIDO — diferente ciudad, mismo país:
-→ Penalizar -0.5 a -1.0 punto.
-
-Puesto PRESENCIAL — diferente ciudad, mismo país:
-→ Penalizar -1.0 a -1.5 puntos.
-
-Puesto PRESENCIAL u HÍBRIDO — otro país:
-→ Penalizar -1.5 a -2.0 puntos.
-→ SALVO que el aviso indique "relocalización provista" o el perfil indique movilidad.
-
-Puestos de DIRECCIÓN REGIONAL o COUNTRY MANAGER:
-→ Reducir penalización geográfica a la mitad (mayor flexibilidad implícita).
+Viabilidad geográfica (usar UBICACIÓN DETECTADA DEL CANDIDATO si está disponible):
+- Mismo lugar o remoto 100%: 0 (sin penalización)
+- Híbrido ciudad distinta mismo país: -0.3 a -0.5
+- Presencial ciudad distinta mismo país: -0.5 a -0.7
+- Presencial u híbrido otro país: -0.6 a -0.8 (salvo que el aviso indique relocalización provista)
+- Dirección Regional / Country Manager: reducir penalización geo a la mitad
 
 ━━━━━━━━━━━━━━━━━━━━━━━
-VETOS DUROS POR FAMILIA
+CAPS DUROS POR INCOMPATIBILIDAD DE FAMILIA
 ━━━━━━━━━━━━━━━━━━━━━━━
 
-Aplicar caps máximos cuando las familias son incompatibles:
+Estos caps se aplican INDEPENDIENTEMENTE de los puntajes de componentes individuales:
 
-Misma familia o adyacente directa:
-→ Sin cap (score libre hasta 10)
+Misma familia o adyacente directa con evidencia clara:
+→ Sin cap (score libre hasta 10.0)
 
-Familia moderadamente diferente
-(ej: Marketing↔Operaciones, HR↔Finanzas sin evidencia):
-→ Score máximo: 6.0
+Familia moderadamente diferente (ej: Marketing↔Operaciones, HR↔Finanzas sin evidencia de transferencia):
+→ Score MÁXIMO: 5.5
 
-Familia muy diferente
-(ej: HR→Marketing, Finanzas→Ventas):
-→ Score máximo: 5.5
+Familia muy diferente (ej: HR→Marketing sin evidencia, Finanzas→Ventas, Operaciones→Marketing):
+→ Score MÁXIMO: 4.5 → EXCLUIR del output (está por debajo del umbral mínimo de 5.0)
 
-Familia completamente diferente
-(ej: HR→Backend, Finanzas→Diseño, RRHH→Product Manager):
-→ Score máximo: 5.0
-→ Solo si el perfil muestra evidencia EXPLÍCITA de transición
+Familia completamente incompatible (ej: HR→Backend, Finanzas→Diseño, RRHH→Product Manager, no-tech→Tecnología sin evidencia, Tecnología→HR sin evidencia):
+→ Score MÁXIMO: 3.5 → EXCLUIR del output obligatoriamente
 
-Si el perfil muestra evidencia clara de transición
-(bootcamp, portfolio, objetivo explícito, roles híbridos recientes):
-→ Cap puede subir hasta 1.5 puntos sobre lo indicado
-
-━━━━━━━━━━━━━━━━━━━━━━━
-VETOS DUROS POR FAMILIA
-━━━━━━━━━━━━━━━━━━━━━━━
-
-Aplicar caps máximos cuando las familias son incompatibles:
-
-Misma familia o adyacente directa:
-→ Sin cap (score libre hasta 10)
-
-Familia moderadamente diferente
-(ej: Marketing↔Operaciones, HR↔Finanzas sin evidencia):
-→ Score máximo: 6.0
-
-Familia muy diferente
-(ej: HR→Marketing, Finanzas→Ventas):
-→ Score máximo: 5.5
-
-Familia completamente diferente
-(ej: HR→Backend, Finanzas→Diseño, RRHH→Product Manager):
-→ Score máximo: 5.0
-→ Solo si el perfil muestra evidencia EXPLÍCITA de transición
-
-Si el perfil muestra evidencia clara de transición
-(bootcamp, portfolio, objetivo explícito, roles híbridos recientes):
-→ Cap puede subir hasta 1.5 puntos sobre lo indicado
+Excepción: si el perfil muestra evidencia EXPLÍCITA de transición de carrera (bootcamp reciente, portfolio técnico demostrable, múltiples experiencias híbridas documentadas, objetivo profesional explícito de cambio de área), el cap puede subir hasta 1.5 puntos sobre lo indicado.
 
 ━━━━━━━━━━━━━━━━━━━━━━━
 REGLAS CRÍTICAS
 ━━━━━━━━━━━━━━━━━━━━━━━
 
 ❌ NO hacer keyword matching superficial.
-
-❌ NO recomendar:
-roles fuera de incumbencia principal
-solo por skills transferibles.
-
-❌ NO priorizar:
-skills blandas sobre profesión real.
-
-❌ NO asumir:
-que alguien quiere cambiar radicalmente de carrera
-si el perfil no lo indica explícitamente.
+❌ NO recomendar roles fuera de incumbencia principal solo por skills transferibles (liderazgo, Excel, analytics NO son suficientes para cruzar familias).
+❌ NO priorizar skills blandas sobre profesión real.
+❌ NO asumir que alguien quiere cambiar radicalmente de carrera si el perfil no lo indica.
+❌ NO asignar scores entre 6.0 y 8.5 a jobs claramente fuera de la familia — eso es matching no discriminativo.
 
 ━━━━━━━━━━━━━━━━━━━━━━━
-CAMBIOS DE CARRERA
+ESCALA DE SCORING Y DISTRIBUCIÓN ESPERADA
 ━━━━━━━━━━━━━━━━━━━━━━━
 
-SOLO permitir:
-matches cross-functional fuertes
-si:
-el perfil:
-muestra evidencia clara de transición.
-
-Ejemplos:
-- bootcamp reciente
-- experiencia híbrida
-- objetivo profesional explícito
-- portfolio
-- múltiples experiencias relacionadas
-
-━━━━━━━━━━━━━━━━━━━━━━━
-SCORING
-━━━━━━━━━━━━━━━━━━━━━━━
-
-Interpretación sugerida:
-
-9-10:
-Excelente fit funcional y seniority.
-
-8-8.9:
-Muy buen fit con pequeñas brechas.
-
-7-7.9:
-Buen fit razonable.
-
-6-6.9:
-Transferible pero no ideal.
-
-5-5.9:
-Solo mostrar si hay lógica profesional clara.
-
-<5:
-NO incluir.
+9-10: Excelente fit funcional, seniority y condiciones. Candidato claramente apto. (Esperado: 1-2 jobs de 30)
+8-8.9: Muy buen fit con brechas menores tolerables. (Esperado: 2-4 jobs de 30)
+7-7.9: Buen fit razonable. Alguna brecha real pero lógica profesional sólida. (Esperado: 3-6 jobs de 30)
+6-6.9: Fit parcial. Familia correcta pero brecha notable de seniority o skills. (Esperado: 2-5 jobs de 30)
+5-5.9: Solo incluir si hay lógica profesional clara. Familia adyacente con transferencia documentada.
+<5: NO incluir. Familia diferente, seniority incompatible o ambos.
 
 ━━━━━━━━━━━━━━━━━━━━━━━
 OUTPUT
 ━━━━━━━━━━━━━━━━━━━━━━━
 
-- Solo incluir:
-match_score >= 5.0
+- Solo incluir: match_score >= 5.0
+- Máximo: 12 resultados
+- Orden: score descendente
 
-- Máximo:
-12 resultados
+strengths: 2-3 fortalezas ESPECÍFICAS para ESE aviso. NO genéricas.
 
-- Orden:
-score descendente
+gaps: 1-2 brechas reales y accionables. Framing positivo:
+✅ "Sumar experiencia en X fortalecería la candidatura."
+❌ "No tiene X."
+Si no hay gaps reales: array vacío.
 
-━━━━━━━━━━━━━━━━━━━━━━━
-strengths
-━━━━━━━━━━━━━━━━━━━━━━━
-
-2-3 fortalezas:
-ESPECÍFICAS
-para ESE aviso.
-
-NO genéricas.
-
-━━━━━━━━━━━━━━━━━━━━━━━
-gaps
-━━━━━━━━━━━━━━━━━━━━━━━
-
-1-2 brechas reales y accionables.
-
-Usar framing positivo:
-
-✅ “Sumar experiencia en X fortalecería la candidatura.”
-
-❌ “No tiene X.”
-
-Si no hay gaps reales:
-array vacío.
-
-━━━━━━━━━━━━━━━━━━━━━━━
-summary
-━━━━━━━━━━━━━━━━━━━━━━━
-
-1 oración:
-en español rioplatense,
-natural,
-profesional.
-
-Mencionar:
-empresa
-o rol
-cuando sea posible.
+summary: 1 oración en español rioplatense, natural, profesional. Mencioná empresa o rol cuando sea posible.
 
 ━━━━━━━━━━━━━━━━━━━━━━━
 ANTI-ALUCINACIÓN
 ━━━━━━━━━━━━━━━━━━━━━━━
 
-❌ Nunca inventes:
-skills,
-experiencias,
-idiomas,
-seniority,
-objetivos
-ni certificaciones
-ausentes del perfil.
+❌ Nunca inventes skills, experiencias, idiomas, seniority, objetivos ni certificaciones ausentes del perfil.
 
 ━━━━━━━━━━━━━━━━━━━━━━━
 RESPUESTA
 ━━━━━━━━━━━━━━━━━━━━━━━
 
-Respondé SOLO JSON válido.
-Sin markdown.
-Sin explicación.
-Sin texto adicional.
+Respondé SOLO JSON válido. Sin markdown. Sin explicación. Sin texto adicional.
 
 Formato exacto:
 
@@ -4423,7 +4311,7 @@ async function handleAiJobRecommendations(body, request, env, ctx, corsHeaders, 
       const pRows = await pRes.json()
       const p     = pRows?.[0]
       isPremium   = p?.es_premium && p?.premium_hasta && new Date(p.premium_hasta) > new Date()
-    } catch { /* default false */ }
+    } catch (e) { console.warn(`[RADAR] premium check failed for user ${user_id}: ${e?.message} — defaulting to free`) }
   }
 
   console.log(`[RADAR] START user=${user_id||'anon'} premium=${isPremium} remoteOk=${!!remote_ok} queries=${JSON.stringify(queries.slice(0,3))} location=${location||'—'}`)
@@ -4439,6 +4327,14 @@ async function handleAiJobRecommendations(body, request, env, ctx, corsHeaders, 
     const radarCache = await getRadarCache(env, user_id, profileHash, queryHashEarly)
     if (radarCache?.results?.length) {
       console.log(`[RADAR] radarCache HIT — returning ${radarCache.results.length} cached recs`)
+      // Recover sourcesUsed from the KV metadata written at fetch time.
+      let radarCachedSources = []
+      try {
+        const metaRaw = env.RATE_LIMIT_KV ? await env.RATE_LIMIT_KV.get(`jobs_meta:${queryHashEarly}`) : null
+        if (metaRaw) radarCachedSources = JSON.parse(metaRaw)
+      } catch (e) { console.warn('[RADAR] radarCache: failed to recover sourcesUsed from KV:', e?.message) }
+      // Derive expansion fields from cached results so the frontend shows correct badges
+      const cachedExpansionCount = radarCache.results.filter(r => r.from_expansion).length
       return new Response(
         JSON.stringify({
           ok:                  true,
@@ -4448,7 +4344,16 @@ async function handleAiJobRecommendations(body, request, env, ctx, corsHeaders, 
           cached_today:        true,
           cache_timestamp:     radarCache.created_at,
           quota_remaining:     0,
-          pipeline_stats:      { cache_hit: 'radar', premium_mode: isPremium },
+          expansion_used:      cachedExpansionCount > 0,
+          expansion_count:     cachedExpansionCount,
+          expansion_available: false,
+          candidate_location:  null,
+          pipeline_stats: {
+            cache_hit:      'radar',
+            premium_mode:   isPremium,
+            sources_used:   radarCachedSources,
+            expansion_used: cachedExpansionCount > 0,
+          },
         }),
         { status: 200, headers: corsHeaders }
       )
@@ -4476,12 +4381,21 @@ async function handleAiJobRecommendations(body, request, env, ctx, corsHeaders, 
   let   jobs         = []
   let   fromCache    = false
 
+  // KV_SOURCES_KEY stores the sourcesUsed alongside jobs so cache hits can report it accurately.
+  // Format stored in KV: { jobs: NormalizedJob[], sourcesUsed: string[] }
+  const KV_SOURCES_KEY = `jobs_meta:${queryHash}`
+
   let sourcesUsed = []
   const kvCached = await getJobsFromKV(env, queryHash)
   if (kvCached) {
     jobs      = kvCached
     fromCache = true
-    console.log(`[RADAR] jobsCache HIT — ${jobs.length} jobs from KV`)
+    // Attempt to recover persisted sourcesUsed so pipeline_stats is not empty on cache hits.
+    try {
+      const metaRaw = env.RATE_LIMIT_KV ? await env.RATE_LIMIT_KV.get(KV_SOURCES_KEY) : null
+      if (metaRaw) sourcesUsed = JSON.parse(metaRaw)
+    } catch (e) { console.warn(`[RADAR] sourcesUsed KV recovery failed: ${e?.message} — reporting [] for pipeline_stats`) }
+    console.log(`[RADAR] jobsCache HIT — ${jobs.length} jobs from KV, sources=${sourcesUsed.length}`)
   } else {
     // Live fetch — pass profile_text so ATS companies are selected by relevance
     const fetchResult = await fetchAllSources(cleanQueries, location, remote_ok, env, String(profile_text))
@@ -4489,11 +4403,17 @@ async function handleAiJobRecommendations(body, request, env, ctx, corsHeaders, 
     if (fetchResult.jobs.length) {
       jobs = fetchResult.jobs
       await putJobsToKV(env, queryHash, jobs)
+      // Persist sourcesUsed alongside the job TTL so future cache hits can report it.
+      if (env.RATE_LIMIT_KV && sourcesUsed.length) {
+        env.RATE_LIMIT_KV.put(KV_SOURCES_KEY, JSON.stringify(sourcesUsed), { expirationTtl: JOB_KV_TTL_SECS }).catch(() => {})
+      }
       await upsertJobsToSupabase(env, ctx, jobs)
       upsertJobsRaw(env, ctx, jobs)
       upsertJobsNormalized(env, ctx, jobs)
+    } else if (fetchResult.sourceErrors && Object.keys(fetchResult.sourceErrors).length) {
+      console.warn(`[RADAR] live fetch returned 0 jobs. Source errors: ${JSON.stringify(fetchResult.sourceErrors)}`)
     }
-    console.log(`[RADAR] jobsCache MISS — fetched ${jobs.length} live jobs`)
+    console.log(`[RADAR] jobsCache MISS — fetched ${jobs.length} live jobs, sources=[${sourcesUsed.join(',')}]`)
   }
 
   if (!jobs.length) {
@@ -4519,6 +4439,8 @@ async function handleAiJobRecommendations(body, request, env, ctx, corsHeaders, 
     const jrecCached = await getJrecFromKV(env, user_id, queryHash)
     if (jrecCached?.recommendations?.length) {
       console.log(`[RADAR] jrecCache HIT — ${jrecCached.recommendations.length} recs, skipping Gemini`)
+      // sourcesUsed is already populated above (either from KV_SOURCES_KEY or live fetch path)
+      const jrecExpansionCount = jrecCached.recommendations.filter(r => r.from_expansion).length
       return new Response(
         JSON.stringify({
           ok:                  true,
@@ -4526,7 +4448,17 @@ async function handleAiJobRecommendations(body, request, env, ctx, corsHeaders, 
           total_jobs_analyzed: jrecCached.total_jobs_analyzed || 0,
           from_cache:          true,
           quota_remaining:     rl.limit - rl.count,
-          pipeline_stats:      { cache_hit: 'jrec', premium_mode: isPremium },
+          expansion_used:      jrecExpansionCount > 0,
+          expansion_count:     jrecExpansionCount,
+          expansion_available: false,
+          candidate_location:  null,
+          pipeline_stats: {
+            cache_hit:       'jrec',
+            premium_mode:    isPremium,
+            sources_used:    sourcesUsed,
+            from_jobs_cache: fromCache,
+            expansion_used:  jrecExpansionCount > 0,
+          },
         }),
         { status: 200, headers: corsHeaders }
       )
@@ -4561,8 +4493,9 @@ async function handleAiJobRecommendations(body, request, env, ctx, corsHeaders, 
       const raw    = aiData?.candidates?.[0]?.content?.parts?.[0]?.text || ''
       try {
         aiResult = JSON.parse(raw.replace(/^```json\n?|\n?```$/g, '').trim())
-      } catch {
+      } catch (parseErr) {
         aiError = 'ai_parse_error'
+        console.warn(`[RADAR] Gemini JSON parse failed: ${parseErr.message} — raw preview: ${raw.slice(0, 200)}`)
       }
     } else {
       aiError = `ai_http_${aiRes.status}`
@@ -4601,7 +4534,9 @@ async function handleAiJobRecommendations(body, request, env, ctx, corsHeaders, 
             { status: 200, headers: corsHeaders }
           )
         }
-      } catch { /* no previous recs — fall through */ }
+      } catch (err) {
+        console.warn(`[RADAR] fallback prev-recs fetch failed: ${err.message}`)
+      }
     }
 
     // No cached recs either — return top jobs without scores
@@ -4628,8 +4563,30 @@ async function handleAiJobRecommendations(body, request, env, ctx, corsHeaders, 
   }
 
   // ── Build final recommendations from AI matches ────────────────────────────
+  // geo_score blends into the ranking when candidateLocation is known.
+  // Gemini already applies geo penalties via the system prompt, but it can miss nuances
+  // when the location signal is weak. We apply a conservative JS-side geo adjustment
+  // (max ±0.5) as a tiebreaker — not a full re-score — to surface geographically
+  // viable jobs higher within similar score bands.
+  const geoAdjust = (job, geminiScore) => {
+    if (!candidateLocation || job.remote) return geminiScore
+    const gs = geoCompatibilityScore(job.location, job.remote, candidateLocation)
+    // gs=1.0 → +0, gs=0.95 → +0, gs=0.6 → -0.2, gs=0.45 → -0.35, gs=0.15 → -0.5
+    if (gs >= 0.9) return geminiScore
+    const penalty = Math.min(0.5, (0.9 - gs) * 1.25)
+    return Math.max(0, geminiScore - penalty)
+  }
+
   const topMatches = (aiResult.matches || [])
-    .sort((a, b) => b.match_score - a.match_score)
+    .map(m => {
+      const job = jobPool[m.job_index]
+      if (!job) return null
+      const geoScore = geoCompatibilityScore(job.location, job.remote, candidateLocation)
+      const adjustedScore = geoAdjust(job, m.match_score || 0)
+      return { ...m, _adjusted_score: adjustedScore, _geo_score: geoScore }
+    })
+    .filter(Boolean)
+    .sort((a, b) => b._adjusted_score - a._adjusted_score)
     .slice(0, requestedN)
 
   let recommendations = topMatches.map(m => {
@@ -4642,7 +4599,7 @@ async function handleAiJobRecommendations(body, request, env, ctx, corsHeaders, 
       gaps:        Array.isArray(m.gaps)       ? m.gaps.slice(0, 2)     : [],
       summary:     String(m.summary || ''),
       rec_id:      null,  // populated after Supabase insert below
-      geo_score:   geoCompatibilityScore(job.location, job.remote, candidateLocation),
+      geo_score:   m._geo_score,
     }
   }).filter(Boolean)
 
@@ -4789,7 +4746,9 @@ async function handleAiJobRecommendations(body, request, env, ctx, corsHeaders, 
             body: JSON.stringify(historialRow),
           })
         }
-      } catch { /* non-fatal */ }
+      } catch (err) {
+        console.warn(`[RADAR] saveHistorial failed for user ${user_id}: ${err.message}`)
+      }
     })()
     ctx.waitUntil(saveHistorial)
   }

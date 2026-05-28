@@ -130,44 +130,44 @@ function SkeletonCard() {
 const LOADING_STAGES = [
   {
     icon: '🌐',
-    msg: 'Conectando con ATS corporativos',
-    sub: 'Accediendo a Greenhouse, Lever, Ashby y 400+ portales directos de empresas.',
+    msg: 'Conectando con 14 fuentes de empleo en simultáneo',
+    sub: 'ATS corporativos (Greenhouse, Lever, Ashby), Google Jobs, Himalayas y portales LATAM.',
   },
   {
     icon: '🔍',
-    msg: 'Escaneando bolsas laborales activas',
-    sub: 'RemoteOK, Remotive, Jooble, GetOnBoard y fuentes regionales LATAM en simultáneo.',
+    msg: 'Escaneando bolsas laborales en tiempo real',
+    sub: 'RemoteOK, Remotive, Jooble, GetOnBoard, Adzuna y fuentes regionales LATAM activas.',
   },
   {
     icon: '🧬',
-    msg: 'Analizando tu perfil profesional',
-    sub: 'Extrayendo área, nivel, industria y señales de diferenciación de tu experiencia.',
+    msg: 'Extrayendo señales clave de tu perfil',
+    sub: 'Área funcional, nivel de seniority, industria y diferenciadores únicos de tu trayectoria.',
   },
   {
     icon: '📍',
-    msg: 'Evaluando compatibilidad geográfica',
-    sub: 'Priorizando presencial e híbrido accesibles, más remoto con zona horaria compatible.',
+    msg: 'Filtrando por compatibilidad geográfica y modalidad',
+    sub: 'Presencial e híbrido en tu zona, más remoto con zona horaria compatible con LATAM.',
   },
   {
     icon: '🤖',
-    msg: 'Calculando matching semántico',
-    sub: 'No comparamos palabras clave — analizamos coherencia de carrera real con cada aviso.',
+    msg: 'Analizando compatibilidad funcional y de seniority',
+    sub: 'Comparamos trayectoria real, no solo palabras clave — coherencia de carrera con cada aviso.',
   },
   {
     icon: '✨',
-    msg: 'Activando búsqueda expandida',
-    sub: 'El Radar explora títulos alternativos y variantes de tu rol que los filtros normales no cubren.',
+    msg: 'Explorando títulos alternativos y roles equivalentes',
+    sub: 'HRBP, People Partner, Tech Lead, Staff Engineer… variantes que los filtros normales no cubren.',
     premiumOnly: true,
   },
   {
     icon: '📊',
-    msg: 'Calculando puntuaciones de match',
-    sub: 'Cada vacante recibe un score basado en trayectoria, industria y brecha de skills.',
+    msg: 'Calculando score de compatibilidad para cada vacante',
+    sub: 'Puntaje 0–100 basado en trayectoria, industria, seniority y brecha de skills detectada.',
   },
   {
     icon: '🏆',
-    msg: 'Clasificando tus mejores oportunidades',
-    sub: 'Las posiciones donde sos candidato/a diferenciador/a aparecen primero.',
+    msg: 'Ordenando las oportunidades donde más destacás',
+    sub: 'Las posiciones donde sos candidato/a diferenciador/a — las que más vale la pena explorar primero.',
   },
 ]
 
@@ -758,6 +758,41 @@ function JobCard({
                     ✨ Hallazgo IA
                   </span>
                 )}
+                {/* ATS Verificado — sourced directly from an ATS (greenhouse/lever/ashby/workable) */}
+                {job.ats_type && (
+                  <span className="px-1.5 py-0.5 rounded text-[10px] font-medium"
+                    style={{ background: 'rgba(16,185,129,0.10)', color: '#059669', border: '1px solid rgba(16,185,129,0.22)' }}>
+                    🏢 ATS Verificado
+                  </span>
+                )}
+                {/* Con salario — salary info is available */}
+                {(job.salary_min || job.salary_max) && (
+                  <span className="px-1.5 py-0.5 rounded text-[10px] font-medium"
+                    style={{ background: 'rgba(34,197,94,0.10)', color: '#16a34a', border: '1px solid rgba(34,197,94,0.22)' }}>
+                    💰 Con salario
+                  </span>
+                )}
+                {/* Remoto Total — fully remote position */}
+                {job.remote === true && (
+                  <span className="px-1.5 py-0.5 rounded text-[10px] font-medium"
+                    style={{ background: 'rgba(99,102,241,0.10)', color: '#4f46e5', border: '1px solid rgba(99,102,241,0.22)' }}>
+                    🌍 Remoto Total
+                  </span>
+                )}
+                {/* Reciente — posted less than 7 days ago */}
+                {postedDays !== null && postedDays < 7 && postedDays > 0 && (
+                  <span className="px-1.5 py-0.5 rounded text-[10px] font-medium"
+                    style={{ background: 'rgba(239,68,68,0.09)', color: '#dc2626', border: '1px solid rgba(239,68,68,0.20)' }}>
+                    🔥 Reciente
+                  </span>
+                )}
+                {/* Alta compatibilidad — match_score >= 8.5 (85+ on 0-10 scale) */}
+                {match_score != null && match_score >= 8.5 && (
+                  <span className="px-1.5 py-0.5 rounded text-[10px] font-medium"
+                    style={{ background: 'rgba(217,119,6,0.10)', color: '#92400e', border: '1px solid rgba(217,119,6,0.22)' }}>
+                    ⭐ Alta compatibilidad
+                  </span>
+                )}
               </div>
             )}
             {isStale && (
@@ -1013,6 +1048,7 @@ export default function JobRecommendationsScreen({
   const [expansionUsed, setExpansionUsed]     = useState(false)
   const [expansionCount, setExpansionCount]   = useState(0)
   const [candidateLoc, setCandidateLoc]       = useState(null)
+  const [pipelineStats, setPipelineStats]     = useState(null)   // { sources_count, total_evaluated }
 
   // ── Analytics session refs ─────────────────────────────────────────────────
   // Track how many cards the user has seen and saved in this session
@@ -1166,6 +1202,7 @@ export default function JobRecommendationsScreen({
       setExpansionUsed(data.expansion_used || false)
       setExpansionCount(data.expansion_count || 0)
       setCandidateLoc(data.candidate_location || null)
+      setPipelineStats(data.pipeline_stats || null)
       setLoadState('done')
 
       // 3. SEARCH COMPLETED — rich params enable source-level attribution and
@@ -1455,8 +1492,16 @@ export default function JobRecommendationsScreen({
             </div>
             {loadState === 'done' && (
               <p className="text-[10px]" style={{ color: '#94a3b8' }}>
-                {totalAnalyzed > 0 ? `${totalAnalyzed} avisos analizados` : ''}
-                {fromCache ? ' · Actualizado' : ''}
+                {pipelineStats?.sources_count
+                  ? `${pipelineStats.sources_count} fuentes`
+                  : null}
+                {pipelineStats?.sources_count && (pipelineStats?.total_evaluated || totalAnalyzed > 0) ? ' · ' : null}
+                {pipelineStats?.total_evaluated
+                  ? `${pipelineStats.total_evaluated.toLocaleString('es-AR')} avisos evaluados`
+                  : totalAnalyzed > 0
+                    ? `${totalAnalyzed} avisos evaluados`
+                    : null}
+                {fromCache ? ' · Caché de hoy' : ''}
               </p>
             )}
           </div>
@@ -1651,36 +1696,48 @@ export default function JobRecommendationsScreen({
           <>
             {/* Results count + profile summary */}
             {filteredRecs.length > 0 && (
-              <div className="rounded-2xl px-4 py-3 flex items-center gap-3"
+              <div className="rounded-2xl px-4 py-3 space-y-2"
                 style={{ background: 'rgba(0,119,181,0.05)', border: '1px solid rgba(0,119,181,0.12)' }}>
-                <div className="flex-1 min-w-0">
-                  <p className="text-sm font-semibold" style={{ color: '#0d2137' }}>
-                    {filteredRecs.length} oportunidad{filteredRecs.length !== 1 ? 'es' : ''} altamente compatible{filteredRecs.length !== 1 ? 's' : ''}
-                  </p>
-                  {result?.resumen_diagnostico && (
-                    <p className="text-xs mt-0.5 truncate" style={{ color: '#64748b' }}>
-                      {result.resumen_diagnostico.slice(0, 70)}...
+                <div className="flex items-start gap-3">
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-semibold" style={{ color: '#0d2137' }}>
+                      {filteredRecs.length === 1
+                        ? '1 oportunidad seleccionada para tu perfil'
+                        : `${filteredRecs.length} oportunidades seleccionadas para tu perfil`}
                     </p>
-                  )}
-                  {totalAnalyzed > filteredRecs.length && (
-                    <p className="text-xs" style={{ color: '#64748b' }}>
-                      Seleccionadas de {totalAnalyzed} avisos analizados
-                    </p>
-                  )}
-                </div>
-                <div className="flex items-center gap-1.5 shrink-0">
-                  {candidateLoc && (
-                    <span className="text-[10px] px-1.5 py-0.5 rounded"
-                      style={{ background: 'rgba(16,185,129,0.08)', color: '#059669' }}>
-                      📍 {candidateLoc}
-                    </span>
-                  )}
-                  {quotaRemaining !== null && (
-                    <span className="text-[10px] px-2 py-1 rounded-lg"
-                      style={{ background: 'rgba(0,119,181,0.10)', color: '#0077B5' }}>
-                      {quotaRemaining} restantes hoy
-                    </span>
-                  )}
+                    {/* Pipeline stats — shown discretely when available from API */}
+                    {pipelineStats && (pipelineStats.sources_count || pipelineStats.total_evaluated) ? (
+                      <p className="text-xs mt-0.5" style={{ color: '#64748b' }}>
+                        {[
+                          pipelineStats.sources_count ? `Analizadas ${pipelineStats.sources_count} fuentes` : null,
+                          pipelineStats.total_evaluated ? `${pipelineStats.total_evaluated.toLocaleString('es-AR')} avisos evaluados` : null,
+                        ].filter(Boolean).join(' · ')}
+                      </p>
+                    ) : totalAnalyzed > filteredRecs.length ? (
+                      <p className="text-xs mt-0.5" style={{ color: '#64748b' }}>
+                        Seleccionadas de {totalAnalyzed.toLocaleString('es-AR')} avisos evaluados
+                      </p>
+                    ) : null}
+                    {result?.resumen_diagnostico && (
+                      <p className="text-xs mt-0.5 truncate" style={{ color: '#94a3b8' }}>
+                        {result.resumen_diagnostico.slice(0, 70)}…
+                      </p>
+                    )}
+                  </div>
+                  <div className="flex flex-col items-end gap-1 shrink-0">
+                    {candidateLoc && (
+                      <span className="text-[10px] px-1.5 py-0.5 rounded"
+                        style={{ background: 'rgba(16,185,129,0.08)', color: '#059669' }}>
+                        📍 {candidateLoc}
+                      </span>
+                    )}
+                    {quotaRemaining !== null && (
+                      <span className="text-[10px] px-2 py-1 rounded-lg"
+                        style={{ background: 'rgba(0,119,181,0.10)', color: '#0077B5' }}>
+                        {quotaRemaining} restantes hoy
+                      </span>
+                    )}
+                  </div>
                 </div>
               </div>
             )}
@@ -1904,17 +1961,35 @@ export default function JobRecommendationsScreen({
               <div className="text-center py-14 px-6 space-y-4">
                 <span className="text-5xl">🧭</span>
                 <h3 className="font-bold text-base" style={{ color: '#0d2137' }}>
-                  Radar sin resultados por ahora
+                  El Radar no encontró resultados para hoy
                 </h3>
                 <p className="text-sm max-w-xs mx-auto leading-relaxed" style={{ color: '#64748b' }}>
-                  No encontramos roles compatibles hoy. Probá expandir la búsqueda:
+                  Escaneamos las fuentes disponibles pero no encontramos roles con compatibilidad suficiente. Podés ampliar la búsqueda o volver mañana cuando se actualizan los avisos.
                 </p>
+                {/* Expansion upsell when expansion_available=true for free users */}
+                {expansionAvail && !isPremium && (
+                  <div className="rounded-2xl p-4 text-left space-y-2 mx-auto max-w-xs"
+                    style={{ background: 'linear-gradient(135deg,rgba(0,119,181,0.08),rgba(14,165,233,0.12))', border: '1.5px solid rgba(0,119,181,0.22)' }}>
+                    <p className="text-xs font-bold" style={{ color: '#0d2137' }}>
+                      ✨ Búsqueda Activa podría encontrar más
+                    </p>
+                    <p className="text-xs leading-relaxed" style={{ color: '#475569' }}>
+                      Con Premium, el Radar explora fuentes adicionales y títulos alternativos. Puede encontrar roles que los portales normales no muestran.
+                    </p>
+                    <button
+                      onClick={() => { trackEvent('radar_laboral_premium_modal_opened', { trigger: 'empty_state_expansion' }); setShowPremiumModal(true) }}
+                      className="w-full py-2.5 rounded-xl text-xs font-bold text-white"
+                      style={{ background: 'linear-gradient(135deg,#0d2137,#0077B5)' }}>
+                      Activar Búsqueda Activa →
+                    </button>
+                  </div>
+                )}
                 <div className="flex flex-wrap gap-2 justify-center">
                   <button
                     onClick={() => { setFilters(f => ({ ...f, remoteOnly: true })); fetchRecommendations() }}
                     className="px-3 py-1.5 rounded-xl text-xs font-medium"
                     style={{ background: 'rgba(0,119,181,0.08)', color: '#0077B5', border: '1px solid rgba(0,119,181,0.2)' }}>
-                    🌐 Activar Remoto
+                    🌐 Ampliar a remoto
                   </button>
                   <button
                     onClick={() => { setFilters(f => ({ ...f, seniority: '' })); fetchRecommendations() }}
