@@ -3173,6 +3173,7 @@ async function fetchJobSource(source, query, location, remoteOk, env) {
 
     if (source === 'serper') {
       if (!env.SERPER_API_KEY) return { source, jobs: [], error: 'serper_not_configured' }
+      console.log(`[SERPER] query="${query}" gl=ar`)
       const r = await fetch('https://google.serper.dev/jobs', {
         method:  'POST',
         headers: { 'X-API-KEY': env.SERPER_API_KEY, 'Content-Type': 'application/json', 'User-Agent': UA },
@@ -3180,7 +3181,9 @@ async function fetchJobSource(source, query, location, remoteOk, env) {
         signal:  ctrl.signal,
       })
       raw = await r.json()
-      return { source, jobs: normalizeJobs(source, raw) }
+      const serperJobs = normalizeJobs(source, raw)
+      console.log(`[SERPER] status=${r.status} results=${serperJobs.length}`)
+      return { source, jobs: serperJobs }
     }
 
     return { source, jobs: [], error: 'unknown_source' }
@@ -3200,9 +3203,11 @@ async function fetchJobSource(source, query, location, remoteOk, env) {
 async function fetchAllSources(queries, location, remoteOk, env, userProfile = '') {
   const remoteSources = ['remoteok', 'remotive', 'jobicy', 'adzuna', 'getonboard', 'himalayas']
   const localSources  = ['adzuna', 'jobicy', 'getonboard', 'himalayas']
-  if (env.JOOBLE_KEY)    { remoteSources.push('jooble'); localSources.push('jooble') }
-  if (env.SERPER_API_KEY) { localSources.push('serper') }
+  if (env.JOOBLE_KEY)     { remoteSources.push('jooble');  localSources.push('jooble')  }
+  if (env.SERPER_API_KEY) { remoteSources.push('serper');  localSources.push('serper')  }
   const sources = remoteOk ? remoteSources : localSources
+
+  console.log(`[RADAR:sources] remoteOk=${!!remoteOk} active=[${sources.join(',')}] queries=${JSON.stringify(queries)}`)
 
   // Run aggregators + ATS boards in parallel
   const [aggregatorResults, atsJobs] = await Promise.all([
@@ -3223,7 +3228,10 @@ async function fetchAllSources(queries, location, remoteOk, env, userProfile = '
   // Merge and 3-level dedup (ATS takes priority over aggregator on URL collision)
   const allJobs = deduplicateJobs([...rawAggregatorJobs, ...atsJobs])
 
-  return { jobs: allJobs, sourceErrors: errors }
+  console.log(`[RADAR:sources] aggregator=${rawAggregatorJobs.length} ats=${atsJobs.length} deduped=${allJobs.length}`)
+  if (Object.keys(errors).length) console.warn('[RADAR:sources] errors:', JSON.stringify(errors))
+
+  return { jobs: allJobs, sourceErrors: errors, sourcesUsed: sources }
 }
 
 
@@ -4418,6 +4426,8 @@ async function handleAiJobRecommendations(body, request, env, ctx, corsHeaders, 
     } catch { /* default false */ }
   }
 
+  console.log(`[RADAR] START user=${user_id||'anon'} premium=${isPremium} remoteOk=${!!remote_ok} queries=${JSON.stringify(cleanQueries.slice(0,3))} location=${location||'—'}`)
+
   // ── radar_search_history: daily persistence check ────────────────────────
   // If the user already ran a fresh search today (premium) or this month (free),
   // serve the stored results immediately — no Gemini call, no rate limit decrement.
@@ -4428,6 +4438,7 @@ async function handleAiJobRecommendations(body, request, env, ctx, corsHeaders, 
   if (user_id && profileHash && queryHashEarly) {
     const radarCache = await getRadarCache(env, user_id, profileHash, queryHashEarly)
     if (radarCache?.results?.length) {
+      console.log(`[RADAR] radarCache HIT — returning ${radarCache.results.length} cached recs`)
       return new Response(
         JSON.stringify({
           ok:                  true,
@@ -4437,6 +4448,7 @@ async function handleAiJobRecommendations(body, request, env, ctx, corsHeaders, 
           cached_today:        true,
           cache_timestamp:     radarCache.created_at,
           quota_remaining:     0,
+          pipeline_stats:      { cache_hit: 'radar', premium_mode: isPremium },
         }),
         { status: 200, headers: corsHeaders }
       )
@@ -4464,20 +4476,24 @@ async function handleAiJobRecommendations(body, request, env, ctx, corsHeaders, 
   let   jobs         = []
   let   fromCache    = false
 
+  let sourcesUsed = []
   const kvCached = await getJobsFromKV(env, queryHash)
   if (kvCached) {
     jobs      = kvCached
     fromCache = true
+    console.log(`[RADAR] jobsCache HIT — ${jobs.length} jobs from KV`)
   } else {
     // Live fetch — pass profile_text so ATS companies are selected by relevance
-    const { jobs: freshJobs } = await fetchAllSources(cleanQueries, location, remote_ok, env, String(profile_text))
-    if (freshJobs.length) {
-      jobs = freshJobs
-      await putJobsToKV(env, queryHash, freshJobs)
-      await upsertJobsToSupabase(env, ctx, freshJobs)
-      upsertJobsRaw(env, ctx, freshJobs)
-      upsertJobsNormalized(env, ctx, freshJobs)
+    const fetchResult = await fetchAllSources(cleanQueries, location, remote_ok, env, String(profile_text))
+    sourcesUsed = fetchResult.sourcesUsed || []
+    if (fetchResult.jobs.length) {
+      jobs = fetchResult.jobs
+      await putJobsToKV(env, queryHash, jobs)
+      await upsertJobsToSupabase(env, ctx, jobs)
+      upsertJobsRaw(env, ctx, jobs)
+      upsertJobsNormalized(env, ctx, jobs)
     }
+    console.log(`[RADAR] jobsCache MISS — fetched ${jobs.length} live jobs`)
   }
 
   if (!jobs.length) {
@@ -4496,11 +4512,13 @@ async function handleAiJobRecommendations(body, request, env, ctx, corsHeaders, 
   // ── Pre-filter: rule-based (zero tokens) → top 25 candidates ─────────────
   const preFiltered = applyPreFilter(jobs, String(profile_text), MAX_JOBS_FOR_AI_MATCHING)
   const jobPool     = preFiltered.length > 0 ? preFiltered : jobs.slice(0, MAX_JOBS_FOR_AI_MATCHING)
+  console.log(`[RADAR] preFilter ${jobs.length} → ${jobPool.length} jobs to Gemini`)
 
   // ── jrec: per-user AI score cache (skip Gemini on re-run within 2 h) ──────
   if (user_id) {
     const jrecCached = await getJrecFromKV(env, user_id, queryHash)
     if (jrecCached?.recommendations?.length) {
+      console.log(`[RADAR] jrecCache HIT — ${jrecCached.recommendations.length} recs, skipping Gemini`)
       return new Response(
         JSON.stringify({
           ok:                  true,
@@ -4508,6 +4526,7 @@ async function handleAiJobRecommendations(body, request, env, ctx, corsHeaders, 
           total_jobs_analyzed: jrecCached.total_jobs_analyzed || 0,
           from_cache:          true,
           quota_remaining:     rl.limit - rl.count,
+          pipeline_stats:      { cache_hit: 'jrec', premium_mode: isPremium },
         }),
         { status: 200, headers: corsHeaders }
       )
@@ -4550,7 +4569,10 @@ async function handleAiJobRecommendations(body, request, env, ctx, corsHeaders, 
     }
   } catch (e) {
     aiError = e.message
+    console.warn(`[RADAR] Gemini error: ${e.message}`)
   }
+
+  console.log(`[RADAR] Gemini latency=${Date.now()-startMs}ms aiError=${aiError||'none'} matches=${aiResult?.matches?.length||0}`)
 
   // ── Fallback: AI failed — return top jobs sorted by recency ───────────────
   if (!aiResult?.matches || aiError) {
@@ -4667,10 +4689,13 @@ async function handleAiJobRecommendations(body, request, env, ctx, corsHeaders, 
   let expansionUsed      = false
   let expansionCount     = 0
 
-  const needsExpansion = shouldTriggerExpansion(recommendations)
+  // Premium always expands; free expands only when threshold not met (shows upsell)
+  const needsExpansion = isPremium || shouldTriggerExpansion(recommendations)
+  console.log(`[RADAR] expansion needsExpansion=${needsExpansion} isPremium=${isPremium} topScore=${recommendations[0]?.match_score?.toFixed(1)||0}`)
   if (needsExpansion) {
     if (isPremium) {
       try {
+        console.log(`[RADAR] expansion START — generating alternative terms...`)
         const existingHashes = new Set(jobPool.map(j => canonicalJobHash(j)))
         const expandResult   = await Promise.race([
           expandWithSearch(env, ctx, cleanQueries, location, remote_ok, String(profile_text), existingHashes, requestedN, candidateLocation),
@@ -4691,8 +4716,13 @@ async function handleAiJobRecommendations(body, request, env, ctx, corsHeaders, 
           recommendations  = merged
           expansionUsed    = true
           expansionCount   = expandResult.count
+          console.log(`[RADAR] expansion OK — +${expansionCount} new jobs merged, final=${recommendations.length}`)
+        } else {
+          console.log(`[RADAR] expansion returned 0 new results`)
         }
-      } catch { /* non-fatal — serve initial results */ }
+      } catch (err) {
+        console.warn(`[RADAR] expansion error: ${err.message}`)
+      }
     } else {
       expansionAvailable = true   // tells frontend to show upsell
     }
@@ -4775,6 +4805,8 @@ async function handleAiJobRecommendations(body, request, env, ctx, corsHeaders, 
     }
   }
 
+  console.log(`[RADAR] DONE recs=${recommendations.length} totalAnalyzed=${jobPool.length} expansionUsed=${expansionUsed} expansionCount=${expansionCount} totalMs=${Date.now()-startMs}`)
+
   return new Response(
     JSON.stringify({
       ok:                  true,
@@ -4788,6 +4820,19 @@ async function handleAiJobRecommendations(body, request, env, ctx, corsHeaders, 
       expansion_used:      expansionUsed,
       expansion_count:     expansionCount,
       candidate_location:  candidateLocation || null,
+      pipeline_stats: {
+        premium_mode:        isPremium,
+        sources_used:        sourcesUsed,
+        serper_active:       !!env.SERPER_API_KEY,
+        jobs_fetched:        jobs.length,
+        jobs_to_gemini:      jobPool.length,
+        from_jobs_cache:     fromCache,
+        expansion_triggered: needsExpansion,
+        expansion_used:      expansionUsed,
+        expansion_count:     expansionCount,
+        candidate_location:  candidateLocation || null,
+        total_ms:            Date.now() - startMs,
+      },
     }),
     { status: 200, headers: corsHeaders }
   )
