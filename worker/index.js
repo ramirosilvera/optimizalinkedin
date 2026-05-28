@@ -2107,7 +2107,7 @@ const JOB_SEARCH_TTL_SECS = 7_200  // job_searches row TTL (mirrors KV)
 const ATS_KV_TTL_SECS     = 79_200  // 22-hour KV cache for ATS company boards (date-keyed)
 const ATS_DB_TTL_HOURS    = 40      // ATS boards update slowly — longer DB TTL
 const JREC_KV_TTL_SECS    = 86_400  // 24-hour per-user AI score cache — skips Gemini on re-runs
-const JREC_PROMPT_VERSION = 'v3'    // bump when JOB_MATCHING_SYSTEM_PROMPT changes to bust stale KV
+const JREC_PROMPT_VERSION = 'v4'    // bump when JOB_MATCHING_SYSTEM_PROMPT changes to bust stale KV
 
 // Rate limits for *new* (fresh) searches — cached re-visits bypass these entirely.
 // Premium: 1 new search/day  (cached same-day results shown for free)
@@ -2124,7 +2124,7 @@ const MAX_DESC_CHARS = 6_000
 
 // Sprint 5: Adaptive Expansion — Premium-only second-pass search layer.
 // Triggers when the initial AI scoring returns weak matches.
-const EXPANSION_THRESHOLD  = 7.5   // expand if top match_score < this (0–10 scale)
+const EXPANSION_THRESHOLD  = 8.0   // expand if top match_score < this (0–10 scale)
 const EXPANSION_MIN_HQ     = 3     // expand if fewer than N jobs score ≥ 7.0
 const EXPANSION_TIMEOUT_MS = 5_500 // hard cap on total expansion time (ms)
 const EXPANSION_GEMINI_MS  = 3_500 // Gemini timeout for expansion scoring pass
@@ -2298,6 +2298,7 @@ function applyPreFilter(jobs, profileText, maxCandidates = 25) {
   const profileLower = (profileText || '').toLowerCase()
   const expanded = expandProfileSkills(profileLower)
 
+  const ATS_SOURCES = new Set(['greenhouse','lever','smartrecruiters','ashby'])
   function score(job) {
     const jobText = `${job.title} ${job.description || ''} ${(job.skills_required || []).join(' ')}`.toLowerCase()
     const titleText = job.title.toLowerCase()
@@ -2305,6 +2306,14 @@ function applyPreFilter(jobs, profileText, maxCandidates = 25) {
     for (const skill of expanded) {
       if (titleText.includes(skill)) s += 3
       else if (jobText.includes(skill)) s += 1
+    }
+    // ATS direct sources are higher quality (less noise, no aggregator reshuffling)
+    if (ATS_SOURCES.has(job.source)) s += 2
+    // Recency bonus — prefer recently posted
+    if (job.posted_at) {
+      const daysOld = (Date.now() - new Date(job.posted_at).getTime()) / 86_400_000
+      if (daysOld <= 1) s += 2
+      else if (daysOld <= 7) s += 1
     }
     return s
   }
@@ -3069,7 +3078,7 @@ async function expandSearchTerms(env, profileText, existingQueries) {
 
 // Full expansion pass: generate new terms → fetch jobs → deduplicate → AI score.
 // Returns { recommendations: [...], count: N } or null if nothing new found.
-async function expandWithSearch(env, ctx, cleanQueries, location, remoteOk, profileText, existingHashes, requestedN) {
+async function expandWithSearch(env, ctx, cleanQueries, location, remoteOk, profileText, existingHashes, requestedN, candidateLocation = null) {
   const newTerms = await expandSearchTerms(env, profileText, cleanQueries)
   if (!newTerms.length) return null
 
@@ -3082,7 +3091,7 @@ async function expandWithSearch(env, ctx, cleanQueries, location, remoteOk, prof
   if (!newJobs.length) return null
 
   const batchJobs  = newJobs.slice(0, 12)
-  const contents   = buildMatchingContents(String(profileText).slice(0, 2000), batchJobs)
+  const contents   = buildMatchingContents(String(profileText).slice(0, 2000), batchJobs, candidateLocation)
   const geminiKeys = (env.GEMINI_API_KEYS || env.GEMINI_API_KEY || '')
     .split(',').map(k => k.trim()).filter(Boolean)
   if (!geminiKeys.length) return null
@@ -3128,6 +3137,7 @@ async function expandWithSearch(env, ctx, cleanQueries, location, remoteOk, prof
         summary:        String(m.summary || ''),
         rec_id:         null,
         from_expansion: true,
+        geo_score:      geoCompatibilityScore(job.location, job.remote, candidateLocation),
       }
     }).filter(Boolean)
 
@@ -3214,6 +3224,79 @@ function inferProfessionFamily(title) {
   if (/\b(legal|counsel|abogado|compliance|regulatory|juridic|contrato|contratos|privacidad|gdpr)\b/.test(t)) return 'Legal/Compliance'
   if (/\b(country manager|general manager|director general|gm |ceo|coo|president|head of|vp |vice president|gerente general|managing director)\b/.test(t)) return 'Management General'
   return null
+}
+
+// ── Geo-contextual helpers ────────────────────────────────────────────────────
+// Extracts the most specific location mentioned in the profile text.
+// Used as geo context when scoring jobs — helps Gemini penalize inviable on-site roles.
+function extractCandidateLocation(profileText) {
+  const t = (profileText || '').slice(0, 2000).toLowerCase()
+  const PATTERNS = [
+    [/\b(caba|capital federal|ciudad de buenos aires|ciudad aut[oó]noma)\b/, 'CABA'],
+    [/\b(palermo|belgrano|villa crespo|san telmo|recoleta|microcentro|barracas|flores|villa urquiza)\b/, 'CABA'],
+    [/\b(quilmes|mor[oó]n|tigre|lom[aá]s de zamora|avellaneda|bernal|vicente l[oó]pez)\b/, 'Gran Buenos Aires'],
+    [/\b(gran buenos aires|gba)\b/, 'Gran Buenos Aires'],
+    [/\b(buenos aires|provincia de buenos aires)\b/, 'Buenos Aires'],
+    [/\b(c[oó]rdoba)\b/, 'Córdoba'],
+    [/\b(rosario)\b/, 'Rosario'],
+    [/\b(mendoza)\b/, 'Mendoza'],
+    [/\b(tucum[aá]n)\b/, 'Tucumán'],
+    [/\b(mar del plata)\b/, 'Mar del Plata'],
+    [/\b(salta)\b/, 'Salta'],
+    [/\b(santa fe)\b/, 'Santa Fe'],
+    [/\b(la plata)\b/, 'La Plata'],
+    [/\b(bah[ií]a blanca)\b/, 'Bahía Blanca'],
+    [/\b(neuqu[eé]n)\b/, 'Neuquén'],
+    [/\b(argentina)\b/, 'Argentina'],
+    [/\b(colombia)\b/, 'Colombia'],
+    [/\b(chile)\b/, 'Chile'],
+    [/\b(m[eé]xico)\b/, 'México'],
+    [/\b(per[uú])\b/, 'Perú'],
+    [/\b(brasil|brazil)\b/, 'Brasil'],
+    [/\b(uruguay)\b/, 'Uruguay'],
+    [/\b(paraguay)\b/, 'Paraguay'],
+    [/\b(bolivia)\b/, 'Bolivia'],
+    [/\b(ecuador)\b/, 'Ecuador'],
+  ]
+  for (const [re, canonical] of PATTERNS) {
+    if (re.test(t)) return canonical
+  }
+  return null
+}
+
+// Returns a 0.0–1.0 geo compatibility score for a job vs. the candidate's detected location.
+// Only meaningful for on-site / hybrid jobs — remote jobs always score 1.0.
+function geoCompatibilityScore(jobLocation, jobRemote, candidateLocation) {
+  if (jobRemote)          return 1.0   // remote = geo-neutral
+  if (!candidateLocation) return 0.55  // unknown → benefit of doubt
+
+  const jl = (jobLocation || '').toLowerCase()
+  const cl = candidateLocation.toLowerCase()
+
+  // Exact/substring match
+  if (jl.includes(cl) || cl.includes(jl.split(',')[0].trim())) return 1.0
+
+  // Buenos Aires metro = CABA + Gran Buenos Aires (same commuting zone)
+  const BSAS = ['caba','capital federal','buenos aires','gran buenos aires','palermo','belgrano','quilmes','morón','tigre']
+  const jlBA = BSAS.some(c => jl.includes(c))
+  const clBA = BSAS.some(c => cl.includes(c))
+  if (jlBA && clBA) return 0.95
+
+  // Both in Argentina (different cities)
+  const AR = ['córdoba','rosario','mendoza','tucumán','mar del plata','salta','santa fe',
+               'la plata','bahía blanca','neuquén','argentina']
+  const jlAR = jlBA || AR.some(c => jl.includes(c))
+  const clAR = clBA || AR.some(c => cl.includes(c))
+  if (jlAR && clAR) return 0.60   // different Argentine cities (hybrid is a stretch)
+
+  // Both LATAM, different countries
+  const LATAM = ['colombia','chile','méxico','perú','brasil','uruguay','paraguay','bolivia','ecuador']
+  const jlLATAM = jlAR || LATAM.some(c => jl.includes(c))
+  const clLATAM = clAR || LATAM.some(c => cl.includes(c))
+  if (jlLATAM && clLATAM) return 0.45
+
+  // Cross-region on-site = rarely viable
+  return 0.15
 }
 
 // ── Sprint 4: write to jobs_raw (source provenance) ──────────────────────────
@@ -3521,12 +3604,63 @@ Ejemplo: HR Tech → Fintech → SaaS puede transferir.
 
 ━━━━━━━━━━━━━━━━━━━━━━━
 5.
-CONDICIONES LABORALES
-(8%)
+CONDICIONES LABORALES Y VIABILIDAD GEOGRÁFICA
+(12%)
 
 Para roles 100% remotos internacionales:
 si requiere inglés fluido y el candidato no lo tiene:
-restar hasta 1.5 puntos.
+restar hasta 1.0 punto.
+
+━━━━━━━━━━━━━━━━━━━━━━━
+VIABILIDAD GEOGRÁFICA:
+
+Si en el PERFIL DEL CANDIDATO se indica una ubicación detectada,
+evaluá viabilidad de movilidad según modalidad del aviso:
+
+Puesto REMOTO 100%:
+→ Sin penalización geográfica. Todos los candidatos aplican igual.
+
+Puesto HÍBRIDO — misma ciudad o región:
+→ Sin penalización.
+
+Puesto HÍBRIDO — diferente ciudad, mismo país:
+→ Penalizar -0.5 a -1.0 punto.
+
+Puesto PRESENCIAL — diferente ciudad, mismo país:
+→ Penalizar -1.0 a -1.5 puntos.
+
+Puesto PRESENCIAL u HÍBRIDO — otro país:
+→ Penalizar -1.5 a -2.0 puntos.
+→ SALVO que el aviso indique "relocalización provista" o el perfil indique movilidad.
+
+Puestos de DIRECCIÓN REGIONAL o COUNTRY MANAGER:
+→ Reducir penalización geográfica a la mitad (mayor flexibilidad implícita).
+
+━━━━━━━━━━━━━━━━━━━━━━━
+VETOS DUROS POR FAMILIA
+━━━━━━━━━━━━━━━━━━━━━━━
+
+Aplicar caps máximos cuando las familias son incompatibles:
+
+Misma familia o adyacente directa:
+→ Sin cap (score libre hasta 10)
+
+Familia moderadamente diferente
+(ej: Marketing↔Operaciones, HR↔Finanzas sin evidencia):
+→ Score máximo: 6.0
+
+Familia muy diferente
+(ej: HR→Marketing, Finanzas→Ventas):
+→ Score máximo: 5.5
+
+Familia completamente diferente
+(ej: HR→Backend, Finanzas→Diseño, RRHH→Product Manager):
+→ Score máximo: 5.0
+→ Solo si el perfil muestra evidencia EXPLÍCITA de transición
+
+Si el perfil muestra evidencia clara de transición
+(bootcamp, portfolio, objetivo explícito, roles híbridos recientes):
+→ Cap puede subir hasta 1.5 puntos sobre lo indicado
 
 ━━━━━━━━━━━━━━━━━━━━━━━
 VETOS DUROS POR FAMILIA
@@ -3695,21 +3829,25 @@ Formato exacto:
  * Build the Gemini contents array for job matching.
  * Uses extractRelevantSection() to get the requirements section (not just first 400 chars).
  */
-function buildMatchingContents(profileText, jobs) {
+function buildMatchingContents(profileText, jobs, candidateLocation = null) {
   const jobList = jobs.slice(0, MAX_JOBS_FOR_AI_MATCHING).map((j, i) => {
     const desc = j.description
       ? extractRelevantSection(j.description, 350)
       : '(sin descripción)'
     const isAts = ['greenhouse','lever','smartrecruiters','ashby'].includes(j.source)
-    return `[${i}] ${j.title} | ${j.company}${isAts ? ' ✓' : ''} | ${j.location || 'No especificado'} | ${j.remote ? 'Remoto' : 'Presencial'}
+    return `[${i}] ${j.title} | ${j.company}${isAts ? ' ✓' : ''} | ${j.location || 'No especificado'} | ${j.remote ? 'Remoto 100%' : 'Presencial/Híbrido'}
 Skills: ${(j.skills_required || []).join(', ') || 'No especificado'}
 Seniority: ${j.seniority}
 Descripción: ${desc}`
   }).join('\n\n')
 
+  const geoCtx = candidateLocation
+    ? `\nUBICACIÓN DETECTADA DEL CANDIDATO: ${candidateLocation}`
+    : ''
+
   return [{
     role: 'user',
-    parts: [{ text: `PERFIL DEL CANDIDATO:\n${profileText}\n\nAVISOS LABORALES:\n${jobList}` }],
+    parts: [{ text: `PERFIL DEL CANDIDATO:\n${profileText}${geoCtx}\n\nAVISOS LABORALES:\n${jobList}` }],
   }]
 }
 
@@ -3938,8 +4076,9 @@ async function handleAiJobRecommendations(body, request, env, ctx, corsHeaders, 
     )
   }
 
-  const ip          = request.headers.get('CF-Connecting-IP') || 'unknown'
-  const requestedN  = Math.min(Math.max(parseInt(count, 10) || 10, 1), 20)
+  const ip               = request.headers.get('CF-Connecting-IP') || 'unknown'
+  const requestedN       = Math.min(Math.max(parseInt(count, 10) || 10, 1), 20)
+  const candidateLocation = extractCandidateLocation(String(profile_text))
 
   // ── Premium check ──────────────────────────────────────────────────────────
   let isPremium = false
@@ -4052,7 +4191,7 @@ async function handleAiJobRecommendations(body, request, env, ctx, corsHeaders, 
   }
 
   // ── AI Matching via Gemini ─────────────────────────────────────────────────
-  const contents   = buildMatchingContents(String(profile_text).slice(0, 3000), jobPool)
+  const contents   = buildMatchingContents(String(profile_text).slice(0, 3000), jobPool, candidateLocation)
   const geminiBody = {
     system_instruction: { parts: [{ text: JOB_MATCHING_SYSTEM_PROMPT }] },
     contents,
@@ -4152,6 +4291,7 @@ async function handleAiJobRecommendations(body, request, env, ctx, corsHeaders, 
       gaps:        Array.isArray(m.gaps)       ? m.gaps.slice(0, 2)     : [],
       summary:     String(m.summary || ''),
       rec_id:      null,  // populated after Supabase insert below
+      geo_score:   geoCompatibilityScore(job.location, job.remote, candidateLocation),
     }
   }).filter(Boolean)
 
@@ -4202,10 +4342,15 @@ async function handleAiJobRecommendations(body, request, env, ctx, corsHeaders, 
         location:      location || null,
         remote_ok:     !!remote_ok,
         match_count:   recommendations.length,
-        top_match:     recommendations[0]
+        top_match:          recommendations[0]
           ? { title: recommendations[0].job.title, company: recommendations[0].job.company, score: recommendations[0].match_score }
           : null,
-        generated_at:  new Date().toISOString(),
+        candidate_location: candidateLocation || null,
+        expansion_triggered: needsExpansion,
+        expansion_applied:  expansionUsed,
+        geo_filter_applied: !!candidateLocation,
+        total_jobs_analyzed: jobPool.length,
+        generated_at:       new Date().toISOString(),
       },
     }
     // Dedup: if a job_recommendations historial row already exists today for this user,
@@ -4268,7 +4413,7 @@ async function handleAiJobRecommendations(body, request, env, ctx, corsHeaders, 
       try {
         const existingHashes = new Set(jobPool.map(j => canonicalJobHash(j)))
         const expandResult   = await Promise.race([
-          expandWithSearch(env, ctx, cleanQueries, location, remote_ok, String(profile_text), existingHashes, requestedN),
+          expandWithSearch(env, ctx, cleanQueries, location, remote_ok, String(profile_text), existingHashes, requestedN, candidateLocation),
           new Promise(r => setTimeout(() => r(null), EXPANSION_TIMEOUT_MS)),
         ])
         if (expandResult?.recommendations?.length) {
@@ -4316,6 +4461,7 @@ async function handleAiJobRecommendations(body, request, env, ctx, corsHeaders, 
       expansion_available: expansionAvailable,
       expansion_used:      expansionUsed,
       expansion_count:     expansionCount,
+      candidate_location:  candidateLocation || null,
     }),
     { status: 200, headers: corsHeaders }
   )
