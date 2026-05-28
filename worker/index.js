@@ -3663,6 +3663,32 @@ Si el perfil muestra evidencia clara de transición
 → Cap puede subir hasta 1.5 puntos sobre lo indicado
 
 ━━━━━━━━━━━━━━━━━━━━━━━
+VETOS DUROS POR FAMILIA
+━━━━━━━━━━━━━━━━━━━━━━━
+
+Aplicar caps máximos cuando las familias son incompatibles:
+
+Misma familia o adyacente directa:
+→ Sin cap (score libre hasta 10)
+
+Familia moderadamente diferente
+(ej: Marketing↔Operaciones, HR↔Finanzas sin evidencia):
+→ Score máximo: 6.0
+
+Familia muy diferente
+(ej: HR→Marketing, Finanzas→Ventas):
+→ Score máximo: 5.5
+
+Familia completamente diferente
+(ej: HR→Backend, Finanzas→Diseño, RRHH→Product Manager):
+→ Score máximo: 5.0
+→ Solo si el perfil muestra evidencia EXPLÍCITA de transición
+
+Si el perfil muestra evidencia clara de transición
+(bootcamp, portfolio, objetivo explícito, roles híbridos recientes):
+→ Cap puede subir hasta 1.5 puntos sobre lo indicado
+
+━━━━━━━━━━━━━━━━━━━━━━━
 REGLAS CRÍTICAS
 ━━━━━━━━━━━━━━━━━━━━━━━
 
