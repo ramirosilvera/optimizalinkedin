@@ -2100,7 +2100,7 @@ const JOB_SEARCH_TTL_SECS = 7_200  // job_searches row TTL (mirrors KV)
 const ATS_KV_TTL_SECS     = 79_200  // 22-hour KV cache for ATS company boards (date-keyed)
 const ATS_DB_TTL_HOURS    = 40      // ATS boards update slowly — longer DB TTL
 const JREC_KV_TTL_SECS    = 86_400  // 24-hour per-user AI score cache — skips Gemini on re-runs
-const JREC_PROMPT_VERSION = 'v7'    // bump when JOB_MATCHING_SYSTEM_PROMPT changes to bust stale KV
+const JREC_PROMPT_VERSION = 'v8'    // bump when JOB_MATCHING_SYSTEM_PROMPT changes to bust stale KV
 
 // Rate limits for *new* (fresh) searches — cached re-visits bypass these entirely.
 // Premium: 5 new searches/day — on limit, last search is served from history (silent, no block UX)
@@ -2110,7 +2110,7 @@ const JOB_SEARCH_LIMIT_PREMIUM = 5
 
 // Max jobs to send to Gemini in a single matching call (token budget guard).
 // At ~500 tokens/job snippet, 40 jobs ≈ 20 K tokens input — well within Flash Lite limits.
-const MAX_JOBS_FOR_AI_MATCHING = 40
+const MAX_JOBS_FOR_AI_MATCHING = 25
 
 // Max description length stored in job_cache (chars). Prevents >8 KB JSONB blobs.
 const MAX_DESC_CHARS = 6_000
@@ -4517,46 +4517,62 @@ async function handleAiJobRecommendations(body, request, env, ctx, corsHeaders, 
   const geminiBody = {
     system_instruction: { parts: [{ text: JOB_MATCHING_SYSTEM_PROMPT }] },
     contents,
-    generationConfig:   { temperature: 0.2, maxOutputTokens: 2048 },
+    // 4096 tokens: 25 jobs × ~150 chars/match output = ~6KB, leaves headroom for variance
+    generationConfig:   { temperature: 0.2, maxOutputTokens: 4096 },
   }
 
-  const startMs  = Date.now()
-  let   aiResult = null
-  let   aiError  = null
+  let aiResult = null
+  let aiError  = null
 
-  // 12s local timeout — Flash Lite responds in 3-5s; 12s prevents Worker CPU exhaustion
-  const geminiMatchTimeout = new Promise((_, reject) =>
-    setTimeout(() => reject(new Error('gemini_match_timeout')), 12_000)
-  )
-
-  try {
-    const aiRes = await Promise.race([
-      callGeminiApi(env, ctx, geminiBody, corsHeaders, { feature: 'job_matching_batch', userId: user_id || null }),
-      geminiMatchTimeout,
-    ])
-    // callGeminiApi returns a Response; we need to parse it for our logic
-    if (aiRes.status === 200) {
-      const aiData = await aiRes.clone().json()
-      const raw    = aiData?.candidates?.[0]?.content?.parts?.[0]?.text || ''
-      try {
-        aiResult = JSON.parse(raw.replace(/^```json\n?|\n?```$/g, '').trim())
-      } catch (parseErr) {
-        aiError = 'ai_parse_error'
-        console.warn(`[RADAR] Gemini JSON parse failed: ${parseErr.message} — raw preview: ${raw.slice(0, 200)}`)
+  // Two attempts with decreasing timeouts — Flash Lite typically responds in 3-6s.
+  // Second attempt reuses the same body; if the first timed out the second often succeeds.
+  const GEMINI_ATTEMPTS = [{ ms: 12_000 }, { ms: 8_000 }]
+  for (let attempt = 0; attempt < GEMINI_ATTEMPTS.length; attempt++) {
+    if (aiResult?.matches?.length) break
+    const t0 = Date.now()
+    try {
+      const aiRes = await Promise.race([
+        callGeminiApi(env, ctx, geminiBody, corsHeaders, { feature: 'job_matching_batch', userId: user_id || null }),
+        new Promise((_, rej) => setTimeout(() => rej(new Error('gemini_match_timeout')), GEMINI_ATTEMPTS[attempt].ms)),
+      ])
+      if (aiRes.status === 200) {
+        const aiData = await aiRes.clone().json()
+        const raw    = aiData?.candidates?.[0]?.content?.parts?.[0]?.text || ''
+        const clean  = raw.replace(/^```json\n?|\n?```$/g, '').trim()
+        try {
+          aiResult = JSON.parse(clean)
+          aiError  = null
+          console.log(`[RADAR] Gemini attempt ${attempt+1}/${GEMINI_ATTEMPTS.length} — latency=${Date.now()-t0}ms result=ok matches=${aiResult?.matches?.length||0}`)
+        } catch {
+          // Partial parse recovery: strip the truncated last object by cutting at the last complete },
+          const lastComma = clean.lastIndexOf('},')
+          if (lastComma > 10) {
+            try {
+              const partial = JSON.parse(clean.slice(0, lastComma + 1) + ']}')
+              if (partial?.matches?.length) {
+                aiResult = partial
+                aiError  = null
+                console.log(`[RADAR] Gemini attempt ${attempt+1}/${GEMINI_ATTEMPTS.length} — latency=${Date.now()-t0}ms result=partial_recovery matches=${aiResult.matches.length}`)
+                break
+              }
+            } catch { /* ignore */ }
+          }
+          aiError = 'ai_parse_error'
+          console.warn(`[RADAR] Gemini attempt ${attempt+1}/${GEMINI_ATTEMPTS.length} — latency=${Date.now()-t0}ms result=parse_error preview="${raw.slice(0, 200)}"`)
+        }
+      } else {
+        aiError = `ai_http_${aiRes.status}`
+        console.warn(`[RADAR] Gemini attempt ${attempt+1}/${GEMINI_ATTEMPTS.length} — latency=${Date.now()-t0}ms result=http_${aiRes.status}`)
       }
-    } else {
-      aiError = `ai_http_${aiRes.status}`
+    } catch (e) {
+      aiError = e.message
+      console.warn(`[RADAR] Gemini attempt ${attempt+1}/${GEMINI_ATTEMPTS.length} — latency=${Date.now()-t0}ms result=${e.message}`)
     }
-  } catch (e) {
-    aiError = e.message
-    console.warn(`[RADAR] Gemini error: ${e.message}`)
   }
 
-  console.log(`[RADAR] Gemini latency=${Date.now()-startMs}ms aiError=${aiError||'none'} matches=${aiResult?.matches?.length||0}`)
-
-  // ── Fallback: AI failed — return top jobs sorted by recency ───────────────
-  if (!aiResult?.matches || aiError) {
-    // Check for cached recommendations from a previous session
+  // ── Fallback: AI failed — heuristic scoring so cards always show a score ──
+  if (!aiResult?.matches?.length || aiError) {
+    // Tier 1: try cached recommendations from a previous session
     if (user_id) {
       try {
         const cachedRecs = await fetch(
@@ -4568,6 +4584,7 @@ async function handleAiJobRecommendations(body, request, env, ctx, corsHeaders, 
         )
         const prevRecs = await cachedRecs.json()
         if (Array.isArray(prevRecs) && prevRecs.length > 0) {
+          console.log(`[RADAR] Gemini fallback tier1 — serving ${prevRecs.length} cached recs from job_recommendations`)
           return new Response(
             JSON.stringify({
               ok:                  true,
@@ -4586,15 +4603,26 @@ async function handleAiJobRecommendations(body, request, env, ctx, corsHeaders, 
       }
     }
 
-    // No cached recs either — return top jobs without scores
-    const fallbackRecs = jobPool.slice(0, requestedN).map(j => ({
-      job:         j,
-      match_score: null,
-      strengths:   [],
-      gaps:        [],
-      summary:     'Puntuación no disponible — servicio de IA temporalmente no disponible.',
-      rec_id:      null,
-    }))
+    // Tier 2: heuristic keyword scoring — always yields a visible score on cards
+    const profileWords = new Set(
+      String(profile_text).toLowerCase().split(/\W+/).filter(w => w.length > 3)
+    )
+    const fallbackRecs = jobPool.slice(0, requestedN).map(j => {
+      const jobWords = `${j.title} ${(j.skills_required || []).join(' ')}`.toLowerCase().split(/\W+/)
+      const overlap  = jobWords.filter(w => w.length > 3 && profileWords.has(w)).length
+      const daysOld  = j.posted_at ? (Date.now() - new Date(j.posted_at).getTime()) / 86_400_000 : 30
+      const score    = Math.round(Math.min(7.5, 5.5 + Math.min(overlap, 10) * 0.15 + (daysOld < 7 ? 0.3 : 0)) * 10) / 10
+      const co       = j.company || 'esta empresa'
+      return {
+        job:         j,
+        match_score: score,
+        strengths:   [],
+        gaps:        [],
+        summary:     `Priorizando oportunidades relevantes para tu perfil en ${co}.`,
+        rec_id:      null,
+      }
+    }).sort((a, b) => b.match_score - a.match_score)
+    console.log(`[RADAR] Gemini fallback tier2 — heuristic scoring ${fallbackRecs.length} recs, aiError=${aiError}`)
     return new Response(
       JSON.stringify({
         ok:                  true,
