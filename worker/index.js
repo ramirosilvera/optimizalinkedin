@@ -3184,8 +3184,12 @@ async function fetchJobSource(source, query, location, remoteOk, env) {
     }
 
     if (source === 'serper') {
-      if (!env.SERPER_API_KEY) return { source, jobs: [], error: 'serper_not_configured' }
-      console.log(`[SERPER] query="${query}" gl=ar`)
+      if (!env.SERPER_API_KEY) {
+        console.log('[SERPER] skipped — SERPER_API_KEY not configured in this environment')
+        return { source, jobs: [], error: 'serper_not_configured' }
+      }
+      const serperT0 = Date.now()
+      console.log(`[SERPER] START query="${query}" gl=ar`)
       const r = await fetch('https://google.serper.dev/jobs', {
         method:  'POST',
         headers: { 'X-API-KEY': env.SERPER_API_KEY, 'Content-Type': 'application/json', 'User-Agent': UA },
@@ -3194,7 +3198,7 @@ async function fetchJobSource(source, query, location, remoteOk, env) {
       })
       raw = await r.json()
       const serperJobs = normalizeJobs(source, raw)
-      console.log(`[SERPER] status=${r.status} results=${serperJobs.length}`)
+      console.log(`[SERPER] status=${r.status} results=${serperJobs.length} latency=${Date.now()-serperT0}ms`)
       return { source, jobs: serperJobs }
     }
 
@@ -3227,23 +3231,29 @@ async function fetchAllSources(queries, location, remoteOk, env, userProfile = '
     fetchAtsCompanies(queries, userProfile, env),
   ])
 
-  // Collect aggregator jobs
-  const errors = {}
+  // Collect aggregator jobs + per-source result counts
+  const errors         = {}
+  const sourceCounts   = {}
   const rawAggregatorJobs = []
   for (const result of aggregatorResults) {
     if (result.error) errors[result.source] = errors[result.source] || result.error
+    if (result.jobs.length) sourceCounts[result.source] = (sourceCounts[result.source] || 0) + result.jobs.length
     for (const job of result.jobs) {
       if (job.url && job.title) rawAggregatorJobs.push(job)
     }
   }
+  if (atsJobs.length) sourceCounts['ats'] = atsJobs.length
 
   // Merge and 3-level dedup (ATS takes priority over aggregator on URL collision)
   const allJobs = deduplicateJobs([...rawAggregatorJobs, ...atsJobs])
 
-  console.log(`[RADAR:sources] aggregator=${rawAggregatorJobs.length} ats=${atsJobs.length} deduped=${allJobs.length}`)
+  console.log(`[RADAR:sources] aggregator=${rawAggregatorJobs.length} ats=${atsJobs.length} deduped=${allJobs.length} perSource=${JSON.stringify(sourceCounts)}`)
+  if (sources.includes('serper') && !sourceCounts['serper']) {
+    console.log('[SERPER] returned 0 jobs — check quota, API key validity, or search terms')
+  }
   if (Object.keys(errors).length) console.warn('[RADAR:sources] errors:', JSON.stringify(errors))
 
-  return { jobs: allJobs, sourceErrors: errors, sourcesUsed: sources }
+  return { jobs: allJobs, sourceErrors: errors, sourcesUsed: sources, sourceCounts }
 }
 
 
@@ -4382,6 +4392,7 @@ async function handleAiJobRecommendations(body, request, env, ctx, corsHeaders, 
 
   // ── Rate limit ─────────────────────────────────────────────────────────────
   const rl = await checkJobSearchRateLimit(env, user_id, ip, isPremium)
+  console.log(`[RADAR] rateLimit ok=${rl.ok} count=${rl.count}/${rl.limit} isPremium=${isPremium} identity=${user_id||ip}`)
   if (!rl.ok) {
     if (isPremium && user_id) {
       // Premium users over limit: silently serve most recent search from history.
@@ -4432,7 +4443,8 @@ async function handleAiJobRecommendations(body, request, env, ctx, corsHeaders, 
   // Format stored in KV: { jobs: NormalizedJob[], sourcesUsed: string[] }
   const KV_SOURCES_KEY = `jobs_meta:${queryHash}`
 
-  let sourcesUsed = []
+  let sourcesUsed  = []
+  let sourceCounts = {}  // per-source job counts from live fetch (empty on cache hit)
   const kvCached = await getJobsFromKV(env, queryHash)
   if (kvCached) {
     jobs      = kvCached
@@ -4442,11 +4454,12 @@ async function handleAiJobRecommendations(body, request, env, ctx, corsHeaders, 
       const metaRaw = env.RATE_LIMIT_KV ? await env.RATE_LIMIT_KV.get(KV_SOURCES_KEY) : null
       if (metaRaw) sourcesUsed = JSON.parse(metaRaw)
     } catch (e) { console.warn(`[RADAR] sourcesUsed KV recovery failed: ${e?.message} — reporting [] for pipeline_stats`) }
-    console.log(`[RADAR] jobsCache HIT — ${jobs.length} jobs from KV, sources=${sourcesUsed.length}`)
+    console.log(`[RADAR] jobsCache HIT — ${jobs.length} jobs from KV, sources=[${sourcesUsed.join(',')}] (Serper NOT called — served from cache)`)
   } else {
     // Live fetch — pass profile_text so ATS companies are selected by relevance
     const fetchResult = await fetchAllSources(cleanQueries, location, remote_ok, env, String(profile_text))
-    sourcesUsed = fetchResult.sourcesUsed || []
+    sourcesUsed  = fetchResult.sourcesUsed || []
+    sourceCounts = fetchResult.sourceCounts || {}
     if (fetchResult.jobs.length) {
       jobs = fetchResult.jobs
       await putJobsToKV(env, queryHash, jobs)
@@ -4728,13 +4741,18 @@ async function handleAiJobRecommendations(body, request, env, ctx, corsHeaders, 
   if (needsExpansion) {
     if (isPremium) {
       try {
-        console.log(`[RADAR] expansion START — generating alternative terms...`)
+        const expStartMs      = Date.now()
+        const _expTimedOut    = {}  // sentinel to distinguish timeout from null result
+        console.log(`[RADAR] expansion START — generating alternative terms... serperConfigured=${!!env.SERPER_API_KEY}`)
         const existingHashes = new Set(jobPool.map(j => canonicalJobHash(j)))
         const expandResult   = await Promise.race([
           expandWithSearch(env, ctx, cleanQueries, location, remote_ok, String(profile_text), existingHashes, requestedN, candidateLocation),
-          new Promise(r => setTimeout(() => r(null), EXPANSION_TIMEOUT_MS)),
+          new Promise(r => setTimeout(() => r(_expTimedOut), EXPANSION_TIMEOUT_MS)),
         ])
-        if (expandResult?.recommendations?.length) {
+        const expMs = Date.now() - expStartMs
+        if (expandResult === _expTimedOut) {
+          console.warn(`[RADAR] expansion TIMEOUT — exceeded ${EXPANSION_TIMEOUT_MS}ms (expMs=${expMs})`)
+        } else if (expandResult?.recommendations?.length) {
           // Merge: union of original + expansion, re-rank by match_score
           const seenHashes = new Set()
           const merged = [...recommendations, ...expandResult.recommendations]
@@ -4749,9 +4767,9 @@ async function handleAiJobRecommendations(body, request, env, ctx, corsHeaders, 
           recommendations  = merged
           expansionUsed    = true
           expansionCount   = expandResult.count
-          console.log(`[RADAR] expansion OK — +${expansionCount} new jobs merged, final=${recommendations.length}`)
+          console.log(`[RADAR] expansion OK — +${expansionCount} new jobs merged, final=${recommendations.length} expansionMs=${expMs}`)
         } else {
-          console.log(`[RADAR] expansion returned 0 new results`)
+          console.log(`[RADAR] expansion returned 0 new results expansionMs=${expMs}`)
         }
       } catch (err) {
         console.warn(`[RADAR] expansion error: ${err.message}`)
@@ -4858,7 +4876,12 @@ async function handleAiJobRecommendations(body, request, env, ctx, corsHeaders, 
       pipeline_stats: {
         premium_mode:        isPremium,
         sources_used:        sourcesUsed,
-        serper_active:       !!env.SERPER_API_KEY,
+        sources_count:       sourcesUsed.length,    // frontend reads this for "N fuentes"
+        total_evaluated:     jobPool.length,         // frontend reads this for "N avisos evaluados"
+        source_counts:       sourceCounts,          // per-source job counts (empty on cache hit)
+        serper_configured:   !!env.SERPER_API_KEY,  // env var present
+        serper_in_sources:   sourcesUsed.includes('serper'),  // actually attempted this run
+        serper_returned:     sourceCounts['serper'] || 0,     // jobs returned by Serper
         jobs_fetched:        jobs.length,
         jobs_to_gemini:      jobPool.length,
         from_jobs_cache:     fromCache,
