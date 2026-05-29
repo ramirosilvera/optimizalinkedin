@@ -4513,6 +4513,7 @@ async function handleAiJobRecommendations(body, request, env, ctx, corsHeaders, 
   }
 
   // ── AI Matching via Gemini ─────────────────────────────────────────────────
+  const startMs    = Date.now()
   const contents   = buildMatchingContents(String(profile_text).slice(0, 3000), jobPool, candidateLocation)
   const geminiBody = {
     system_instruction: { parts: [{ text: JOB_MATCHING_SYSTEM_PROMPT }] },
