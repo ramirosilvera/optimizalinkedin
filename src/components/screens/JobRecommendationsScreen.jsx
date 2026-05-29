@@ -155,8 +155,8 @@ const LOADING_STAGES = [
   },
   {
     icon: '✨',
-    msg: 'Explorando títulos alternativos y roles equivalentes',
-    sub: 'HRBP, People Partner, Tech Lead, Staff Engineer… variantes que los filtros normales no cubren.',
+    msg: 'Activando expansión IA · Google Jobs · sourcing avanzado',
+    sub: 'Generando términos alternativos y ampliando cobertura con Google Jobs + ATS premium para tu perfil.',
     premiumOnly: true,
   },
   {
@@ -1050,6 +1050,7 @@ export default function JobRecommendationsScreen({
   const [expansionCount, setExpansionCount]   = useState(0)
   const [candidateLoc, setCandidateLoc]       = useState(null)
   const [pipelineStats, setPipelineStats]     = useState(null)   // { sources_count, total_evaluated }
+  const [serperActive, setSerperActive]       = useState(false)  // Google Jobs ran this search
 
   // ── Analytics session refs ─────────────────────────────────────────────────
   // Track how many cards the user has seen and saved in this session
@@ -1202,6 +1203,7 @@ export default function JobRecommendationsScreen({
       setExpansionCount(data.expansion_count || 0)
       setCandidateLoc(data.candidate_location || null)
       setPipelineStats(data.pipeline_stats || null)
+      setSerperActive(data.pipeline_stats?.serper_in_sources || false)
       setLoadState('done')
 
       // 3. SEARCH COMPLETED — rich params enable source-level attribution and
@@ -1490,18 +1492,26 @@ export default function JobRecommendationsScreen({
               )}
             </div>
             {loadState === 'done' && (
-              <p className="text-[10px]" style={{ color: '#94a3b8' }}>
-                {pipelineStats?.sources_count
-                  ? `${pipelineStats.sources_count} fuentes`
-                  : null}
-                {pipelineStats?.sources_count && (pipelineStats?.total_evaluated || totalAnalyzed > 0) ? ' · ' : null}
-                {pipelineStats?.total_evaluated
-                  ? `${pipelineStats.total_evaluated.toLocaleString('es-AR')} avisos evaluados`
-                  : totalAnalyzed > 0
-                    ? `${totalAnalyzed} avisos evaluados`
+              <div className="flex items-center gap-1.5 flex-wrap">
+                <p className="text-[10px]" style={{ color: '#94a3b8' }}>
+                  {pipelineStats?.sources_count
+                    ? `${pipelineStats.sources_count} fuentes`
                     : null}
-                {fromCache ? ' · Caché de hoy' : ''}
-              </p>
+                  {pipelineStats?.sources_count && (pipelineStats?.total_evaluated || totalAnalyzed > 0) ? ' · ' : null}
+                  {pipelineStats?.total_evaluated
+                    ? `${pipelineStats.total_evaluated.toLocaleString('es-AR')} avisos evaluados`
+                    : totalAnalyzed > 0
+                      ? `${totalAnalyzed} avisos evaluados`
+                      : null}
+                  {fromCache ? ' · Caché de hoy' : ''}
+                </p>
+                {serperActive && (
+                  <span className="text-[9px] font-semibold px-1.5 py-0.5 rounded-full"
+                    style={{ background: 'rgba(66,133,244,0.10)', color: '#4285F4' }}>
+                    Google Jobs ✓
+                  </span>
+                )}
+              </div>
             )}
           </div>
           {/* Refresh button */}
@@ -1709,6 +1719,7 @@ export default function JobRecommendationsScreen({
                         {[
                           pipelineStats.sources_count ? `Analizadas ${pipelineStats.sources_count} fuentes` : null,
                           pipelineStats.total_evaluated ? `${pipelineStats.total_evaluated.toLocaleString('es-AR')} avisos evaluados` : null,
+                          serperActive ? '🔍 Google Jobs activado' : null,
                         ].filter(Boolean).join(' · ')}
                       </p>
                     ) : totalAnalyzed > filteredRecs.length ? (
