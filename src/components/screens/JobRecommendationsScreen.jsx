@@ -1042,8 +1042,9 @@ export default function JobRecommendationsScreen({
   const [quotaRemaining, setQuotaRem]     = useState(null)
   const [totalAnalyzed, setTotalAnalyzed] = useState(0)
   const [fromCache, setFromCache]         = useState(false)
-  const [cachedToday, setCachedToday]     = useState(false)
-  const [cacheTimestamp, setCacheTs]      = useState(null)
+  const [cachedToday, setCachedToday]         = useState(false)
+  const [cacheTimestamp, setCacheTs]          = useState(null)
+  const [servedFromHistory, setFromHistory]   = useState(false)
   const [expansionAvail, setExpansionAvail]   = useState(false)
   const [expansionUsed, setExpansionUsed]     = useState(false)
   const [expansionCount, setExpansionCount]   = useState(0)
@@ -1168,14 +1169,11 @@ export default function JobRecommendationsScreen({
 
       if (res.status === 429) {
         const data = await res.json().catch(() => ({}))
-        const isDaily = data?.quota_remaining === 0
         // Normalize error to string — worker can return {message:} objects in some paths
         const rawErr = data?.error
         const errStr = typeof rawErr === 'string' ? rawErr
-          : (rawErr?.message ? String(rawErr.message) : 'Límite de búsquedas alcanzado. Intentá en unos minutos.')
-        setError(isDaily
-          ? 'Usaste todas tus búsquedas de hoy. Volvé mañana para nuevas recomendaciones.'
-          : errStr)
+          : (rawErr?.message ? String(rawErr.message) : 'Error al buscar. Intentá de nuevo.')
+        setError(errStr)
         setLoadState('error')
         trackEvent('job_recommendations_rate_limited')
         return
@@ -1198,6 +1196,7 @@ export default function JobRecommendationsScreen({
       setFromCache(data.from_cache || false)
       setCachedToday(data.cached_today || false)
       setCacheTs(data.cache_timestamp || null)
+      setFromHistory(data.served_from_history || false)
       setExpansionAvail(data.expansion_available || false)
       setExpansionUsed(data.expansion_used || false)
       setExpansionCount(data.expansion_count || 0)
@@ -1659,20 +1658,18 @@ export default function JobRecommendationsScreen({
 
         {/* ── ERROR STATE ── */}
         {loadState === 'error' && (() => {
-          // Normalize defensively — error must be string for .includes() calls
           const errStr = typeof error === 'string' ? error : String(error?.message || error || '')
+          const isQuotaErr = errStr.includes('mes') || errStr.includes('mañana') || errStr.includes('búsqueda')
           return (
             <div className="text-center py-12 px-6 space-y-4">
-              <span className="text-4xl">
-                {errStr.includes('mañana') || errStr.includes('búsquedas') ? '⏳' : '⚠️'}
-              </span>
+              <span className="text-4xl">{isQuotaErr ? '⏳' : '⚠️'}</span>
               <h3 className="font-bold text-base" style={{ color: '#0d2137' }}>
-                {errStr.includes('mañana') ? 'Límite diario alcanzado' : 'Algo salió mal'}
+                {isQuotaErr ? 'Búsquedas agotadas por hoy' : 'Algo salió mal'}
               </h3>
               <p className="text-sm max-w-xs mx-auto leading-relaxed" style={{ color: '#64748b' }}>
                 {errStr || 'Ocurrió un error inesperado. Intentá de nuevo.'}
               </p>
-              {!errStr.includes('mañana') && (
+              {!isQuotaErr && (
                 <button
                   onClick={fetchRecommendations}
                   className="px-6 py-3 rounded-2xl text-sm font-semibold text-white"
@@ -1680,11 +1677,12 @@ export default function JobRecommendationsScreen({
                   Intentar de nuevo
                 </button>
               )}
-              {quotaRemaining !== null && (
+              {isQuotaErr && !isPremium && (
                 <p className="text-xs" style={{ color: '#94a3b8' }}>
-                  {isPremium
-                    ? `Premium: 1 búsqueda nueva por día · Los resultados del día se guardan`
-                    : `Plan gratuito: 1 búsqueda/mes · Actualizá a Premium para buscar diariamente`}
+                  Plan gratuito: 1 búsqueda/mes · Activá Premium para 5 búsquedas diarias
+                  <button onClick={() => setShowPremiumModal(true)} className="ml-1 underline" style={{ color: '#0077B5' }}>
+                    Activar
+                  </button>
                 </p>
               )}
             </div>
@@ -1742,21 +1740,25 @@ export default function JobRecommendationsScreen({
               </div>
             )}
 
-            {/* Cached-today banner */}
-            {cachedToday && cacheTimestamp && filteredRecs.length > 0 && (
+            {/* Cached/history banner — neutral UX for both same-day cache and history fallback */}
+            {(cachedToday || servedFromHistory) && cacheTimestamp && filteredRecs.length > 0 && (
               <div className="flex items-center gap-2 px-3 py-2 rounded-xl"
                 style={{ background: 'rgba(22,163,74,0.07)', border: '1px solid rgba(22,163,74,0.18)' }}>
                 <span className="text-xs shrink-0" style={{ color: '#16a34a' }}>✓</span>
                 <p className="text-xs flex-1" style={{ color: '#15803d' }}>
-                  Radar listo desde las{' '}
-                  {new Date(cacheTimestamp).toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' })}
+                  {servedFromHistory
+                    ? 'Continuando tu radar laboral'
+                    : `Radar listo desde las ${new Date(cacheTimestamp).toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' })}`
+                  }
                 </p>
-                <button
-                  onClick={() => { setCachedToday(false); setCacheTs(null); fetchRecommendations() }}
-                  className="text-[11px] font-semibold shrink-0 px-2 py-0.5 rounded-lg"
-                  style={{ color: '#0077B5', background: 'rgba(0,119,181,0.08)' }}>
-                  Actualizar
-                </button>
+                {!servedFromHistory && (
+                  <button
+                    onClick={() => { setCachedToday(false); setCacheTs(null); fetchRecommendations() }}
+                    className="text-[11px] font-semibold shrink-0 px-2 py-0.5 rounded-lg"
+                    style={{ color: '#0077B5', background: 'rgba(0,119,181,0.08)' }}>
+                    Actualizar
+                  </button>
+                )}
               </div>
             )}
 
@@ -2007,11 +2009,11 @@ export default function JobRecommendationsScreen({
               </div>
             )}
 
-            {/* Quota usage footer */}
-            {quotaRemaining !== null && filteredRecs.length > 0 && (
+            {/* Quota usage footer — hidden for premium when at 0 (served from history, no need to surface limits) */}
+            {quotaRemaining !== null && quotaRemaining > 0 && filteredRecs.length > 0 && (
               <p className="text-xs text-center py-4" style={{ color: '#cbd5e1' }}>
                 {isPremium
-                  ? `${quotaRemaining} búsquedas disponibles hoy`
+                  ? `${quotaRemaining} ${quotaRemaining === 1 ? 'búsqueda disponible' : 'búsquedas disponibles'} hoy`
                   : `${quotaRemaining} búsquedas gratuitas disponibles`}
                 {!isPremium && (
                   <button
