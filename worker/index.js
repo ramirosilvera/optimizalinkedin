@@ -2103,10 +2103,10 @@ const JREC_KV_TTL_SECS    = 86_400  // 24-hour per-user AI score cache — skips
 const JREC_PROMPT_VERSION = 'v7'    // bump when JOB_MATCHING_SYSTEM_PROMPT changes to bust stale KV
 
 // Rate limits for *new* (fresh) searches — cached re-visits bypass these entirely.
-// Premium: 1 new search/day  (cached same-day results shown for free)
+// Premium: 5 new searches/day — on limit, last search is served from history (silent, no block UX)
 // Free:    1 new search/month
 const JOB_SEARCH_LIMIT_FREE    = 1
-const JOB_SEARCH_LIMIT_PREMIUM = 1
+const JOB_SEARCH_LIMIT_PREMIUM = 5
 
 // Max jobs to send to Gemini in a single matching call (token budget guard).
 // At ~500 tokens/job snippet, 40 jobs ≈ 20 K tokens input — well within Flash Lite limits.
@@ -3382,6 +3382,26 @@ async function putRadarCache(env, ctx, userId, profileHash, queryHash, recommend
   else upsert
 }
 
+// Fetch the user's most recent radar search, ignoring query hash and expiry.
+// Used to silently serve stale-but-valid results when premium daily limit is reached.
+async function getLatestRadarHistory(env, userId) {
+  if (!userId || !env.SUPABASE_SERVICE_ROLE_KEY) return null
+  try {
+    const res = await fetch(
+      `${env.SUPABASE_URL}/rest/v1/radar_search_history`
+      + `?user_id=eq.${userId}&results=not.is.null`
+      + `&order=created_at.desc&limit=1`
+      + `&select=results,top_score,match_count,created_at`,
+      { headers: { apikey: env.SUPABASE_SERVICE_ROLE_KEY, Authorization: `Bearer ${env.SUPABASE_SERVICE_ROLE_KEY}` } }
+    )
+    const rows = await res.json().catch(() => [])
+    return Array.isArray(rows) && rows[0]?.results?.length ? rows[0] : null
+  } catch (err) {
+    console.warn(`[DB] getLatestRadarHistory error for user ${userId}: ${err.message}`)
+    return null
+  }
+}
+
 /**
  * Layer 2: Upsert fresh jobs into job_cache.
  * Returns an array of { id, source, external_id } objects (the saved rows).
@@ -4363,10 +4383,37 @@ async function handleAiJobRecommendations(body, request, env, ctx, corsHeaders, 
   // ── Rate limit ─────────────────────────────────────────────────────────────
   const rl = await checkJobSearchRateLimit(env, user_id, ip, isPremium)
   if (!rl.ok) {
+    if (isPremium && user_id) {
+      // Premium users over limit: silently serve most recent search from history.
+      // This preserves the "radar is always working" UX — no wall, no "volvé mañana".
+      const historyRow = await getLatestRadarHistory(env, user_id)
+      if (historyRow?.results?.length) {
+        const histExpansionCount = historyRow.results.filter(r => r.from_expansion).length
+        console.log(`[RADAR] daily limit hit — serving history for premium ${user_id}, ${historyRow.results.length} results from ${historyRow.created_at}`)
+        return new Response(
+          JSON.stringify({
+            ok:                  true,
+            recommendations:     historyRow.results,
+            total_jobs_analyzed: historyRow.match_count || historyRow.results.length,
+            from_cache:          true,
+            cached_today:        false,
+            served_from_history: true,
+            cache_timestamp:     historyRow.created_at,
+            quota_remaining:     0,
+            expansion_used:      histExpansionCount > 0,
+            expansion_count:     histExpansionCount,
+            expansion_available: false,
+            pipeline_stats:      { cache_hit: 'history', premium_mode: true },
+          }),
+          { status: 200, headers: corsHeaders }
+        )
+      }
+    }
+    // Free users, or premium with no history at all — return 429
     return new Response(
       JSON.stringify({
         error: isPremium
-          ? `Tu búsqueda de hoy ya fue utilizada. Se renueva a las 00:00 UTC.`
+          ? `Exploraste todo lo disponible hoy. Volvé mañana para una nueva búsqueda.`
           : `Usaste tu búsqueda de este mes. Se renueva el 1 del próximo mes.`,
         quota_remaining: 0,
         next_reset:      rl.nextReset,
