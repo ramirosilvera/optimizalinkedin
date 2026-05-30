@@ -450,6 +450,7 @@ function JobCard({
   const isGlobalRemote = ['remoteok', 'remotive', 'jobicy'].includes(job.source)
   const isLocalMarket  = ['jooble', 'adzuna'].includes(job.source)
   const isDirectAts    = ['greenhouse','lever','smartrecruiters','ashby'].includes(job.source)
+  const ATS_NAMES      = { greenhouse: 'Greenhouse', lever: 'Lever', smartrecruiters: 'SmartRecruiters', ashby: 'Ashby', workable: 'Workable', teamtailor: 'TeamTailor', recruitee: 'Recruitee', personio: 'Personio', workday: 'Workday' }
 
   const companyKey    = (job.company || '').toLowerCase().trim()
   const avatarColors  = COMPANY_COLORS[companyKey] || { bg: 'linear-gradient(135deg,#e2e8f0,#cbd5e1)', text: '#64748b' }
@@ -699,7 +700,7 @@ function JobCard({
               {isDirectAts && (
                 <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold"
                   style={{ background: 'rgba(22,163,74,0.10)', color: '#15803d', border: '1px solid rgba(22,163,74,0.25)' }}>
-                  ✓ Directo de la empresa
+                  ✓ Via {ATS_NAMES[job.source] || 'ATS'}
                 </span>
               )}
               {!isDirectAts && isGlobalRemote && (
@@ -1051,6 +1052,7 @@ export default function JobRecommendationsScreen({
   const [candidateLoc, setCandidateLoc]       = useState(null)
   const [pipelineStats, setPipelineStats]     = useState(null)   // { sources_count, total_evaluated }
   const [serperActive, setSerperActive]       = useState(false)  // Google Jobs ran this search
+  const [expansionSearched, setExpSearched]  = useState(false)  // deep search ran for this user
 
   // ── Analytics session refs ─────────────────────────────────────────────────
   // Track how many cards the user has seen and saved in this session
@@ -1204,6 +1206,7 @@ export default function JobRecommendationsScreen({
       setCandidateLoc(data.candidate_location || null)
       setPipelineStats(data.pipeline_stats || null)
       setSerperActive(data.pipeline_stats?.serper_in_sources || false)
+      setExpSearched(data.expansion_searched || false)
       setLoadState('done')
 
       // 3. SEARCH COMPLETED — rich params enable source-level attribution and
@@ -1780,6 +1783,17 @@ export default function JobRecommendationsScreen({
                 <span className="text-xs shrink-0">✨</span>
                 <p className="text-xs flex-1" style={{ color: '#0284c7' }}>
                   Radar Activo encontró <span className="font-semibold">{expansionCount} roles adicionales</span> vía búsqueda IA
+                </p>
+              </div>
+            )}
+
+            {/* Deep search ran but found no new jobs — premium users should know the AI searched */}
+            {expansionSearched && !expansionUsed && !fromCache && filteredRecs.length > 0 && (
+              <div className="flex items-center gap-2 px-3 py-2 rounded-xl"
+                style={{ background: 'rgba(16,185,129,0.06)', border: '1px solid rgba(16,185,129,0.14)' }}>
+                <span className="text-xs shrink-0">🔍</span>
+                <p className="text-xs" style={{ color: '#059669' }}>
+                  Búsqueda IA ampliada — estos son los mejores resultados del mercado para tu perfil
                 </p>
               </div>
             )}
