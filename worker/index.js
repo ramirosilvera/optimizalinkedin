@@ -3361,19 +3361,33 @@ async function putJobsToKV(env, queryHash, jobs) {
 // Key: "jrec:{userId}:{queryHash}" — personalised scores keyed by user + query.
 // Prevents repeat Gemini calls when the same user re-runs the same search within 2 h.
 // Stores: { recommendations, total_jobs_analyzed }
-// Track whether Serper (Google Jobs) was already called for this user today.
-// Guarantees at least one live Serper call per user per day by bypassing outer caches on the first search.
-async function hasCalledSerperToday(env, userId) {
-  if (!env.RATE_LIMIT_KV || !userId) return false
-  const date = new Date().toISOString().slice(0, 10)
-  return !!(await env.RATE_LIMIT_KV.get(`serper_daily:${userId}:${date}`).catch(() => null))
+// Live-fetch period tracking: guarantees all sources (Serper + Jooble + ATS) are called
+// exactly once per period — daily for premium, monthly for free.
+// When the flag is absent the first search bypasses ALL caches (radarCache, jrecCache, jobsKV)
+// and triggers a full live fetch. Subsequent searches within the same period use cache normally.
+function _liveFetchKey(userId, isPremium) {
+  return isPremium
+    ? `live_fetch:${userId}:${new Date().toISOString().slice(0, 10)}`   // daily key  YYYY-MM-DD
+    : `live_fetch:${userId}:${new Date().toISOString().slice(0, 7)}`    // monthly key YYYY-MM
 }
-async function markSerperCalledToday(env, userId) {
+async function hasLiveFetchedThisPeriod(env, userId, isPremium) {
+  if (!env.RATE_LIMIT_KV || !userId) return false
+  return !!(await env.RATE_LIMIT_KV.get(_liveFetchKey(userId, isPremium)).catch(() => null))
+}
+function markLiveFetchedThisPeriod(env, userId, isPremium) {
   if (!env.RATE_LIMIT_KV || !userId) return
-  const date = new Date().toISOString().slice(0, 10)
-  const midnight = new Date(); midnight.setUTCHours(24, 0, 0, 0)
-  const ttlSecs = Math.max(60, Math.floor((midnight.getTime() - Date.now()) / 1000) + 120)
-  env.RATE_LIMIT_KV.put(`serper_daily:${userId}:${date}`, '1', { expirationTtl: ttlSecs }).catch(() => {})
+  const key = _liveFetchKey(userId, isPremium)
+  let ttlSecs
+  if (isPremium) {
+    const midnight = new Date(); midnight.setUTCHours(24, 0, 0, 0)
+    ttlSecs = Math.max(60, Math.floor((midnight.getTime() - Date.now()) / 1000) + 300)
+  } else {
+    const firstNextMonth = new Date()
+    firstNextMonth.setUTCMonth(firstNextMonth.getUTCMonth() + 1, 1)
+    firstNextMonth.setUTCHours(0, 0, 0, 0)
+    ttlSecs = Math.max(60, Math.floor((firstNextMonth.getTime() - Date.now()) / 1000) + 300)
+  }
+  env.RATE_LIMIT_KV.put(key, '1', { expirationTtl: ttlSecs }).catch(() => {})
 }
 
 async function getJrecFromKV(env, userId, queryHash) {
@@ -3387,13 +3401,13 @@ async function getJrecFromKV(env, userId, queryHash) {
   }
 }
 
-async function putJrecToKV(env, userId, queryHash, payload) {
+async function putJrecToKV(env, userId, queryHash, payload, ttlSecs = JREC_KV_TTL_SECS) {
   if (!env.RATE_LIMIT_KV || !userId) return
   try {
     await env.RATE_LIMIT_KV.put(
       `jrec:${userId}:${queryHash}:${JREC_PROMPT_VERSION}`,
       JSON.stringify(payload),
-      { expirationTtl: JREC_KV_TTL_SECS }
+      { expirationTtl: ttlSecs }
     )
   } catch (err) {
     console.warn(`[KV] putJrecToKV failed for user ${userId}: ${err.message}`)
@@ -3434,7 +3448,7 @@ async function getRadarCache(env, userId, profileHash, queryHash) {
 
 async function putRadarCache(env, ctx, userId, profileHash, queryHash, recommendations, isPremium) {
   if (!userId || !recommendations.length || !env.SUPABASE_SERVICE_ROLE_KEY) return
-  const ttlMs   = isPremium ? 3_600_000 : 7 * 86_400_000  // testing phase: 1h premium / 7d free
+  const ttlMs   = isPremium ? 25 * 3_600_000 : 32 * 86_400_000  // premium: 25h | free: 32d (covers full period)
   const expires = new Date(Date.now() + ttlMs).toISOString()
   const row = {
     user_id:      userId,
@@ -4575,18 +4589,18 @@ async function handleAiJobRecommendations(body, request, env, ctx, corsHeaders, 
 
   console.log(`[RADAR] START user=${user_id||'anon'} premium=${isPremium} remoteOk=${!!remote_ok} queries=${JSON.stringify(baseQueriesRaw)} location=${location||'—'}`)
 
-  // ── Serper daily guarantee + cache checks ─────────────────────────────────
-  // serperCalledToday = true → all cache layers are available normally.
-  // serperCalledToday = false → this is the user's first search of the day, so we
-  //   bypass radarCache, jrecCache, and jobsKV to guarantee Serper is called at least once.
-  const serperCalledToday = user_id ? await hasCalledSerperToday(env, user_id) : true
-  console.log(`[RADAR] serperCalledToday=${serperCalledToday} user=${user_id||'anon'}`)
+  // ── Live-fetch gate: guarantees ALL sources are called once per period ─────
+  // liveFetched=false → first search of period → bypass ALL caches → full live fetch
+  // liveFetched=true  → period already fetched → caches serve normally
+  // Premium: once/day | Free: once/month
+  const liveFetched = user_id ? await hasLiveFetchedThisPeriod(env, user_id, isPremium) : true
+  console.log(`[RADAR] liveFetched=${liveFetched} period=${isPremium?'daily':'monthly'} user=${user_id||'anon'}`)
 
   const profileHash = user_id ? await computeProfileHash(String(profile_text)) : null
   const cleanQueriesForHash = baseQueriesRaw
   const queryHashEarly = user_id ? await hashQueryParams(cleanQueriesForHash, location, remote_ok) : null
 
-  if (serperCalledToday && user_id && profileHash && queryHashEarly) {
+  if (liveFetched && user_id && profileHash && queryHashEarly) {
     const radarCache = await getRadarCache(env, user_id, profileHash, queryHashEarly)
     if (radarCache?.results?.length) {
       console.log(`[RADAR] radarCache HIT — returning ${radarCache.results.length} cached recs`)
@@ -4686,8 +4700,8 @@ async function handleAiJobRecommendations(body, request, env, ctx, corsHeaders, 
 
   let sourcesUsed  = []
   let sourceCounts = {}
-  // Skip job KV cache on the user's first search of the day so Serper is called live.
-  const kvCached = serperCalledToday ? await getJobsFromKV(env, queryHash) : null
+  // Skip job KV cache when period hasn't been live-fetched yet → all sources called live.
+  const kvCached = liveFetched ? await getJobsFromKV(env, queryHash) : null
   if (kvCached) {
     jobs      = kvCached
     fromCache = true
@@ -4716,9 +4730,8 @@ async function handleAiJobRecommendations(body, request, env, ctx, corsHeaders, 
       console.warn(`[RADAR] live fetch returned 0 jobs. Source errors: ${JSON.stringify(fetchResult.sourceErrors)}`)
     }
     console.log(`[RADAR] jobsCache MISS — fetched ${jobs.length} live jobs, sources=[${sourcesUsed.join(',')}]`)
-    // Live fetch completed — Serper was called (or attempted). Mark for today so subsequent
-    // searches within the same day can be served from cache normally.
-    if (user_id && env.SERPER_API_KEY) markSerperCalledToday(env, user_id)
+    // Live fetch completed — all sources were called. Mark period so subsequent searches use cache.
+    if (user_id) markLiveFetchedThisPeriod(env, user_id, isPremium)
   }
 
   if (!jobs.length) {
@@ -4740,8 +4753,8 @@ async function handleAiJobRecommendations(body, request, env, ctx, corsHeaders, 
   const jobPool     = preFiltered.length > 0 ? preFiltered : jobs.slice(0, maxJobsForGemini)
   console.log(`[RADAR] preFilter ${jobs.length} → ${jobPool.length} jobs to Gemini (maxJobs=${maxJobsForGemini} premium=${isPremium})`)
 
-  // ── jrec: per-user AI score cache — skipped on first-of-day to guarantee Serper ──
-  if (serperCalledToday && user_id) {
+  // ── jrec: per-user AI score cache — skipped until period live-fetch is done ──
+  if (liveFetched && user_id) {
     const jrecCached = await getJrecFromKV(env, user_id, queryHash)
     if (jrecCached?.recommendations?.length) {
       console.log(`[RADAR] jrecCache HIT — ${jrecCached.recommendations.length} recs, skipping Gemini`)
@@ -5099,12 +5112,14 @@ async function handleAiJobRecommendations(body, request, env, ctx, corsHeaders, 
     ctx.waitUntil(saveHistorial)
   }
 
-  // Cache AI scores in KV (24h) and radar_search_history (Supabase, cross-device)
+  // Cache AI scores in KV and radar_search_history (Supabase, cross-device)
+  // TTL mirrors the live-fetch period: 25h for premium (daily), 32 days for free (monthly)
+  const jrecTtlSecs = isPremium ? 25 * 3_600 : 32 * 86_400
   if (user_id && ctx?.waitUntil) {
     ctx.waitUntil(putJrecToKV(env, user_id, queryHash, {
       recommendations,
       total_jobs_analyzed: jobPool.length,
-    }))
+    }, jrecTtlSecs))
     if (profileHash) {
       putRadarCache(env, ctx, user_id, profileHash, queryHash, recommendations, isPremium)
     }
