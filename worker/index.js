@@ -2119,8 +2119,8 @@ const MAX_DESC_CHARS = 6_000
 // Triggers when the initial AI scoring returns weak matches.
 const EXPANSION_THRESHOLD  = 8.0   // expand if top match_score < this (0–10 scale)
 const EXPANSION_MIN_HQ     = 3     // expand if fewer than N jobs score ≥ 7.0
-const EXPANSION_TIMEOUT_MS = 12_000 // hard cap on total expansion time (ms) — pipeline needs 4-16s; 5500ms timed out ~60% of runs
-const EXPANSION_GEMINI_MS  = 3_500  // Gemini timeout for expansion scoring pass
+const EXPANSION_TIMEOUT_MS = 12_000 // hard cap on total expansion time (ms)
+const EXPANSION_GEMINI_MS  = 6_000  // was 3500 — Flash Lite takes 4-7s; 3.5s caused ~60% silent timeouts
 
 // ══════════════════════════════════════════════════════════════════════════════
 // SECTION 1 — Job Data Normalization
@@ -2312,8 +2312,10 @@ function applyPreFilter(jobs, profileText, maxCandidates = 25) {
       if (daysOld <= 1) s += 2
       else if (daysOld <= 7) s += 1
     }
-    // Description quality
-    if ((job.description || '').length > 300) s += 1
+    // Description quality — penalize near-empty descriptions (likely scraping artifacts)
+    const descLen = (job.description || '').length
+    if (descLen > 300) s += 1
+    else if (descLen < 50) s -= 3  // push below zero → excluded from preFiltered unless pool is tiny
     // Has salary information
     if (job.salary_min || job.salary_max) s += 2
     // Has distinct apply URL (= not just a homepage link)
@@ -3435,11 +3437,11 @@ async function expandSearchTerms(env, profileText, existingQueries) {
   if (!geminiKeys.length) return []
 
   const prompt =
-    `Profile: "${(profileText || '').slice(0, 600)}"\nCurrent searches: ${JSON.stringify(existingQueries)}\n\nThe candidate belongs to one of these 8 families:\nHR/Personas | Finanzas | Tecnología | Marketing/Growth | Operaciones | Ventas/BD | Legal/Compliance | Management General\n\nStep 1: Identify which family best matches this profile.\nStep 2: Generate 3 alternative job titles WITHIN that same family that:\n- Use different Spanish/English naming conventions (e.g., "HRBP" vs "Talent Partner")\n- Cover adjacent seniority framing for the profile level\n- Are searchable on LinkedIn/Bumeran Argentina\n\nRespond ONLY with JSON: {"family":"HR/Personas","terms":["HRBP","People Manager","HR Business Partner"]}`
+    `Profile: "${(profileText || '').slice(0, 600)}"\nExisting searches (DO NOT repeat these or close variations): ${JSON.stringify(existingQueries)}\n\nThe candidate belongs to one of these 8 families:\nHR/Personas | Finanzas | Tecnología | Marketing/Growth | Operaciones | Ventas/BD | Legal/Compliance | Management General\n\nStep 1: Identify which family best matches this profile.\nStep 2: Generate 3 DIFFERENT alternative job titles WITHIN that same family that:\n- Are NOT semantic duplicates of the existing searches listed above\n- If existing searches are in Spanish → provide English equivalents, and vice versa\n- Explore lateral titles: if existing = "HR Manager" → try "People Operations Lead", "Talent Partner", "HRBP"\n- Cover adjacent sub-specialties within the family (e.g., compensation, L&D, recruiting for HR)\n- Are searchable on LinkedIn/Bumeran Argentina\n\nRespond ONLY with JSON: {"family":"HR/Personas","terms":["HRBP","People Operations Lead","Talent Partner"]}`
 
   try {
     const controller = new AbortController()
-    const tid = setTimeout(() => controller.abort(), 2_500)
+    const tid = setTimeout(() => controller.abort(), 3_500)  // was 2500 — tight for Flash Lite cold start
     // Rotate through keys on 429 (same as callGeminiApi) so a rate-limited first key
     // doesn't silently kill the expansion pass.
     let res = null
@@ -3451,7 +3453,7 @@ async function expandSearchTerms(env, profileText, existingQueries) {
           headers: { 'content-type': 'application/json' },
           body: JSON.stringify({
             contents:          [{ role: 'user', parts: [{ text: prompt }] }],
-            generationConfig:  { temperature: 0.4, maxOutputTokens: 120 },
+            generationConfig:  { temperature: 0.4, maxOutputTokens: 200 },  // was 120 — need room for 3 terms
           }),
           signal: controller.signal,
         }
@@ -4872,6 +4874,7 @@ async function handleAiJobRecommendations(body, request, env, ctx, corsHeaders, 
       expansion_available: expansionAvailable,
       expansion_used:      expansionUsed,
       expansion_count:     expansionCount,
+      expansion_searched:  needsExpansion && isPremium,  // true = deep search ran for this user
       candidate_location:  candidateLocation || null,
       pipeline_stats: {
         premium_mode:        isPremium,
