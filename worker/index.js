@@ -3361,6 +3361,21 @@ async function putJobsToKV(env, queryHash, jobs) {
 // Key: "jrec:{userId}:{queryHash}" — personalised scores keyed by user + query.
 // Prevents repeat Gemini calls when the same user re-runs the same search within 2 h.
 // Stores: { recommendations, total_jobs_analyzed }
+// Track whether Serper (Google Jobs) was already called for this user today.
+// Guarantees at least one live Serper call per user per day by bypassing outer caches on the first search.
+async function hasCalledSerperToday(env, userId) {
+  if (!env.RATE_LIMIT_KV || !userId) return false
+  const date = new Date().toISOString().slice(0, 10)
+  return !!(await env.RATE_LIMIT_KV.get(`serper_daily:${userId}:${date}`).catch(() => null))
+}
+async function markSerperCalledToday(env, userId) {
+  if (!env.RATE_LIMIT_KV || !userId) return
+  const date = new Date().toISOString().slice(0, 10)
+  const midnight = new Date(); midnight.setUTCHours(24, 0, 0, 0)
+  const ttlSecs = Math.max(60, Math.floor((midnight.getTime() - Date.now()) / 1000) + 120)
+  env.RATE_LIMIT_KV.put(`serper_daily:${userId}:${date}`, '1', { expirationTtl: ttlSecs }).catch(() => {})
+}
+
 async function getJrecFromKV(env, userId, queryHash) {
   if (!env.RATE_LIMIT_KV || !userId) return null
   try {
@@ -4560,12 +4575,18 @@ async function handleAiJobRecommendations(body, request, env, ctx, corsHeaders, 
 
   console.log(`[RADAR] START user=${user_id||'anon'} premium=${isPremium} remoteOk=${!!remote_ok} queries=${JSON.stringify(baseQueriesRaw)} location=${location||'—'}`)
 
-  // ── radar_search_history: daily persistence check ────────────────────────
+  // ── Serper daily guarantee + cache checks ─────────────────────────────────
+  // serperCalledToday = true → all cache layers are available normally.
+  // serperCalledToday = false → this is the user's first search of the day, so we
+  //   bypass radarCache, jrecCache, and jobsKV to guarantee Serper is called at least once.
+  const serperCalledToday = user_id ? await hasCalledSerperToday(env, user_id) : true
+  console.log(`[RADAR] serperCalledToday=${serperCalledToday} user=${user_id||'anon'}`)
+
   const profileHash = user_id ? await computeProfileHash(String(profile_text)) : null
   const cleanQueriesForHash = baseQueriesRaw
   const queryHashEarly = user_id ? await hashQueryParams(cleanQueriesForHash, location, remote_ok) : null
 
-  if (user_id && profileHash && queryHashEarly) {
+  if (serperCalledToday && user_id && profileHash && queryHashEarly) {
     const radarCache = await getRadarCache(env, user_id, profileHash, queryHashEarly)
     if (radarCache?.results?.length) {
       console.log(`[RADAR] radarCache HIT — returning ${radarCache.results.length} cached recs`)
@@ -4664,8 +4685,9 @@ async function handleAiJobRecommendations(body, request, env, ctx, corsHeaders, 
   const KV_SOURCES_KEY = `jobs_meta:${queryHash}`
 
   let sourcesUsed  = []
-  let sourceCounts = {}  // per-source job counts from live fetch (empty on cache hit)
-  const kvCached = await getJobsFromKV(env, queryHash)
+  let sourceCounts = {}
+  // Skip job KV cache on the user's first search of the day so Serper is called live.
+  const kvCached = serperCalledToday ? await getJobsFromKV(env, queryHash) : null
   if (kvCached) {
     jobs      = kvCached
     fromCache = true
@@ -4694,6 +4716,9 @@ async function handleAiJobRecommendations(body, request, env, ctx, corsHeaders, 
       console.warn(`[RADAR] live fetch returned 0 jobs. Source errors: ${JSON.stringify(fetchResult.sourceErrors)}`)
     }
     console.log(`[RADAR] jobsCache MISS — fetched ${jobs.length} live jobs, sources=[${sourcesUsed.join(',')}]`)
+    // Live fetch completed — Serper was called (or attempted). Mark for today so subsequent
+    // searches within the same day can be served from cache normally.
+    if (user_id && env.SERPER_API_KEY) markSerperCalledToday(env, user_id)
   }
 
   if (!jobs.length) {
@@ -4715,8 +4740,8 @@ async function handleAiJobRecommendations(body, request, env, ctx, corsHeaders, 
   const jobPool     = preFiltered.length > 0 ? preFiltered : jobs.slice(0, maxJobsForGemini)
   console.log(`[RADAR] preFilter ${jobs.length} → ${jobPool.length} jobs to Gemini (maxJobs=${maxJobsForGemini} premium=${isPremium})`)
 
-  // ── jrec: per-user AI score cache (skip Gemini on re-run within 2 h) ──────
-  if (user_id) {
+  // ── jrec: per-user AI score cache — skipped on first-of-day to guarantee Serper ──
+  if (serperCalledToday && user_id) {
     const jrecCached = await getJrecFromKV(env, user_id, queryHash)
     if (jrecCached?.recommendations?.length) {
       console.log(`[RADAR] jrecCache HIT — ${jrecCached.recommendations.length} recs, skipping Gemini`)
