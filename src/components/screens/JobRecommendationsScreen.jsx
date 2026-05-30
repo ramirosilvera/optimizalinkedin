@@ -425,7 +425,7 @@ function JobCard({
   const saveAttemptRef                        = useRef(false)
   const cardRef                               = useRef(null)
 
-  const { job, match_score, strengths, gaps, summary, rec_id, geo_score, from_expansion } = rec
+  const { job, match_score, match_type, strengths, gaps, summary, rec_id, geo_score, from_expansion } = rec
 
   // Convert 0–10 scale from API to 0–100 percentage
   const scorePct = match_score != null ? Math.round(match_score * 10) : null
@@ -750,6 +750,31 @@ function JobCard({
                   <span className="px-1.5 py-0.5 rounded text-[10px] font-medium"
                     style={{ background: 'rgba(16,185,129,0.09)', color: '#059669' }}>
                     🧭 Tu zona
+                  </span>
+                )}
+                {/* Match type badge — sourced from AI headhunter scoring */}
+                {match_type === 'Directo' && (
+                  <span className="px-1.5 py-0.5 rounded text-[10px] font-semibold"
+                    style={{ background: 'rgba(22,163,74,0.11)', color: '#15803d', border: '1px solid rgba(22,163,74,0.28)' }}>
+                    ⚡ Match Directo
+                  </span>
+                )}
+                {match_type === 'Adyacente' && (
+                  <span className="px-1.5 py-0.5 rounded text-[10px] font-semibold"
+                    style={{ background: 'rgba(59,130,246,0.10)', color: '#1d4ed8', border: '1px solid rgba(59,130,246,0.25)' }}>
+                    ↗ Match Adyacente
+                  </span>
+                )}
+                {match_type === 'Transferible' && (
+                  <span className="px-1.5 py-0.5 rounded text-[10px] font-semibold"
+                    style={{ background: 'rgba(245,158,11,0.10)', color: '#b45309', border: '1px solid rgba(245,158,11,0.28)' }}>
+                    ↔ Transferible
+                  </span>
+                )}
+                {match_type === 'Exploratorio' && (
+                  <span className="px-1.5 py-0.5 rounded text-[10px] font-medium"
+                    style={{ background: 'rgba(148,163,184,0.10)', color: '#475569', border: '1px solid rgba(148,163,184,0.25)' }}>
+                    🔭 Exploratorio
                   </span>
                 )}
                 {/* AI discovery badge — shown for expansion-layer results */}
