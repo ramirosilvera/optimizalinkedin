@@ -2100,7 +2100,7 @@ const JOB_SEARCH_TTL_SECS = 1_800  // job_searches row TTL (mirrors KV)
 const ATS_KV_TTL_SECS     = 79_200  // 22-hour KV cache for ATS company boards (date-keyed)
 const ATS_DB_TTL_HOURS    = 40      // ATS boards update slowly — longer DB TTL
 const JREC_KV_TTL_SECS    = 3_600   // 1-hour per-user AI score cache (testing phase)
-const JREC_PROMPT_VERSION = 'v8'    // bump when JOB_MATCHING_SYSTEM_PROMPT changes to bust stale KV
+const JREC_PROMPT_VERSION = 'v9'    // bump when JOB_MATCHING_SYSTEM_PROMPT changes to bust stale KV
 
 // Rate limits for *new* (fresh) searches — cached re-visits bypass these entirely.
 // Premium: 5 new searches/day — on limit, last search is served from history (silent, no block UX)
@@ -2108,9 +2108,10 @@ const JREC_PROMPT_VERSION = 'v8'    // bump when JOB_MATCHING_SYSTEM_PROMPT chan
 const JOB_SEARCH_LIMIT_FREE    = 1
 const JOB_SEARCH_LIMIT_PREMIUM = 5
 
-// Max jobs to send to Gemini in a single matching call (token budget guard).
-// At ~500 tokens/job snippet, 40 jobs ≈ 20 K tokens input — well within Flash Lite limits.
-const MAX_JOBS_FOR_AI_MATCHING = 25
+// Max jobs to send to Gemini — heavy search mode for premium, lighter for free tier.
+const MAX_JOBS_PREMIUM         = 50   // premium: wider pool → better chance of excellent matches
+const MAX_JOBS_FREE            = 20   // free tier
+const MAX_JOBS_FOR_AI_MATCHING = MAX_JOBS_FREE  // backward-compat alias
 
 // Max description length stored in job_cache (chars). Prevents >8 KB JSONB blobs.
 const MAX_DESC_CHARS = 6_000
@@ -2289,53 +2290,77 @@ function expandProfileSkills(profileText) {
   return found
 }
 
-// Rule-based pre-filter: returns top N candidates without using AI
-function applyPreFilter(jobs, profileText, maxCandidates = 25) {
+// Rule-based pre-filter: returns top N candidates without using AI.
+// professionInfo enables family-aware scoring: strong boost for same-family titles,
+// strong penalty for clearly incompatible families — keeps irrelevant jobs out of Gemini.
+function applyPreFilter(jobs, profileText, maxCandidates = 25, professionInfo = null) {
   if (!jobs.length) return jobs
   const profileLower = (profileText || '').toLowerCase()
   const expanded = expandProfileSkills(profileLower)
 
   const ATS_SOURCES = new Set(['greenhouse','lever','smartrecruiters','ashby','workable','teamtailor','recruitee','personio','workday'])
+
+  const FAMILY_TITLE_SIGNALS = {
+    'HR/Personas':        ['hr ', ' hr', 'rrhh', 'people ', 'talent', 'recursos humanos', 'human resource', 'hrbp', 'payroll', 'nómina', 'nomina', 'recruiting', 'reclut', 'capital humano', 'compensaci'],
+    'Finanzas':           ['financ', 'fp&a', 'controller', 'tesor', 'contab', 'auditor', 'impuesto', 'tax ', 'presupuesto', 'budget'],
+    'Tecnología':         ['engineer', 'developer', 'desarrollador', 'devops', 'frontend', 'backend', 'fullstack', 'full stack', 'software ', 'cloud ', 'sre ', 'data engineer'],
+    'Marketing/Growth':   ['marketing', 'growth ', 'brand ', 'performance mkt', 'community', 'content mkt', 'seo ', 'sem ', 'digital ads'],
+    'Ventas/BD':          ['sales ', 'ventas', 'comercial', 'account exec', 'business dev', 'revenue ops', 'key account'],
+    'Operaciones':        ['operations', 'operaciones', 'supply chain', 'logística', 'logistics', 'procurement', 'compras'],
+    'Legal/Compliance':   ['legal ', 'abogad', 'compliance', 'counsel', 'contratos', 'juridic'],
+    'Management General': ['country manager', 'general manager', 'director general', 'gerente general'],
+  }
+
+  const myFamily          = professionInfo?.family || null
+  const mySignals         = myFamily ? (FAMILY_TITLE_SIGNALS[myFamily] || []) : []
+  const otherFamilySigs   = myFamily
+    ? Object.entries(FAMILY_TITLE_SIGNALS).filter(([f]) => f !== myFamily).flatMap(([, sigs]) => sigs)
+    : []
+
   function score(job) {
-    const jobText = `${job.title} ${job.description || ''} ${(job.skills_required || []).join(' ')}`.toLowerCase()
+    const jobText  = `${job.title} ${job.description || ''} ${(job.skills_required || []).join(' ')}`.toLowerCase()
     const titleText = job.title.toLowerCase()
     let s = 0
     for (const skill of expanded) {
       if (titleText.includes(skill)) s += 3
       else if (jobText.includes(skill)) s += 1
     }
-    // ATS direct sources are higher quality (less noise, no aggregator reshuffling)
     if (ATS_SOURCES.has(job.source)) s += 2
-    // Recency bonus — prefer recently posted
     if (job.posted_at) {
       const daysOld = (Date.now() - new Date(job.posted_at).getTime()) / 86_400_000
       if (daysOld <= 1) s += 2
       else if (daysOld <= 7) s += 1
     }
-    // Description quality — penalize near-empty descriptions (likely scraping artifacts)
     const descLen = (job.description || '').length
     if (descLen > 300) s += 1
-    else if (descLen < 50) s -= 3  // push below zero → excluded from preFiltered unless pool is tiny
-    // Has salary information
+    else if (descLen < 50) s -= 3
     if (job.salary_min || job.salary_max) s += 2
-    // Has distinct apply URL (= not just a homepage link)
     if (job.apply_url && job.apply_url !== job.url) s += 1
-    // Company has ATS slug (= verified employer)
     if (job.company_slug) s += 1
-    // Stale penalty for old jobs
     if (job.posted_at) {
       const daysOld2 = (Date.now() - new Date(job.posted_at).getTime()) / 86_400_000
       if (daysOld2 > 30) s -= 2
     }
+
+    // Family-aware boost/penalty — the biggest lever for matching quality.
+    // Jobs in the candidate's professional family get a large boost to reach Gemini.
+    // Jobs clearly in incompatible families get a large penalty to stay OUT of Gemini.
+    if (myFamily) {
+      const isFamilyMatch = mySignals.some(sig => titleText.includes(sig))
+      if (isFamilyMatch) {
+        s += 8  // family title match → ensure this job reaches Gemini
+      } else {
+        const isClearMismatch = otherFamilySigs.some(sig => titleText.includes(sig))
+        if (isClearMismatch) s -= 12  // clearly wrong family → exclude from Gemini pool
+      }
+    }
+
     return s
   }
 
-  const scored = jobs.map(j => ({ job: j, s: score(j) }))
+  const scored   = jobs.map(j => ({ job: j, s: score(j) }))
   const positive = scored.filter(x => x.s > 0)
-  // When fewer than maxCandidates jobs have any relevance signal, pad with the
-  // zero-score jobs sorted by recency rather than discarding them entirely.
-  // This avoids sending an empty pool to Gemini when the taxonomy doesn't match.
-  const base = positive.length >= Math.ceil(maxCandidates / 2) ? positive : scored
+  const base     = positive.length >= Math.ceil(maxCandidates / 2) ? positive : scored
   return base
     .sort((a, b) => b.s - a.s)
     .slice(0, maxCandidates)
@@ -3457,30 +3482,87 @@ function shouldTriggerExpansion(recommendations) {
 
 // Lightweight Gemini call (50–80 output tokens) that suggests 1–2 alternative
 // search terms not covered by the user's initial queries.
-async function expandSearchTerms(env, profileText, existingQueries) {
-  const geminiKeys = (env.GEMINI_API_KEYS || env.GEMINI_API_KEY || '')
-    .split(',').map(k => k.trim()).filter(Boolean)
-  if (!geminiKeys.length) return []
+// Async Gemini call for richer profession metadata — runs in parallel with job fetch.
+// Returns { profession, family, subfamilies, seniority_label, seniority_level, industries } or null.
+async function extractDominantProfession(env, profileText) {
+  const geminiKeys = (env.GEMINI_API_KEYS || env.GEMINI_API_KEY || '').split(',').map(k => k.trim()).filter(Boolean)
+  if (!geminiKeys.length) return null
+  const prompt = `Analyze this professional profile and extract the dominant professional classification.
 
-  const prompt =
-    `Profile: "${(profileText || '').slice(0, 600)}"\nExisting searches (DO NOT repeat these or close variations): ${JSON.stringify(existingQueries)}\n\nThe candidate belongs to one of these 8 families:\nHR/Personas | Finanzas | Tecnología | Marketing/Growth | Operaciones | Ventas/BD | Legal/Compliance | Management General\n\nStep 1: Identify which family best matches this profile.\nStep 2: Generate 3 DIFFERENT alternative job titles WITHIN that same family that:\n- Are NOT semantic duplicates of the existing searches listed above\n- If existing searches are in Spanish → provide English equivalents, and vice versa\n- Explore lateral titles: if existing = "HR Manager" → try "People Operations Lead", "Talent Partner", "HRBP"\n- Cover adjacent sub-specialties within the family (e.g., compensation, L&D, recruiting for HR)\n- Are searchable on LinkedIn/Bumeran Argentina\n\nRespond ONLY with JSON: {"family":"HR/Personas","terms":["HRBP","People Operations Lead","Talent Partner"]}`
+PROFILE:
+"${(profileText || '').slice(0, 1500)}"
+
+PROFESSIONAL FAMILIES: HR/Personas | Finanzas | Tecnología | Marketing/Growth | Operaciones | Ventas/BD | Legal/Compliance | Management General
+
+SENIORITY LEVELS: 1=Junior/Trainee | 2=Semi Senior/Analista | 3=Senior/Especialista | 4=Lead/Jefe/Coordinador | 5=Gerente/Manager/Director | 6=VP/C-Level/Head of
+
+Respond ONLY with JSON (no markdown):
+{"profession":"Gerente de RRHH","family":"HR/Personas","subfamilies":["Talent","HRBP","Compensaciones"],"seniority_label":"Gerencial","seniority_level":5,"industries":["Fintech","Retail"],"is_senior":true}`
 
   try {
-    const controller = new AbortController()
-    const tid = setTimeout(() => controller.abort(), 3_500)  // was 2500 — tight for Flash Lite cold start
-    // Rotate through keys on 429 (same as callGeminiApi) so a rate-limited first key
-    // doesn't silently kill the expansion pass.
+    const ctrl = new AbortController()
+    const tid  = setTimeout(() => ctrl.abort(), 5_000)
     let res = null
     for (let ki = 0; ki < geminiKeys.length; ki++) {
       res = await fetch(
         `https://generativelanguage.googleapis.com/v1beta/models/${DEFAULT_MODEL}:generateContent?key=${geminiKeys[ki]}`,
         {
-          method:  'POST',
-          headers: { 'content-type': 'application/json' },
-          body: JSON.stringify({
-            contents:          [{ role: 'user', parts: [{ text: prompt }] }],
-            generationConfig:  { temperature: 0.4, maxOutputTokens: 200 },  // was 120 — need room for 3 terms
-          }),
+          method: 'POST', headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ contents: [{ role: 'user', parts: [{ text: prompt }] }], generationConfig: { temperature: 0.1, maxOutputTokens: 300 } }),
+          signal: ctrl.signal,
+        }
+      )
+      if (res.status !== 429) break
+    }
+    clearTimeout(tid)
+    if (!res?.ok) return null
+    const d    = await res.json()
+    const raw  = d?.candidates?.[0]?.content?.parts?.[0]?.text || ''
+    const parsed = JSON.parse(raw.replace(/^```json\n?|\n?```$/g, '').trim())
+    if (parsed?.family) console.log(`[RADAR] professionMeta: ${parsed.profession} | ${parsed.family} | lvl=${parsed.seniority_level}`)
+    return parsed
+  } catch (err) {
+    console.warn(`[RADAR] extractDominantProfession failed: ${err.message}`)
+    return null
+  }
+}
+
+async function expandSearchTerms(env, profileText, existingQueries, professionInfo = null) {
+  const geminiKeys = (env.GEMINI_API_KEYS || env.GEMINI_API_KEY || '')
+    .split(',').map(k => k.trim()).filter(Boolean)
+  if (!geminiKeys.length) return []
+
+  const familyCtx = professionInfo?.family
+    ? `DETECTED FAMILY: ${professionInfo.family} | SENIORITY LEVEL: ${professionInfo.seniority_level}\nIMPORTANT: Generate ONLY titles within the ${professionInfo.family} family. Do NOT cross into other professional families.`
+    : 'Step 1: Identify the professional family. Step 2: Stay STRICTLY within that family.'
+  const seniorityCtx = (professionInfo?.seniority_level || 0) >= 5
+    ? 'SENIORITY: Management/Director level — titles must reflect this seniority.'
+    : ''
+
+  const prompt = `Profile: "${(profileText || '').slice(0, 600)}"
+Existing searches (DO NOT repeat or use close variations): ${JSON.stringify(existingQueries)}
+
+${familyCtx}
+${seniorityCtx}
+
+Generate 5 DIFFERENT alternative job titles WITHIN the same professional family that:
+- Are NOT semantic duplicates of the existing searches above
+- Mix languages: if existing = Spanish → include English equivalents, and vice versa
+- Cover different sub-specialties within the family (e.g. for HR: compensation, L&D, HRBP, talent, ops)
+- Are realistic and searchable on LinkedIn/Bumeran LATAM
+
+Respond ONLY with JSON (no markdown): {"family":"HR/Personas","terms":["HRBP","People Operations Lead","Talent Partner","Compensation Manager","HR Generalist"]}`
+
+  try {
+    const controller = new AbortController()
+    const tid = setTimeout(() => controller.abort(), 5_000)
+    let res = null
+    for (let ki = 0; ki < geminiKeys.length; ki++) {
+      res = await fetch(
+        `https://generativelanguage.googleapis.com/v1beta/models/${DEFAULT_MODEL}:generateContent?key=${geminiKeys[ki]}`,
+        {
+          method: 'POST', headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ contents: [{ role: 'user', parts: [{ text: prompt }] }], generationConfig: { temperature: 0.3, maxOutputTokens: 300 } }),
           signal: controller.signal,
         }
       )
@@ -3492,11 +3574,11 @@ async function expandSearchTerms(env, profileText, existingQueries) {
       console.warn(`[RADAR:expansion] expandSearchTerms Gemini HTTP ${res.status}`)
       return []
     }
-    const d   = await res.json()
-    const raw = d?.candidates?.[0]?.content?.parts?.[0]?.text || ''
+    const d      = await res.json()
+    const raw    = d?.candidates?.[0]?.content?.parts?.[0]?.text || ''
     const parsed = JSON.parse(raw.replace(/^```json\n?|\n?```$/g, '').trim())
-    const arr = parsed?.terms || (Array.isArray(parsed) ? parsed : [])
-    return Array.isArray(arr) ? arr.slice(0, 3).filter(s => typeof s === 'string' && s.trim()) : []
+    const arr    = parsed?.terms || (Array.isArray(parsed) ? parsed : [])
+    return Array.isArray(arr) ? arr.slice(0, 5).filter(s => typeof s === 'string' && s.trim()) : []
   } catch (err) {
     console.warn(`[RADAR:expansion] expandSearchTerms failed: ${err.message}`)
     return []
@@ -3505,12 +3587,12 @@ async function expandSearchTerms(env, profileText, existingQueries) {
 
 // Full expansion pass: generate new terms → fetch jobs → deduplicate → AI score.
 // Returns { recommendations: [...], count: N } or null if nothing new found.
-async function expandWithSearch(env, ctx, cleanQueries, location, remoteOk, profileText, existingHashes, requestedN, candidateLocation = null) {
-  const newTerms = await expandSearchTerms(env, profileText, cleanQueries)
+async function expandWithSearch(env, ctx, cleanQueries, location, remoteOk, profileText, existingHashes, requestedN, candidateLocation = null, professionInfo = null) {
+  const newTerms = await expandSearchTerms(env, profileText, cleanQueries, professionInfo)
   if (!newTerms.length) return null
 
   const { jobs: rawExpanded } = await fetchAllSources(
-    newTerms.slice(0, 2), location, remoteOk, env, String(profileText), candidateLocation
+    newTerms.slice(0, 3), location, remoteOk, env, String(profileText), candidateLocation
   )
   const newJobs = rawExpanded
     .filter(j => !existingHashes.has(canonicalJobHash(j)))
@@ -3711,6 +3793,109 @@ function extractCandidateLocation(profileText) {
   return null
 }
 
+// Fast synchronous profession detection — no AI, pure regex heuristics.
+// Returns { family, seniority_level, is_senior } or null if undetermined.
+function detectProfessionFamilySync(profileText) {
+  const t = (profileText || '').slice(0, 2000).toLowerCase()
+
+  let seniority_level = 3
+  if (/\b(ceo|cto|coo|cfo|chief\s|c-level|vice\s*president|vp\s+de|vp\s+of)\b/.test(t)) seniority_level = 6
+  else if (/\b(director\s+general|director general|country\s*manager|head\s+of\s+\w+|director\s+de\s+\w+)\b/.test(t)) seniority_level = 5
+  else if (/\bgerente\b|\bmanager\b|\bjefe\s+de\s+\w+\b/.test(t)) seniority_level = 5
+  else if (/\b(team\s*lead|tech\s*lead|jefe\s+de|coordinador|líder\s+de|supervisor)\b/.test(t)) seniority_level = 4
+  else if (/\b(sr\.|senior|especialista)\b/.test(t)) seniority_level = 3
+  else if (/\b(semi.?senior|ssr|mid.?level|analista\s+sr)\b/.test(t)) seniority_level = 2
+  else if (/\b(junior|jr\.|trainee|pasante|entry.?level|analista\s+jr)\b/.test(t)) seniority_level = 1
+
+  if (/\b(rrhh|recursos\s+humanos|human\s+resources|hr\s+manager|hr\s+business\s+partner|hrbp|talent\s+manager|people\s+manager|gerente\s+de\s+rrhh|gerente\s+de\s+personas|capital\s+humano|nómina|payroll|talent\s+acquisition|onboarding|relaciones\s+laborales|hr\s+generalist)\b/.test(t))
+    return { family: 'HR/Personas', seniority_level, is_senior: seniority_level >= 4 }
+
+  if (/\b(software\s+engineer|desarrollador|developer|frontend|backend|fullstack|full.stack|devops|cloud\s+engineer|data\s+engineer|tech\s+lead|engineering\s+manager|ios\s+developer|android\s+dev|mobile\s+dev|arquitecto\s+de\s+software|qa\s+engineer|sre|platform\s+engineer|cto)\b/.test(t))
+    return { family: 'Tecnología', seniority_level, is_senior: seniority_level >= 4 }
+
+  if (/\b(gerente\s+financiero|director\s+financiero|finance\s+manager|fp&a|controller|cfo|tesorería|treasury|contabl|auditor|impuestos\s+corporativos|presupuesto\s+corporativo|cash\s+flow\s+model)\b/.test(t))
+    return { family: 'Finanzas', seniority_level, is_senior: seniority_level >= 4 }
+
+  if (/\b(marketing\s+manager|brand\s+manager|growth\s+manager|performance\s+marketing|community\s+manager|content\s+manager|seo\s+manager|cmo|head\s+of\s+marketing|gerente\s+de\s+marketing)\b/.test(t))
+    return { family: 'Marketing/Growth', seniority_level, is_senior: seniority_level >= 4 }
+
+  if (/\b(sales\s+manager|gerente\s+comercial|director\s+comercial|key\s+account|business\s+development\s+manager|head\s+of\s+sales|ejecutivo\s+comercial\s+sr|revenue\s+manager|cro)\b/.test(t))
+    return { family: 'Ventas/BD', seniority_level, is_senior: seniority_level >= 4 }
+
+  if (/\b(operations\s+manager|supply\s+chain\s+manager|gerente\s+de\s+operaciones|director\s+de\s+operaciones|logística|procurement\s+manager|coo|lean\s+six\s+sigma)\b/.test(t))
+    return { family: 'Operaciones', seniority_level, is_senior: seniority_level >= 4 }
+
+  if (/\b(abogado\s+senior|abogado\s+corporativo|lawyer|legal\s+manager|compliance\s+manager|counsel|director\s+legal|gerente\s+legal)\b/.test(t))
+    return { family: 'Legal/Compliance', seniority_level, is_senior: seniority_level >= 4 }
+
+  if (/\b(country\s+manager|general\s+manager|director\s+general|gerente\s+general|managing\s+director|regional\s+director)\b/.test(t))
+    return { family: 'Management General', seniority_level, is_senior: seniority_level >= 4 }
+
+  return null
+}
+
+// Generate targeted headhunter search queries for premium users based on profession + seniority.
+function buildHeadhunterQueries(professionInfo, baseQueries, isPremium) {
+  if (!professionInfo || !isPremium) return baseQueries.slice(0, 3)
+
+  const HEADHUNTER_MAP = {
+    'HR/Personas': {
+      4: ['HRBP', 'HR Lead', 'Jefe de RRHH', 'People Lead', 'Talent Lead'],
+      5: ['Gerente de RRHH', 'HR Manager', 'Head of People', 'People Manager', 'HR Director', 'Gerente Capital Humano'],
+      6: ['HR Director', 'Chief People Officer', 'VP of People', 'Director de RRHH', 'VP HR'],
+    },
+    'Finanzas': {
+      4: ['Jefe de Finanzas', 'FP&A Lead', 'Controller Senior', 'Senior Finance Analyst'],
+      5: ['Gerente de Finanzas', 'Finance Manager', 'CFO', 'Director Financiero', 'Head of Finance'],
+      6: ['CFO', 'Chief Financial Officer', 'VP Finance', 'Finance Director'],
+    },
+    'Tecnología': {
+      3: ['Senior Software Engineer', 'Senior Backend Developer', 'Senior Full Stack', 'Senior Frontend'],
+      4: ['Tech Lead', 'Engineering Lead', 'Team Lead Backend', 'Senior Engineer'],
+      5: ['Engineering Manager', 'Head of Engineering', 'VP Engineering', 'Director of Technology'],
+      6: ['CTO', 'Chief Technology Officer', 'VP Engineering'],
+    },
+    'Marketing/Growth': {
+      4: ['Marketing Lead', 'Growth Lead', 'Brand Manager Senior', 'Performance Lead'],
+      5: ['Marketing Manager', 'Head of Marketing', 'Growth Manager', 'Director de Marketing', 'CMO'],
+      6: ['CMO', 'Chief Marketing Officer', 'VP Marketing', 'Head of Brand'],
+    },
+    'Operaciones': {
+      4: ['Operations Lead', 'Supply Chain Lead', 'Jefe de Operaciones'],
+      5: ['Operations Manager', 'Head of Operations', 'Director de Operaciones', 'Supply Chain Manager'],
+      6: ['COO', 'Chief Operating Officer', 'VP Operations', 'Operations Director'],
+    },
+    'Ventas/BD': {
+      4: ['Sales Lead', 'Account Manager Senior', 'Jefe de Ventas'],
+      5: ['Sales Manager', 'Head of Sales', 'Director Comercial', 'Gerente Comercial', 'VP Sales'],
+      6: ['Chief Revenue Officer', 'VP Sales', 'Revenue Director', 'Commercial Director'],
+    },
+    'Legal/Compliance': {
+      4: ['Legal Counsel', 'Compliance Lead', 'Senior Legal Analyst'],
+      5: ['Legal Manager', 'Head of Legal', 'Compliance Manager', 'Director Legal'],
+      6: ['General Counsel', 'Chief Legal Officer', 'VP Legal'],
+    },
+    'Management General': {
+      4: ['Project Manager', 'Team Lead', 'Jefe de Área'],
+      5: ['General Manager', 'Country Manager', 'Director General', 'Gerente General'],
+      6: ['CEO', 'Managing Director', 'COO', 'Regional Director'],
+    },
+  }
+
+  const { family, seniority_level } = professionInfo
+  const lvl = Math.min(6, Math.max(1, seniority_level || 3))
+  const levelMap = HEADHUNTER_MAP[family]
+  if (!levelMap) return baseQueries.slice(0, 5)
+
+  const availLevels = Object.keys(levelMap).map(Number).sort((a, b) => a - b)
+  const bestLevel = availLevels.reduce((prev, cur) => Math.abs(cur - lvl) < Math.abs(prev - lvl) ? cur : prev, availLevels[0])
+  const headhunterQueries = levelMap[bestLevel] || []
+
+  const lowerBase = new Set(baseQueries.map(q => q.toLowerCase()))
+  const fresh = headhunterQueries.filter(q => !lowerBase.has(q.toLowerCase()))
+  return [...fresh, ...baseQueries].slice(0, 5)
+}
+
 // Returns a 0.0–1.0 geo compatibility score for a job vs. the candidate's detected location.
 // Only meaningful for on-site / hybrid jobs — remote jobs always score 1.0.
 function geoCompatibilityScore(jobLocation, jobRemote, candidateLocation) {
@@ -3888,209 +4073,200 @@ async function saveJobSearch(env, ctx, userId, queryHash, queries, location, rem
  * Build the Gemini system prompt for job matching.
  * Stored here in the worker, never sent to the client.
  */
-const JOB_MATCHING_SYSTEM_PROMPT = `Sos un sistema experto de matching laboral para profesionales argentinos y latinoamericanos.
+const JOB_MATCHING_SYSTEM_PROMPT = `Sos un headhunter digital senior especializado en el mercado laboral latinoamericano.
 
-CONTEXTO:
-Los avisos provienen de ATS (Greenhouse, Lever, SmartRecruiters, Ashby, Workday) y bolsas globales. Las descripciones pueden venir:
-- parcialmente en inglés
-- con HTML
-- incompletas
-- infladas con keywords irrelevantes
-- mezclando requisitos obligatorios y deseables
+Tu misión: identificar las oportunidades VERDADERAMENTE relevantes para este candidato. Comportate como un headhunter experto que entiende la profesión del candidato en profundidad, NO como un ATS que hace keyword matching.
+
+━━━━━━━━━━━━━━━━━━━━━━━
+CONTEXTO DE FUENTES
+━━━━━━━━━━━━━━━━━━━━━━━
+
+Los avisos provienen de ATS (Greenhouse, Lever, SmartRecruiters, Ashby, Workday) y bolsas globales. Las descripciones pueden:
+- Estar parcialmente en inglés
+- Contener HTML residual
+- Ser incompletas o infladas con keywords irrelevantes
+- Mezclar requisitos obligatorios y deseables
 
 Interpretá los avisos con criterio HUMANO de recruiter senior.
-NO hagas matching solo por coincidencia de skills.
-
-━━━━━━━━━━━━━━━━━━━━━━━
-OBJETIVO PRINCIPAL
-━━━━━━━━━━━━━━━━━━━━━━━
-
-Producir scores DISCRIMINATIVOS. La distribución esperada debe ser amplia: pocos jobs en rango 8-10, varios en 6-8, muchos descartados por debajo de 5.0. Si todos los scores quedan entre 6 y 8.5, el matching no es útil — revisá los caps.
-
-Priorizar la COHERENCIA PROFESIONAL REAL. La mayoría de las personas quieren seguir trabajando en su profesión, especialidad y área de incumbencia.
-
-El matching debe priorizar:
-✅ función principal y familia profesional
-✅ trayectoria y continuidad de carrera
-✅ seniority real (penalizar desfasajes grandes)
-✅ tipo de rol e identidad laboral
-
-ANTES que coincidencias aisladas de skills.
-
-━━━━━━━━━━━━━━━━━━━━━━━
-EJEMPLO CRÍTICO
-━━━━━━━━━━━━━━━━━━━━━━━
-
-Candidato: Gerente de RRHH con skills de liderazgo, analytics, transformación digital, gestión de proyectos.
-
-❌ NO recomendar: Product Manager, Operations Manager, Data Analyst, Scrum Master
-→ Aunque comparte skills transferibles, SON FAMILIAS DISTINTAS. Score máximo: 3.5. EXCLUIR del output.
-
-✅ SÍ recomendar: HR Business Partner, Talent Manager, People Operations Lead, Compensaciones, DO
-→ Misma familia. Score puede llegar a 9-10 si el seniority y condiciones alinean.
 
 ━━━━━━━━━━━━━━━━━━━━━━━
 RECIBÍS
 ━━━━━━━━━━━━━━━━━━━━━━━
 
-1. Perfil candidato: experiencia, habilidades, seniority, trayectoria, objetivo profesional, rubros, idiomas.
-2. Lista numerada de avisos laborales.
+1. Perfil del candidato con PROFESIÓN DOMINANTE ya detectada (úsala como ancla principal)
+2. Lista numerada de avisos laborales a evaluar
 
 ━━━━━━━━━━━━━━━━━━━━━━━
-TU TAREA
+PASO 1 — CONFIRMAR CLASIFICACIÓN
 ━━━━━━━━━━━━━━━━━━━━━━━
 
-PASO 1 — CLASIFICAR AL CANDIDATO:
-Identificá la familia profesional basándote en el rol más reciente y la trayectoria completa.
+Usá la PROFESIÓN DOMINANTE DETECTADA como punto de partida absoluto. Solo reclasificá si hay evidencia MUY CLARA de transición de carrera voluntaria en el perfil.
 
 FAMILIAS PROFESIONALES (8):
-HR/Personas: RRHH, HRBP, Talent Manager, People Lead, Compensaciones, DO, Recruiting, HR Operations
-Finanzas: Finance Manager, FP&A, Controller, Tesorería, Contabilidad, CFO, Cost Analyst
-Tecnología: Backend, Frontend, Full Stack, DevOps, QA, Data Engineer, Tech Lead, CTO, Platform
-Marketing/Growth: Brand Manager, Performance, Growth, Community, Content, Marketing Manager
-Operaciones: Operations Manager, Supply Chain, Logística, Procurement, Facilities, Process
-Ventas/BD: Sales Manager, Account Executive, BD Manager, Key Account, Sales Engineer
-Legal/Compliance: Counsel, Compliance Officer, Legal Manager, Paralegal
-Management General: Country Manager, GM, BU Head, CEO, Dirección General, Regional Director
+HR/Personas | Finanzas | Tecnología | Marketing/Growth | Operaciones | Ventas/BD | Legal/Compliance | Management General
 
 ━━━━━━━━━━━━━━━━━━━━━━━
-PASO 2 — CALCULAR match_score (0-10):
+PASO 2 — SCORING match_score (0–10)
 ━━━━━━━━━━━━━━━━━━━━━━━
 
-COMPONENTE 1 — FAMILIA PROFESIONAL / FUNCIÓN (peso 40%, máx 4.0 puntos)
+COMPONENTE 1 — PROFESIÓN Y FAMILIA (35%, máx 3.5 pts)
 
-Misma familia exacta: 4.0 puntos
-Familia adyacente con transferencia real documentada: 2.0–2.5 puntos
+¿El puesto pertenece a la misma familia profesional que el candidato?
+
+Misma familia exacta: 3.5 pts
+Familia adyacente con transferencia documentada: 1.5–2.0 pts
   Adyacentes válidos: HR↔Management General | Finanzas↔Operaciones | Ventas↔Marketing | Legal↔Finanzas
-Familia diferente: 0.5–1.0 puntos
-Familia completamente incompatible: 0.0–0.3 puntos
-  Incompatibles ejemplos: HR↔Tecnología | Finanzas↔Diseño | RRHH↔Product Manager | Marketing↔Backend
+Familia diferente: 0.3–0.8 pts
+Familia completamente incompatible: 0.0–0.2 pts
+  Incompatibles absolutos: HR↔Tecnología | RRHH↔Product Manager | RRHH↔Revenue Ops | HR↔Data Analyst | no-tech↔Backend/Dev
 
-Ejemplos de misma familia:
-✅ HR/Personas → HRBP / Talent / People / HR Manager / Compensaciones / DO
-✅ Finanzas → FP&A / Controller / Finance Manager / Tesorería / Contabilidad
-✅ Marketing → Brand / Growth / Performance / Community / Content
-✅ Legal → Compliance / Corporate Legal / Regulatory / Paralegal
-✅ Tecnología → Backend / Full Stack / DevOps / Data Eng / QA / Mobile
+━━━━━━━
 
-━━━━━━━━━━━━━━━━━━━━━━━
+COMPONENTE 2 — ÁREA FUNCIONAL Y SUB-ESPECIALIDAD (25%, máx 2.5 pts)
 
-COMPONENTE 2 — SENIORITY Y EXPERIENCIA (peso 20%, máx 2.0 puntos)
+Dentro de la misma familia, ¿coincide el área funcional específica?
 
-Escala de seniority (de menor a mayor):
-  Nivel 1: Junior / Trainee / Pasante / Entry Level
-  Nivel 2: Semi Senior / SSR / Analista / Mid-Level
-  Nivel 3: Senior / Especialista / Analista Sr
-  Nivel 4: Lead / Jefe / Coordinador / Team Lead / Supervisor
-  Nivel 5: Gerente / Manager / Director de área
-  Nivel 6: VP / C-Level / Head of / Country Manager / Director General
+Mismo rol o sub-área muy similar: 2.5 pts
+  Ejemplos: Talent → Talent Manager | HRBP → HR Business Partner | Compensaciones → Compensation Manager
+Sub-área relacionada dentro de la familia: 1.5–2.0 pts
+  Ejemplos: Talent → HRBP | Recruiting → Onboarding | FP&A → Controller
+Sub-área diferente dentro de la misma familia: 1.0–1.4 pts
+  Ejemplos: Talent → Compensaciones | Marketing Digital → Brand Manager
+No aplica (familia distinta): proporcional al puntaje C1
 
-Coherencia de seniority — puntaje sobre 2.0:
-  Diferencia 0 niveles (match exacto): 2.0
-  Diferencia 1 nivel (±1): 1.5 — aceptable (SSR aplica Senior, Gerente aplica Head of pequeño equipo)
-  Diferencia 2 niveles (±2): 0.8 — brecha significativa, penalizar
-  Diferencia 3+ niveles (±3 o más): 0.2 — muy poco realista
+Sub-áreas HR/Personas: Talent Acquisition, HRBP, Learning & Development, Compensaciones y Beneficios, HR Operations, Employee Relations, People Analytics, HR Generalist, Payroll
+Sub-áreas Finanzas: FP&A, Controller, Tesorería, Contabilidad, Auditoría, Tax, Costos
+Sub-áreas Tecnología: Backend, Frontend, Full Stack, DevOps, Cloud, Data Engineering, QA, Mobile, Platform, SRE
+Sub-áreas Marketing: Performance, Brand, Growth, Community, Content, SEO/SEM, CRM
+Sub-áreas Ventas: Enterprise Sales, SMB Sales, Key Account, Business Development, Presales
+Sub-áreas Operaciones: Supply Chain, Logística, Procurement, Facilities, Process Excellence
 
-CASOS DUROS:
-- Director/Gerente (Nivel 5-6) aplicando a Junior/SSR (Nivel 1-2): puntaje máximo 0.3 en este componente. No tiene sentido operativo.
-- Junior/Trainee (Nivel 1) aplicando a Director/Gerente (Nivel 5-6): puntaje máximo 0.3 en este componente.
-- Estos casos deben reflejarse en el score final bajo (6.0 o menos aunque la familia coincida).
+━━━━━━━
 
-━━━━━━━━━━━━━━━━━━━━━━━
+COMPONENTE 3 — SENIORITY (15%, máx 1.5 pts)
 
-COMPONENTE 3 — HABILIDADES TÉCNICAS Y FUNCIONALES (peso 12%, máx 1.2 puntos)
+Niveles: 1=Junior/Trainee | 2=Semi Senior/Analista | 3=Senior/Especialista | 4=Lead/Jefe/Coordinador | 5=Gerente/Manager/Director | 6=VP/C-Level/Head of
 
-Evaluar skills ESPECÍFICAS del dominio profesional.
-NO sobreponderar skills genéricas: liderazgo, Excel, comunicación, analytics, gestión de proyectos.
-Solo pesan las skills técnicas y funcionales específicas del área (ej: para HR: HRIS, SAP HCM, Workday, gestión de nómina; para Finanzas: IFRS, consolidación, SAP FI, cash flow modeling).
-"Nice to have" ausente NO penaliza. Solo penalizar si un requisito MANDATORIO clave está ausente.
+Diferencia 0 niveles: 1.5 pts | Diferencia ±1: 1.0 pt | Diferencia ±2: 0.5 pt | Diferencia ±3: 0.1 pt
 
-━━━━━━━━━━━━━━━━━━━━━━━
+CASO DURO: Gerente/Director (nivel 5-6) → Junior/SSR (nivel 1-2): máximo 0.2 pts en este componente.
 
-COMPONENTE 4 — INDUSTRIA Y CONTEXTO (peso 8%, máx 0.8 puntos)
+━━━━━━━
 
-Transferibilidad razonable entre industrias afines.
-HR en Fintech puede transferir a HR en SaaS o Ecommerce sin penalización.
-Finanzas en industria puede transferir a Finanzas en servicios con penalización mínima.
-Distancia muy grande (ej: Finanzas en sector público → startup tecnológica) penalizar 0.3-0.5.
+COMPONENTE 4 — INDUSTRIA (10%, máx 1.0 pt)
 
-━━━━━━━━━━━━━━━━━━━━━━━
+Misma industria o sectores muy afines: 1.0 | Industrias transferibles (Fintech↔SaaS, Retail↔Ecommerce): 0.7 | Alguna transferencia: 0.4 | Distancia muy alta: 0.1–0.2
 
-COMPONENTE 5 — CONDICIONES LABORALES Y GEO (peso 8%, máx 0.8 puntos, puede ser negativo)
+━━━━━━━
 
-Idioma:
-- Rol 100% remoto internacional que requiere inglés fluido y el candidato no lo menciona: -0.5
+COMPONENTE 5 — SKILLS TÉCNICAS ESPECÍFICAS (10%, máx 1.0 pt)
 
-Viabilidad geográfica (usar UBICACIÓN DETECTADA DEL CANDIDATO si está disponible):
-- Mismo lugar o remoto 100%: 0 (sin penalización)
-- Híbrido ciudad distinta mismo país: -0.3 a -0.5
-- Presencial ciudad distinta mismo país: -0.5 a -0.7
-- Presencial u híbrido otro país: -0.6 a -0.8 (salvo que el aviso indique relocalización provista)
-- Dirección Regional / Country Manager: reducir penalización geo a la mitad
+Solo skills ESPECÍFICAS del dominio. Skills genéricas (liderazgo, Excel, comunicación, analytics) NO suman.
+Específicas por familia:
+  HR: HRIS, SAP HCM, Workday, Successfactors, payroll system, nómina
+  Finanzas: IFRS, SAP FI, consolidación, cash flow modeling, closing
+  Tecnología: stacks específicos (React, Python, AWS, etc.), arquitectura, CI/CD
+  Marketing: Google Ads, Meta Ads, SEO técnico, CRM específico
+"Nice to have" ausente NO penaliza. Solo penalizar si requisito MANDATORIO clave falta.
+
+━━━━━━━
+
+COMPONENTE 6 — CONDICIONES Y GEO (5%, máx 0.5 pts, puede ser negativo)
+
+Idioma: rol internacional que requiere inglés fluido y candidato no lo menciona: -0.4
+Geo (usar UBICACIÓN DETECTADA si está disponible):
+  Mismo lugar / remoto 100%: 0 | Híbrido ciudad distinta: -0.2 | Presencial ciudad distinta: -0.3 | Otro país presencial: -0.4 a -0.5
 
 ━━━━━━━━━━━━━━━━━━━━━━━
-CAPS DUROS POR INCOMPATIBILIDAD DE FAMILIA
+CAPS DUROS — SE APLICAN AL SCORE FINAL (independiente de componentes)
 ━━━━━━━━━━━━━━━━━━━━━━━
 
-Estos caps se aplican INDEPENDIENTEMENTE de los puntajes de componentes individuales:
+Misma familia o adyacente directa: sin cap (libre hasta 10.0)
+Familia moderadamente diferente: MÁXIMO 5.5
+Familia muy diferente: MÁXIMO 4.5 → EXCLUIR del output
+Familia completamente incompatible: MÁXIMO 3.5 → EXCLUIR SIEMPRE
 
-Misma familia o adyacente directa con evidencia clara:
-→ Sin cap (score libre hasta 10.0)
+INCOMPATIBILIDADES ABSOLUTAS — nunca incluir en output:
+❌ HR/Personas → Product Manager / Product Owner
+❌ HR/Personas → Revenue Operations / Revenue Systems
+❌ HR/Personas → Backend / Frontend / Dev / Data Engineer
+❌ HR/Personas → Business Analyst / Data Analyst (salvo People Analytics explícito)
+❌ Finanzas → Tecnología pura (salvo FinTech con evidencia técnica real)
+❌ Marketing → Ingeniería de Software
+❌ Cualquier profesión no-técnica → rol de ingeniería/desarrollo
 
-Familia moderadamente diferente (ej: Marketing↔Operaciones, HR↔Finanzas sin evidencia de transferencia):
-→ Score MÁXIMO: 5.5
-
-Familia muy diferente (ej: HR→Marketing sin evidencia, Finanzas→Ventas, Operaciones→Marketing):
-→ Score MÁXIMO: 4.5 → EXCLUIR del output (está por debajo del umbral mínimo de 5.0)
-
-Familia completamente incompatible (ej: HR→Backend, Finanzas→Diseño, RRHH→Product Manager, no-tech→Tecnología sin evidencia, Tecnología→HR sin evidencia):
-→ Score MÁXIMO: 3.5 → EXCLUIR del output obligatoriamente
-
-Excepción: si el perfil muestra evidencia EXPLÍCITA de transición de carrera (bootcamp reciente, portfolio técnico demostrable, múltiples experiencias híbridas documentadas, objetivo profesional explícito de cambio de área), el cap puede subir hasta 1.5 puntos sobre lo indicado.
-
-━━━━━━━━━━━━━━━━━━━━━━━
-REGLAS CRÍTICAS
-━━━━━━━━━━━━━━━━━━━━━━━
-
-❌ NO hacer keyword matching superficial.
-❌ NO recomendar roles fuera de incumbencia principal solo por skills transferibles (liderazgo, Excel, analytics NO son suficientes para cruzar familias).
-❌ NO priorizar skills blandas sobre profesión real.
-❌ NO asumir que alguien quiere cambiar radicalmente de carrera si el perfil no lo indica.
-❌ NO asignar scores entre 6.0 y 8.5 a jobs claramente fuera de la familia — eso es matching no discriminativo.
+Excepción: perfil con evidencia EXPLÍCITA de transición (bootcamp reciente, portfolio técnico, objetivo explícito) → cap puede subir 1.5 pts.
 
 ━━━━━━━━━━━━━━━━━━━━━━━
-ESCALA DE SCORING Y DISTRIBUCIÓN ESPERADA
+PASO 3 — CLASIFICAR match_type
 ━━━━━━━━━━━━━━━━━━━━━━━
 
-9-10: Excelente fit funcional, seniority y condiciones. Candidato claramente apto. (Esperado: 1-2 jobs de 30)
-8-8.9: Muy buen fit con brechas menores tolerables. (Esperado: 2-4 jobs de 30)
-7-7.9: Buen fit razonable. Alguna brecha real pero lógica profesional sólida. (Esperado: 3-6 jobs de 30)
-6-6.9: Fit parcial. Familia correcta pero brecha notable de seniority o skills. (Esperado: 2-5 jobs de 30)
-5-5.9: Solo incluir si hay lógica profesional clara. Familia adyacente con transferencia documentada.
-<5: NO incluir. Familia diferente, seniority incompatible o ambos.
+"Directo" — misma familia + misma o muy similar sub-área funcional
+  Ejemplos: Gerente RRHH → HR Manager, Head of People, People Manager, Gerente de Personas
+  Score típico: 7.5 o más
+
+"Adyacente" — misma familia, sub-área diferente dentro de ella
+  Ejemplos: Gerente RRHH → Talent Manager, L&D Manager, HR Business Partner
+  Score típico: 6.0–7.4
+
+"Transferible" — familia adyacente con transferencia documentada y razonable
+  Ejemplos: Gerente RRHH → Gerente Administrativo (con historial Admin)
+  Score típico: 5.0–5.9
+
+"Exploratorio" — familia diferente con señales explícitas de transición en el perfil
+  Solo si score >= 5.0 Y hay evidencia real de transición
+  Score típico: 5.0–5.4
+
+━━━━━━━━━━━━━━━━━━━━━━━
+EJEMPLO COMPLETO
+━━━━━━━━━━━━━━━━━━━━━━━
+
+Candidato: Gerente de RRHH, 10 años, Fintech, CABA. Profesión: HR/Personas | Nivel 5
+
+✅ "HR Manager — empresa retail CABA" → Directo | score ~8.5
+✅ "Head of People — SaaS, remoto" → Directo | score ~8.8
+✅ "Talent Manager — startup, CABA" → Adyacente | score ~7.5
+⚠️ "Gerente Administrativo — con historial admin" → Transferible | score ~5.5
+❌ "Product Manager — fintech" → familia incompatible → score ≤ 3.5 → NO INCLUIR
+❌ "Revenue Operations Manager" → familia incompatible → score ≤ 3.5 → NO INCLUIR
+❌ "Director Revenue Systems" → familia incompatible → score ≤ 3.5 → NO INCLUIR
+
+━━━━━━━━━━━━━━━━━━━━━━━
+REGLAS ANTI-ATS
+━━━━━━━━━━━━━━━━━━━━━━━
+
+❌ NO recomendar por skills compartidas si la familia es incompatible. "Liderazgo, analytics, gestión de proyectos" son transversales y NO crean afinidad familiar.
+❌ NO asignar scores 6–8.5 a jobs claramente fuera de familia — eso es matching no discriminativo.
+❌ NO asumir cambio de carrera si el perfil no lo indica explícitamente.
+
+━━━━━━━━━━━━━━━━━━━━━━━
+ESCALA Y DISTRIBUCIÓN ESPERADA (de 50 avisos)
+━━━━━━━━━━━━━━━━━━━━━━━
+
+9–10: Excelente fit. Candidato claramente apto. (1-3 de 50)
+8–8.9: Muy buen fit, brechas menores tolerables. (2-5 de 50)
+7–7.9: Buen fit razonable, lógica profesional sólida. (3-7 de 50)
+6–6.9: Fit parcial. Familia correcta, brecha notable de sub-área o seniority. (2-5 de 50)
+5–5.9: Solo si hay lógica profesional clara. Familia adyacente con transferencia documentada.
+<5: NO incluir.
 
 ━━━━━━━━━━━━━━━━━━━━━━━
 OUTPUT
 ━━━━━━━━━━━━━━━━━━━━━━━
 
-- Solo incluir: match_score >= 5.0
-- Máximo: 12 resultados
-- Orden: score descendente
+Solo incluir: match_score >= 5.0
+Máximo: 15 resultados | Orden: score descendente
 
+match_type: "Directo" | "Adyacente" | "Transferible" | "Exploratorio"
 strengths: 2-3 fortalezas ESPECÍFICAS para ESE aviso. NO genéricas.
-
-gaps: 1-2 brechas reales y accionables. Framing positivo:
-✅ "Sumar experiencia en X fortalecería la candidatura."
-❌ "No tiene X."
-Si no hay gaps reales: array vacío.
-
-summary: 1 oración en español rioplatense, natural, profesional. Mencioná empresa o rol cuando sea posible.
+gaps: 1-2 brechas reales, framing positivo ("Sumar experiencia en X fortalecería..."). Array vacío si no hay.
+summary: 1 oración en español rioplatense, mencioná empresa o rol.
 
 ━━━━━━━━━━━━━━━━━━━━━━━
 ANTI-ALUCINACIÓN
 ━━━━━━━━━━━━━━━━━━━━━━━
 
-❌ Nunca inventes skills, experiencias, idiomas, seniority, objetivos ni certificaciones ausentes del perfil.
+❌ Nunca inventés skills, experiencias, idiomas, seniority ni certificaciones ausentes del perfil.
 
 ━━━━━━━━━━━━━━━━━━━━━━━
 RESPUESTA
@@ -4100,17 +4276,17 @@ Respondé SOLO JSON válido. Sin markdown. Sin explicación. Sin texto adicional
 
 Formato exacto:
 
-{"matches":[{"job_index":0,"match_score":7.5,"strengths":["str","str"],"gaps":["str"],"summary":"str"}]}
+{"matches":[{"job_index":0,"match_score":7.5,"match_type":"Directo","strengths":["str","str"],"gaps":["str"],"summary":"str"}]}
 `
 
 /**
  * Build the Gemini contents array for job matching.
  * Uses extractRelevantSection() to get the requirements section (not just first 400 chars).
  */
-function buildMatchingContents(profileText, jobs, candidateLocation = null) {
-  const jobList = jobs.slice(0, MAX_JOBS_FOR_AI_MATCHING).map((j, i) => {
+function buildMatchingContents(profileText, jobs, candidateLocation = null, professionMeta = null, maxJobs = MAX_JOBS_FREE) {
+  const jobList = jobs.slice(0, maxJobs).map((j, i) => {
     const desc = j.description
-      ? extractRelevantSection(j.description, 350)
+      ? extractRelevantSection(j.description, 400)
       : '(sin descripción)'
     const isAts = ['greenhouse','lever','smartrecruiters','ashby'].includes(j.source)
     return `[${i}] ${j.title} | ${j.company}${isAts ? ' ✓' : ''} | ${j.location || 'No especificado'} | ${j.remote ? 'Remoto 100%' : 'Presencial/Híbrido'}
@@ -4119,13 +4295,14 @@ Seniority: ${j.seniority}
 Descripción: ${desc}`
   }).join('\n\n')
 
-  const geoCtx = candidateLocation
-    ? `\nUBICACIÓN DETECTADA DEL CANDIDATO: ${candidateLocation}`
+  const geoCtx  = candidateLocation ? `\nUBICACIÓN DETECTADA DEL CANDIDATO: ${candidateLocation}` : ''
+  const profCtx = professionMeta?.family
+    ? `\nPROFESIÓN DOMINANTE DETECTADA: ${professionMeta.profession || professionMeta.family} | FAMILIA: ${professionMeta.family} | SENIORITY: nivel ${professionMeta.seniority_level} (${professionMeta.seniority_label || ''}) | SUB-ÁREAS: ${(professionMeta.subfamilies || []).join(', ') || 'N/A'} | INDUSTRIAS: ${(professionMeta.industries || []).join(', ') || 'N/A'}`
     : ''
 
   return [{
     role: 'user',
-    parts: [{ text: `PERFIL DEL CANDIDATO:\n${profileText}${geoCtx}\n\nAVISOS LABORALES:\n${jobList}` }],
+    parts: [{ text: `PERFIL DEL CANDIDATO:\n${profileText}${geoCtx}${profCtx}\n\nAVISOS LABORALES:\n${jobList}` }],
   }]
 }
 
@@ -4357,6 +4534,9 @@ async function handleAiJobRecommendations(body, request, env, ctx, corsHeaders, 
   const ip               = request.headers.get('CF-Connecting-IP') || 'unknown'
   const requestedN       = Math.min(Math.max(parseInt(count, 10) || 10, 1), 20)
   const candidateLocation = extractCandidateLocation(String(profile_text))
+  // Synchronous profession detection — instant, no Gemini needed for query building
+  const professionInfoSync = detectProfessionFamilySync(String(profile_text))
+  if (professionInfoSync) console.log(`[RADAR] professionSync: family=${professionInfoSync.family} seniority=${professionInfoSync.seniority_level} isSenior=${professionInfoSync.is_senior}`)
 
   // ── Premium check ──────────────────────────────────────────────────────────
   let isPremium = false
@@ -4372,13 +4552,17 @@ async function handleAiJobRecommendations(body, request, env, ctx, corsHeaders, 
     } catch (e) { console.warn(`[RADAR] premium check failed for user ${user_id}: ${e?.message} — defaulting to free`) }
   }
 
-  console.log(`[RADAR] START user=${user_id||'anon'} premium=${isPremium} remoteOk=${!!remote_ok} queries=${JSON.stringify(queries.slice(0,3))} location=${location||'—'}`)
+  // ── Build queries — headhunter mode for premium (built here so all hashes use same queries) ──
+  const baseQueriesRaw = queries.map(q => String(q).trim().slice(0, 100)).filter(Boolean).slice(0, 3)
+  const headhunterActive = isPremium && !!professionInfoSync
+  // Note: cleanQueries is declared here (before caches) so queryHashEarly uses same queries as queryHash
+  // This ensures radarCache, jrecCache, and KV job cache all share the same hash key.
+
+  console.log(`[RADAR] START user=${user_id||'anon'} premium=${isPremium} remoteOk=${!!remote_ok} queries=${JSON.stringify(baseQueriesRaw)} location=${location||'—'}`)
 
   // ── radar_search_history: daily persistence check ────────────────────────
-  // If the user already ran a fresh search today (premium) or this month (free),
-  // serve the stored results immediately — no Gemini call, no rate limit decrement.
   const profileHash = user_id ? await computeProfileHash(String(profile_text)) : null
-  const cleanQueriesForHash = queries.map(q => String(q).trim().slice(0, 100)).filter(Boolean).slice(0, 3)
+  const cleanQueriesForHash = baseQueriesRaw
   const queryHashEarly = user_id ? await hashQueryParams(cleanQueriesForHash, location, remote_ok) : null
 
   if (user_id && profileHash && queryHashEarly) {
@@ -4461,8 +4645,16 @@ async function handleAiJobRecommendations(body, request, env, ctx, corsHeaders, 
     )
   }
 
+  // ── Build final queries — headhunter mode expands base with profession-targeted titles ──
+  const cleanQueries = headhunterActive
+    ? buildHeadhunterQueries(professionInfoSync, baseQueriesRaw, true)
+    : baseQueriesRaw
+  if (headhunterActive) console.log(`[RADAR] headhunterQueries: ${JSON.stringify(cleanQueries)}`)
+
+  // Kick off deep profession extraction async — runs in parallel with job fetch (~2-4s each)
+  const professionMetaPromise = extractDominantProfession(env, String(profile_text).slice(0, 1500))
+
   // ── Fetch jobs (hits cache layers before live APIs) ────────────────────────
-  const cleanQueries = queries.map(q => String(q).trim().slice(0, 100)).filter(Boolean).slice(0, 3)
   const queryHash    = await hashQueryParams(cleanQueries, location, remote_ok)
   let   jobs         = []
   let   fromCache    = false
@@ -4517,10 +4709,11 @@ async function handleAiJobRecommendations(body, request, env, ctx, corsHeaders, 
     )
   }
 
-  // ── Pre-filter: rule-based (zero tokens) → top 25 candidates ─────────────
-  const preFiltered = applyPreFilter(jobs, String(profile_text), MAX_JOBS_FOR_AI_MATCHING)
-  const jobPool     = preFiltered.length > 0 ? preFiltered : jobs.slice(0, MAX_JOBS_FOR_AI_MATCHING)
-  console.log(`[RADAR] preFilter ${jobs.length} → ${jobPool.length} jobs to Gemini`)
+  // ── Pre-filter: family-aware (zero tokens) → top N candidates ──────────────
+  const maxJobsForGemini = isPremium ? MAX_JOBS_PREMIUM : MAX_JOBS_FREE
+  const preFiltered = applyPreFilter(jobs, String(profile_text), maxJobsForGemini, professionInfoSync)
+  const jobPool     = preFiltered.length > 0 ? preFiltered : jobs.slice(0, maxJobsForGemini)
+  console.log(`[RADAR] preFilter ${jobs.length} → ${jobPool.length} jobs to Gemini (maxJobs=${maxJobsForGemini} premium=${isPremium})`)
 
   // ── jrec: per-user AI score cache (skip Gemini on re-run within 2 h) ──────
   if (user_id) {
@@ -4554,13 +4747,18 @@ async function handleAiJobRecommendations(body, request, env, ctx, corsHeaders, 
   }
 
   // ── AI Matching via Gemini ─────────────────────────────────────────────────
-  const startMs    = Date.now()
-  const contents   = buildMatchingContents(String(profile_text).slice(0, 3000), jobPool, candidateLocation)
+  const startMs      = Date.now()
+  // Await async profession metadata — should be done by now (ran in parallel with job fetch)
+  const professionMeta = await professionMetaPromise.catch(() => null)
+  const profInfo     = professionMeta || professionInfoSync  // prefer richer Gemini metadata
+  if (professionMeta) console.log(`[RADAR] professionMeta resolved: ${professionMeta.profession} | ${professionMeta.family} | lvl=${professionMeta.seniority_level}`)
+
+  const contents   = buildMatchingContents(String(profile_text).slice(0, 3000), jobPool, candidateLocation, profInfo, maxJobsForGemini)
+  // Premium: 8192 tokens (50 jobs × ~150 chars output + headroom); free: 4096
   const geminiBody = {
     system_instruction: { parts: [{ text: JOB_MATCHING_SYSTEM_PROMPT }] },
     contents,
-    // 4096 tokens: 25 jobs × ~150 chars/match output = ~6KB, leaves headroom for variance
-    generationConfig:   { temperature: 0.2, maxOutputTokens: 4096 },
+    generationConfig:   { temperature: 0.2, maxOutputTokens: isPremium ? 8192 : 4096 },
   }
 
   let aiResult = null
@@ -4712,10 +4910,11 @@ async function handleAiJobRecommendations(body, request, env, ctx, corsHeaders, 
     return {
       job,
       match_score: Number((m.match_score || 0).toFixed(2)),
+      match_type:  m.match_type || null,
       strengths:   Array.isArray(m.strengths) ? m.strengths.slice(0, 3) : [],
       gaps:        Array.isArray(m.gaps)       ? m.gaps.slice(0, 2)     : [],
       summary:     String(m.summary || ''),
-      rec_id:      null,  // populated after Supabase insert below
+      rec_id:      null,
       geo_score:   m._geo_score,
     }
   }).filter(Boolean)
@@ -4774,7 +4973,7 @@ async function handleAiJobRecommendations(body, request, env, ctx, corsHeaders, 
         console.log(`[RADAR] expansion START — generating alternative terms... serperConfigured=${!!env.SERPER_API_KEY}`)
         const existingHashes = new Set(jobPool.map(j => canonicalJobHash(j)))
         const expandResult   = await Promise.race([
-          expandWithSearch(env, ctx, cleanQueries, location, remote_ok, String(profile_text), existingHashes, requestedN, candidateLocation),
+          expandWithSearch(env, ctx, cleanQueries, location, remote_ok, String(profile_text), existingHashes, requestedN, candidateLocation, profInfo),
           new Promise(r => setTimeout(() => r(_expTimedOut), EXPANSION_TIMEOUT_MS)),
         ])
         const expMs = Date.now() - expStartMs
@@ -4900,8 +5099,9 @@ async function handleAiJobRecommendations(body, request, env, ctx, corsHeaders, 
       expansion_available: expansionAvailable,
       expansion_used:      expansionUsed,
       expansion_count:     expansionCount,
-      expansion_searched:  needsExpansion && isPremium,  // true = deep search ran for this user
+      expansion_searched:  needsExpansion && isPremium,
       candidate_location:  candidateLocation || null,
+      profession_context:  profInfo ? { family: profInfo.family, seniority_level: profInfo.seniority_level, profession: profInfo.profession || profInfo.family } : null,
       pipeline_stats: {
         premium_mode:        isPremium,
         sources_used:        sourcesUsed,
