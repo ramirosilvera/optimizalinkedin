@@ -2095,6 +2095,9 @@ export default {
 // ── Constants ─────────────────────────────────────────────────────────────────
 
 const JOB_KV_TTL_SECS     = 7_200   // 2-hour KV cache for raw query results
+// NOTE: reducing this increases Serper call frequency — on free plan (2,500/mo ≈ 80/day)
+// each extra cache-miss costs 3 Serper calls (one per query). At 2h TTL the budget is safe.
+// To call Serper more → upgrade Serper plan first, then reduce JOB_KV_TTL_SECS here.
 const JOB_DB_TTL_HOURS    = 24      // job_cache table TTL (aggregators)
 const JOB_SEARCH_TTL_SECS = 7_200  // job_searches row TTL (mirrors KV)
 const ATS_KV_TTL_SECS     = 79_200  // 22-hour KV cache for ATS company boards (date-keyed)
@@ -3110,7 +3113,7 @@ function deduplicateJobs(allJobs) {
  * Fetch from a single aggregator source with a 10 s timeout.
  * Returns { source, jobs: NormalizedJob[] } or { source, jobs: [], error }.
  */
-async function fetchJobSource(source, query, location, remoteOk, env) {
+async function fetchJobSource(source, query, location, remoteOk, env, candidateLocation = null) {
   const ctrl = new AbortController()
   const tid  = setTimeout(() => ctrl.abort(), 10_000)
   const q    = encodeURIComponent(query)
@@ -3190,12 +3193,13 @@ async function fetchJobSource(source, query, location, remoteOk, env) {
         console.log('[SERPER] skipped — SERPER_API_KEY not configured in this environment')
         return { source, jobs: [], error: 'serper_not_configured' }
       }
+      const geoParams = serperGeoConfig(candidateLocation)
       const serperT0 = Date.now()
-      console.log(`[SERPER] START query="${query}" gl=ar`)
+      console.log(`[SERPER] START query="${query}" geo=${geoParams.gl}/${geoParams.location}`)
       const r = await fetch('https://google.serper.dev/jobs', {
         method:  'POST',
         headers: { 'X-API-KEY': env.SERPER_API_KEY, 'Content-Type': 'application/json', 'User-Agent': UA },
-        body:    JSON.stringify({ q: query, gl: 'ar', hl: 'es', location: 'Argentina', num: 20 }),
+        body:    JSON.stringify({ q: query, ...geoParams, num: 20 }),
         signal:  ctrl.signal,
       })
       raw = await r.json()
@@ -3214,11 +3218,36 @@ async function fetchJobSource(source, query, location, remoteOk, env) {
 }
 
 /**
+ * Map the auto-detected candidateLocation string to Serper geo params.
+ * Keeps Serper relevance high without increasing call frequency.
+ * Falls back to Argentina (primary market) when location is unknown.
+ */
+function serperGeoConfig(candidateLocation) {
+  if (!candidateLocation) return { gl: 'ar', location: 'Argentina', hl: 'es' }
+  const loc = candidateLocation.toLowerCase()
+  if (/argentina|caba|buenos aires|córdoba|cordoba|rosario|mendoza|tucumán|tucuman|santa fe|mar del plata/.test(loc)) {
+    return { gl: 'ar', location: 'Argentina', hl: 'es' }
+  }
+  if (/colombia/.test(loc))           return { gl: 'co', location: 'Colombia', hl: 'es' }
+  if (/chile/.test(loc))              return { gl: 'cl', location: 'Chile', hl: 'es' }
+  if (/m[eé]xico|mexico/.test(loc))  return { gl: 'mx', location: 'México', hl: 'es' }
+  if (/per[uú]/.test(loc))           return { gl: 'pe', location: 'Perú', hl: 'es' }
+  if (/uruguay/.test(loc))           return { gl: 'uy', location: 'Uruguay', hl: 'es' }
+  if (/venezuela/.test(loc))         return { gl: 've', location: 'Venezuela', hl: 'es' }
+  if (/ecuador/.test(loc))           return { gl: 'ec', location: 'Ecuador', hl: 'es' }
+  if (/bolivia/.test(loc))           return { gl: 'bo', location: 'Bolivia', hl: 'es' }
+  if (/paraguay/.test(loc))          return { gl: 'py', location: 'Paraguay', hl: 'es' }
+  if (/brasil|brazil/.test(loc))     return { gl: 'br', location: 'Brasil', hl: 'pt' }
+  return { gl: 'ar', location: 'Argentina', hl: 'es' }  // default
+}
+
+/**
  * Fetch from all aggregators + ATS company boards in parallel.
  * Deduplicates with 3-level strategy; ATS version wins over aggregator on URL match.
  * @param {string} userProfile - Used to select relevant ATS companies (no AI cost)
+ * @param {string|null} candidateLocation - Auto-detected from profile text; drives Serper geo
  */
-async function fetchAllSources(queries, location, remoteOk, env, userProfile = '') {
+async function fetchAllSources(queries, location, remoteOk, env, userProfile = '', candidateLocation = null) {
   const remoteSources = ['remoteok', 'remotive', 'jobicy', 'adzuna', 'getonboard', 'himalayas']
   const localSources  = ['adzuna', 'jobicy', 'getonboard', 'himalayas']
   if (env.JOOBLE_KEY)     { remoteSources.push('jooble');  localSources.push('jooble')  }
@@ -3229,7 +3258,7 @@ async function fetchAllSources(queries, location, remoteOk, env, userProfile = '
 
   // Run aggregators + ATS boards in parallel
   const [aggregatorResults, atsJobs] = await Promise.all([
-    Promise.all(sources.flatMap(source => queries.map(q => fetchJobSource(source, q, location, remoteOk, env)))),
+    Promise.all(sources.flatMap(source => queries.map(q => fetchJobSource(source, q, location, remoteOk, env, candidateLocation)))),
     fetchAtsCompanies(queries, userProfile, env),
   ])
 
@@ -3484,7 +3513,7 @@ async function expandWithSearch(env, ctx, cleanQueries, location, remoteOk, prof
   if (!newTerms.length) return null
 
   const { jobs: rawExpanded } = await fetchAllSources(
-    newTerms.slice(0, 2), location, remoteOk, env, String(profileText)
+    newTerms.slice(0, 2), location, remoteOk, env, String(profileText), candidateLocation
   )
   const newJobs = rawExpanded
     .filter(j => !existingHashes.has(canonicalJobHash(j)))
@@ -4459,7 +4488,7 @@ async function handleAiJobRecommendations(body, request, env, ctx, corsHeaders, 
     console.log(`[RADAR] jobsCache HIT — ${jobs.length} jobs from KV, sources=[${sourcesUsed.join(',')}] (Serper NOT called — served from cache)`)
   } else {
     // Live fetch — pass profile_text so ATS companies are selected by relevance
-    const fetchResult = await fetchAllSources(cleanQueries, location, remote_ok, env, String(profile_text))
+    const fetchResult = await fetchAllSources(cleanQueries, location, remote_ok, env, String(profile_text), candidateLocation)
     sourcesUsed  = fetchResult.sourcesUsed || []
     sourceCounts = fetchResult.sourceCounts || {}
     if (fetchResult.jobs.length) {
