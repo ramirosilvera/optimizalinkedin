@@ -2094,15 +2094,12 @@ export default {
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
-const JOB_KV_TTL_SECS     = 7_200   // 2-hour KV cache for raw query results
-// NOTE: reducing this increases Serper call frequency — on free plan (2,500/mo ≈ 80/day)
-// each extra cache-miss costs 3 Serper calls (one per query). At 2h TTL the budget is safe.
-// To call Serper more → upgrade Serper plan first, then reduce JOB_KV_TTL_SECS here.
-const JOB_DB_TTL_HOURS    = 24      // job_cache table TTL (aggregators)
-const JOB_SEARCH_TTL_SECS = 7_200  // job_searches row TTL (mirrors KV)
+const JOB_KV_TTL_SECS     = 1_800   // 30-min KV cache for raw query results (testing phase — few users)
+const JOB_DB_TTL_HOURS    = 2       // job_cache table TTL
+const JOB_SEARCH_TTL_SECS = 1_800  // job_searches row TTL (mirrors KV)
 const ATS_KV_TTL_SECS     = 79_200  // 22-hour KV cache for ATS company boards (date-keyed)
 const ATS_DB_TTL_HOURS    = 40      // ATS boards update slowly — longer DB TTL
-const JREC_KV_TTL_SECS    = 86_400  // 24-hour per-user AI score cache — skips Gemini on re-runs
+const JREC_KV_TTL_SECS    = 3_600   // 1-hour per-user AI score cache (testing phase)
 const JREC_PROMPT_VERSION = 'v8'    // bump when JOB_MATCHING_SYSTEM_PROMPT changes to bust stale KV
 
 // Rate limits for *new* (fresh) searches — cached re-visits bypass these entirely.
@@ -3397,7 +3394,7 @@ async function getRadarCache(env, userId, profileHash, queryHash) {
 
 async function putRadarCache(env, ctx, userId, profileHash, queryHash, recommendations, isPremium) {
   if (!userId || !recommendations.length || !env.SUPABASE_SERVICE_ROLE_KEY) return
-  const ttlMs   = isPremium ? 86_400_000 : 30 * 86_400_000
+  const ttlMs   = isPremium ? 3_600_000 : 7 * 86_400_000  // testing phase: 1h premium / 7d free
   const expires = new Date(Date.now() + ttlMs).toISOString()
   const row = {
     user_id:      userId,
