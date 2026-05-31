@@ -1596,6 +1596,46 @@ export default {
         }
       }
 
+      // ── Flush radar cache for a user (testing / support) ─────────────────────
+      if (body.action === 'admin_flush_radar_cache') {
+        if (!canWrite) return new Response(JSON.stringify({ error: 'Sin permisos de escritura' }), { status: 403, headers: corsHeaders })
+        const { user_id, flush_all_users = false } = body
+        if (!flush_all_users && !user_id) return new Response(JSON.stringify({ error: 'Falta user_id o flush_all_users=true' }), { status: 400, headers: corsHeaders })
+        if (user_id && !isValidUuid(user_id)) return new Response(JSON.stringify({ error: 'user_id inválido' }), { status: 400, headers: corsHeaders })
+
+        const targetIds = user_id ? [user_id] : null
+        const deleted = { kv_keys: [], supabase_radar: 0, supabase_recs: 0 }
+
+        // 1. Supabase: radar_search_history + job_recommendations
+        const supaFilter = targetIds ? `?user_id=eq.${targetIds[0]}` : ''
+        try {
+          await Promise.all([
+            supabaseServiceFetch(env, `radar_search_history${supaFilter}`, { method: 'DELETE', headers: { Prefer: 'return=minimal' } }),
+            supabaseServiceFetch(env, `job_recommendations${supaFilter}`, { method: 'DELETE', headers: { Prefer: 'return=minimal' } }),
+          ])
+          deleted.supabase_radar = 1
+          deleted.supabase_recs  = 1
+        } catch (e) { console.warn('[FLUSH] supabase delete failed:', e?.message) }
+
+        // 2. KV: live_fetch + jrec + rate-limit counters for the user
+        if (env.RATE_LIMIT_KV && targetIds) {
+          const uid      = targetIds[0]
+          const today    = new Date().toISOString().slice(0, 10)
+          const month    = new Date().toISOString().slice(0, 7)
+          const kvKeys   = [
+            `live_fetch:${uid}:${today}`,   // premium daily
+            `live_fetch:${uid}:${month}`,   // free monthly
+            `jobsearch:day:${uid}`,
+            `jobsearch:hour:${uid}:${new Date().toISOString().slice(0, 13)}`,
+          ]
+          await Promise.all(kvKeys.map(k => env.RATE_LIMIT_KV.delete(k).catch(() => {})))
+          deleted.kv_keys = kvKeys
+        }
+
+        await logAdminAction(env, admin.userId, 'flush_radar_cache', 'user', user_id || 'all', { flush_all_users })
+        return new Response(JSON.stringify({ ok: true, deleted }), { status: 200, headers: corsHeaders })
+      }
+
       // ── Revenue stats ─────────────────────────────────────────────────────────
       if (body.action === 'admin_revenue_stats') {
         try {
