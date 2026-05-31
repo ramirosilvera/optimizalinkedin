@@ -793,7 +793,7 @@ function JobCard({
                   <span className="px-1.5 py-0.5 rounded text-[10px] font-medium"
                     style={{ background: 'rgba(148,163,184,0.10)', color: '#64748b', border: '1px solid rgba(148,163,184,0.20)' }}
                     aria-label="Análisis preliminar basado en palabras clave — el análisis IA profundo estará disponible en la próxima búsqueda">
-                    🔍 Análisis preliminar
+                    🔍 Matcheo inicial · actualizá para análisis IA
                   </span>
                 )}
                 {/* ATS Verificado — sourced directly from an ATS (greenhouse/lever/ashby/workable) */}
@@ -863,7 +863,7 @@ function JobCard({
         )}
         {ai_fallback && (
           <p className="text-xs italic" style={{ color: '#94a3b8' }}>
-            Análisis detallado disponible al reiniciar el radar.
+            Puntuación estimada · El análisis con IA estará disponible al actualizar.
           </p>
         )}
 
@@ -1142,14 +1142,20 @@ export default function JobRecommendationsScreen({
   // ── Build search queries from profile ─────────────────────────────────────
   const buildQueries = useCallback(() => {
     if (!profileText) return []
-    const match = profileText.match(/TITULAR PROFESIONAL:\s*([^\n]+)/i)
+    const SENIORITY_WORDS = new Set(['senior','junior','semi','ssr','lead','staff','head','principal','intern','trainee','sr','jr'])
+    const titleMatch = profileText.match(/TITULAR PROFESIONAL:\s*([^\n]+)/i)
       || profileText.match(/^([^\n]{10,80})/m)
-    const headline = match?.[1]?.trim() || ''
-    if (!headline) return refineQuery ? [refineQuery] : ['profesional']
-    const words = headline.split(/\s+/).filter(w => w.length > 3)
-    const base  = [headline.slice(0, 60), words.slice(0, 2).join(' ')].filter(Boolean).slice(0, 2)
-    // Prepend user refinement term so it drives the ATS company selection
-    return refineQuery ? [refineQuery, ...base].slice(0, 3) : base
+    // Strip LinkedIn formatting characters (pipes, brackets, etc.)
+    const raw = (titleMatch?.[1]?.trim() || '').replace(/[|;()\[\]]/g, ' ').replace(/\s+/g, ' ').trim()
+    if (!raw) return refineQuery ? [refineQuery] : ['profesional']
+    const words = raw.split(/\s+/).filter(w => w.length > 2)
+    const coreWords = words.filter(w => !SENIORITY_WORDS.has(w.toLowerCase()))
+    const queries = [
+      raw.slice(0, 60),                          // full cleaned headline
+      coreWords.slice(0, 3).join(' '),            // core role without seniority
+      coreWords.slice(0, 2).join(' '),            // shorter core variant
+    ].map(q => q.trim()).filter((q, i, arr) => q.length > 2 && arr.indexOf(q) === i)
+    return refineQuery ? [refineQuery, ...queries].slice(0, 5) : queries.slice(0, 3)
   }, [profileText, refineQuery])
 
   // ── Fetch recommendations ──────────────────────────────────────────────────
@@ -1203,7 +1209,7 @@ export default function JobRecommendationsScreen({
             queries,
             location:     activeFilters.location || undefined,
             remote_ok:    activeFilters.remoteOnly ? true : undefined,
-            count:        isPremium ? 15 : 8,
+            count:        isPremium ? 15 : 10,
             user_id:      user?.id || undefined,
           }),
         }),
