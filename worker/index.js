@@ -3380,7 +3380,11 @@ async function handleAiJobRecommendations(body, request, env, ctx, corsHeaders, 
       if (aiRes.status === 200) {
         const aiData = await aiRes.clone().json()
         const raw    = aiData?.candidates?.[0]?.content?.parts?.[0]?.text || ''
-        const clean  = raw.replace(/^```json\n?|\n?```$/g, '').trim()
+        // Robust extraction: find the JSON object even when Gemini adds text before/after
+        const jsonIdx = raw.indexOf('{"matches"')
+        const clean   = jsonIdx >= 0
+          ? raw.slice(jsonIdx)
+          : raw.replace(/^```json\n?|\n?```$/g, '').trim()
         try {
           aiResult = JSON.parse(clean)
           aiError  = null
@@ -3400,7 +3404,7 @@ async function handleAiJobRecommendations(body, request, env, ctx, corsHeaders, 
             } catch { /* ignore */ }
           }
           aiError = 'ai_parse_error'
-          console.warn(`[RADAR] Gemini attempt ${attempt+1}/${GEMINI_ATTEMPTS.length} — latency=${Date.now()-t0}ms result=parse_error preview="${raw.slice(0, 200)}"`)
+          console.warn(`[RADAR] Gemini attempt ${attempt+1}/${GEMINI_ATTEMPTS.length} — latency=${Date.now()-t0}ms result=parse_error raw="${raw.slice(0, 300)}"`)
         }
       } else {
         aiError = `ai_http_${aiRes.status}`
