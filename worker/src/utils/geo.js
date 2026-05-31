@@ -26,7 +26,7 @@ export function geoCompatibilityScore(jobLocation, jobRemote, candidateLocation)
   const jl = (jobLocation || '').toLowerCase()
   const cl = candidateLocation.toLowerCase()
 
-  if (jl.includes(cl) || cl.includes(jl.split(',')[0].trim())) return 1.0
+  if (jl && (jl.includes(cl) || cl.includes(jl.split(',')[0].trim()))) return 1.0
 
   const BSAS = ['caba','capital federal','buenos aires','gran buenos aires','palermo','belgrano','quilmes','morón','tigre']
   const jlBA = BSAS.some(c => jl.includes(c))

@@ -34,6 +34,7 @@ export function extractCandidateLocation(profileText) {
     [/\b(bah[ií]a blanca)\b/, 'Bahía Blanca'],
     [/\b(neuqu[eé]n)\b/, 'Neuquén'],
     [/\b(argentina)\b/, 'Argentina'],
+    [/\b(venezuela|caracas|maracaibo|valencia|barquisimeto)\b/, 'Venezuela'],
     [/\b(colombia)\b/, 'Colombia'],
     [/\b(chile)\b/, 'Chile'],
     [/\b(m[eé]xico)\b/, 'México'],
@@ -56,7 +57,7 @@ export function detectProfessionFamilySync(profileText) {
   const t = (profileText || '').slice(0, 2000).toLowerCase()
 
   let seniority_level = 3
-  if (/\b(ceo|cto|coo|cfo|chief\s|c-level|vice\s*president|vp\s+de|vp\s+of)\b/.test(t)) seniority_level = 6
+  if (/\b(ceo|cto|coo|cfo|chief\s|c-level|vice\s*president|vp\s+de|vp\s+of|\bvp\b)\b/.test(t)) seniority_level = 6
   else if (/\b(director\s+general|director general|country\s*manager|head\s+of\s+\w+|director\s+de\s+\w+)\b/.test(t)) seniority_level = 5
   else if (/\bgerente\b|\bmanager\b|\bjefe\s+de\s+\w+\b/.test(t)) seniority_level = 5
   else if (/\b(team\s*lead|tech\s*lead|jefe\s+de|coordinador|líder\s+de|supervisor)\b/.test(t)) seniority_level = 4

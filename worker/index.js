@@ -804,15 +804,28 @@ export default {
         if (promo.expires_at && new Date(promo.expires_at) < new Date()) return new Response(JSON.stringify({ error: 'Código expirado' }), { status: 400, headers: corsHeaders })
         if (promo.max_uses && promo.uses_count >= promo.max_uses) return new Response(JSON.stringify({ error: 'Código agotado' }), { status: 400, headers: corsHeaders })
         const premiumHasta = new Date(Date.now() + promo.duration_days * 24 * 60 * 60 * 1000).toISOString()
+        // Atomic optimistic-lock PATCH: only updates if uses_count hasn't changed since we read it
+        const patchResp = await fetch(
+          `${env.SUPABASE_URL}/rest/v1/promo_codes?id=eq.${promo.id}&uses_count=eq.${promo.uses_count}`,
+          {
+            method: 'PATCH',
+            headers: {
+              'Content-Type': 'application/json',
+              'apikey': env.SUPABASE_SERVICE_ROLE_KEY,
+              'Authorization': `Bearer ${env.SUPABASE_SERVICE_ROLE_KEY}`,
+              'Prefer': 'return=representation',
+            },
+            body: JSON.stringify({ uses_count: promo.uses_count + 1 }),
+          }
+        )
+        const updated = await patchResp.json()
+        if (!updated || updated.length === 0) {
+          return new Response(JSON.stringify({ ok: false, error: 'Código ya fue utilizado' }), { status: 409, headers: corsHeaders })
+        }
         await supabaseServiceFetch(env, 'perfiles', {
           method: 'POST',
           body: JSON.stringify({ id: userId, es_premium: true, premium_hasta: premiumHasta, premium_source: 'promo_code', updated_at: new Date().toISOString() }),
           headers: { Prefer: 'resolution=merge-duplicates' },
-        })
-        await supabaseServiceFetch(env, `promo_codes?id=eq.${promo.id}`, {
-          method: 'PATCH',
-          body: JSON.stringify({ uses_count: promo.uses_count + 1 }),
-          headers: { Prefer: 'return=minimal' },
         })
         // Log subscription event for promo code
         supabaseServiceFetch(env, 'subscription_events', {
@@ -1456,6 +1469,10 @@ export default {
 
     // ── Check MP plan (debug) ─────────────────────────────────────────────────
     if (body.action === 'check_mp_plan') {
+      const isAdmin = await verifyAdmin(env, request)
+      if (!isAdmin) {
+        return new Response(JSON.stringify({ error: 'Forbidden' }), { status: 403, headers: corsHeaders })
+      }
       const planData = await mpFetch(env, `/preapproval_plan/${env.MP_PLAN_ID || 'NOT_SET'}`)
       return new Response(JSON.stringify({
         plan_id_in_env: env.MP_PLAN_ID || 'NOT SET',
@@ -1580,6 +1597,10 @@ export default {
       if (!user_id || !user_email) {
         return new Response(JSON.stringify({ error: 'Faltan user_id y user_email' }), { status: 400, headers: corsHeaders })
       }
+      const callerUser = await verifyUserJwt(env, request)
+      if (!callerUser || callerUser.id !== user_id) {
+        return new Response(JSON.stringify({ error: 'Unauthorized' }), { status: 401, headers: corsHeaders })
+      }
       if (!env.MP_PLAN_ID) {
         return new Response(JSON.stringify({ error: 'MP_PLAN_ID no está configurado' }), { status: 500, headers: corsHeaders })
       }
@@ -1617,6 +1638,10 @@ export default {
       const { user_id } = body
       if (!user_id) {
         return new Response(JSON.stringify({ error: 'Falta user_id' }), { status: 400, headers: corsHeaders })
+      }
+      const callerUser = await verifyUserJwt(env, request)
+      if (!callerUser || callerUser.id !== user_id) {
+        return new Response(JSON.stringify({ error: 'Unauthorized' }), { status: 401, headers: corsHeaders })
       }
       try {
         const perfilRes = await supabaseServiceFetch(env, `perfiles?id=eq.${user_id}&select=mp_subscription_id,premium_hasta`)
@@ -1974,21 +1999,19 @@ async function getAtsSlugOverride(atsType, slug, env) {
   } catch { return null }
 }
 
-// Date-keyed ATS board KV cache (one board = one entry per calendar day)
+// ATS board KV cache — single stable key per board, refreshed daily via 24h TTL
 async function getAtsBoardFromKV(env, atsType, slug) {
   if (!env.RATE_LIMIT_KV) return null
-  const date = new Date().toISOString().slice(0, 10)
   try {
-    const raw = await env.RATE_LIMIT_KV.get(`ats:${atsType}:${slug}:${date}`)
+    const raw = await env.RATE_LIMIT_KV.get(`ats:${atsType}:${slug}`)
     return raw ? JSON.parse(raw) : null
   } catch { return null }
 }
 
 async function putAtsBoardToKV(env, atsType, slug, jobs) {
   if (!env.RATE_LIMIT_KV || !jobs.length) return
-  const date = new Date().toISOString().slice(0, 10)
   try {
-    await env.RATE_LIMIT_KV.put(`ats:${atsType}:${slug}:${date}`, JSON.stringify(jobs), { expirationTtl: ATS_KV_TTL_SECS })
+    await env.RATE_LIMIT_KV.put(`ats:${atsType}:${slug}`, JSON.stringify(jobs), { expirationTtl: 86_400 })
   } catch (e) { console.warn(`[KV] putAtsBoardToKV failed for ${atsType}:${slug}: ${e?.message}`) }
 }
 
@@ -2395,7 +2418,10 @@ async function getRadarCache(env, userId, profileHash, queryHash) {
     const res = await fetch(
       `${env.SUPABASE_URL}/rest/v1/radar_search_history`
       + `?user_id=eq.${userId}&profile_hash=eq.${profileHash}&query_hash=eq.${queryHash}`
-      + `&expires_at=gte.${new Date().toISOString()}&select=results,top_score,match_count,created_at&limit=1`,
+      + `&expires_at=gte.${new Date().toISOString()}`
+      // TODO: add prompt_version column to radar_search_history and uncomment:
+      + `&prompt_version=eq.${JREC_PROMPT_VERSION}`
+      + `&select=results,top_score,match_count,created_at&limit=1`,
       { headers: { apikey: env.SUPABASE_SERVICE_ROLE_KEY, Authorization: `Bearer ${env.SUPABASE_SERVICE_ROLE_KEY}` } }
     )
     const rows = await res.json().catch(() => [])
@@ -2408,17 +2434,19 @@ async function getRadarCache(env, userId, profileHash, queryHash) {
 
 async function putRadarCache(env, ctx, userId, profileHash, queryHash, recommendations, isPremium) {
   if (!userId || !recommendations.length || !env.SUPABASE_SERVICE_ROLE_KEY) return
-  const ttlMs   = isPremium ? 25 * 3_600_000 : 32 * 86_400_000  // premium: 25h | free: 32d (covers full period)
+  const ttlMs   = isPremium ? 25 * 3_600_000 : 7 * 86_400_000  // premium: 25h | free: 7d
   const expires = new Date(Date.now() + ttlMs).toISOString()
   const row = {
-    user_id:      userId,
-    profile_hash: profileHash,
-    query_hash:   queryHash,
-    results:      recommendations,
-    top_score:    Math.max(...recommendations.map(r => r.match_score || 0)),
-    match_count:  recommendations.length,
-    search_type:  'fresh',
-    expires_at:   expires,
+    user_id:        userId,
+    profile_hash:   profileHash,
+    query_hash:     queryHash,
+    results:        recommendations,
+    top_score:      Math.max(...recommendations.map(r => r.match_score || 0)),
+    match_count:    recommendations.length,
+    search_type:    'fresh',
+    expires_at:     expires,
+    // TODO: add prompt_version column to radar_search_history to activate invalidation
+    prompt_version: JREC_PROMPT_VERSION,
   }
   const upsert = fetch(`${env.SUPABASE_URL}/rest/v1/radar_search_history`, {
     method:  'POST',
@@ -3641,8 +3669,8 @@ async function handleAiJobRecommendations(body, request, env, ctx, corsHeaders, 
   }
 
   // Cache AI scores in KV and radar_search_history (Supabase, cross-device)
-  // TTL mirrors the live-fetch period: 25h for premium (daily), 32 days for free (monthly)
-  const jrecTtlSecs = isPremium ? 25 * 3_600 : 32 * 86_400
+  // TTL: 25h for premium (daily refresh), 7 days for free
+  const jrecTtlSecs = isPremium ? 25 * 3_600 : 7 * 86_400
   if (user_id && ctx?.waitUntil) {
     ctx.waitUntil(putJrecToKV(env, user_id, queryHash, {
       recommendations,

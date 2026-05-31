@@ -4,9 +4,9 @@ import { expandProfileSkills, normalizeJobUrl } from '../utils/jobHelpers.js'
 export const FAMILY_TITLE_SIGNALS = {
   'HR/Personas':        ['hr ', ' hr', 'rrhh', 'people ', 'talent', 'recursos humanos', 'human resource', 'hrbp', 'payroll', 'nómina', 'nomina', 'recruiting', 'reclut', 'capital humano', 'compensaci'],
   'Finanzas':           ['financ', 'fp&a', 'controller', 'tesor', 'contab', 'auditor', 'impuesto', 'tax ', 'presupuesto', 'budget'],
-  'Tecnología':         ['engineer', 'developer', 'desarrollador', 'devops', 'frontend', 'backend', 'fullstack', 'full stack', 'software ', 'cloud ', 'sre ', 'data engineer', 'data labeling', 'data annotation', 'labeling specialist', 'annotation specialist', 'ai trainer', 'ml data', 'prompt engineer'],
-  'Marketing/Growth':   ['marketing', 'growth ', 'brand ', 'performance mkt', 'community', 'content mkt', 'seo ', 'sem ', 'digital ads'],
-  'Ventas/BD':          ['sales ', 'ventas', 'comercial', 'account exec', 'business dev', 'revenue ops', 'key account'],
+  'Tecnología':         ['engineer', 'developer', 'desarrollador', 'devops', 'frontend', 'backend', 'fullstack', 'full stack', 'software ', 'cloud ', 'sre ', 'data engineer', 'data analyst', 'data labeling', 'data annotation', 'labeling specialist', 'annotation specialist', 'ai trainer', 'ml data', 'prompt engineer'],
+  'Marketing/Growth':   ['marketing', 'growth ', 'brand ', 'performance mkt', 'community', 'content mkt', 'content ', 'seo ', 'sem ', 'digital ads'],
+  'Ventas/BD':          ['sales ', 'ventas', 'comercial', 'account exec', 'account manager', 'business dev', 'revenue ops', 'revenue operation', 'key account'],
   'Operaciones':        ['operations', 'operaciones', 'supply chain', 'logística', 'logistics', 'procurement', 'compras'],
   'Legal/Compliance':   ['legal ', 'abogad', 'compliance', 'counsel', 'contratos', 'juridic'],
   'Management General': ['country manager', 'general manager', 'director general', 'gerente general'],
@@ -52,13 +52,20 @@ export function applyPreFilter(jobs, profileText, maxCandidates = 25, profession
     // Jobs in the candidate's professional family get a large boost to reach Gemini.
     // Jobs clearly in incompatible families get a large penalty to stay OUT of Gemini.
     if (myFamily) {
-      const isFamilyMatch = mySignals.some(sig => titleText.includes(sig))
+      const titleForSig = titleText + ' '
+      const isFamilyMatch = mySignals.some(sig => titleForSig.includes(sig))
       if (isFamilyMatch) {
         s += 8  // family title match → ensure this job reaches Gemini
       } else {
-        const isClearMismatch = otherFamilySigs.some(sig => titleText.includes(sig))
+        const isClearMismatch = otherFamilySigs.some(sig => titleForSig.includes(sig))
         if (isClearMismatch) s -= 12  // clearly wrong family → exclude from Gemini pool
       }
+    }
+
+    // Hard-exclude titles incompatibles con cualquier familia no-producto
+    const PRODUCT_TITLES = ['product manager', 'product owner', 'product lead', 'scrum master', 'agile coach', 'revenue operations', 'revops']
+    if (myFamily && myFamily !== 'Tecnología' && myFamily !== 'Management General') {
+      if (PRODUCT_TITLES.some(t => titleText.includes(t))) s -= 12
     }
 
     return s
@@ -66,7 +73,7 @@ export function applyPreFilter(jobs, profileText, maxCandidates = 25, profession
 
   const scored   = jobs.map(j => ({ job: j, s: score(j) }))
   const positive = scored.filter(x => x.s > 0)
-  const base     = positive.length >= Math.ceil(maxCandidates / 2) ? positive : scored
+  const base     = positive.length >= Math.ceil(maxCandidates / 2) ? positive : scored.filter(x => x.s > -999)
   return base
     .sort((a, b) => b.s - a.s)
     .slice(0, maxCandidates)
@@ -89,7 +96,7 @@ export function deduplicateJobs(allJobs) {
   const byUrl = new Map()
   for (const job of deduped) {
     const url = normalizeJobUrl(job.url)
-    if (!url) { byUrl.set(job.external_id, job); continue }
+    if (!url) { byUrl.set(`${job.source}::${job.external_id}`, job); continue }
     if (!byUrl.has(url)) { byUrl.set(url, job) }
     else {
       const existing = byUrl.get(url)

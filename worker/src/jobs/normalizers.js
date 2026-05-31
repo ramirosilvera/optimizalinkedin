@@ -9,7 +9,7 @@ export function normalizeRemoteOK(raw) {
       external_id:     String(j.id),
       title:           j.position || '',
       company:         j.company  || '',
-      description:     truncateDesc(j.description),
+      description:     truncateDesc(stripHtml(j.description || '')),
       location:        j.location || 'Remote',
       remote:          true,
       url:             j.url || `https://remoteok.com/remote-jobs/${j.id}`,
@@ -33,7 +33,7 @@ export function normalizeRemotive(raw) {
     external_id:     String(j.id),
     title:           j.title        || '',
     company:         j.company_name || '',
-    description:     truncateDesc(j.description),
+    description:     truncateDesc(stripHtml(j.description || '')),
     location:        j.candidate_required_location || 'Worldwide',
     remote:          true,
     url:             j.url || '',
@@ -118,7 +118,7 @@ export function normalizeGetOnBoard(raw) {
     const a = j.attributes || {}
     return {
       source:          'getonboard',
-      external_id:     String(j.id || Math.random()),
+      external_id:     String(j.id || `${(a.company?.data?.attributes?.name || a.company?.name || '').slice(0,20)}-${(a.title || '').slice(0,30)}-${(a.published_at || '').slice(0,10)}`),
       title:           a.title || '',
       company:         a.company?.data?.attributes?.name || a.company?.name || '',
       description:     truncateDesc(a.functions || a.description || ''),
@@ -141,12 +141,12 @@ export function normalizeHimalayas(raw) {
   const jobs = raw?.jobs || []
   return jobs.map(j => ({
     source:          'himalayas',
-    external_id:     String(j.id || Math.random()),
+    external_id:     String(j.id || `${(j.company?.name || '').slice(0,20)}-${(j.title || '').slice(0,30)}-${(j.publishedAt || '').slice(0,10)}`),
     title:           j.title || '',
     company:         j.company?.name || '',
     description:     truncateDesc(j.description || ''),
     location:        j.location || j.country || null,
-    remote:          !!(j.remote ?? true),
+    remote:          j.remote === true,
     url:             j.url || `https://himalayas.app/jobs/${j.id}`,
     apply_url:       j.applyUrl || null,
     salary_min:      j.salary?.min || null,
@@ -165,10 +165,10 @@ export function normalizeWorkable(raw, companyMeta) {
   const jobs = raw?.results || []
   return jobs.map(j => ({
     source:          'workable',
-    external_id:     j.shortcode || String(Math.random()),
+    external_id:     j.shortcode || `${(companyMeta?.name || '').slice(0,20)}-${(j.title || '').slice(0,30)}`,
     title:           j.title || '',
     company:         companyMeta.name,
-    description:     truncateDesc(j.description || ''),
+    description:     truncateDesc(stripHtml(j.description || '')),
     location:        [j.city, j.country].filter(Boolean).join(', ') || null,
     remote:          j.remote === true,
     url:             j.url || `https://apply.workable.com/${companyMeta.slug}/j/${j.shortcode}`,
@@ -189,10 +189,10 @@ export function normalizeTeamtailor(raw, companyMeta) {
     const a = j.attributes || {}
     return {
       source:          'teamtailor',
-      external_id:     String(j.id || Math.random()),
+      external_id:     String(j.id || `${(companyMeta?.name || '').slice(0,20)}-${(a.title || '').slice(0,30)}-${(a['created-at'] || '').slice(0,10)}`),
       title:           a.title || '',
       company:         companyMeta.name,
-      description:     truncateDesc(a['body-text'] || a.pitch || ''),
+      description:     truncateDesc(stripHtml(a['body-text'] || a.pitch || '')),
       location:        a.city || a.country || null,
       remote:          ['fully', 'hybrid'].includes(a['remote-status']),
       url:             a['career-page-url'] || `https://${companyMeta.slug}.teamtailor.com/jobs/${j.id}`,
@@ -214,13 +214,13 @@ export function normalizeRecruitee(raw, companyMeta) {
     const descText = truncateDesc(stripHtml(j.description || ''))
     return {
       source:          'recruitee',
-      external_id:     String(j.id || Math.random()),
+      external_id:     String(j.id || `${(companyMeta?.name || '').slice(0,20)}-${(j.title || '').slice(0,30)}-${(j.created_at || '').slice(0,10)}`),
       title:           j.title || '',
       company:         companyMeta.name,
       description:     descText,
       location:        j.city || j.location || null,
       remote:          j.remote === true,
-      url:             j.careers_url || `https://${companyMeta.slug}.recruitee.com/o/${j.slug}`,
+      url:             j.careers_url || (j.slug ? `https://${companyMeta.slug}.recruitee.com/o/${j.slug}` : ''),
       apply_url:       j.careers_apply_url || null,
       salary_min:      null, salary_max: null, currency: null,
       skills_required: extractSkillsFromText(descText),
@@ -237,13 +237,13 @@ export function normalizePersonio(raw, companyMeta) {
   const positions = raw?.data?.positions || raw?.positions || raw?.jobs || []
   return positions.map(j => ({
     source:          'personio',
-    external_id:     String(j.id || Math.random()),
+    external_id:     String(j.id || `${(companyMeta?.name || '').slice(0,20)}-${(j.name || j.title || '').slice(0,30)}-${(j.created_at || '').slice(0,10)}`),
     title:           j.name || j.title || '',
     company:         companyMeta.name,
     description:     truncateDesc(stripHtml(j.description || '')),
     location:        j.office?.name || j.location || null,
     remote:          /remot|teletrabajo/i.test(j.office?.name || j.location || ''),
-    url:             j.url || j.application_url || `https://${companyMeta.slug}.jobs.personio.com/${j.id}`,
+    url:             j.url || j.application_url || (j.id ? `https://${companyMeta.slug}.jobs.personio.com/${j.id}` : ''),
     apply_url:       j.application_url || null,
     salary_min:      null, salary_max: null, currency: null,
     skills_required: [],
@@ -264,14 +264,14 @@ export function normalizeWorkday(raw, companyMeta) {
     const extPath = j.externalPath || ''
     return {
       source:          'workday',
-      external_id:     extPath.split('/').pop() || String(Math.random()),
+      external_id:     extPath.split('/').pop() || `${(companyMeta?.name || '').slice(0,20)}-${(j.title || '').slice(0,30)}-${(j.postedOn || '').slice(0,10)}`,
       title:           j.title || '',
       company:         companyMeta.name,
       description:     truncateDesc(j.briefDescription || (j.bulletFields || []).join(' ')),
       location:        j.locationsText || null,
       remote:          /remot/i.test(j.locationsText || ''),
       url:             boardBase ? `${boardBase}${extPath}` : '',
-      apply_url:       null,
+      apply_url:       (boardBase && extPath) ? `${boardBase}${extPath}` : null,
       salary_min:      null, salary_max: null, currency: null,
       skills_required: [],
       seniority:       normalizeSeniority(j.title || ''),
@@ -293,7 +293,7 @@ export function normalizeSerper(raw) {
     description:     truncateDesc((j.highlights?.items || []).join(' ') || j.description || ''),
     location:        j.location || null,
     remote:          /remot/i.test(j.location || ''),
-    url:             j.applyLink || j.link || '',
+    url:             j.applyLink || (j.link && !j.link.includes('google.com') ? j.link : ''),
     apply_url:       j.applyLink || null,
     salary_min:      null, salary_max: null, currency: null,
     skills_required: [],
@@ -333,16 +333,16 @@ export function normalizeGreenhouse(rawJobs, companyMeta) {
 export function normalizeLever(rawPostings, companyMeta) {
   if (!Array.isArray(rawPostings)) return []
   return rawPostings.map(j => {
-    const descText = truncateDesc(
-      j.descriptionPlain || stripHtml(j.description)
-    )
-    const fullText = [descText, ...(j.lists || []).map(l => stripHtml(l.content))].join('\n')
+    const rawDesc = j.descriptionPlain || stripHtml(j.description || '')
+    const listItems = (j.lists || []).map(l => stripHtml(l.content || '')).filter(Boolean)
+    const fullText = [rawDesc, ...listItems].join('\n\n')
+    const descText = truncateDesc(fullText)
     return {
       source:          'lever',
-      external_id:     j.id || String(Math.random()),
+      external_id:     j.id || `${(companyMeta?.name || '').slice(0,20)}-${(j.text || '').slice(0,30)}-${j.createdAt ? new Date(j.createdAt).toISOString().slice(0,10) : ''}`,
       title:           j.text || '',
       company:         companyMeta.name,
-      description:     truncateDesc(fullText),
+      description:     descText,
       location:        j.categories?.location || null,
       remote:          /remot|anywhere|worldwide/i.test(j.categories?.location || j.text || ''),
       url:             j.hostedUrl || `https://jobs.lever.co/${companyMeta.slug}/${j.id}`,
@@ -367,7 +367,7 @@ export function normalizeSmartRecruiters(raw, companyMeta) {
     const locationStr = [locObj.city, locObj.region, locObj.country].filter(Boolean).join(', ')
     return {
       source:          'smartrecruiters',
-      external_id:     j.id || String(Math.random()),
+      external_id:     j.id || `${(j.company?.name || companyMeta?.name || '').slice(0,20)}-${(j.name || '').slice(0,30)}-${(j.releasedDate || '').slice(0,10)}`,
       title:           j.name || '',
       company:         j.company?.name || companyMeta.name,
       description:     truncateDesc(j.jobAd?.sections?.description?.text || null),
@@ -376,7 +376,7 @@ export function normalizeSmartRecruiters(raw, companyMeta) {
       url:             j.ref || `https://careers.smartrecruiters.com/${companyMeta.slug}/${j.id}`,
       apply_url:       j.ref || null,
       salary_min:      null, salary_max: null, currency: null,
-      skills_required: extractSkillsFromText(j.name),
+      skills_required: extractSkillsFromText(`${j.name || ''} ${j.jobAd?.sections?.description?.text || j.jobAd?.sections?.qualifications?.text || ''}`),
       seniority:       normalizeSeniority(j.experienceLevel?.label || j.name),
       industry:        j.department?.label || companyMeta.industries?.[0] || null,
       posted_at:       j.releasedDate || null,
@@ -393,7 +393,7 @@ export function normalizeAshby(raw, companyMeta) {
     const comp = j.compensation?.summaryComponents?.[0]?.value || null
     return {
       source:          'ashby',
-      external_id:     j.id || String(Math.random()),
+      external_id:     j.id || `${(companyMeta?.name || '').slice(0,20)}-${(j.title || '').slice(0,30)}-${(j.publishedAt || '').slice(0,10)}`,
       title:           j.title || '',
       company:         companyMeta.name,
       description:     descText,

@@ -9,10 +9,11 @@ export function normalizeSeniority(raw = '') {
   const s = (raw || '').toLowerCase()
   if (/junior|jr\b|entry|trainee|pasante|aprendiz/.test(s))                    return 'Junior'
   if (/analista\s+(jr|i\b)/.test(s))                                           return 'Junior'
+  if (/associate/.test(s))                                                      return 'Junior'
   if (/semi.?senior|ssr\b|mid.?level|pleno|analista\s+(sr|ii\b)/.test(s))     return 'Semi Senior'
-  if (/senior|sr\b/.test(s))                                                   return 'Senior'
+  if (/senior|sr\b|principal|staff/.test(s))                                   return 'Senior'
   if (/jefe|coordinador|team.?lead|lead\b|supervisor/.test(s))                 return 'Lead'
-  if (/gerente|manager|head\s+of|director|vp\b|vice\s+president|cto|cfo|coo|ceo/.test(s)) return 'Management'
+  if (/gerente|manager|head\s+of|director|\bvp\b|vice\s+president|cto|cfo|\bcoo\b|ceo/.test(s)) return 'Management'
   if (/analista(?!\s*(jr|sr|i{1,3}))/.test(s))                                 return 'Semi Senior'
   if (/intern|practice/.test(s))                                               return 'Junior'
   return 'No especificado'
@@ -54,8 +55,9 @@ export function extractRelevantSection(rawText, maxChars = 500) {
 // Extract known skills from free text using taxonomy keywords
 export const SKILLS_KEYWORDS = new Set([
   'python','javascript','typescript','java','kotlin','swift','golang','rust','ruby','php','scala','c#',
-  'react','vue','angular','nextjs','html','css','tailwind','graphql',
-  'nodejs','django','fastapi','spring','rails','laravel','express','nestjs','grpc',
+  'react','vue','angular','nextjs','next.js','html','css','tailwind','graphql',
+  'nodejs','node.js','django','fastapi','spring','rails','laravel','express','nestjs','grpc',
+  '.net','asp.net',
   'sql','postgresql','mysql','mongodb','redis','elasticsearch','kafka','spark','airflow','dbt','snowflake','bigquery',
   'aws','gcp','azure','kubernetes','docker','terraform','ci/cd','github actions','jenkins',
   'machine learning','deep learning','nlp','pytorch','tensorflow','scikit-learn','langchain',
@@ -66,12 +68,25 @@ export const SKILLS_KEYWORDS = new Set([
   'fintech','ecommerce','logistics','supply chain',
 ])
 
+// Skills where \b word-boundary regex doesn't work well (special chars)
+const DIRECT_SKILLS = ['c#', '.net', 'node.js', 'next.js', 'vue.js', 'asp.net', 'f#']
+
 export function extractSkillsFromText(text) {
   if (!text) return []
   const lower = text.toLowerCase()
-  return [...SKILLS_KEYWORDS].filter(skill => {
-    try { return new RegExp(`\\b${skill.replace(/[+#./]/g, '\\$&')}\\b`).test(lower) } catch { return lower.includes(skill) }
-  }).slice(0, 20)
+  const found = new Set(
+    [...SKILLS_KEYWORDS].filter(skill => {
+      try { return new RegExp(`\\b${skill.replace(/[+#./]/g, '\\$&')}\\b`).test(lower) } catch { return lower.includes(skill) }
+    })
+  )
+  // Special-case: skills that \b regex doesn't handle well due to special characters
+  for (const skill of DIRECT_SKILLS) {
+    if (lower.includes(skill)) found.add(skill)
+  }
+  // Aliases for normalisation
+  if (lower.includes('node.js') || lower.includes('nodejs')) found.add('nodejs')
+  if (lower.includes('next.js') || lower.includes('nextjs')) found.add('nextjs')
+  return [...found].slice(0, 20)
 }
 
 // Normalize a job URL for deduplication (strip tracking params)
