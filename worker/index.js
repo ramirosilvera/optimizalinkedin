@@ -508,6 +508,23 @@ function clampPage(rawOffset, rawLimit, { maxLimit = 100, maxOffset = 50_000 } =
   }
 }
 
+// Rate limits for destructive admin actions (per admin per hour via KV counter)
+const ADMIN_ACTION_LIMITS = {
+  grant_premium:  50,
+  revoke_premium: 50,
+  crm_export:     10,
+  create_promo:   20,
+}
+async function checkAdminActionRate(env, adminId, action) {
+  const limit = ADMIN_ACTION_LIMITS[action]
+  if (!limit || !env.RATE_LIMIT_KV || !adminId) return true
+  const key   = `admin_rl:${adminId}:${action}:${new Date().toISOString().slice(0, 13)}` // hourly bucket
+  const count = parseInt(await env.RATE_LIMIT_KV.get(key).catch(() => '0')) || 0
+  if (count >= limit) return false
+  env.RATE_LIMIT_KV.put(key, String(count + 1), { expirationTtl: 3_600 }).catch(() => {})
+  return true
+}
+
 // ── AI usage log (fire-and-forget) ───────────────────────────────────────────
 
 /**
@@ -1233,6 +1250,7 @@ export default {
 
       if (body.action === 'admin_crm_export') {
         if (!canWrite) return new Response(JSON.stringify({ error: 'Sin permisos' }), { status: 403, headers: corsHeaders })
+        if (!await checkAdminActionRate(env, admin.userId, 'crm_export')) return new Response(JSON.stringify({ error: 'Límite de exportaciones por hora alcanzado (10/h)' }), { status: 429, headers: corsHeaders })
         const { search = '', premium_status = 'all', feature_used = '', tag = '', sort = 'created_at_desc' } = body
         try {
           await logAdminAction(env, admin.userId, 'crm_export', 'users', null, { premium_status, feature_used, tag, search })
@@ -1314,6 +1332,7 @@ export default {
 
       if (body.action === 'admin_grant_premium') {
         if (!canWrite) return new Response(JSON.stringify({ error: 'Sin permisos de escritura' }), { status: 403, headers: corsHeaders })
+        if (!await checkAdminActionRate(env, admin.userId, 'grant_premium')) return new Response(JSON.stringify({ error: 'Límite de acciones por hora alcanzado (50/h)' }), { status: 429, headers: corsHeaders })
         const { user_id, days = 30 } = body
         if (!user_id) return new Response(JSON.stringify({ error: 'Falta user_id' }), { status: 400, headers: corsHeaders })
         if (!isValidUuid(user_id)) return new Response(JSON.stringify({ error: 'user_id inválido' }), { status: 400, headers: corsHeaders })
@@ -1338,6 +1357,7 @@ export default {
 
       if (body.action === 'admin_revoke_premium') {
         if (!canWrite) return new Response(JSON.stringify({ error: 'Sin permisos de escritura' }), { status: 403, headers: corsHeaders })
+        if (!await checkAdminActionRate(env, admin.userId, 'revoke_premium')) return new Response(JSON.stringify({ error: 'Límite de acciones por hora alcanzado (50/h)' }), { status: 429, headers: corsHeaders })
         const { user_id } = body
         if (!user_id) return new Response(JSON.stringify({ error: 'Falta user_id' }), { status: 400, headers: corsHeaders })
         if (!isValidUuid(user_id)) return new Response(JSON.stringify({ error: 'user_id inválido' }), { status: 400, headers: corsHeaders })
@@ -1360,6 +1380,7 @@ export default {
 
       if (body.action === 'admin_create_promo') {
         if (!canWrite) return new Response(JSON.stringify({ error: 'Sin permisos de escritura' }), { status: 403, headers: corsHeaders })
+        if (!await checkAdminActionRate(env, admin.userId, 'create_promo')) return new Response(JSON.stringify({ error: 'Límite de creación de promos alcanzado (20/h)' }), { status: 429, headers: corsHeaders })
         const { code, description, duration_days = 30, max_uses, expires_at } = body
         if (!code) return new Response(JSON.stringify({ error: 'Falta code' }), { status: 400, headers: corsHeaders })
         if (code.trim().length > 50) return new Response(JSON.stringify({ error: 'Código demasiado largo (máx 50)' }), { status: 400, headers: corsHeaders })
