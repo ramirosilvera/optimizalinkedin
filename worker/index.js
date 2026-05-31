@@ -1808,6 +1808,12 @@ export default {
         const appToken = request.headers.get('X-App-Token')
         if (appToken !== env.APP_TOKEN) return new Response(JSON.stringify({ error: { message: 'Unauthorized' } }), { status: 401, headers: corsHeaders })
       }
+      const ip = request.headers.get('CF-Connecting-IP') || 'unknown'
+      const rl = await checkRateLimit(env, ip, 'job_search')
+      if (!rl.ok) return new Response(
+        JSON.stringify({ error: { message: `Límite de búsqueda alcanzado (${rl.limit}/hora). Intentá en 60 minutos.` } }),
+        { status: 429, headers: corsHeaders }
+      )
       return handleAiJobRecommendations(body, request, env, ctx, corsHeaders, callGeminiApi, logAiUsage)
     }
 
@@ -2419,7 +2425,6 @@ async function getRadarCache(env, userId, profileHash, queryHash) {
       `${env.SUPABASE_URL}/rest/v1/radar_search_history`
       + `?user_id=eq.${userId}&profile_hash=eq.${profileHash}&query_hash=eq.${queryHash}`
       + `&expires_at=gte.${new Date().toISOString()}`
-      // TODO: add prompt_version column to radar_search_history and uncomment:
       + `&prompt_version=eq.${JREC_PROMPT_VERSION}`
       + `&select=results,top_score,match_count,created_at&limit=1`,
       { headers: { apikey: env.SUPABASE_SERVICE_ROLE_KEY, Authorization: `Bearer ${env.SUPABASE_SERVICE_ROLE_KEY}` } }
@@ -2445,7 +2450,6 @@ async function putRadarCache(env, ctx, userId, profileHash, queryHash, recommend
     match_count:    recommendations.length,
     search_type:    'fresh',
     expires_at:     expires,
-    // TODO: add prompt_version column to radar_search_history to activate invalidation
     prompt_version: JREC_PROMPT_VERSION,
   }
   const upsert = fetch(`${env.SUPABASE_URL}/rest/v1/radar_search_history`, {
