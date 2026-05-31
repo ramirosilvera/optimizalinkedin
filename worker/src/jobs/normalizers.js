@@ -9,7 +9,7 @@ export function normalizeRemoteOK(raw) {
       external_id:     String(j.id),
       title:           j.position || '',
       company:         j.company  || '',
-      description:     truncateDesc(j.description),
+      description:     truncateDesc(stripHtml(j.description || '')),
       location:        j.location || 'Remote',
       remote:          true,
       url:             j.url || `https://remoteok.com/remote-jobs/${j.id}`,
@@ -33,7 +33,7 @@ export function normalizeRemotive(raw) {
     external_id:     String(j.id),
     title:           j.title        || '',
     company:         j.company_name || '',
-    description:     truncateDesc(j.description),
+    description:     truncateDesc(stripHtml(j.description || '')),
     location:        j.candidate_required_location || 'Worldwide',
     remote:          true,
     url:             j.url || '',
@@ -118,7 +118,7 @@ export function normalizeGetOnBoard(raw) {
     const a = j.attributes || {}
     return {
       source:          'getonboard',
-      external_id:     String(j.id || Math.random()),
+      external_id:     String(j.id || `${(a.company?.data?.attributes?.name || a.company?.name || '').slice(0,20)}-${(a.title || '').slice(0,30)}-${(a.published_at || '').slice(0,10)}`),
       title:           a.title || '',
       company:         a.company?.data?.attributes?.name || a.company?.name || '',
       description:     truncateDesc(a.functions || a.description || ''),
@@ -141,7 +141,7 @@ export function normalizeHimalayas(raw) {
   const jobs = raw?.jobs || []
   return jobs.map(j => ({
     source:          'himalayas',
-    external_id:     String(j.id || Math.random()),
+    external_id:     String(j.id || `${(j.company?.name || '').slice(0,20)}-${(j.title || '').slice(0,30)}-${(j.publishedAt || '').slice(0,10)}`),
     title:           j.title || '',
     company:         j.company?.name || '',
     description:     truncateDesc(j.description || ''),
@@ -165,10 +165,10 @@ export function normalizeWorkable(raw, companyMeta) {
   const jobs = raw?.results || []
   return jobs.map(j => ({
     source:          'workable',
-    external_id:     j.shortcode || String(Math.random()),
+    external_id:     j.shortcode || `${(companyMeta?.name || '').slice(0,20)}-${(j.title || '').slice(0,30)}`,
     title:           j.title || '',
     company:         companyMeta.name,
-    description:     truncateDesc(j.description || ''),
+    description:     truncateDesc(stripHtml(j.description || '')),
     location:        [j.city, j.country].filter(Boolean).join(', ') || null,
     remote:          j.remote === true,
     url:             j.url || `https://apply.workable.com/${companyMeta.slug}/j/${j.shortcode}`,
@@ -189,10 +189,10 @@ export function normalizeTeamtailor(raw, companyMeta) {
     const a = j.attributes || {}
     return {
       source:          'teamtailor',
-      external_id:     String(j.id || Math.random()),
+      external_id:     String(j.id || `${(companyMeta?.name || '').slice(0,20)}-${(a.title || '').slice(0,30)}-${(a['created-at'] || '').slice(0,10)}`),
       title:           a.title || '',
       company:         companyMeta.name,
-      description:     truncateDesc(a['body-text'] || a.pitch || ''),
+      description:     truncateDesc(stripHtml(a['body-text'] || a.pitch || '')),
       location:        a.city || a.country || null,
       remote:          ['fully', 'hybrid'].includes(a['remote-status']),
       url:             a['career-page-url'] || `https://${companyMeta.slug}.teamtailor.com/jobs/${j.id}`,
@@ -214,7 +214,7 @@ export function normalizeRecruitee(raw, companyMeta) {
     const descText = truncateDesc(stripHtml(j.description || ''))
     return {
       source:          'recruitee',
-      external_id:     String(j.id || Math.random()),
+      external_id:     String(j.id || `${(companyMeta?.name || '').slice(0,20)}-${(j.title || '').slice(0,30)}-${(j.created_at || '').slice(0,10)}`),
       title:           j.title || '',
       company:         companyMeta.name,
       description:     descText,
@@ -264,7 +264,7 @@ export function normalizeWorkday(raw, companyMeta) {
     const extPath = j.externalPath || ''
     return {
       source:          'workday',
-      external_id:     extPath.split('/').pop() || String(Math.random()),
+      external_id:     extPath.split('/').pop() || `${(companyMeta?.name || '').slice(0,20)}-${(j.title || '').slice(0,30)}-${(j.postedOn || '').slice(0,10)}`,
       title:           j.title || '',
       company:         companyMeta.name,
       description:     truncateDesc(j.briefDescription || (j.bulletFields || []).join(' ')),
