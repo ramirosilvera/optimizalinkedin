@@ -16,37 +16,36 @@ export function inferProfessionFamily(title) {
 // Used as geo context when scoring jobs — helps Gemini penalize inviable on-site roles.
 export function extractCandidateLocation(profileText) {
   const t = (profileText || '').slice(0, 2000).toLowerCase()
-  /** @type {[RegExp, string][]} */
   const PATTERNS = [
-    [/\b(caba|capital federal|ciudad de buenos aires|ciudad aut[oó]noma)\b/, 'CABA'],
-    [/\b(palermo|belgrano|villa crespo|san telmo|recoleta|microcentro|barracas|flores|villa urquiza)\b/, 'CABA'],
-    [/\b(quilmes|mor[oó]n|tigre|lom[aá]s de zamora|avellaneda|bernal|vicente l[oó]pez)\b/, 'Gran Buenos Aires'],
-    [/\b(gran buenos aires|gba)\b/, 'Gran Buenos Aires'],
-    [/\b(buenos aires|provincia de buenos aires)\b/, 'Buenos Aires'],
-    [/\b(c[oó]rdoba)\b/, 'Córdoba'],
-    [/\b(rosario)\b/, 'Rosario'],
-    [/\b(mendoza)\b/, 'Mendoza'],
-    [/\b(tucum[aá]n)\b/, 'Tucumán'],
-    [/\b(mar del plata)\b/, 'Mar del Plata'],
-    [/\b(salta)\b/, 'Salta'],
-    [/\b(santa fe)\b/, 'Santa Fe'],
-    [/\b(la plata)\b/, 'La Plata'],
-    [/\b(bah[ií]a blanca)\b/, 'Bahía Blanca'],
-    [/\b(neuqu[eé]n)\b/, 'Neuquén'],
-    [/\b(argentina)\b/, 'Argentina'],
-    [/\b(venezuela|caracas|maracaibo|valencia|barquisimeto)\b/, 'Venezuela'],
-    [/\b(colombia)\b/, 'Colombia'],
-    [/\b(chile)\b/, 'Chile'],
-    [/\b(m[eé]xico)\b/, 'México'],
-    [/\b(per[uú])\b/, 'Perú'],
-    [/\b(brasil|brazil)\b/, 'Brasil'],
-    [/\b(uruguay)\b/, 'Uruguay'],
-    [/\b(paraguay)\b/, 'Paraguay'],
-    [/\b(bolivia)\b/, 'Bolivia'],
-    [/\b(ecuador)\b/, 'Ecuador'],
+    { re: /\b(caba|capital federal|ciudad de buenos aires|ciudad aut[oó]noma)\b/, city: 'CABA' },
+    { re: /\b(palermo|belgrano|villa crespo|san telmo|recoleta|microcentro|barracas|flores|villa urquiza)\b/, city: 'CABA' },
+    { re: /\b(quilmes|mor[oó]n|tigre|lom[aá]s de zamora|avellaneda|bernal|vicente l[oó]pez)\b/, city: 'Gran Buenos Aires' },
+    { re: /\b(gran buenos aires|gba)\b/, city: 'Gran Buenos Aires' },
+    { re: /\b(buenos aires|provincia de buenos aires)\b/, city: 'Buenos Aires' },
+    { re: /\b(c[oó]rdoba)\b/, city: 'Córdoba' },
+    { re: /\b(rosario)\b/, city: 'Rosario' },
+    { re: /\b(mendoza)\b/, city: 'Mendoza' },
+    { re: /\b(tucum[aá]n)\b/, city: 'Tucumán' },
+    { re: /\b(mar del plata)\b/, city: 'Mar del Plata' },
+    { re: /\b(salta)\b/, city: 'Salta' },
+    { re: /\b(santa fe)\b/, city: 'Santa Fe' },
+    { re: /\b(la plata)\b/, city: 'La Plata' },
+    { re: /\b(bah[ií]a blanca)\b/, city: 'Bahía Blanca' },
+    { re: /\b(neuqu[eé]n)\b/, city: 'Neuquén' },
+    { re: /\b(argentina)\b/, city: 'Argentina' },
+    { re: /\b(venezuela|caracas|maracaibo|valencia|barquisimeto)\b/, city: 'Venezuela' },
+    { re: /\b(colombia)\b/, city: 'Colombia' },
+    { re: /\b(chile)\b/, city: 'Chile' },
+    { re: /\b(m[eé]xico)\b/, city: 'México' },
+    { re: /\b(per[uú])\b/, city: 'Perú' },
+    { re: /\b(brasil|brazil)\b/, city: 'Brasil' },
+    { re: /\b(uruguay)\b/, city: 'Uruguay' },
+    { re: /\b(paraguay)\b/, city: 'Paraguay' },
+    { re: /\b(bolivia)\b/, city: 'Bolivia' },
+    { re: /\b(ecuador)\b/, city: 'Ecuador' },
   ]
-  for (const [re, canonical] of PATTERNS) {
-    if (re.test(t)) return canonical
+  for (const { re, city } of PATTERNS) {
+    if (re.test(t)) return city
   }
   return null
 }
