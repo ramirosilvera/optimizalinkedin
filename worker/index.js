@@ -3628,7 +3628,7 @@ Respond ONLY with JSON (no markdown):
         `https://generativelanguage.googleapis.com/v1beta/models/${DEFAULT_MODEL}:generateContent?key=${geminiKeys[ki]}`,
         {
           method: 'POST', headers: { 'content-type': 'application/json' },
-          body: JSON.stringify({ contents: [{ role: 'user', parts: [{ text: prompt }] }], generationConfig: { temperature: 0.1, maxOutputTokens: 300 } }),
+          body: JSON.stringify({ contents: [{ role: 'user', parts: [{ text: prompt }] }], generationConfig: { temperature: 0.1, maxOutputTokens: 300, thinkingConfig: { thinkingBudget: 0 } } }),
           signal: ctrl.signal,
         }
       )
@@ -3682,7 +3682,7 @@ Respond ONLY with JSON (no markdown): {"family":"HR/Personas","terms":["HRBP","P
         `https://generativelanguage.googleapis.com/v1beta/models/${DEFAULT_MODEL}:generateContent?key=${geminiKeys[ki]}`,
         {
           method: 'POST', headers: { 'content-type': 'application/json' },
-          body: JSON.stringify({ contents: [{ role: 'user', parts: [{ text: prompt }] }], generationConfig: { temperature: 0.3, maxOutputTokens: 300 } }),
+          body: JSON.stringify({ contents: [{ role: 'user', parts: [{ text: prompt }] }], generationConfig: { temperature: 0.3, maxOutputTokens: 300, thinkingConfig: { thinkingBudget: 0 } } }),
           signal: controller.signal,
         }
       )
@@ -3740,7 +3740,7 @@ async function expandWithSearch(env, ctx, cleanQueries, location, remoteOk, prof
           body: JSON.stringify({
             system_instruction: { parts: [{ text: JOB_MATCHING_SYSTEM_PROMPT }] },
             contents,
-            generationConfig:   { temperature: 0.2, maxOutputTokens: 2048 },
+            generationConfig:   { temperature: 0.2, maxOutputTokens: 2048, thinkingConfig: { thinkingBudget: 0 } },
           }),
           signal: controller.signal,
         }
@@ -4886,25 +4886,30 @@ async function handleAiJobRecommendations(body, request, env, ctx, corsHeaders, 
   if (professionMeta) console.log(`[RADAR] professionMeta resolved: ${professionMeta.profession} | ${professionMeta.family} | lvl=${professionMeta.seniority_level}`)
 
   const contents   = buildMatchingContents(String(profile_text).slice(0, 3000), jobPool, candidateLocation, profInfo, maxJobsForGemini)
-  // Premium: 8192 tokens (50 jobs × ~150 chars output + headroom); free: 4096
+  // thinkingBudget:0 disables Flash Lite's default thinking mode, cutting latency from 15-30s to 3-5s.
+  // Premium: 8192 output tokens (50 jobs × ~150 chars + headroom); free: 4096
   const geminiBody = {
     system_instruction: { parts: [{ text: JOB_MATCHING_SYSTEM_PROMPT }] },
     contents,
-    generationConfig:   { temperature: 0.2, maxOutputTokens: isPremium ? 8192 : 4096 },
+    generationConfig:   { temperature: 0.2, maxOutputTokens: isPremium ? 8192 : 4096, thinkingConfig: { thinkingBudget: 0 } },
   }
 
   let aiResult = null
   let aiError  = null
 
-  // Two attempts with decreasing timeouts — Flash Lite typically responds in 3-6s.
-  // Second attempt reuses the same body; if the first timed out the second often succeeds.
-  const GEMINI_ATTEMPTS = [{ ms: 12_000 }, { ms: 8_000 }]
+  // Two attempts with decreasing timeouts. thinkingBudget:0 means Flash Lite responds in 3-5s;
+  // 20s/15s outer guards are safety nets for overloaded API slots.
+  // Each apiPromise is registered with ctx.waitUntil so its internal logAiUsage call survives
+  // even if the outer race fires and the response is sent before Gemini finishes.
+  const GEMINI_ATTEMPTS = [{ ms: 20_000 }, { ms: 15_000 }]
   for (let attempt = 0; attempt < GEMINI_ATTEMPTS.length; attempt++) {
     if (aiResult?.matches?.length) break
     const t0 = Date.now()
     try {
+      const apiPromise = callGeminiApi(env, ctx, geminiBody, corsHeaders, { feature: 'job_matching_batch', userId: user_id || null })
+      if (ctx?.waitUntil) ctx.waitUntil(apiPromise.catch(() => {}))
       const aiRes = await Promise.race([
-        callGeminiApi(env, ctx, geminiBody, corsHeaders, { feature: 'job_matching_batch', userId: user_id || null }),
+        apiPromise,
         new Promise((_, rej) => setTimeout(() => rej(new Error('gemini_match_timeout')), GEMINI_ATTEMPTS[attempt].ms)),
       ])
       if (aiRes.status === 200) {
