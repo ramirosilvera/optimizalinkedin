@@ -3471,7 +3471,7 @@ async function putRadarCache(env, ctx, userId, profileHash, queryHash, recommend
     body: JSON.stringify(row),
   }).catch(() => {})
   if (ctx?.waitUntil) ctx.waitUntil(upsert)
-  else upsert
+  else upsert.catch(err => console.warn('[RADAR] putRadarCache: ctx missing, upsert fire-and-forget:', err?.message))
 }
 
 // Fetch the user's most recent radar search, ignoring query hash and expiry.
@@ -3530,7 +3530,7 @@ Respond ONLY with JSON (no markdown):
 
   try {
     const ctrl = new AbortController()
-    const tid  = setTimeout(() => ctrl.abort(), 5_000)
+    const tid  = setTimeout(() => ctrl.abort(), 8_000)
     let res = null
     for (let ki = 0; ki < geminiKeys.length; ki++) {
       res = await fetch(
@@ -4585,8 +4585,11 @@ async function handleAiJobRecommendations(body, request, env, ctx, corsHeaders, 
   // ── Build queries — headhunter mode for premium (built here so all hashes use same queries) ──
   const baseQueriesRaw = queries.map(q => String(q).trim().slice(0, 100)).filter(Boolean).slice(0, 3)
   const headhunterActive = isPremium && !!professionInfoSync
-  // Note: cleanQueries is declared here (before caches) so queryHashEarly uses same queries as queryHash
-  // This ensures radarCache, jrecCache, and KV job cache all share the same hash key.
+  // Build cleanQueries here (before ALL cache lookups) so every cache layer uses the same hash.
+  const cleanQueries = headhunterActive
+    ? buildHeadhunterQueries(professionInfoSync, baseQueriesRaw, true)
+    : baseQueriesRaw
+  if (headhunterActive) console.log(`[RADAR] headhunterQueries: ${JSON.stringify(cleanQueries)}`)
 
   console.log(`[RADAR] START user=${user_id||'anon'} premium=${isPremium} remoteOk=${!!remote_ok} queries=${JSON.stringify(baseQueriesRaw)} location=${location||'—'}`)
 
@@ -4598,17 +4601,16 @@ async function handleAiJobRecommendations(body, request, env, ctx, corsHeaders, 
   console.log(`[RADAR] liveFetched=${liveFetched} period=${isPremium?'daily':'monthly'} user=${user_id||'anon'}`)
 
   const profileHash = user_id ? await computeProfileHash(String(profile_text)) : null
-  const cleanQueriesForHash = baseQueriesRaw
-  const queryHashEarly = user_id ? await hashQueryParams(cleanQueriesForHash, location, remote_ok) : null
+  const queryHash = user_id ? await hashQueryParams(cleanQueries, location, remote_ok) : null
 
-  if (liveFetched && user_id && profileHash && queryHashEarly) {
-    const radarCache = await getRadarCache(env, user_id, profileHash, queryHashEarly)
+  if (liveFetched && user_id && profileHash && queryHash) {
+    const radarCache = await getRadarCache(env, user_id, profileHash, queryHash)
     if (radarCache?.results?.length) {
       console.log(`[RADAR] radarCache HIT — returning ${radarCache.results.length} cached recs`)
       // Recover sourcesUsed from the KV metadata written at fetch time.
       let radarCachedSources = []
       try {
-        const metaRaw = env.RATE_LIMIT_KV ? await env.RATE_LIMIT_KV.get(`jobs_meta:${queryHashEarly}`) : null
+        const metaRaw = env.RATE_LIMIT_KV ? await env.RATE_LIMIT_KV.get(`jobs_meta:${queryHash}`) : null
         if (metaRaw) radarCachedSources = JSON.parse(metaRaw)
       } catch (e) { console.warn('[RADAR] radarCache: failed to recover sourcesUsed from KV:', e?.message) }
       // Derive expansion fields from cached results so the frontend shows correct badges
@@ -4681,17 +4683,10 @@ async function handleAiJobRecommendations(body, request, env, ctx, corsHeaders, 
     )
   }
 
-  // ── Build final queries — headhunter mode expands base with profession-targeted titles ──
-  const cleanQueries = headhunterActive
-    ? buildHeadhunterQueries(professionInfoSync, baseQueriesRaw, true)
-    : baseQueriesRaw
-  if (headhunterActive) console.log(`[RADAR] headhunterQueries: ${JSON.stringify(cleanQueries)}`)
-
   // Kick off deep profession extraction async — runs in parallel with job fetch (~2-4s each)
   const professionMetaPromise = extractDominantProfession(env, String(profile_text).slice(0, 1500))
 
   // ── Fetch jobs (hits cache layers before live APIs) ────────────────────────
-  const queryHash    = await hashQueryParams(cleanQueries, location, remote_ok)
   let   jobs         = []
   let   fromCache    = false
 
@@ -4858,7 +4853,7 @@ async function handleAiJobRecommendations(body, request, env, ctx, corsHeaders, 
           `${env.SUPABASE_URL}/rest/v1/job_recommendations`
           + `?user_id=eq.${user_id}&status=neq.dismissed`
           + `&order=match_score.desc&limit=${requestedN}`
-          + `&select=id,title,company,location,remote,url,match_score,strengths,gaps,summary,source,status`,
+          + `&select=id,title,company,location,remote,url,match_score,match_type,strengths,gaps,summary,source,status`,
           { headers: { apikey: env.SUPABASE_SERVICE_ROLE_KEY, Authorization: `Bearer ${env.SUPABASE_SERVICE_ROLE_KEY}` } }
         )
         const prevRecs = await cachedRecs.json()
@@ -4867,7 +4862,7 @@ async function handleAiJobRecommendations(body, request, env, ctx, corsHeaders, 
           return new Response(
             JSON.stringify({
               ok:                  true,
-              recommendations:     prevRecs.map(r => ({ job: r, match_score: r.match_score, strengths: r.strengths, gaps: r.gaps, summary: r.summary, rec_id: r.id })),
+              recommendations:     prevRecs.map(r => ({ job: r, match_score: r.match_score, match_type: r.match_type || null, strengths: r.strengths, gaps: r.gaps, summary: r.summary, rec_id: r.id })),
               total_jobs_analyzed: 0,
               from_cache:          true,
               fallback:            true,
@@ -4895,6 +4890,7 @@ async function handleAiJobRecommendations(body, request, env, ctx, corsHeaders, 
       return {
         job:         j,
         match_score: score,
+        match_type:  null,
         strengths:   [],
         gaps:        [],
         summary:     `Priorizando oportunidades relevantes para tu perfil en ${co}.`,
