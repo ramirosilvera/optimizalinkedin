@@ -495,7 +495,34 @@ async function logAdminAction(env, adminId, action, targetType, targetId, detail
     method: 'POST',
     body: JSON.stringify({ admin_id: adminId, action, target_type: targetType, target_id: targetId ? String(targetId) : null, details }),
     headers: { Prefer: 'return=minimal' },
-  }).catch(() => {})
+  }).catch(e => console.error('[ADMIN] audit log failed:', action, e?.message))
+}
+
+// ── Admin input validation helpers ───────────────────────────────────────────
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+function isValidUuid(v) { return typeof v === 'string' && UUID_RE.test(v) }
+function clampPage(rawOffset, rawLimit, { maxLimit = 100, maxOffset = 50_000 } = {}) {
+  return {
+    offset: Math.max(0, Math.min(parseInt(rawOffset) || 0, maxOffset)),
+    limit:  Math.max(1, Math.min(parseInt(rawLimit)  || 25, maxLimit)),
+  }
+}
+
+// Rate limits for destructive admin actions (per admin per hour via KV counter)
+const ADMIN_ACTION_LIMITS = {
+  grant_premium:  50,
+  revoke_premium: 50,
+  crm_export:     10,
+  create_promo:   20,
+}
+async function checkAdminActionRate(env, adminId, action) {
+  const limit = ADMIN_ACTION_LIMITS[action]
+  if (!limit || !env.RATE_LIMIT_KV || !adminId) return true
+  const key   = `admin_rl:${adminId}:${action}:${new Date().toISOString().slice(0, 13)}` // hourly bucket
+  const count = parseInt(await env.RATE_LIMIT_KV.get(key).catch(() => '0')) || 0
+  if (count >= limit) return false
+  env.RATE_LIMIT_KV.put(key, String(count + 1), { expirationTtl: 3_600 }).catch(() => {})
+  return true
 }
 
 // ── AI usage log (fire-and-forget) ───────────────────────────────────────────
@@ -1153,7 +1180,8 @@ export default {
       }
 
       if (body.action === 'admin_users') {
-        const { search = '', offset = 0, limit = 20, premium_only } = body
+        const { search = '', offset: rawOff = 0, limit: rawLim = 20, premium_only } = body
+        const { offset, limit } = clampPage(rawOff, rawLim, { maxLimit: 100 })
         let qs = `perfiles?select=id,nombre,email,es_premium,premium_hasta,premium_source,created_at&order=created_at.desc&offset=${offset}&limit=${limit}`
         if (search) qs += `&or=(email.ilike.*${encodeURIComponent(search)}*,nombre.ilike.*${encodeURIComponent(search)}*)`
         if (premium_only) qs += '&es_premium=eq.true'
@@ -1174,6 +1202,7 @@ export default {
       if (body.action === 'admin_user_detail') {
         const { user_id } = body
         if (!user_id) return new Response(JSON.stringify({ error: 'Falta user_id' }), { status: 400, headers: corsHeaders })
+        if (!isValidUuid(user_id)) return new Response(JSON.stringify({ error: 'user_id inválido' }), { status: 400, headers: corsHeaders })
         try {
           const [perfilRes, subRes, histRes, linkedinRes, tagsRes, notesRes] = await Promise.all([
             supabaseServiceFetch(env, `perfiles?id=eq.${user_id}&select=*`),
@@ -1204,7 +1233,8 @@ export default {
       // ── CRM endpoints ────────────────────────────────────────────────────────
 
       if (body.action === 'admin_crm_users') {
-        const { search = '', premium_status = 'all', feature_used = '', tag = '', sort = 'created_at_desc', offset: off = 0, limit = 25 } = body
+        const { search = '', premium_status = 'all', feature_used = '', tag = '', sort = 'created_at_desc', offset: rawOff = 0, limit: rawLim = 25 } = body
+        const { offset: off, limit } = clampPage(rawOff, rawLim, { maxLimit: 100 })
         try {
           const res = await fetch(`${env.SUPABASE_URL}/rest/v1/rpc/get_admin_users_crm`, {
             method: 'POST',
@@ -1220,6 +1250,7 @@ export default {
 
       if (body.action === 'admin_crm_export') {
         if (!canWrite) return new Response(JSON.stringify({ error: 'Sin permisos' }), { status: 403, headers: corsHeaders })
+        if (!await checkAdminActionRate(env, admin.userId, 'crm_export')) return new Response(JSON.stringify({ error: 'Límite de exportaciones por hora alcanzado (10/h)' }), { status: 429, headers: corsHeaders })
         const { search = '', premium_status = 'all', feature_used = '', tag = '', sort = 'created_at_desc' } = body
         try {
           await logAdminAction(env, admin.userId, 'crm_export', 'users', null, { premium_status, feature_used, tag, search })
@@ -1239,6 +1270,8 @@ export default {
         if (!canWrite) return new Response(JSON.stringify({ error: 'Sin permisos' }), { status: 403, headers: corsHeaders })
         const { user_id, tag } = body
         if (!user_id || !tag?.trim()) return new Response(JSON.stringify({ error: 'Faltan user_id y tag' }), { status: 400, headers: corsHeaders })
+        if (!isValidUuid(user_id)) return new Response(JSON.stringify({ error: 'user_id inválido' }), { status: 400, headers: corsHeaders })
+        if (tag.trim().length > 100) return new Response(JSON.stringify({ error: 'Tag demasiado largo (máx 100 caracteres)' }), { status: 400, headers: corsHeaders })
         try {
           await supabaseServiceFetch(env, 'user_tags', {
             method: 'POST',
@@ -1271,6 +1304,8 @@ export default {
         if (!canWrite) return new Response(JSON.stringify({ error: 'Sin permisos' }), { status: 403, headers: corsHeaders })
         const { user_id, nota } = body
         if (!user_id || !nota?.trim()) return new Response(JSON.stringify({ error: 'Faltan user_id y nota' }), { status: 400, headers: corsHeaders })
+        if (!isValidUuid(user_id)) return new Response(JSON.stringify({ error: 'user_id inválido' }), { status: 400, headers: corsHeaders })
+        if (nota.trim().length > 5000) return new Response(JSON.stringify({ error: 'Nota demasiado larga (máx 5000 caracteres)' }), { status: 400, headers: corsHeaders })
         try {
           await supabaseServiceFetch(env, 'admin_notes', {
             method: 'POST',
@@ -1297,9 +1332,12 @@ export default {
 
       if (body.action === 'admin_grant_premium') {
         if (!canWrite) return new Response(JSON.stringify({ error: 'Sin permisos de escritura' }), { status: 403, headers: corsHeaders })
+        if (!await checkAdminActionRate(env, admin.userId, 'grant_premium')) return new Response(JSON.stringify({ error: 'Límite de acciones por hora alcanzado (50/h)' }), { status: 429, headers: corsHeaders })
         const { user_id, days = 30 } = body
         if (!user_id) return new Response(JSON.stringify({ error: 'Falta user_id' }), { status: 400, headers: corsHeaders })
-        const premiumHasta = new Date(Date.now() + days * 24 * 60 * 60 * 1000).toISOString()
+        if (!isValidUuid(user_id)) return new Response(JSON.stringify({ error: 'user_id inválido' }), { status: 400, headers: corsHeaders })
+        const clampedDays = Math.max(1, Math.min(parseInt(days) || 30, 730))
+        const premiumHasta = new Date(Date.now() + clampedDays * 24 * 60 * 60 * 1000).toISOString()
         await supabaseServiceFetch(env, 'perfiles', {
           method: 'POST',
           body: JSON.stringify({ id: user_id, es_premium: true, premium_hasta: premiumHasta, premium_source: 'admin_grant', updated_at: new Date().toISOString() }),
@@ -1319,8 +1357,10 @@ export default {
 
       if (body.action === 'admin_revoke_premium') {
         if (!canWrite) return new Response(JSON.stringify({ error: 'Sin permisos de escritura' }), { status: 403, headers: corsHeaders })
+        if (!await checkAdminActionRate(env, admin.userId, 'revoke_premium')) return new Response(JSON.stringify({ error: 'Límite de acciones por hora alcanzado (50/h)' }), { status: 429, headers: corsHeaders })
         const { user_id } = body
         if (!user_id) return new Response(JSON.stringify({ error: 'Falta user_id' }), { status: 400, headers: corsHeaders })
+        if (!isValidUuid(user_id)) return new Response(JSON.stringify({ error: 'user_id inválido' }), { status: 400, headers: corsHeaders })
         await supabaseServiceFetch(env, 'perfiles', {
           method: 'POST',
           body: JSON.stringify({ id: user_id, es_premium: false, premium_hasta: null, updated_at: new Date().toISOString() }),
@@ -1340,14 +1380,19 @@ export default {
 
       if (body.action === 'admin_create_promo') {
         if (!canWrite) return new Response(JSON.stringify({ error: 'Sin permisos de escritura' }), { status: 403, headers: corsHeaders })
+        if (!await checkAdminActionRate(env, admin.userId, 'create_promo')) return new Response(JSON.stringify({ error: 'Límite de creación de promos alcanzado (20/h)' }), { status: 429, headers: corsHeaders })
         const { code, description, duration_days = 30, max_uses, expires_at } = body
         if (!code) return new Response(JSON.stringify({ error: 'Falta code' }), { status: 400, headers: corsHeaders })
+        if (code.trim().length > 50) return new Response(JSON.stringify({ error: 'Código demasiado largo (máx 50)' }), { status: 400, headers: corsHeaders })
+        if (description && description.length > 500) return new Response(JSON.stringify({ error: 'Descripción demasiado larga (máx 500)' }), { status: 400, headers: corsHeaders })
+        const safeDays = Math.max(1, Math.min(parseInt(duration_days) || 30, 730))
+        const safeMaxUses = max_uses ? Math.max(1, Math.min(parseInt(max_uses) || 1, 10_000)) : null
         try {
           const res = await supabaseServiceFetch(env, 'promo_codes', {
             method: 'POST',
             body: JSON.stringify({
               code: code.toUpperCase().trim(), description,
-              duration_days, max_uses: max_uses || null,
+              duration_days: safeDays, max_uses: safeMaxUses,
               expires_at: expires_at || null, created_by: admin.userId,
             }),
             headers: { Prefer: 'return=representation' },
@@ -1385,7 +1430,8 @@ export default {
       }
 
       if (body.action === 'admin_list_logs') {
-        const { offset: logsOffset = 0, limit = 50 } = body
+        const { offset: rawOff = 0, limit: rawLim = 50 } = body
+        const { offset: logsOffset, limit } = clampPage(rawOff, rawLim, { maxLimit: 200 })
         try {
           const res = await supabaseServiceFetch(env, `admin_logs?select=*&order=created_at.desc&offset=${logsOffset}&limit=${limit}`)
           const logs = await res.json()
@@ -1428,13 +1474,16 @@ export default {
       }
 
       if (body.action === 'admin_ai_logs') {
-        const { offset: logsOffset = 0, limit = 50, feature_filter } = body
+        const { offset: rawOff = 0, limit: rawLim = 50, feature_filter } = body
+        const { offset: logsOffset, limit } = clampPage(rawOff, rawLim, { maxLimit: 100 })
         try {
           let qs = `ai_usage_logs?select=*&order=created_at.desc&offset=${logsOffset}&limit=${limit}`
           if (feature_filter) qs += `&feature=eq.${encodeURIComponent(feature_filter)}`
           const res = await supabaseServiceFetch(env, qs)
+          if (!res.ok) throw new Error(`Supabase error ${res.status}`)
           const logs = await res.json()
-          return new Response(JSON.stringify({ ok: true, logs: Array.isArray(logs) ? logs : [] }), { status: 200, headers: corsHeaders })
+          const safeLog = Array.isArray(logs) ? logs : []
+          return new Response(JSON.stringify({ ok: true, logs: safeLog, has_more: safeLog.length === limit }), { status: 200, headers: corsHeaders })
         } catch (e) {
           return new Response(JSON.stringify({ ok: false, error: e.message }), { status: 500, headers: corsHeaders })
         }
@@ -1459,7 +1508,8 @@ export default {
       }
 
       if (body.action === 'admin_list_comments') {
-        const { status_filter = 'all', search = '', featured_only = false, offset: off = 0, limit = 30 } = body
+        const { status_filter = 'all', search = '', featured_only = false, offset: rawOff = 0, limit: rawLim = 30 } = body
+        const { offset: off, limit } = clampPage(rawOff, rawLim, { maxLimit: 100 })
         try {
           let qs = `comments?select=*&order=created_at.desc&offset=${off}&limit=${limit}`
           if (status_filter && status_filter !== 'all') qs += `&status=eq.${encodeURIComponent(status_filter)}`
@@ -1563,7 +1613,8 @@ export default {
 
       // ── Subscription events log ───────────────────────────────────────────────
       if (body.action === 'admin_subscription_events') {
-        const { offset = 0, limit = 25, event_type = 'all' } = body
+        const { offset: rawOff = 0, limit: rawLim = 25, event_type = 'all' } = body
+        const { offset, limit } = clampPage(rawOff, rawLim, { maxLimit: 100 })
         try {
           const res = await supabaseServiceFetch(env, 'rpc/get_subscription_events_paged', {
             method: 'POST',
@@ -1579,7 +1630,8 @@ export default {
 
       // ── Payments log ─────────────────────────────────────────────────────────
       if (body.action === 'admin_payments_log') {
-        const { offset = 0, limit = 25 } = body
+        const { offset: rawOff = 0, limit: rawLim = 25 } = body
+        const { offset, limit } = clampPage(rawOff, rawLim, { maxLimit: 100 })
         try {
           const res = await supabaseServiceFetch(env, 'rpc/get_payments_paged', {
             method: 'POST',
@@ -1595,23 +1647,20 @@ export default {
 
       // ── Product Intelligence — overview + funnel + trend + AI breakdown ────────
       if (body.action === 'admin_analytics_overview') {
-        try {
-          const rpcPost = (fn, params = {}) => supabaseServiceFetch(env, `rpc/${fn}`, {
-            method: 'POST', body: JSON.stringify(params),
-          })
-          const [overviewRes, funnelRes, trendRes, aiRes] = await Promise.all([
-            rpcPost('get_product_overview'),
-            rpcPost('get_product_funnel'),
-            rpcPost('get_weekly_activity_trend', { p_weeks: 8 }),
-            rpcPost('get_ai_feature_breakdown_30d'),
-          ])
-          const [overview, funnel, trend, ai_features] = await Promise.all([
-            overviewRes.json(), funnelRes.json(), trendRes.json(), aiRes.json(),
-          ])
-          return new Response(JSON.stringify({ ok: true, overview, funnel, trend, ai_features }), { status: 200, headers: corsHeaders })
-        } catch (e) {
-          return new Response(JSON.stringify({ ok: false, error: e.message }), { status: 500, headers: corsHeaders })
+        const rpcSafe = async (fn, params = {}) => {
+          try {
+            const res = await supabaseServiceFetch(env, `rpc/${fn}`, { method: 'POST', body: JSON.stringify(params) })
+            if (!res.ok) { console.warn(`[ADMIN] RPC ${fn} returned ${res.status}`); return null }
+            return res.json()
+          } catch (e) { console.warn(`[ADMIN] RPC ${fn} failed:`, e?.message); return null }
         }
+        const [overview, funnel, trend, ai_features] = await Promise.all([
+          rpcSafe('get_product_overview'),
+          rpcSafe('get_product_funnel'),
+          rpcSafe('get_weekly_activity_trend', { p_weeks: 8 }),
+          rpcSafe('get_ai_feature_breakdown_30d'),
+        ])
+        return new Response(JSON.stringify({ ok: true, overview, funnel, trend, ai_features }), { status: 200, headers: corsHeaders })
       }
 
       // ── GA4 Data API — runFunnelReport ───────────────────────────────────────
@@ -1629,6 +1678,8 @@ export default {
         } catch { /* cache miss is silent */ }
         try {
           const creds = JSON.parse(env.GA4_CREDENTIALS_JSON)
+          if (!creds?.client_email || !creds?.private_key || !creds?.token_uri)
+            return new Response(JSON.stringify({ ok: false, error: 'GA4_CREDENTIALS_JSON falta campos requeridos (client_email, private_key, token_uri)' }), { status: 500, headers: corsHeaders })
           const token = await getGa4AccessToken(creds)
           const GA4_PROPERTY = '534867380'
           // Updated funnel: starts from questionnaire entry so top-of-funnel is always visible
