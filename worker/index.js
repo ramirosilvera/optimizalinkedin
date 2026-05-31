@@ -3629,7 +3629,7 @@ async function expandWithSearch(env, ctx, cleanQueries, location, remoteOk, prof
   if (!newJobs.length) return null
 
   const batchJobs  = newJobs.slice(0, 12)
-  const contents   = buildMatchingContents(String(profileText).slice(0, 2000), batchJobs, candidateLocation)
+  const contents   = buildMatchingContents(String(profileText).slice(0, 2000), batchJobs, candidateLocation, professionInfo, 12)
   const geminiKeys = (env.GEMINI_API_KEYS || env.GEMINI_API_KEY || '')
     .split(',').map(k => k.trim()).filter(Boolean)
   if (!geminiKeys.length) return null
@@ -3649,7 +3649,7 @@ async function expandWithSearch(env, ctx, cleanQueries, location, remoteOk, prof
           body: JSON.stringify({
             system_instruction: { parts: [{ text: JOB_MATCHING_SYSTEM_PROMPT }] },
             contents,
-            generationConfig:   { temperature: 0.2, maxOutputTokens: 1024 },
+            generationConfig:   { temperature: 0.2, maxOutputTokens: 2048 },
           }),
           signal: controller.signal,
         }
@@ -3689,6 +3689,7 @@ async function expandWithSearch(env, ctx, cleanQueries, location, remoteOk, prof
       return {
         job,
         match_score:    Number((m.match_score || 0).toFixed(2)),
+        match_type:     m.match_type || null,
         strengths:      Array.isArray(m.strengths) ? m.strengths.slice(0, 3) : [],
         gaps:           Array.isArray(m.gaps)       ? m.gaps.slice(0, 2)     : [],
         summary:        String(m.summary || ''),
@@ -4967,6 +4968,7 @@ async function handleAiJobRecommendations(body, request, env, ctx, corsHeaders, 
       remote:      r.job.remote,
       url:         r.job.url,
       match_score: r.match_score,
+      match_type:  r.match_type || null,
       strengths:   r.strengths,
       gaps:        r.gaps,
       summary:     r.summary,
