@@ -425,7 +425,7 @@ function JobCard({
   const saveAttemptRef                        = useRef(false)
   const cardRef                               = useRef(null)
 
-  const { job, match_score, match_type, strengths, gaps, summary, rec_id, geo_score, from_expansion } = rec
+  const { job, match_score, match_type, strengths, gaps, summary, rec_id, geo_score, from_expansion, ai_fallback } = rec
 
   // Convert 0–10 scale from API to 0–100 percentage
   const scorePct = match_score != null ? Math.round(match_score * 10) : null
@@ -782,10 +782,18 @@ function JobCard({
                   </span>
                 )}
                 {/* AI discovery badge — shown for expansion-layer results */}
-                {from_expansion && (
+                {from_expansion && !ai_fallback && (
                   <span className="px-1.5 py-0.5 rounded text-[10px] font-medium"
                     style={{ background: 'rgba(14,165,233,0.09)', color: '#0284c7' }}>
                     ✨ Hallazgo IA
+                  </span>
+                )}
+                {/* Heuristic fallback indicator — AI analysis unavailable for this card */}
+                {ai_fallback && (
+                  <span className="px-1.5 py-0.5 rounded text-[10px] font-medium"
+                    style={{ background: 'rgba(148,163,184,0.10)', color: '#64748b', border: '1px solid rgba(148,163,184,0.20)' }}
+                    aria-label="Análisis preliminar basado en palabras clave — el análisis IA profundo estará disponible en la próxima búsqueda">
+                    🔍 Análisis preliminar
                   </span>
                 )}
                 {/* ATS Verificado — sourced directly from an ATS (greenhouse/lever/ashby/workable) */}
@@ -848,14 +856,19 @@ function JobCard({
         </div>
 
         {/* ── Row 2: AI Summary ── */}
-        {summary && (
+        {summary && !ai_fallback && (
           <p className="text-xs leading-relaxed" style={{ color: '#475569' }}>
             {summary}
           </p>
         )}
+        {ai_fallback && (
+          <p className="text-xs italic" style={{ color: '#94a3b8' }}>
+            Análisis detallado disponible al reiniciar el radar.
+          </p>
+        )}
 
         {/* ── Row 3: Strengths (collapsed: 2 max) ── */}
-        {strengths?.length > 0 && (
+        {!ai_fallback && strengths?.length > 0 && (
           <div className="space-y-1">
             {strengths.slice(0, expanded ? 3 : 2).map((s, i) => (
               <div key={i} className="flex items-start gap-1.5">
@@ -867,7 +880,7 @@ function JobCard({
         )}
 
         {/* ── Row 4: Gaps → reframed as growth opportunities ── */}
-        {gaps?.length > 0 && (
+        {!ai_fallback && gaps?.length > 0 && (
           <div className="space-y-1">
             {gaps.slice(0, expanded ? 2 : 1).map((g, i) => (
               <div key={i} className="flex items-start gap-1.5">

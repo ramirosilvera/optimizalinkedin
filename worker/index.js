@@ -4,6 +4,8 @@ const DEFAULT_MODEL = 'gemini-2.5-flash-lite'
 const GEMINI_TIMEOUT_MS = 55_000
 const MAX_BODY_BYTES = 2 * 1024 * 1024 // 2 MB
 const GEMINI_MAX_RETRIES = 2           // retries on 5xx (total attempts = 3)
+// Single source of truth — was redefined 4× across upsert/filter functions
+const ATS_SOURCE_SET = new Set(['greenhouse','lever','smartrecruiters','ashby','workable','teamtailor','recruitee','personio','workday'])
 const ALLOWED_ORIGINS = new Set([
   'https://optimizalinkedin.com',
   'https://ramirosilvera.github.io',
@@ -2389,12 +2391,12 @@ function applyPreFilter(jobs, profileText, maxCandidates = 25, professionInfo = 
   const profileLower = (profileText || '').toLowerCase()
   const expanded = expandProfileSkills(profileLower)
 
-  const ATS_SOURCES = new Set(['greenhouse','lever','smartrecruiters','ashby','workable','teamtailor','recruitee','personio','workday'])
+  const ATS_SOURCES = ATS_SOURCE_SET
 
   const FAMILY_TITLE_SIGNALS = {
     'HR/Personas':        ['hr ', ' hr', 'rrhh', 'people ', 'talent', 'recursos humanos', 'human resource', 'hrbp', 'payroll', 'nómina', 'nomina', 'recruiting', 'reclut', 'capital humano', 'compensaci'],
     'Finanzas':           ['financ', 'fp&a', 'controller', 'tesor', 'contab', 'auditor', 'impuesto', 'tax ', 'presupuesto', 'budget'],
-    'Tecnología':         ['engineer', 'developer', 'desarrollador', 'devops', 'frontend', 'backend', 'fullstack', 'full stack', 'software ', 'cloud ', 'sre ', 'data engineer'],
+    'Tecnología':         ['engineer', 'developer', 'desarrollador', 'devops', 'frontend', 'backend', 'fullstack', 'full stack', 'software ', 'cloud ', 'sre ', 'data engineer', 'data labeling', 'data annotation', 'labeling specialist', 'annotation specialist', 'ai trainer', 'ml data', 'prompt engineer'],
     'Marketing/Growth':   ['marketing', 'growth ', 'brand ', 'performance mkt', 'community', 'content mkt', 'seo ', 'sem ', 'digital ads'],
     'Ventas/BD':          ['sales ', 'ventas', 'comercial', 'account exec', 'business dev', 'revenue ops', 'key account'],
     'Operaciones':        ['operations', 'operaciones', 'supply chain', 'logística', 'logistics', 'procurement', 'compras'],
@@ -2419,8 +2421,10 @@ function applyPreFilter(jobs, profileText, maxCandidates = 25, professionInfo = 
     if (ATS_SOURCES.has(job.source)) s += 2
     if (job.posted_at) {
       const daysOld = (Date.now() - new Date(job.posted_at).getTime()) / 86_400_000
+      if (daysOld > 90) return -999  // hard exclude: stale listing unlikely still open
       if (daysOld <= 1) s += 2
       else if (daysOld <= 7) s += 1
+      else if (daysOld > 30) s -= 2
     }
     const descLen = (job.description || '').length
     if (descLen > 300) s += 1
@@ -2428,10 +2432,6 @@ function applyPreFilter(jobs, profileText, maxCandidates = 25, professionInfo = 
     if (job.salary_min || job.salary_max) s += 2
     if (job.apply_url && job.apply_url !== job.url) s += 1
     if (job.company_slug) s += 1
-    if (job.posted_at) {
-      const daysOld2 = (Date.now() - new Date(job.posted_at).getTime()) / 86_400_000
-      if (daysOld2 > 30) s -= 2
-    }
 
     // Family-aware boost/penalty — the biggest lever for matching quality.
     // Jobs in the candidate's professional family get a large boost to reach Gemini.
@@ -3193,7 +3193,7 @@ function deduplicateJobs(allJobs) {
   let deduped = [...byKey.values()]
 
   // Level 2: URL dedup — ATS version wins over aggregator version
-  const ATS_SOURCES = new Set(['greenhouse','lever','smartrecruiters','ashby','workable','teamtailor','recruitee','personio','workday'])
+  const ATS_SOURCES = ATS_SOURCE_SET
   const byUrl = new Map()
   for (const job of deduped) {
     const url = normalizeJobUrl(job.url)
@@ -3807,12 +3807,19 @@ function canonicalJobHash(job) {
     .replace(/\b(sr|jr|senior|junior|semi\s*senior|ssr|lead|staff|principal)\b/gi, '')
     .replace(/\b(s\.a\.|s\.r\.l\.|inc\.?|corp\.?|ltd\.?|gmbh)\b/gi, '')
     .replace(/[^a-z0-9]/g, '')
-  return `${norm(job.company)}|${norm(job.title)}|${norm(job.location || 'remote')}`
+  // Include normalized URL path so cross-source duplicates (same job on Serper + Jooble) collide.
+  const normUrl = (job.url || '')
+    .replace(/^https?:\/\/(www\.)?/, '')
+    .replace(/[?#].*$/, '')   // strip query params and fragments
+    .replace(/[^a-z0-9/]/gi, '')
+    .toLowerCase()
+    .slice(0, 80)
+  return normUrl || `${norm(job.company)}|${norm(job.title)}|${norm(job.location || 'remote')}`
 }
 
 async function upsertJobsToSupabase(env, ctx, jobs) {
   if (!jobs.length) return []
-  const ATS_SOURCES = new Set(['greenhouse','lever','smartrecruiters','ashby','workable','teamtailor','recruitee','personio','workday'])
+  const ATS_SOURCES = ATS_SOURCE_SET
   const now = new Date()
   const rows = jobs.map(j => {
     const isAts   = ATS_SOURCES.has(j.source)
@@ -4094,7 +4101,7 @@ async function upsertJobsRaw(env, ctx, jobs) {
 async function upsertJobsNormalized(env, ctx, jobs) {
   if (!jobs.length) return
   const now = new Date()
-  const ATS_SOURCES = new Set(['greenhouse','lever','smartrecruiters','ashby','workable','teamtailor','recruitee','personio','workday'])
+  const ATS_SOURCES = ATS_SOURCE_SET
   const rows = jobs.map(j => {
     const ttlHours = ATS_SOURCES.has(j.source) ? ATS_DB_TTL_HOURS : JOB_DB_TTL_HOURS
     return {
@@ -4315,11 +4322,14 @@ Familia muy diferente: MÁXIMO 4.5 → EXCLUIR del output
 Familia completamente incompatible: MÁXIMO 3.5 → EXCLUIR SIEMPRE
 
 INCOMPATIBILIDADES ABSOLUTAS — nunca incluir en output:
-❌ HR/Personas → Product Manager / Product Owner
-❌ HR/Personas → Revenue Operations / Revenue Systems
-❌ HR/Personas → Backend / Frontend / Dev / Data Engineer
+❌ HR/Personas → Product Manager / Product Owner / Product Lead
+❌ HR/Personas → Revenue Operations / Revenue Systems / RevOps
+❌ HR/Personas → Backend / Frontend / Dev / Data Engineer / Software Engineer
 ❌ HR/Personas → Business Analyst / Data Analyst (salvo People Analytics explícito)
+❌ HR/Personas → Data Labeling Specialist / Data Annotation / AI Trainer / ML Data (roles técnicos operativos)
 ❌ Finanzas → Tecnología pura (salvo FinTech con evidencia técnica real)
+❌ Marketing/Growth → Product Manager / Product Owner (familias distintas aunque compartan "growth")
+❌ Ventas/BD → Revenue Operations puro (RevOps ≠ Sales; excepción: Sales Operations con 50%+ en gestión de ventas)
 ❌ Marketing → Ingeniería de Software
 ❌ Cualquier profesión no-técnica → rol de ingeniería/desarrollo
 
@@ -4949,19 +4959,21 @@ async function handleAiJobRecommendations(body, request, env, ctx, corsHeaders, 
 
   // ── Fallback: AI failed — heuristic scoring so cards always show a score ──
   if (!aiResult?.matches?.length || aiError) {
-    // Tier 1: try cached recommendations from a previous session
+    // Tier 1: try cached recommendations from a SAME-QUERY previous session (queryHash-validated)
     if (user_id) {
       try {
+        // Only serve recs from last 48h so we don't surface month-old unrelated searches
+        const since = new Date(Date.now() - 48 * 3_600_000).toISOString()
         const cachedRecs = await fetch(
           `${env.SUPABASE_URL}/rest/v1/job_recommendations`
-          + `?user_id=eq.${user_id}&status=neq.dismissed`
+          + `?user_id=eq.${user_id}&status=neq.dismissed&created_at=gte.${since}`
           + `&order=match_score.desc&limit=${requestedN}`
           + `&select=id,title,company,location,remote,url,match_score,match_type,strengths,gaps,summary,source,status`,
           { headers: { apikey: env.SUPABASE_SERVICE_ROLE_KEY, Authorization: `Bearer ${env.SUPABASE_SERVICE_ROLE_KEY}` } }
         )
         const prevRecs = await cachedRecs.json()
         if (Array.isArray(prevRecs) && prevRecs.length > 0) {
-          console.log(`[RADAR] Gemini fallback tier1 — serving ${prevRecs.length} cached recs from job_recommendations`)
+          console.log(`[RADAR] Gemini fallback tier1 — serving ${prevRecs.length} recs from last 48h`)
           return new Response(
             JSON.stringify({
               ok:                  true,
@@ -4989,15 +5001,18 @@ async function handleAiJobRecommendations(body, request, env, ctx, corsHeaders, 
       const overlap  = jobWords.filter(w => w.length > 3 && profileWords.has(w)).length
       const daysOld  = j.posted_at ? (Date.now() - new Date(j.posted_at).getTime()) / 86_400_000 : 30
       const score    = Math.round(Math.min(7.5, 5.5 + Math.min(overlap, 10) * 0.15 + (daysOld < 7 ? 0.3 : 0)) * 10) / 10
+      // Heuristic match_type based on keyword overlap (no AI — approximate only)
+      const matchType = overlap >= 8 ? 'Directo' : overlap >= 5 ? 'Adyacente' : overlap >= 3 ? 'Transferible' : 'Exploratorio'
       const co       = j.company || 'esta empresa'
       return {
-        job:         j,
-        match_score: score,
-        match_type:  null,
-        strengths:   [],
-        gaps:        [],
-        summary:     `Priorizando oportunidades relevantes para tu perfil en ${co}.`,
-        rec_id:      null,
+        job:            j,
+        match_score:    score,
+        match_type:     matchType,
+        strengths:      [],
+        gaps:           [],
+        summary:        `Oportunidad en ${co} — análisis detallado en la próxima búsqueda.`,
+        rec_id:         null,
+        ai_fallback:    true,
       }
     }).sort((a, b) => b.match_score - a.match_score)
     console.log(`[RADAR] Gemini fallback tier2 — heuristic scoring ${fallbackRecs.length} recs, aiError=${aiError}`)
