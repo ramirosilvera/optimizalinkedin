@@ -755,25 +755,29 @@ function JobCard({
                 {/* Match type badge — sourced from AI headhunter scoring */}
                 {match_type === 'Directo' && (
                   <span className="px-1.5 py-0.5 rounded text-[10px] font-semibold"
-                    style={{ background: 'rgba(22,163,74,0.11)', color: '#15803d', border: '1px solid rgba(22,163,74,0.28)' }}>
+                    style={{ background: 'rgba(22,163,74,0.11)', color: '#15803d', border: '1px solid rgba(22,163,74,0.28)' }}
+                    aria-label="Match directo: tu perfil se alinea directamente con este rol">
                     ⚡ Match Directo
                   </span>
                 )}
                 {match_type === 'Adyacente' && (
                   <span className="px-1.5 py-0.5 rounded text-[10px] font-semibold"
-                    style={{ background: 'rgba(59,130,246,0.10)', color: '#1d4ed8', border: '1px solid rgba(59,130,246,0.25)' }}>
+                    style={{ background: 'rgba(59,130,246,0.10)', color: '#1d4ed8', border: '1px solid rgba(59,130,246,0.25)' }}
+                    aria-label="Match adyacente: rol en una familia profesional cercana a la tuya">
                     ↗ Match Adyacente
                   </span>
                 )}
                 {match_type === 'Transferible' && (
                   <span className="px-1.5 py-0.5 rounded text-[10px] font-semibold"
-                    style={{ background: 'rgba(245,158,11,0.10)', color: '#b45309', border: '1px solid rgba(245,158,11,0.28)' }}>
+                    style={{ background: 'rgba(245,158,11,0.10)', color: '#b45309', border: '1px solid rgba(245,158,11,0.28)' }}
+                    aria-label="Habilidades transferibles: tus competencias aplican a este rol con adaptación">
                     ↔ Transferible
                   </span>
                 )}
                 {match_type === 'Exploratorio' && (
                   <span className="px-1.5 py-0.5 rounded text-[10px] font-medium"
-                    style={{ background: 'rgba(148,163,184,0.10)', color: '#475569', border: '1px solid rgba(148,163,184,0.25)' }}>
+                    style={{ background: 'rgba(148,163,184,0.10)', color: '#475569', border: '1px solid rgba(148,163,184,0.25)' }}
+                    aria-label="Exploratorio: rol fuera de tu área principal, incluido para ampliar horizontes">
                     🔭 Exploratorio
                   </span>
                 )}
