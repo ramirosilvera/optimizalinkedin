@@ -413,6 +413,30 @@ export function normalizeAshby(raw, companyMeta) {
   })
 }
 
+export function normalizeArbeitnow(data) {
+  const items = Array.isArray(data?.data) ? data.data : []
+  return items.slice(0, 100).map(j => {
+    const slug = String(j.slug || '').split('/').pop() || String(j.url || '').split('/').pop() || `arb-${Math.random().toString(36).slice(2)}`
+    return {
+      source:          'arbeitnow',
+      external_id:     slug,
+      title:           j.title || '',
+      company:         j.company_name || '',
+      location:        j.location || 'Remote',
+      remote:          j.remote === true,
+      url:             j.url || '',
+      apply_url:       j.url || null,
+      description:     truncateDesc(stripHtml(j.description || '')),
+      skills_required: Array.isArray(j.tags) ? j.tags.slice(0, 10) : [],
+      seniority:       normalizeSeniority(j.title || ''),
+      posted_at:       j.created_at ? new Date(j.created_at * 1000).toISOString() : null,
+      salary_min:      null,
+      salary_max:      null,
+      company_slug:    null,
+    }
+  }).filter(j => j.url && j.title)
+}
+
 export function normalizeJobs(source, rawData, companyMeta = null) {
   switch (source) {
     case 'remoteok':        return normalizeRemoteOK(rawData)
@@ -422,6 +446,7 @@ export function normalizeJobs(source, rawData, companyMeta = null) {
     case 'adzuna':          return normalizeAdzuna(rawData)
     case 'getonboard':      return normalizeGetOnBoard(rawData)
     case 'himalayas':       return normalizeHimalayas(rawData)
+    case 'arbeitnow':       return normalizeArbeitnow(rawData)
     case 'workable':        return normalizeWorkable(rawData, companyMeta)
     case 'teamtailor':      return normalizeTeamtailor(rawData, companyMeta)
     case 'recruitee':       return normalizeRecruitee(rawData, companyMeta)

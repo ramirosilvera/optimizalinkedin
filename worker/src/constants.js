@@ -68,8 +68,8 @@ export const JREC_PROMPT_VERSION = 'v9'    // bump when JOB_MATCHING_SYSTEM_PROM
 export const JOB_SEARCH_LIMIT_FREE    = 1
 export const JOB_SEARCH_LIMIT_PREMIUM = 5
 
-export const MAX_JOBS_PREMIUM         = 50
-export const MAX_JOBS_FREE            = 20
+export const MAX_JOBS_PREMIUM         = 80
+export const MAX_JOBS_FREE            = 30
 export const MAX_JOBS_FOR_AI_MATCHING = MAX_JOBS_FREE
 
 export const MAX_DESC_CHARS = 6_000

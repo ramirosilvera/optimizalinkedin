@@ -2222,6 +2222,14 @@ async function fetchJobSource(source, query, location, remoteOk, env, candidateL
       return { source, jobs: normalizeJobs(source, raw) }
     }
 
+    if (source === 'arbeitnow') {
+      const page = Math.ceil(Math.random() * 2)  // Randomly alternate pages 1-2 for variety
+      url = `https://www.arbeitnow.com/api/job-board-api?page=${page}${remoteOk ? '&remote=true' : ''}`
+      const r = await fetch(url, { headers: { 'User-Agent': UA, 'Accept': 'application/json' }, signal: ctrl.signal })
+      raw = await r.json()
+      return { source, jobs: normalizeJobs(source, raw) }
+    }
+
     if (source === 'serper') {
       if (!env.SERPER_API_KEY) {
         console.log('[SERPER] skipped — SERPER_API_KEY not configured in this environment')
@@ -2259,8 +2267,8 @@ async function fetchJobSource(source, query, location, remoteOk, env, candidateL
  * @param {string|null} candidateLocation - Auto-detected from profile text; drives Serper geo
  */
 async function fetchAllSources(queries, location, remoteOk, env, userProfile = '', candidateLocation = null) {
-  const remoteSources = ['remoteok', 'remotive', 'jobicy', 'adzuna', 'getonboard', 'himalayas']
-  const localSources  = ['adzuna', 'jobicy', 'getonboard', 'himalayas']
+  const remoteSources = ['remoteok', 'remotive', 'jobicy', 'adzuna', 'getonboard', 'himalayas', 'arbeitnow']
+  const localSources  = ['adzuna', 'jobicy', 'getonboard', 'himalayas', 'arbeitnow']
   if (env.JOOBLE_KEY)     { remoteSources.push('jooble');  localSources.push('jooble')  }
   if (env.SERPER_API_KEY) { remoteSources.push('serper');  localSources.push('serper')  }
   const sources = remoteOk ? remoteSources : localSources
