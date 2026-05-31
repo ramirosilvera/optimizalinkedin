@@ -3,19 +3,15 @@ import { Logo, LinkedInIcon } from '../ui'
 import CommentsSection from '../CommentsSection'
 
 export default function WelcomeScreen({ setStep, result, latestAnalisis, historialLoading, hasCV, hasInterview, onResumePreparation, restoreFromHistorial, sessionChecked }) {
-  // Synchronous localStorage hints — available before any async resolves
-  const isPremiumHint = localStorage.getItem('ol_premium') === '1'
-
-  // Unified session data: in-session result takes priority over restored historial item
   const sessionData = result || latestAnalisis?.datos || null
   const hasActiveSession = !!sessionData
 
-  // Show skeleton while auth + historial are resolving for a known PRO user.
-  // sessionChecked starts false (has tokens) and becomes true only after the full
-  // auth+historial bootstrap completes — eliminating the flash of wrong CTA.
-  const showSkeleton = isPremiumHint && !hasActiveSession && !sessionChecked
+  // Show skeleton when:
+  // - historialLoading is in progress, OR
+  // - sessionChecked is false (stored tokens exist but auth not yet verified — user likely has history)
+  // This prevents flashing "Empezá tu diagnóstico" for returning users on page load and after login.
+  const showSkeleton = !hasActiveSession && (historialLoading || !sessionChecked)
 
-  // Progress items — derived from what's been done
   const progressItems = sessionData ? [
     { done: true, label: 'Diagnóstico' },
     { done: !!result || hasCV, label: 'CV generado' },
@@ -26,25 +22,30 @@ export default function WelcomeScreen({ setStep, result, latestAnalisis, histori
   const sessionScore = sessionData?.puntaje_general ?? null
 
   return (
-    <div className="step-transition text-center space-y-8">
+    <div className="step-transition text-center space-y-8 max-w-4xl mx-auto">
       <Logo />
 
       {/* Hero */}
-      <div className="space-y-5">
+      <div className="space-y-5 md:space-y-6">
         <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full text-xs font-semibold tracking-wide badge-shimmer"
           style={{ border: '1px solid rgba(0,119,181,0.4)', color: '#0077B5' }}>
-          ✦ &nbsp;Centro de Preparación Profesional
+          ✦ &nbsp;Sistema de Empleabilidad Profesional
         </div>
-        <h1 className="text-4xl sm:text-5xl font-bold leading-tight tracking-tight" style={{ letterSpacing: '-0.02em' }}>
-          <span className="text-slate-900">Tu preparación profesional,</span><br />
-          <span className="gradient-text-pro">con criterio de headhunter.</span>
+        <h1 className="text-3xl sm:text-4xl lg:text-5xl font-bold leading-tight tracking-tight" style={{ letterSpacing: '-0.02em' }}>
+          <span className="text-slate-900">El sistema para conseguir</span><br />
+          <span className="gradient-text-pro">el trabajo que buscás.</span>
         </h1>
-        <p className="text-slate-600 text-base max-w-sm mx-auto leading-relaxed">
-          Diagnóstico, CV, entrenamiento y seguimiento — sistema guiado, sin registro, sin costo.
-        </p>
+        <div className="space-y-2">
+          <p className="text-slate-500 text-sm max-w-xs sm:max-w-md mx-auto leading-relaxed">
+            Diagnóstico · CV · Radar Laboral · Entrevistas · Kanban
+          </p>
+          <p className="text-slate-400 text-xs max-w-xs sm:max-w-sm mx-auto">
+            Con criterio de headhunter real. Sin registro. Gratuito.
+          </p>
+        </div>
       </div>
 
-      {/* ── Continuation card (skeleton) ── */}
+      {/* Continuation card — skeleton */}
       {showSkeleton && (
         <div className="w-full max-w-sm mx-auto rounded-2xl overflow-hidden flex"
           style={{ border: '1px solid rgba(0,119,181,0.12)', background: 'white', height: 88 }}>
@@ -57,7 +58,7 @@ export default function WelcomeScreen({ setStep, result, latestAnalisis, histori
         </div>
       )}
 
-      {/* ── Continuation card (active) ── */}
+      {/* Continuation card — active */}
       {hasActiveSession && (
         <div className="w-full max-w-sm mx-auto rounded-2xl overflow-hidden flex"
           style={{
@@ -66,7 +67,6 @@ export default function WelcomeScreen({ setStep, result, latestAnalisis, histori
             boxShadow: '0 2px 12px rgba(0,0,0,0.06)',
             animation: 'fadeSlideUp 0.3s cubic-bezier(0.16,1,0.3,1) 120ms both',
           }}>
-          {/* Left accent bar */}
           <div className="w-1 shrink-0" style={{ background: 'linear-gradient(180deg,#0d2137,#0077B5)' }} />
           <div className="flex-1 px-4 py-3 text-left">
             <div className="flex items-start justify-between gap-2">
@@ -85,7 +85,6 @@ export default function WelcomeScreen({ setStep, result, latestAnalisis, histori
                 </span>
               )}
             </div>
-            {/* Progress pills */}
             <div className="flex items-center gap-2 mt-2 flex-wrap">
               {progressItems.map(item => (
                 <span key={item.label} className="flex items-center gap-1 text-[10px] font-medium"
@@ -98,7 +97,7 @@ export default function WelcomeScreen({ setStep, result, latestAnalisis, histori
         </div>
       )}
 
-      {/* ── Primary CTA zone ── */}
+      {/* Primary CTA zone */}
       <div className="space-y-3">
         {hasActiveSession ? (
           <>
@@ -114,7 +113,7 @@ export default function WelcomeScreen({ setStep, result, latestAnalisis, histori
               className="btn-glow spring-tap w-full text-white font-semibold py-4 px-8 rounded-2xl text-base"
               style={{ background: 'linear-gradient(135deg, #0d2137 0%, #0077B5 100%)' }}
             >
-              Seguir con tu preparación →
+              Seguí con tu preparación →
             </button>
             <p className="text-xs" style={{ color: '#94a3b8' }}>
               <button
@@ -133,7 +132,8 @@ export default function WelcomeScreen({ setStep, result, latestAnalisis, histori
               {' · '}
               <button
                 onClick={() => { trackEvent('click_nuevo_diagnostico', { location: 'hero' }); setStep(STEPS.QUESTIONS) }}
-                className="underline hover:text-slate-500 transition-colors"
+                className="hover:text-slate-400 transition-colors"
+                style={{ color: '#cbd5e1' }}
               >
                 Nuevo diagnóstico
               </button>
@@ -146,53 +146,26 @@ export default function WelcomeScreen({ setStep, result, latestAnalisis, histori
           <button
             onClick={() => { trackEvent('click_empezar_analisis', { location: 'hero' }); setStep(STEPS.QUESTIONS) }}
             className="btn-glow spring-tap w-full text-white font-semibold py-4 px-8 rounded-2xl text-base"
-            style={{ background: 'linear-gradient(135deg, #0077B5 0%, #0ea5e9 100%)' }}
+            style={{ background: 'linear-gradient(135deg, #0d2137 0%, #0077B5 100%)' }}
           >
-            Iniciar diagnóstico →
+            Empezá tu diagnóstico →
           </button>
         )}
-        <p className="text-slate-500 text-xs">Sin registro · Resultado en minutos · Gratuito</p>
+        <p className="text-slate-500 text-xs">Sin registro · Resultado en minutos · 100% gratuito</p>
       </div>
 
-      <div className="accent-line" style={{ maxWidth: 380, margin: '0 auto' }} />
+      {/* Scroll hint */}
+      <p className="text-[11px] font-medium" style={{ color: '#94a3b8', letterSpacing: '0.04em' }}>
+        ↓ Cómo funciona el sistema
+      </p>
 
-      {/* Module strip — system context, below fold */}
-      <div style={{ width: '100%', maxWidth: 380, margin: '0 auto' }}>
-        <p style={{ fontSize: 10, fontWeight: 600, color: '#94a3b8', textAlign: 'center', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 10 }}>
-          Sistema de preparación · 7 módulos
-        </p>
-        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, justifyContent: 'center' }}>
-          {[
-            { icon: '🎯', label: 'Diagnóstico' },
-            { icon: '✏️', label: 'Posicionamiento' },
-            { icon: '📄', label: 'CV Profesional' },
-            { icon: '🎙️', label: 'Entrenamiento' },
-            { icon: '⭐', label: 'STAR' },
-            { icon: '📍', label: 'Postulaciones' },
-            { icon: '📊', label: 'Informe' },
-          ].map(m => (
-            <span key={m.label} style={{
-              display: 'inline-flex', alignItems: 'center', gap: 4,
-              fontSize: 11, fontWeight: 500, color: '#475569',
-              background: '#f8fafc', border: '1px solid #e2e8f0',
-              borderRadius: 99, padding: '4px 10px',
-            }}>
-              <span style={{ fontSize: 12 }}>{m.icon}</span>
-              {m.label}
-            </span>
-          ))}
-        </div>
-      </div>
+      {/* SEO sections */}
+      <div className="text-left space-y-12 pt-2">
 
-      <CommentsSection />
-
-      {/* ── Secciones SEO ── */}
-      <div className="text-left space-y-12 pt-6">
-
-        {/* Cómo funciona — moved first: validates the journey before feature list */}
+        {/* Cómo funciona */}
         <section>
-          <h2 className="text-xl font-bold text-slate-900 mb-4">Cómo funciona</h2>
-          <div className="space-y-3">
+          <h2 className="text-xl sm:text-2xl font-bold text-slate-900 mb-4">Cómo funciona</h2>
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
             {[
               {
                 num: '1', color: '#0077B5',
@@ -205,12 +178,12 @@ export default function WelcomeScreen({ setStep, result, latestAnalisis, histori
                 desc: 'Aplicás las mejoras al LinkedIn, generás tu CV ATS-compatible de 1 página y definís tu estrategia de contenido para aparecer en búsquedas de reclutadores.',
               },
               {
-                num: '3', color: '#6366f1',
-                title: 'Entrenás y postulás con ventaja',
-                desc: 'Simulás entrevistas reales con IA, dominás la metodología STAR y adaptás tu CV y carta de presentación para cada oferta específica.',
+                num: '3', color: '#c2185b',
+                title: 'Encontrás oportunidades reales y entrenás',
+                desc: 'El Radar Laboral te muestra empleos compatibles con tu perfil actualizado. Simulás entrevistas reales con IA, dominás la metodología STAR y adaptás tu candidatura para cada oferta.',
               },
             ].map(stepItem => (
-              <div key={stepItem.num} className="flex items-start gap-4 rounded-2xl p-4"
+              <div key={stepItem.num} className="flex sm:flex-col items-start gap-4 rounded-2xl p-4 sm:p-5"
                 style={{ background: 'white', border: '1px solid rgba(0,119,181,0.10)' }}>
                 <div className="w-8 h-8 rounded-full flex items-center justify-center text-white text-sm font-bold shrink-0"
                   style={{ background: stepItem.color }}>{stepItem.num}</div>
@@ -223,39 +196,76 @@ export default function WelcomeScreen({ setStep, result, latestAnalisis, histori
           </div>
         </section>
 
-        {/* ¿Qué incluye el sistema? — consolidated from 9 → 5 items */}
+        {/* ¿Qué incluye el sistema? */}
         <section>
-          <h2 className="text-xl font-bold text-slate-900 mb-4">¿Qué incluye el sistema?</h2>
+          <h2 className="text-xl font-bold text-slate-900 mb-2">¿Qué incluye el sistema?</h2>
+          {/* Module chips — visual header */}
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 16 }}>
+            {[
+              { icon: '🎯', label: 'Diagnóstico' },
+              { icon: '✏️', label: 'Posicionamiento' },
+              { icon: '📄', label: 'CV Profesional' },
+              { icon: '📡', label: 'Radar Laboral' },
+              { icon: '🎙️', label: 'Entrevista' },
+              { icon: '⭐', label: 'STAR' },
+              { icon: '📍', label: 'Kanban' },
+              { icon: '📊', label: 'Informe' },
+            ].map(m => (
+              <span key={m.label} style={{
+                display: 'inline-flex', alignItems: 'center', gap: 4,
+                fontSize: 11, fontWeight: 500, color: '#475569',
+                background: '#f8fafc', border: '1px solid #e2e8f0',
+                borderRadius: 99, padding: '4px 10px',
+              }}>
+                <span style={{ fontSize: 12 }}>{m.icon}</span>
+                {m.label}
+              </span>
+            ))}
+          </div>
           <div className="space-y-3">
             {[
               {
                 icon: '🎯',
                 title: 'Diagnóstico con criterio de headhunter',
                 desc: 'Score de empleabilidad, análisis de brechas críticas y recomendaciones concretas basadas en criterio real de selección profesional.',
+                highlight: false,
               },
               {
                 icon: '✏️',
                 title: 'LinkedIn y CV de 1 página',
                 desc: 'Titular y resumen reescritos con propuesta de valor, palabras clave SEO y CV ATS-compatible generado con tu perfil optimizado.',
+                highlight: false,
+              },
+              {
+                icon: '📡',
+                title: 'Radar Laboral — empleos compatibles con tu perfil',
+                desc: 'Recibís recomendaciones de empleo priorizadas por compatibilidad real con tu perfil, sector y objetivos. Cada oferta viene con score de match, fortalezas aplicables y brechas a cerrar.',
+                highlight: true,
               },
               {
                 icon: '🎙️',
                 title: 'Simulador de entrevista + metodología STAR',
-                desc: 'Practicá 5 preguntas reales con IA y recibí feedback de RRHH. Dominá el framework que usan los mejores candidatos para respuestas de alto impacto.',
+                desc: 'Practicás 5 preguntas reales con IA y recibís feedback de RRHH. Dominás el framework que usan los mejores candidatos para respuestas de alto impacto.',
+                highlight: false,
               },
               {
                 icon: '📝',
                 title: 'CV adaptado por oferta + carta de presentación',
                 desc: 'Pegás el aviso y recibís tu CV personalizado para esa posición más una carta de presentación lista para enviar.',
+                highlight: false,
               },
               {
                 icon: '📍',
-                title: 'Seguimiento de postulaciones',
-                desc: 'Tablero kanban para organizar tus aplicaciones, estado y próximos pasos — todo integrado en un sistema de preparación continuo.',
+                title: 'Kanban de postulaciones',
+                desc: 'Tablero visual para organizar tus aplicaciones por estado y próximos pasos — integrado con el sistema de preparación continua.',
+                highlight: false,
               },
             ].map(item => (
               <div key={item.title} className="flex items-start gap-3 rounded-2xl p-4"
-                style={{ background: 'white', border: '1px solid rgba(0,119,181,0.10)' }}>
+                style={{
+                  background: item.highlight ? 'rgba(194,24,91,0.04)' : 'white',
+                  border: item.highlight ? '1.5px solid rgba(194,24,91,0.20)' : '1px solid rgba(0,119,181,0.10)',
+                }}>
                 <span className="text-xl shrink-0">{item.icon}</span>
                 <div>
                   <p className="text-slate-800 text-sm font-semibold">{item.title}</p>
@@ -266,7 +276,7 @@ export default function WelcomeScreen({ setStep, result, latestAnalisis, histori
           </div>
         </section>
 
-        {/* Gratuito vs. Profesional — new section, communicates model clearly */}
+        {/* Gratuito vs. Profesional */}
         <section>
           <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full text-xs font-semibold mb-3"
             style={{ background: 'rgba(0,119,181,0.07)', color: '#0077B5', border: '1px solid rgba(0,119,181,0.2)' }}>
@@ -285,9 +295,9 @@ export default function WelcomeScreen({ setStep, result, latestAnalisis, histori
               </div>
               <ul className="space-y-1.5">
                 {[
-                  '7 módulos completos',
-                  'Diagnóstico, CV, entrevista',
-                  'STAR y Postulaciones',
+                  '8 módulos completos',
+                  'Diagnóstico, CV, Radar',
+                  'Entrevista y Kanban',
                   'Sin límite de usos',
                 ].map(f => (
                   <li key={f} className="flex items-start gap-1.5 text-xs text-slate-600">
@@ -358,6 +368,7 @@ export default function WelcomeScreen({ setStep, result, latestAnalisis, histori
                   { feat: 'Criterio de headhunter real',         app: 1, premium: 0, ia: 0, asesor: 1 },
                   { feat: 'Diagnóstico completo del perfil',      app: 1, premium: 2, ia: 2, asesor: 1 },
                   { feat: 'Titular y resumen optimizados',        app: 1, premium: 2, ia: 2, asesor: 1 },
+                  { feat: 'Radar de empleos compatibles',         app: 1, premium: 1, ia: 0, asesor: 0 },
                   { feat: 'SEO para búsquedas de reclutadores',   app: 1, premium: 1, ia: 0, asesor: 1 },
                   { feat: 'Simulador de entrevista con IA',       app: 1, premium: 0, ia: 0, asesor: 2 },
                   { feat: 'Entrenamiento metodología STAR',       app: 1, premium: 0, ia: 0, asesor: 2 },
@@ -410,12 +421,15 @@ export default function WelcomeScreen({ setStep, result, latestAnalisis, histori
           </div>
         </section>
 
+        {/* Comments — moved after "Quién está detrás" */}
+        <CommentsSection />
+
         {/* FAQ */}
         <section>
           <h2 className="text-xl font-bold text-slate-900 mb-4">Preguntas frecuentes</h2>
           <div className="space-y-3">
             {[
-              { q: '¿Qué es Optimiza LK?', a: 'Optimiza LK es el Centro de Preparación Profesional creado por Ramiro Silvera (Gerente de RRHH y Headhunter con +10 años de experiencia). Diagnosticá tu competitividad laboral, construí tu CV, entrenás entrevistas con IA y adaptás tu candidatura para cada oferta — todo sin costo y sin registro.' },
+              { q: '¿Qué es el Radar Laboral?', a: 'El Radar Laboral es el módulo de recomendaciones de empleo inteligente de Optimiza LK. Analiza tu perfil actualizado y te muestra ofertas priorizadas por compatibilidad real — con score de match, fortalezas aplicables y brechas a cerrar para cada posición.' },
               { q: '¿Es realmente gratis?', a: 'Sí, 100% gratis y sin registro. No necesitás crear una cuenta ni dejar tu email para recibir el análisis completo.' },
               { q: '¿Qué pasa con mi CV o perfil?', a: 'Tu información se usa para generar el análisis. Solo se guarda si vos lo autorizás — por ejemplo, al activar el plan Profesional para mantener tu historial entre sesiones. En ningún caso se comparte con terceros.' },
               { q: '¿Cuánto tarda el análisis?', a: 'Menos de 60 segundos una vez que subís tu perfil. El cuestionario inicial tarda 3-5 minutos dependiendo del detalle que ingreses.' },
@@ -432,11 +446,37 @@ export default function WelcomeScreen({ setStep, result, latestAnalisis, histori
           </div>
         </section>
 
-        {/* Footer de marca */}
+        {/* Final CTA */}
+        <section className="text-center space-y-4 py-4">
+          <p className="text-slate-700 font-semibold text-base">
+            ¿Listo para destacar en tu próxima búsqueda?
+          </p>
+          <button
+            onClick={() => {
+              trackEvent('click_empezar_analisis', { location: 'footer_cta' })
+              if (hasActiveSession) {
+                if (!result && latestAnalisis && onResumePreparation) {
+                  onResumePreparation()
+                } else {
+                  setStep(STEPS.MODE_SELECT)
+                }
+              } else {
+                setStep(STEPS.QUESTIONS)
+              }
+            }}
+            className="btn-glow spring-tap w-full text-white font-semibold py-4 px-8 rounded-2xl text-base"
+            style={{ background: 'linear-gradient(135deg, #0d2137 0%, #0077B5 100%)' }}
+          >
+            {hasActiveSession ? 'Seguí con tu preparación →' : 'Empezá tu diagnóstico →'}
+          </button>
+          <p className="text-slate-400 text-xs">Sin registro · Resultado en minutos · 100% gratuito</p>
+        </section>
+
+        {/* Footer */}
         <div className="pt-4 pb-2 text-center border-t" style={{ borderColor: 'rgba(0,119,181,0.1)' }}>
           <p className="text-xs text-slate-400 leading-relaxed">
             <strong className="text-slate-500">Optimiza LK</strong> · Creado por Ramiro Silvera · Argentina<br />
-            <span>Centro de Preparación Profesional · Diagnóstico, CV, Entrevista y Seguimiento</span>
+            <span>Sistema de Empleabilidad Profesional · Diagnóstico, CV, Radar, Entrevista y Kanban</span>
           </p>
         </div>
 

@@ -123,7 +123,7 @@ export default function CvScreen({
   }
 
   return (
-    <div className="step-transition space-y-4">
+    <div className="step-transition space-y-4 max-w-3xl mx-auto">
       {/* Header */}
       <div className="flex items-center justify-between gap-2">
         <button

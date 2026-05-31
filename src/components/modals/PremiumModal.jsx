@@ -3,58 +3,67 @@ import { LinkedInIcon } from '../ui'
 
 export default function PremiumModal({ user, setShowPremiumModal, subscriptionLoading, premiumEmail, setPremiumEmail, startSubscription, couponCode, setCouponCode, couponEmail, setCouponEmail, couponLoading, applyCoupon, couponError, setCouponError, couponSuccess, setCouponSuccess, showCouponField, setShowCouponField, handleLinkedinAuthViaSupabase }) {
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 backdrop-enter"
+    <div className="fixed inset-0 z-50 flex items-start sm:items-center justify-center p-3 sm:p-6 backdrop-enter overflow-y-auto"
       style={{ background: 'rgba(0,0,0,0.55)', backdropFilter: 'blur(4px)' }}
       onClick={e => { if (e.target === e.currentTarget) { setShowPremiumModal(false); setShowCouponField(false); setCouponCode(''); setCouponError(''); setCouponSuccess(false) } }}>
-      <div className="w-full max-w-sm rounded-3xl overflow-hidden modal-enter"
-        style={{ boxShadow: '0 25px 60px rgba(0,0,0,0.2)' }}>
-        <div className="p-6 text-white" style={{ background: 'linear-gradient(135deg, #0d1f2d 0%, #1a3a5c 60%, #0d3055 100%)' }}>
-          <p className="text-xs font-semibold opacity-60 mb-1 tracking-widest">PLAN PROFESIONAL</p>
-          <h2 className="text-2xl font-bold tracking-tight">Plan Profesional ✦</h2>
-          <div className="flex items-baseline gap-2 mt-2">
-            <p className="text-4xl font-bold">$3.000<span className="text-lg font-normal opacity-80">/mes</span></p>
-            <span className="text-xs font-bold px-2 py-0.5 rounded-full" style={{ background: 'rgba(255,255,255,0.22)', color: 'white' }}>7 DÍAS GRATIS</span>
+      <div className="w-full max-w-sm sm:max-w-md lg:max-w-lg rounded-3xl overflow-hidden modal-enter my-auto"
+        style={{ boxShadow: '0 25px 60px rgba(0,0,0,0.25)' }}>
+
+        {/* ── Header — price + plan name ── */}
+        <div className="p-6 sm:p-8 text-white" style={{ background: 'linear-gradient(135deg, #0d1f2d 0%, #1a3a5c 60%, #0d3055 100%)' }}>
+          <p className="text-xs font-semibold opacity-60 mb-1 tracking-widest uppercase">Sistema de Empleabilidad IA</p>
+          <div className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-3">
+            <div>
+              <h2 className="text-2xl font-bold tracking-tight">Plan Profesional ✦</h2>
+              <p className="text-sm opacity-75 mt-1">La IA trabaja activamente en tu empleabilidad</p>
+              <p className="text-xs opacity-55 mt-0.5">Cancelás antes del día 7, no se cobra nada</p>
+            </div>
+            <div className="flex items-baseline gap-2 shrink-0">
+              <p className="text-4xl font-bold">$3.000<span className="text-lg font-normal opacity-80">/mes</span></p>
+              <span className="text-xs font-bold px-2 py-0.5 rounded-full" style={{ background: 'rgba(255,255,255,0.22)', color: 'white' }}>7 DÍAS GRATIS</span>
+            </div>
           </div>
-          <p className="text-xs opacity-60 mt-1">Menos que un café por semana</p>
-          <p className="text-sm opacity-75 mt-0.5">Cancelás antes del día 7 y no te cobramos nada</p>
         </div>
-        <div className="p-6 space-y-5 bg-white">
-          {/* RI Teaser */}
+
+        <div className="p-5 sm:p-8 space-y-4 bg-white">
+          {/* Radar hero teaser */}
           <div style={{
-            background: 'linear-gradient(135deg, #0d2137 0%, #0c3a5e 100%)',
+            background: 'linear-gradient(135deg, #0d2137 0%, #7b0d2f 100%)',
             borderRadius: 16,
             padding: '14px 16px',
-            marginBottom: 16,
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'space-between',
+            gap: 12,
           }}>
             <div>
               <p style={{ fontSize: 10, fontWeight: 700, color: 'rgba(255,255,255,0.6)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 3 }}>
-                Índice de Preparación
+                📡 Radar Laboral IA
               </p>
-              <p style={{ fontSize: 11, color: 'rgba(255,255,255,0.5)' }}>
-                Evolución de tu competitividad
+              <p style={{ fontSize: 13, fontWeight: 700, color: 'white', marginBottom: 2 }}>
+                La IA busca oportunidades por vos
+              </p>
+              <p style={{ fontSize: 11, color: 'rgba(255,255,255,0.55)', lineHeight: 1.4 }}>
+                Analiza el mercado en tiempo real · % de fit · brechas concretas
               </p>
             </div>
-            <div style={{ display: 'flex', alignItems: 'baseline', gap: 2 }}>
-              <span style={{ fontSize: 36, fontWeight: 800, color: 'white', letterSpacing: '-0.03em' }}>—</span>
-              <span style={{ fontSize: 14, color: 'rgba(255,255,255,0.5)' }}>/10</span>
-            </div>
+            <span style={{ fontSize: 28, opacity: 0.9, flexShrink: 0 }}>📡</span>
           </div>
 
-          <p style={{ fontSize: 12, fontWeight: 600, color: '#475569', marginBottom: 10, textAlign: 'center' }}>
-            Lo que incluye el Plan Profesional
+          <p className="text-xs font-semibold text-slate-400 uppercase tracking-widest text-center">
+            Todo lo que incluye
           </p>
 
-          <ul className="space-y-3">
+          <ul className="grid grid-cols-1 sm:grid-cols-2 gap-2">
             {[
-              ['🏆', 'Entrenamiento continuo', 'Historial ilimitado de sesiones de entrevista, STAR y análisis — mejorás de forma medible.'],
-              ['📄', 'CV re-descargable cuando quieras', 'Generá versiones y descargalas en cualquier momento, sin rehacer el proceso.'],
-              ['📍', 'Centro de operaciones', 'Kanban para trackear todas tus búsquedas activas y vincular el CV adaptado a cada una.'],
-              ['🎯', 'Índice de Preparación', 'Seguí la evolución de tu competitividad con cada sesión de entrenamiento.'],
+              ['📡', 'Radar Laboral IA', 'Búsqueda inteligente: matching por perfil, empresas objetivo, expansión IA y pipeline de oportunidades.'],
+              ['🏆', 'Entrenamiento continuo', 'Historial ilimitado de entrevistas, STAR y diagnósticos — mejorás de sesión en sesión.'],
+              ['📄', 'CV descargable + versiones', 'Descargá tu CV, guardá versiones adaptadas y exportalas cuando quieras.'],
+              ['📍', 'Pipeline de postulaciones', 'Kanban para trackear cada proceso activo y vincular el CV adaptado a cada búsqueda.'],
+              ['💡', 'Informe de preparación', 'Índice evolutivo de competitividad con desglose de todos tus módulos completados.'],
+              ['⚡', 'Adaptación táctica ilimitada', 'Adaptá tu CV a cada oferta en segundos con IA. Sin límite de postulaciones.'],
             ].map(([icon, title, desc]) => (
-              <li key={title} className="flex gap-3 card-depth" style={{ background: '#f8fafc', borderRadius: 10, padding: '8px 12px', marginBottom: 6 }}>
+              <li key={title} className="flex gap-3 card-depth" style={{ background: '#f8fafc', borderRadius: 10, padding: '10px 12px' }}>
                 <span className="text-xl shrink-0">{icon}</span>
                 <div>
                   <p className="text-slate-800 font-semibold text-sm">{title}</p>
@@ -96,11 +105,11 @@ export default function PremiumModal({ user, setShowPremiumModal, subscriptionLo
             {subscriptionLoading ? 'Procesando...' : 'Activar Plan Profesional → 7 días gratis'}
           </button>
           <p className="text-center text-xs text-slate-400 -mt-1">
-            La versión gratuita es completa. El Plan Profesional agrega historial y entrenamiento continuo.
+            La versión gratuita es funcional. El Plan Profesional activa el Radar IA, historial, pipeline y entrenamiento continuo.
           </p>
           <button onClick={() => setShowPremiumModal(false)}
             className="w-full py-2 text-sm text-slate-400 text-center">
-            Ahora no, continuar sin guardar progreso
+            Ahora no, continuar sin Plan Profesional
           </button>
 
           {!showCouponField ? (

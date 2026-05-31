@@ -41,20 +41,20 @@ export default function InterviewIntroScreen({ interviewJobContext, setInterview
   const isStartDisabled = !!(trackingLoading && !trackingCards?.length && !interviewJobContext && !customTarget.trim())
 
   return (
-    <div className="step-transition text-center space-y-8">
+    <div className="step-transition text-center space-y-8 max-w-2xl mx-auto py-8 sm:py-12 lg:py-16">
       <Logo />
       <div className="space-y-5">
         <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full text-xs font-semibold tracking-wide"
           style={{ border: '1px solid rgba(99,102,241,0.4)', color: '#6366f1', background: 'rgba(99,102,241,0.07)' }}>
           🎙️ &nbsp;Sesión de Entrenamiento
         </div>
-        <h2 className="text-3xl sm:text-4xl font-bold text-slate-900 leading-tight" style={{ letterSpacing: '-0.02em' }}>
+        <h2 className="text-3xl sm:text-4xl lg:text-5xl font-bold text-slate-900 leading-tight" style={{ letterSpacing: '-0.02em' }}>
           Sesión de<br />
           <span style={{ background: 'linear-gradient(135deg,#6366f1,#8b5cf6)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent' }}>
             Entrenamiento
           </span>
         </h2>
-        <p className="text-slate-600 text-base max-w-sm mx-auto leading-relaxed">
+        <p className="text-slate-600 text-base max-w-lg mx-auto leading-relaxed">
           {interviewJobContext
             ? `Entrenamiento calibrado para el puesto de ${interviewJobContext.puesto}${interviewJobContext.empresa ? ` en ${interviewJobContext.empresa}` : ''}.`
             : '5 preguntas personalizadas a tu perfil. Al final recibís análisis detallado de cada respuesta con criterio de selección real.'}
@@ -81,7 +81,7 @@ export default function InterviewIntroScreen({ interviewJobContext, setInterview
 
       {/* Postulaciones picker + custom input — only if no Kanban context */}
       {!interviewJobContext && (
-        <div className="w-full max-w-sm mx-auto text-left space-y-3">
+        <div className="w-full max-w-lg mx-auto text-left space-y-3">
           {showSkeleton && (
             <>
               <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide">Tus postulaciones</p>

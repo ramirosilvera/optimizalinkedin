@@ -1,346 +1,34 @@
-const WORKER_VERSION = '2.0.0'
-const ALLOWED_MODELS = new Set(['gemini-2.5-flash-lite'])
-const DEFAULT_MODEL = 'gemini-2.5-flash-lite'
-const GEMINI_TIMEOUT_MS = 55_000
-const MAX_BODY_BYTES = 2 * 1024 * 1024 // 2 MB
-const GEMINI_MAX_RETRIES = 2           // retries on 5xx (total attempts = 3)
-const ALLOWED_ORIGINS = new Set([
-  'https://optimizalinkedin.com',
-  'https://ramirosilvera.github.io',
-  'http://localhost:5173',
-  'http://localhost:4173',
-])
-const WORKER_NOTIFICATION_URL = 'https://linkedin-optimizer-proxy.raa1990-rs.workers.dev/mp-webhook'
-const BACK_URL = 'https://optimizalinkedin.com/?premium=ok'
-
-// ── Shared bullet-writing rules (embedded in all CV prompts) ─────────────────
-const BULLET_WRITING_RULES = `
-BULLETS — REDACCIÓN PROFESIONAL:
-Estructura: [verbo 1ª persona] + [objeto/alcance] + [contexto o método] + [impacto o resultado].
-Longitud: máx 15 palabras para Junior/SSR · máx 20 palabras para Senior+.
-
-ELEGÍ verbos según el seniority REAL del cargo (no el más impresionante, el más creíble):
-
-SI el cargo es JUNIOR / ANALISTA / ASISTENTE → usá solo:
-  Ejecuté · Procesé · Registré · Elaboré · Documenté · Reporté · Consolidé · Monitoreé · Analicé · Colaboré en · Asistí en · Contribuí a · Apoyé · Integré
-  PROHIBIDO en este nivel: Lideré · Dirigí · Supervisé · Conduje · Encabecé · Transformé · Definí estrategia
-
-SI el cargo es SEMI-SENIOR / SSR / ANALISTA SR → usá solo:
-  Implementé · Gestioné · Desarrollé · Coordiné · Analicé · Optimicé · Diseñé · Automaticé · Mejoré · Reestructuré · Administré · Capacité · Audité · Establecí
-  PROHIBIDO en este nivel: Conduje · Encabecé · Transformé · Definí la estrategia de
-
-SI el cargo es SENIOR / ESPECIALISTA → usá:
-  Lideré · Diseñé · Supervisé · Dirigí · Reestructuré · Definí · Establecí · Formulé · Evalué · Propuse · Instrumenté
-
-SI el cargo es LEAD / JEFE / COORDINADOR → usá:
-  Conduje (equipo de) · Encabecé · Establecí la estrategia de · Lideré la implementación de
-
-SI el cargo es GERENTE / DIRECTOR / HEAD → usá:
-  Diseñé la estrategia de · Lideré la transformación de · Definí la visión de · Conduje la organización hacia
-
-VERBOS TRANSVERSALES (válidos para cualquier nivel):
-  Presenté · Capacité · Reporté · Documenté · Centralicé · Compilé · Medí · Ajusté · Planeé · Mejoré · Simplifiqué
-
-CUANTIFICACIÓN: si existe un número real, incluilo. Si no hay métricas disponibles, usá descriptores de alcance: "equipo de N personas" · "cartera de N clientes" · "proceso mensual de..." · "+N% de mejora".
-
-VARIEDAD OBLIGATORIA: cada bullet de la misma experiencia debe iniciar con un verbo diferente. Antes de finalizar, verificá que ningún verbo se repita dentro de la misma experiencia.
-
-PROHIBIDO iniciar un bullet con: "Responsable de" · "Encargado de" · "A cargo de" · "Trabajé en" · "Me encargué de" · "Participé en el equipo de".`
-
-// ── AI system prompts (stored here, never sent to clients) ───────────────────
-const AI_SYSTEM_PROMPTS = {
-  analyze_linkedin: `Sos headhunter y consultora senior de RRHH con 20 años en posicionamiento profesional en LinkedIn.
-Analizá el perfil aplicando estos frameworks:
-- Test 6s: ¿el titular comunica quién es y para quién en 6 segundos?
-- SEO: ¿aparece en búsquedas de reclutadores y clientes correctos?
-- ATS: ¿pasa filtros automáticos de sistemas de tracking?
-- Propuesta de valor: ¿está claro qué problema resuelve y para quién?
-- Prueba social: ¿hay métricas, logros concretos o validaciones externas?
-- CTA: ¿hay una llamada a la acción clara para el visitante ideal?
-- Foto (si se incluye): encuadre headshot, fondo, iluminación, expresión, fit profesional.
-Español rioplatense. Directo, específico, sin genéricos. Respondé SOLO en JSON válido, sin markdown.`,
-
-  generate_cv: `Sos redactor experto de CVs para el mercado argentino y latinoamericano, con foco en ATS compliance.
-Transformá el perfil provisto en un CV de 1 página orientado a logros.
-
-ANTI-ALUCINACIÓN:
-- NUNCA inventes métricas, fechas, logros ni responsabilidades. Solo datos del perfil.
-- Sin info para un bullet → omitilo. Sin dato para un campo → null.
-- PROHIBIDO: "orientado a resultados", "proactivo", "dinámico", "apasionado", "multitarea", "comprometido".
-- Bullet sin verbo de acción + resultado real → omitilo.
-
-FECHAS:
-- Copiá el período EXACTAMENTE del perfil para CADA entrada (experiencia y educación por separado).
-- Dos títulos con fechas distintas → cada uno lleva su propio período. NUNCA copies de otro.
-- Sin fecha → null. No uses la fecha de otra entrada como fallback.
-
-ESTRUCTURA:
-- RANKING: Seleccioná las 3 experiencias más relevantes por (1) actualidad, (2) seniority/nivel, (3) alineación con objetivo profesional, (4) impacto y keywords ATS. No simplemente las últimas — si hay un cargo senior hace 2 años y uno junior más reciente, el senior puede ser más relevante.
-- Las 3 seleccionadas van en "experiencias" con hasta 3 bullets cada una.
-- "experiencias_anteriores" = ÚNICAMENTE las experiencias del perfil que NO están ya en el array "experiencias". Si todas las experiencias del perfil caben en los 3 slots, "experiencias_anteriores" debe ser []. NUNCA repitas en "experiencias_anteriores" un cargo+empresa que ya figure en "experiencias".
-- Resumen: 2 oraciones, datos reales. Sin objetivo laboral, sin datos personales.
-- Habilidades: 6-10 keywords del perfil. Idioma: español (técnicos en inglés si se usan así).
-
-Usá "titular_propuesto" y "resumen_propuesto" del análisis si están disponibles.
-${BULLET_WRITING_RULES}
-
-Respondé SOLO en JSON válido, sin markdown.`,
-
-  cv_quality: `Sos consultor de empleabilidad senior con estándares de headhunter.
-Revisá el CV en dos partes:
-
-PARTE 1 — Brechas críticas (máx 6, priorizá impacto Alto):
-1. Fechas faltantes (período null o vacío) → SIEMPRE Alto
-2. Bullets sin métricas donde claramente deberían tenerlas
-3. Frases genéricas ("orientado a resultados", "proactivo", "dinámico", etc.)
-4. Herramientas sin especificidad ("manejo de sistemas" sin decir cuáles)
-5. Logros sin verbo de impacto + resultado medible
-6. Resumen débil o genérico
-Por cada brecha: 1 pregunta corta, específica y accionable. NUNCA genéricas.
-
-PARTE 2 — Evaluación:
-- 2-3 fortalezas reales y específicas
-- Nota honesta sobre empleabilidad en el mercado actual
-- Riesgo ATS
-
-JSON:
-{"score":1-10,"nivel":"Básico|Intermedio|Sólido|Premium","aprobado":bool,"nota_consultor":"1-2 oraciones","riesgo_ats":"Bajo|Medio|Alto","fortalezas":["str","str"],"gaps":[{"id":"str","campo":"str","descripcion":"str","pregunta":"str","placeholder":"str","impacto":"Alto|Medio"}]}`,
-
-  cv_pre_questions: `Sos consultor de empleabilidad senior. Analizá el perfil ANTES de generar el CV para detectar qué información adicional mejoraría el resultado.
-
-Generá 3-5 preguntas MUY específicas sobre:
-1. Métricas faltantes en logros (ej: "aumenté ventas" → ¿cuánto %?)
-2. Tecnologías o herramientas relevantes no especificadas
-3. Escala de equipo o proyecto (personas, presupuesto)
-4. Logros vagos que con contexto destacarían
-5. Info declarada en el cuestionario que no aparece en el perfil
-
-Reglas: no preguntes lo que ya está claro. Si no hay brechas, devolvé preguntas vacías. Máx 5, solo las de mayor impacto. Segunda persona informal. Cada pregunta referencia un cargo/logro específico.
-
-JSON: {"preguntas":[{"id":"str","contexto":"str (máx 45c)","pregunta":"str","placeholder":"str (máx 60c)"}]}`,
-
-  interview_questions: `Sos headhunter senior con 20 años generando preguntas de entrevista calibradas para el puesto específico.
-
-ESTRUCTURA OBLIGATORIA — exactamente 5 preguntas en este orden:
-1. RAPPORT / MOTIVACIÓN: fit cultural o motivación específica para este puesto/empresa. NUNCA "¿cuál es tu fortaleza?" ni "contame sobre vos".
-2. COMPETENCIA STAR #1: pregunta situacional sobre una habilidad clave del puesto. Requerí Situación + Acción + Resultado concreto.
-3. COMPETENCIA STAR #2: segunda competencia crítica del puesto, distinta a la anterior.
-4. TÉCNICA / ROL-ESPECÍFICA: pregunta técnica o de criterio directamente vinculada al rol y seniority. Nunca genérica.
-5. PRESIÓN / AMBIGÜEDAD: situación de conflicto, urgencia o decisión con información incompleta.
-
-CALIDAD OBLIGATORIA:
-- Mencioná la empresa o el puesto dentro de la pregunta ("En [empresa]...", "El rol implica X, ¿cómo lo abordarías?").
-- Basate en las habilidades clave y descripción del puesto cuando estén disponibles.
-- Adaptá la complejidad al seniority: Junior = situaciones del día a día; Senior/Lead = decisiones estratégicas y gestión de equipos.
-- PROHIBIDO: preguntas genéricas, preguntas repetidas entre sí, frases de manual de RRHH.
-
-HINTS — campo "hint" de cada pregunta (OBLIGATORIO):
-- Prescriptivos: decirle AL CANDIDATO exactamente qué evidencia necesita mostrar.
-- NO: "mencioná una situación". SÍ: "Nombrá la métrica de resultado concreta: %, $, tiempo ahorrado o usuarios impactados".
-- Si hay habilidades clave del puesto disponibles, referenciá al menos una en cada hint de las preguntas STAR.
-
-FORMATO: Array JSON — [{"pregunta": "...", "hint": "..."}]
-Sin markdown, sin texto fuera del JSON.`,
-
-  interview_feedback: `Sos headhunter y entrevistadora senior de RRHH con 20 años en selección ejecutiva.
-Evaluá las respuestas de la entrevista usando estos criterios: claridad del mensaje, método STAR en logros, autoconciencia, propuesta de valor, autenticidad y solidez de los argumentos.
-Cuando se provea contexto del puesto, evaluá también la alineación de las respuestas con los requisitos específicos del rol.
-Español rioplatense. Directa, específica, sin genéricos. Respondé SOLO en JSON válido, sin markdown.`,
-
-  star_feedback: `Sos coach de entrevistas especializado en metodología STAR. Evaluá si la respuesta aplica correctamente Situación, Tarea, Acción, Resultado. Directo, específico, constructivo. Español rioplatense. JSON válido, sin markdown.`,
-
-  job_adapter: `Sos experto en empleabilidad y CVs para el mercado argentino y latinoamericano.
-Analizá el aviso, adaptá el CV del candidato y generá una carta de presentación personalizada.
-
-ANTI-ALUCINACIÓN: NUNCA inventes métricas, logros ni tecnologías. Solo reorganizá y reformulá lo que ya existe.
-"cv_adaptado" debe tener exactamente la misma estructura JSON que el CV original.
-
-EXTRACCIÓN DEL AVISO: Del texto del aviso detectá:
-- empresa_detectada: nombre de la empresa (null si no aparece)
-- cargo_detectado: título exacto del puesto publicado
-- seniority_detectado: nivel inferido del aviso ("Junior", "Semi Senior", "Senior", "Lead", "No especificado")
-
-ADAPTACIÓN: ajustá titular y resumen con keywords del aviso. Reorganizá bullets y habilidades priorizando lo relevante para la posición. Al reformular bullets, aplicá las reglas de redacción profesional definidas abajo.
-${BULLET_WRITING_RULES}
-
-CARTA (3-4 párrafos): quién es y por qué aplica → logros relevantes con datos reales → cierre con CTA. Profesional, directo, sin clichés. Español rioplatense.
-
-JSON: {"empresa_detectada":"str|null","cargo_detectado":"str","seniority_detectado":"str","cv_adaptado":{...mismo esquema...},"carta_de_presentacion":"str","palabras_clave_incorporadas":["str"],"ajustes_principales":["str"],"quality":{"score":1-10,"nivel":"Básico|Intermedio|Sólido|Premium","nota_consultor":"1 oración sobre el CV adaptado para esta posición","riesgo_ats":"Bajo|Medio|Alto","fortalezas":["str"]}}`,
-
-  cv_optimize_consult: `Sos consultor senior de empleabilidad. Analizás CVs ya generados para detectar qué datos adicionales necesitás del candidato para optimizarlos con impacto real.
-
-Hacé 2-4 preguntas específicas donde la respuesta cambie CONCRETAMENTE un bullet o el titular:
-1. Logros vagos sin métricas donde una cifra real cambia todo
-2. Herramientas mencionadas de pasada que con contexto de escala destacarían más
-3. Liderazgo sin contexto de equipo (personas, presupuesto)
-4. Titular que no refleja la especialidad o propuesta de valor
-5. Proyectos liderados sin impacto concreto
-
-Reglas: no preguntes lo que ya es claro. Si el CV ya tiene métricas y bullets fuertes, devolvé vacío. Máx 4. Segunda persona informal. Cada pregunta menciona el cargo/logro específico.
-
-JSON: {"preguntas":[{"id":"str","contexto":"str (máx 45c)","pregunta":"str","placeholder":"str (máx 60c)"}]}`,
-
-  generate_cv_full: `Sos redactor experto de CVs para el mercado argentino y latinoamericano, con foco en ATS compliance. Tenés dos tareas en UNA sola respuesta JSON.
-
-TAREA 1 — GENERAR CV:
-Transformá el perfil provisto en un CV de 1 página orientado a logros.
-
-ANTI-ALUCINACIÓN:
-- NUNCA inventes métricas, fechas, logros ni responsabilidades. Solo datos del perfil.
-- Sin info para un bullet → omitilo. Sin dato para un campo → null.
-- PROHIBIDO: "orientado a resultados", "proactivo", "dinámico", "apasionado", "multitarea", "comprometido".
-- Bullet sin verbo de acción + resultado real → omitilo.
-
-FECHAS: Copiá el período EXACTAMENTE del perfil para CADA entrada. Sin fecha → null. NUNCA copies la fecha de otra entrada.
-
-ESTRUCTURA:
-- Seleccioná las 3 experiencias más relevantes por (1) actualidad (2) seniority (3) keywords ATS (4) impacto. Con hasta 3 bullets cada una.
-- "experiencias_anteriores" = ÚNICAMENTE las que NO están ya en "experiencias". Si no quedan sobrantes → [].
-- Resumen: 2 oraciones, datos reales. Habilidades: 6-10 keywords del perfil.
-- Usá "titular_propuesto" y "resumen_propuesto" del análisis si están disponibles.
-${BULLET_WRITING_RULES}
-
-TAREA 2 — EVALUAR EL CV QUE ACABÁS DE GENERAR:
-Inmediatamente después de generarlo, revisalo con criterio de headhunter senior.
-
-Brechas críticas (máx 6, priorizá Alto):
-1. Fechas faltantes (período null o vacío) → SIEMPRE Alto
-2. Bullets sin métricas donde deberían tenerlas
-3. Frases genéricas prohibidas
-4. Herramientas sin especificidad
-5. Logros sin verbo de impacto + resultado medible
-6. Resumen débil o genérico
-Por cada brecha: 1 pregunta corta, accionable, referenciando el cargo/logro específico.
-Evaluación global: 2-3 fortalezas reales, nota honesta, riesgo ATS.
-
-JSON DE SALIDA — respondé SOLO en JSON válido, sin markdown:
-{"cv":{"nombre":"str","titular":"str","email":"str|null","telefono":"str|null","linkedin":"str|null","ubicacion":"str|null","resumen":"2 oraciones","experiencias":[{"cargo":"str","empresa":"str","periodo":"período exacto del perfil","logros":["str"]}],"educacion":[{"titulo":"str","institucion":"str","periodo":"str"}],"habilidades":["str"],"idiomas":["str"],"experiencias_anteriores":[{"cargo":"str","empresa":"str","periodo":"str|null"}]},"quality":{"score":1-10,"nivel":"Básico|Intermedio|Sólido|Premium","aprobado":bool,"nota_consultor":"str","riesgo_ats":"Bajo|Medio|Alto","fortalezas":["str"],"gaps":[{"id":"str","campo":"str","descripcion":"str","pregunta":"str","placeholder":"str","impacto":"Alto|Medio"}]}}`,
-
-  optimize_cv: `Sos consultor senior de empleabilidad especializado en CVs ATS para el mercado latinoamericano.
-
-RECIBÍS:
-1. El CV completo en JSON
-2. Información adicional del candidato (datos concretos que debés incorporar en los bullets correspondientes)
-
-TAREA: MEJORAR OBLIGATORIAMENTE el CV. Siempre hay algo que mejorar.
-
-REGLAS ANTI-ALUCINACIÓN:
-- Nunca inventes métricas, fechas, cargos ni empresas que no aparezcan en el CV ni en los datos adicionales del candidato
-- Si los datos adicionales dicen "lideré 12 personas" → incorporalo en el bullet más relevante de esa experiencia
-- Preservá cargo, empresa, periodo, institución educativa exactamente como están en el JSON original
-
-MEJORAS OBLIGATORIAS — siempre aplicás todas estas, sin excepción:
-1. Bullets: aplicá las reglas de redacción profesional definidas abajo. Reemplazá frases nominales débiles con verbos conjugados que correspondan al seniority del cargo.
-2. Eliminá frases vacías: "orientado a resultados", "proactivo", "dinámico", "apasionado", "trabajo en equipo", "multitarea", "comprometido", "pasión por", "responsable de", "encargado de".
-3. Titular: específico, especialidad concreta + propuesta de valor, máx 90 caracteres.
-4. Resumen: 2-3 oraciones — especialidad/rol actual + logro o expertise más relevante + propuesta de valor. Sin clichés. Específico al candidato.
-5. Habilidades: eliminá genéricas (Microsoft Office, Internet), priorizá las técnicas específicas del área, reordená por relevancia ATS.
-6. Si hay datos adicionales del candidato: incorporalos en los bullets de la experiencia más relevante.
-${BULLET_WRITING_RULES}
-
-Respondé SOLO en JSON válido, sin markdown, con esta estructura exacta:
-{"cv":{...mismo esquema del CV recibido...},"quality":{"score":1-10,"nivel":"Básico|Intermedio|Sólido|Premium","nota_consultor":"1 oración sobre el CV optimizado","riesgo_ats":"Bajo|Medio|Alto","fortalezas":["str","str"],"mejoras_aplicadas":["mejora 1 con referencia al campo/cargo","mejora 2","mejora 3"]}}
-"mejoras_aplicadas": listá solo las mejoras reales que aplicaste, referenciando el campo o cargo afectado (ej: "Titular reescrito con especialidad concreta y propuesta de valor", "Bullets de [Cargo] fortalecidos con verbos de impacto", "Frases genéricas eliminadas del resumen").
-SCORING HONESTO: evaluá el CV mejorado con criterio independiente. Si el CV aún tiene limitaciones (logros sin métricas, resumen genérico, skills débiles), reflejalas en el score. Un CV optimizado no es automáticamente perfecto. Score 9-10 solo para CVs con métricas concretas, titular específico y bullets de alto impacto en todas las experiencias.`,
-
-  linkedin_growth: `Sos experto en personal branding y crecimiento en LinkedIn para el mercado hispanoparlante.
-Generá basándote en el perfil y análisis del usuario:
-
-PARTE 1 — 3 ideas de banner de LinkedIn:
-Cada idea debe ser concreta y específica (colores hex, texto exacto, disposición visual). Adaptá al objetivo profesional del usuario (empleado, freelancer, emprendedor).
-
-PARTE 2 — Plan de networking (90 días):
-Acciones concretas, no genéricas ("comentá 3 posts de líderes de RRHH en tu sector", no "sé activo"). Si el usuario indicó seguidores, usá ese número como punto de partida.
-
-JSON:
-{"banner_ideas":[{"titulo":"str","concepto":"str","copy_principal":"máx 8 palabras","copy_secundario":"máx 12 palabras","paleta":["#hex1","#hex2","#hex3"],"estilo":"Minimalista|Profesional|Creativo|Tecnológico|Corporativo"}],"plan_networking":{"objetivo_resumido":"str","acciones_semanales":[{"frecuencia":"Diario|3× semana|Semanal|Quincenal","accion":"str","ejemplo":"str"}],"contenido_sugerido":[{"formato":"Post de texto|Carrusel|Artículo|Video corto|Encuesta|Repost comentado","tema":"str","frecuencia":"Semanal|Quincenal|Mensual"}],"metrica_90dias":"str"}}`,
-
-  // interview_chat is a function — it receives `interview_meta` from the request body and
-  // returns a dynamic system prompt. The ai_* handler supports function-type prompts.
-  interview_chat: (meta) => {
-    const qList = (meta.questions || [])
-      .map((q, i) => `${i + 1}. ${q}`)
-      .join('\n')
-    const modeNote = meta.mode === 'presion'
-      ? '\nMODO PRESIÓN: Sin hints. Cuestioná directamente respuestas débiles. Repreguntas exigentes. Sin frases motivadoras.'
-      : ''
-    return `Sos Ramiro IA, coach de entrevistas. Español rioplatense. Directo, sin relleno.
-
-VOZ: Cálido pero exigente. Decís lo que ves. Sin elogios baratos ni frases de manual.
-REGLAS:
-- Máx 3 oraciones por mensaje (salvo closing: hasta 8).
-- Máx 1 emoji por mensaje. Solo: 💪 🎯 ✅ ⚠️
-- PROHIBIDO: "¡Excelente!" solo · "Como IA..." · listas con bullets · >4 oraciones · "¿tiene sentido?"
-- Si respuesta es vaga, corta o sin ejemplo concreto → hacé UNA repregunta concreta.
-- Máx 1 repregunta por pregunta. Si ya la usaste → avanzá aunque la respuesta sea débil.
-- Respondé SIEMPRE en JSON válido, sin markdown.
-
-CANDIDATO: ${meta.candidate_profile || 'Profesional'}
-PUESTO: ${meta.job_context || '(entrevista general)'}${modeNote}
-
-PREGUNTAS A HACER EN ORDEN:
-${qList}
-
-ESTADO: pregunta_actual=${meta.current_q_index + 1}/${meta.total_questions} | repregunta_usada=${meta.followup_used}
-
-SCHEMA JSON — siempre este formato exacto, sin texto fuera del JSON:
-{"messages":[{"type":"string","text":"string"}],"next_q":null,"done":false,"summary":null}
-
-TIPOS ("type"):
-- "intro": primer turno. Saludá brevemente y hacé la primera pregunta en un solo mensaje.
-- "reaction": feedback breve (1-2 oraciones) a la respuesta del usuario.
-- "question": siguiente pregunta de entrevista. "next_q" = índice base-0 de esa pregunta.
-- "followup": repregunta concreta (1 oración). "next_q" = null.
-- "closing": cierre final. "done" = true. "summary" requerido.
-
-PATRONES VÁLIDOS de messages[]:
-- Primer turno: [{intro}]
-- Turno normal: [{reaction},{question}]
-- Repregunta: [{reaction},{followup}]
-- Último turno: [{reaction},{closing}]
-
-"summary" (solo cuando done=true):
-{"score":1-10,"nivel":"Básico|Intermedio|Sólido|Premium","fortalezas":["str","str"],"gaps":["str","str"],"tip":"1 consejo concreto y accionable"}`
-  },
-}
-
-// ── Gemini quota constants (Paid Tier 1 — verified in AI Studio 2026-05-23) ──
-// Quotas are per GCP PROJECT (gen-lang-client-0251415813), not per API key.
-// Resets at midnight Pacific Time daily.
-// Source: aistudio.google.com/rate-limit → Gemini 2.5 Flash Lite
-const GEMINI_QUOTA = {
-  RPD: 10_000,     // requests per day (Tier 1 — scroll down in AI Studio to confirm)
-  RPM: 5_000,      // requests per minute (confirmed in AI Studio screenshot)
-  TPM: 5_000_000,  // input tokens per minute (confirmed in AI Studio screenshot)
-}
-
-// ── Rate limits per action (requests / hour / IP) ────────────────────────────
-const RATE_LIMITS = {
-  analyze_linkedin:    3,
-  generate_cv:         3,
-  cv_quality:          6,
-  cv_pre_questions:    3,
-  interview_questions: 4,  // reduced from 8: no legitimate need for rapid repetition
-  interview_feedback:  5,
-  interview_chat:      40, // 40 turns/hour/IP ≈ 5 complete sessions per hour
-  star_feedback:       10,
-  job_adapter:         3,
-  linkedin_growth:     5,
-  optimize_cv:         2,  // reduced from 4: most expensive feature per call
-  cv_optimize_consult: 4,
-  generate_cv_full:    2,  // was missing — combined CV+quality, highest system prompt cost
-  _raw_proxy:          5,  // PDF extraction proxy — large inputs, protect quota
-  // Radar Laboral — job recommendations
-  job_search:             10,
-  job_recommendations:     5,
-  job_save_to_kanban:     20,
-  job_update_status:      60,
-}
-
-// Max total AI calls per IP per 24 hours across ALL features combined.
-// Legitimate heavy users: ~9 calls/session × 2-3 sessions = ~25 calls/day max.
-// This cap stops budget-drain attacks via IP rotation or hourly limit cycling.
-const DAILY_IP_CAP = 50
+import {
+  WORKER_VERSION, ALLOWED_MODELS, DEFAULT_MODEL, GEMINI_TIMEOUT_MS, MAX_BODY_BYTES,
+  GEMINI_MAX_RETRIES, ATS_SOURCE_SET, ALLOWED_ORIGINS, WORKER_NOTIFICATION_URL, BACK_URL,
+  GEMINI_QUOTA, RATE_LIMITS, DAILY_IP_CAP, UUID_RE, ADMIN_ACTION_LIMITS,
+  JOB_KV_TTL_SECS, JOB_DB_TTL_HOURS, JOB_SEARCH_TTL_SECS, ATS_KV_TTL_SECS, ATS_DB_TTL_HOURS,
+  JREC_KV_TTL_SECS, JREC_PROMPT_VERSION, JOB_SEARCH_LIMIT_FREE, JOB_SEARCH_LIMIT_PREMIUM,
+  MAX_JOBS_PREMIUM, MAX_JOBS_FREE, MAX_JOBS_FOR_AI_MATCHING, MAX_DESC_CHARS,
+  EXPANSION_THRESHOLD, EXPANSION_MIN_HQ, EXPANSION_TIMEOUT_MS, EXPANSION_GEMINI_MS,
+} from './src/constants.js'
+import { BULLET_WRITING_RULES, AI_SYSTEM_PROMPTS } from './src/prompts/cv.js'
+import { JOB_MATCHING_SYSTEM_PROMPT, buildMatchingContents } from './src/prompts/jobMatching.js'
+import {
+  truncateDesc, normalizeSeniority, stripHtml, extractRelevantSection,
+  SKILLS_KEYWORDS, extractSkillsFromText, normalizeJobUrl,
+  SKILLS_TAXONOMY, SKILL_SYNONYMS, expandProfileSkills,
+} from './src/utils/jobHelpers.js'
+import { serperGeoConfig, geoCompatibilityScore } from './src/utils/geo.js'
+import {
+  normalizeRemoteOK, normalizeRemotive, normalizeJobicy, normalizeJooble, normalizeAdzuna,
+  normalizeGetOnBoard, normalizeHimalayas, normalizeWorkable, normalizeTeamtailor,
+  normalizeRecruitee, normalizePersonio, normalizeWorkday, normalizeSerper,
+  normalizeGreenhouse, normalizeLever, normalizeSmartRecruiters, normalizeAshby,
+  normalizeJobs,
+} from './src/jobs/normalizers.js'
+import {
+  FAMILY_TITLE_SIGNALS, applyPreFilter, deduplicateJobs, canonicalJobHash,
+} from './src/jobs/matching.js'
+import {
+  inferProfessionFamily, extractCandidateLocation,
+  detectProfessionFamilySync, buildHeadhunterQueries,
+} from './src/jobs/profession.js'
 
 async function checkRateLimit(env, ip, actionKey) {
   if (!env.RATE_LIMIT_KV) return { ok: true }
@@ -405,11 +93,11 @@ async function callGeminiApi(env, ctx, geminiBody, corsHeaders, { feature = 'unk
       retryCount, apiKeyAlias: `key_${usedKeyIndex + 1}`,
     })
     const msg = isTimeout ? 'El servicio de IA tardó demasiado. Intentá de nuevo.' : 'Error de conexión con el servicio de IA.'
-    return new Response(JSON.stringify({ error: { message: msg } }), { status: 504, headers: corsHeaders })
+    return new Response(JSON.stringify({ error: msg }), { status: 504, headers: corsHeaders })
   }
 
   // Parse body before clearing timeout so abort protection covers the full response
-  const data = await res.json().catch(() => ({ error: { message: 'Respuesta inválida del servicio de IA.' } }))
+  const data = await res.json().catch(() => ({ error: 'Respuesta inválida del servicio de IA.' }))
   clearTimeout(timeoutId)
 
   if (res.status === 200) {
@@ -445,8 +133,7 @@ async function callGeminiApi(env, ctx, geminiBody, corsHeaders, { feature = 'unk
     })
     // Surface quota type to client so frontend can show an informative message
     if (res.status === 429 && quotaType === 'daily') {
-      const dailyMsg = { error: { message: 'Cuota diaria de IA agotada. El servicio se restablece a medianoche (hora de Argentina). Volvé mañana.' } }
-      return new Response(JSON.stringify(dailyMsg), { status: 429, headers: corsHeaders })
+      return new Response(JSON.stringify({ error: 'Cuota diaria de IA agotada. El servicio se restablece a medianoche (hora de Argentina). Volvé mañana.' }), { status: 429, headers: corsHeaders })
     }
   }
   return new Response(JSON.stringify(data), { status: res.status, headers: corsHeaders })
@@ -497,7 +184,26 @@ async function logAdminAction(env, adminId, action, targetType, targetId, detail
     method: 'POST',
     body: JSON.stringify({ admin_id: adminId, action, target_type: targetType, target_id: targetId ? String(targetId) : null, details }),
     headers: { Prefer: 'return=minimal' },
-  }).catch(() => {})
+  }).catch(e => console.error('[ADMIN] audit log failed:', action, e?.message))
+}
+
+// ── Admin input validation helpers ───────────────────────────────────────────
+function isValidUuid(v) { return typeof v === 'string' && UUID_RE.test(v) }
+function clampPage(rawOffset, rawLimit, { maxLimit = 100, maxOffset = 50_000 } = {}) {
+  return {
+    offset: Math.max(0, Math.min(parseInt(rawOffset) || 0, maxOffset)),
+    limit:  Math.max(1, Math.min(parseInt(rawLimit)  || 25, maxLimit)),
+  }
+}
+
+async function checkAdminActionRate(env, adminId, action) {
+  const limit = ADMIN_ACTION_LIMITS[action]
+  if (!limit || !env.RATE_LIMIT_KV || !adminId) return true
+  const key   = `admin_rl:${adminId}:${action}:${new Date().toISOString().slice(0, 13)}` // hourly bucket
+  const count = parseInt(await env.RATE_LIMIT_KV.get(key).catch(() => '0')) || 0
+  if (count >= limit) return false
+  env.RATE_LIMIT_KV.put(key, String(count + 1), { expirationTtl: 3_600 }).catch(() => {})
+  return true
 }
 
 // ── AI usage log (fire-and-forget) ───────────────────────────────────────────
@@ -1155,7 +861,8 @@ export default {
       }
 
       if (body.action === 'admin_users') {
-        const { search = '', offset = 0, limit = 20, premium_only } = body
+        const { search = '', offset: rawOff = 0, limit: rawLim = 20, premium_only } = body
+        const { offset, limit } = clampPage(rawOff, rawLim, { maxLimit: 100 })
         let qs = `perfiles?select=id,nombre,email,es_premium,premium_hasta,premium_source,created_at&order=created_at.desc&offset=${offset}&limit=${limit}`
         if (search) qs += `&or=(email.ilike.*${encodeURIComponent(search)}*,nombre.ilike.*${encodeURIComponent(search)}*)`
         if (premium_only) qs += '&es_premium=eq.true'
@@ -1176,6 +883,7 @@ export default {
       if (body.action === 'admin_user_detail') {
         const { user_id } = body
         if (!user_id) return new Response(JSON.stringify({ error: 'Falta user_id' }), { status: 400, headers: corsHeaders })
+        if (!isValidUuid(user_id)) return new Response(JSON.stringify({ error: 'user_id inválido' }), { status: 400, headers: corsHeaders })
         try {
           const [perfilRes, subRes, histRes, linkedinRes, tagsRes, notesRes] = await Promise.all([
             supabaseServiceFetch(env, `perfiles?id=eq.${user_id}&select=*`),
@@ -1206,7 +914,8 @@ export default {
       // ── CRM endpoints ────────────────────────────────────────────────────────
 
       if (body.action === 'admin_crm_users') {
-        const { search = '', premium_status = 'all', feature_used = '', tag = '', sort = 'created_at_desc', offset: off = 0, limit = 25 } = body
+        const { search = '', premium_status = 'all', feature_used = '', tag = '', sort = 'created_at_desc', offset: rawOff = 0, limit: rawLim = 25 } = body
+        const { offset: off, limit } = clampPage(rawOff, rawLim, { maxLimit: 100 })
         try {
           const res = await fetch(`${env.SUPABASE_URL}/rest/v1/rpc/get_admin_users_crm`, {
             method: 'POST',
@@ -1222,6 +931,7 @@ export default {
 
       if (body.action === 'admin_crm_export') {
         if (!canWrite) return new Response(JSON.stringify({ error: 'Sin permisos' }), { status: 403, headers: corsHeaders })
+        if (!await checkAdminActionRate(env, admin.userId, 'crm_export')) return new Response(JSON.stringify({ error: 'Límite de exportaciones por hora alcanzado (10/h)' }), { status: 429, headers: corsHeaders })
         const { search = '', premium_status = 'all', feature_used = '', tag = '', sort = 'created_at_desc' } = body
         try {
           await logAdminAction(env, admin.userId, 'crm_export', 'users', null, { premium_status, feature_used, tag, search })
@@ -1241,6 +951,8 @@ export default {
         if (!canWrite) return new Response(JSON.stringify({ error: 'Sin permisos' }), { status: 403, headers: corsHeaders })
         const { user_id, tag } = body
         if (!user_id || !tag?.trim()) return new Response(JSON.stringify({ error: 'Faltan user_id y tag' }), { status: 400, headers: corsHeaders })
+        if (!isValidUuid(user_id)) return new Response(JSON.stringify({ error: 'user_id inválido' }), { status: 400, headers: corsHeaders })
+        if (tag.trim().length > 100) return new Response(JSON.stringify({ error: 'Tag demasiado largo (máx 100 caracteres)' }), { status: 400, headers: corsHeaders })
         try {
           await supabaseServiceFetch(env, 'user_tags', {
             method: 'POST',
@@ -1273,6 +985,8 @@ export default {
         if (!canWrite) return new Response(JSON.stringify({ error: 'Sin permisos' }), { status: 403, headers: corsHeaders })
         const { user_id, nota } = body
         if (!user_id || !nota?.trim()) return new Response(JSON.stringify({ error: 'Faltan user_id y nota' }), { status: 400, headers: corsHeaders })
+        if (!isValidUuid(user_id)) return new Response(JSON.stringify({ error: 'user_id inválido' }), { status: 400, headers: corsHeaders })
+        if (nota.trim().length > 5000) return new Response(JSON.stringify({ error: 'Nota demasiado larga (máx 5000 caracteres)' }), { status: 400, headers: corsHeaders })
         try {
           await supabaseServiceFetch(env, 'admin_notes', {
             method: 'POST',
@@ -1299,9 +1013,12 @@ export default {
 
       if (body.action === 'admin_grant_premium') {
         if (!canWrite) return new Response(JSON.stringify({ error: 'Sin permisos de escritura' }), { status: 403, headers: corsHeaders })
+        if (!await checkAdminActionRate(env, admin.userId, 'grant_premium')) return new Response(JSON.stringify({ error: 'Límite de acciones por hora alcanzado (50/h)' }), { status: 429, headers: corsHeaders })
         const { user_id, days = 30 } = body
         if (!user_id) return new Response(JSON.stringify({ error: 'Falta user_id' }), { status: 400, headers: corsHeaders })
-        const premiumHasta = new Date(Date.now() + days * 24 * 60 * 60 * 1000).toISOString()
+        if (!isValidUuid(user_id)) return new Response(JSON.stringify({ error: 'user_id inválido' }), { status: 400, headers: corsHeaders })
+        const clampedDays = Math.max(1, Math.min(parseInt(days) || 30, 730))
+        const premiumHasta = new Date(Date.now() + clampedDays * 24 * 60 * 60 * 1000).toISOString()
         await supabaseServiceFetch(env, 'perfiles', {
           method: 'POST',
           body: JSON.stringify({ id: user_id, es_premium: true, premium_hasta: premiumHasta, premium_source: 'admin_grant', updated_at: new Date().toISOString() }),
@@ -1321,8 +1038,10 @@ export default {
 
       if (body.action === 'admin_revoke_premium') {
         if (!canWrite) return new Response(JSON.stringify({ error: 'Sin permisos de escritura' }), { status: 403, headers: corsHeaders })
+        if (!await checkAdminActionRate(env, admin.userId, 'revoke_premium')) return new Response(JSON.stringify({ error: 'Límite de acciones por hora alcanzado (50/h)' }), { status: 429, headers: corsHeaders })
         const { user_id } = body
         if (!user_id) return new Response(JSON.stringify({ error: 'Falta user_id' }), { status: 400, headers: corsHeaders })
+        if (!isValidUuid(user_id)) return new Response(JSON.stringify({ error: 'user_id inválido' }), { status: 400, headers: corsHeaders })
         await supabaseServiceFetch(env, 'perfiles', {
           method: 'POST',
           body: JSON.stringify({ id: user_id, es_premium: false, premium_hasta: null, updated_at: new Date().toISOString() }),
@@ -1342,14 +1061,19 @@ export default {
 
       if (body.action === 'admin_create_promo') {
         if (!canWrite) return new Response(JSON.stringify({ error: 'Sin permisos de escritura' }), { status: 403, headers: corsHeaders })
+        if (!await checkAdminActionRate(env, admin.userId, 'create_promo')) return new Response(JSON.stringify({ error: 'Límite de creación de promos alcanzado (20/h)' }), { status: 429, headers: corsHeaders })
         const { code, description, duration_days = 30, max_uses, expires_at } = body
         if (!code) return new Response(JSON.stringify({ error: 'Falta code' }), { status: 400, headers: corsHeaders })
+        if (code.trim().length > 50) return new Response(JSON.stringify({ error: 'Código demasiado largo (máx 50)' }), { status: 400, headers: corsHeaders })
+        if (description && description.length > 500) return new Response(JSON.stringify({ error: 'Descripción demasiado larga (máx 500)' }), { status: 400, headers: corsHeaders })
+        const safeDays = Math.max(1, Math.min(parseInt(duration_days) || 30, 730))
+        const safeMaxUses = max_uses ? Math.max(1, Math.min(parseInt(max_uses) || 1, 10_000)) : null
         try {
           const res = await supabaseServiceFetch(env, 'promo_codes', {
             method: 'POST',
             body: JSON.stringify({
               code: code.toUpperCase().trim(), description,
-              duration_days, max_uses: max_uses || null,
+              duration_days: safeDays, max_uses: safeMaxUses,
               expires_at: expires_at || null, created_by: admin.userId,
             }),
             headers: { Prefer: 'return=representation' },
@@ -1387,7 +1111,8 @@ export default {
       }
 
       if (body.action === 'admin_list_logs') {
-        const { offset: logsOffset = 0, limit = 50 } = body
+        const { offset: rawOff = 0, limit: rawLim = 50 } = body
+        const { offset: logsOffset, limit } = clampPage(rawOff, rawLim, { maxLimit: 200 })
         try {
           const res = await supabaseServiceFetch(env, `admin_logs?select=*&order=created_at.desc&offset=${logsOffset}&limit=${limit}`)
           const logs = await res.json()
@@ -1430,13 +1155,16 @@ export default {
       }
 
       if (body.action === 'admin_ai_logs') {
-        const { offset: logsOffset = 0, limit = 50, feature_filter } = body
+        const { offset: rawOff = 0, limit: rawLim = 50, feature_filter } = body
+        const { offset: logsOffset, limit } = clampPage(rawOff, rawLim, { maxLimit: 100 })
         try {
           let qs = `ai_usage_logs?select=*&order=created_at.desc&offset=${logsOffset}&limit=${limit}`
           if (feature_filter) qs += `&feature=eq.${encodeURIComponent(feature_filter)}`
           const res = await supabaseServiceFetch(env, qs)
+          if (!res.ok) throw new Error(`Supabase error ${res.status}`)
           const logs = await res.json()
-          return new Response(JSON.stringify({ ok: true, logs: Array.isArray(logs) ? logs : [] }), { status: 200, headers: corsHeaders })
+          const safeLog = Array.isArray(logs) ? logs : []
+          return new Response(JSON.stringify({ ok: true, logs: safeLog, has_more: safeLog.length === limit }), { status: 200, headers: corsHeaders })
         } catch (e) {
           return new Response(JSON.stringify({ ok: false, error: e.message }), { status: 500, headers: corsHeaders })
         }
@@ -1461,7 +1189,8 @@ export default {
       }
 
       if (body.action === 'admin_list_comments') {
-        const { status_filter = 'all', search = '', featured_only = false, offset: off = 0, limit = 30 } = body
+        const { status_filter = 'all', search = '', featured_only = false, offset: rawOff = 0, limit: rawLim = 30 } = body
+        const { offset: off, limit } = clampPage(rawOff, rawLim, { maxLimit: 100 })
         try {
           let qs = `comments?select=*&order=created_at.desc&offset=${off}&limit=${limit}`
           if (status_filter && status_filter !== 'all') qs += `&status=eq.${encodeURIComponent(status_filter)}`
@@ -1548,6 +1277,46 @@ export default {
         }
       }
 
+      // ── Flush radar cache for a user (testing / support) ─────────────────────
+      if (body.action === 'admin_flush_radar_cache') {
+        if (!canWrite) return new Response(JSON.stringify({ error: 'Sin permisos de escritura' }), { status: 403, headers: corsHeaders })
+        const { user_id, flush_all_users = false } = body
+        if (!flush_all_users && !user_id) return new Response(JSON.stringify({ error: 'Falta user_id o flush_all_users=true' }), { status: 400, headers: corsHeaders })
+        if (user_id && !isValidUuid(user_id)) return new Response(JSON.stringify({ error: 'user_id inválido' }), { status: 400, headers: corsHeaders })
+
+        const targetIds = user_id ? [user_id] : null
+        const deleted = { kv_keys: [], supabase_radar: 0, supabase_recs: 0 }
+
+        // 1. Supabase: radar_search_history + job_recommendations
+        const supaFilter = targetIds ? `?user_id=eq.${targetIds[0]}` : ''
+        try {
+          await Promise.all([
+            supabaseServiceFetch(env, `radar_search_history${supaFilter}`, { method: 'DELETE', headers: { Prefer: 'return=minimal' } }),
+            supabaseServiceFetch(env, `job_recommendations${supaFilter}`, { method: 'DELETE', headers: { Prefer: 'return=minimal' } }),
+          ])
+          deleted.supabase_radar = 1
+          deleted.supabase_recs  = 1
+        } catch (e) { console.warn('[FLUSH] supabase delete failed:', e?.message) }
+
+        // 2. KV: live_fetch + jrec + rate-limit counters for the user
+        if (env.RATE_LIMIT_KV && targetIds) {
+          const uid      = targetIds[0]
+          const today    = new Date().toISOString().slice(0, 10)
+          const month    = new Date().toISOString().slice(0, 7)
+          const kvKeys   = [
+            `live_fetch:${uid}:${today}`,   // premium daily
+            `live_fetch:${uid}:${month}`,   // free monthly
+            `jobsearch:day:${uid}`,
+            `jobsearch:hour:${uid}:${new Date().toISOString().slice(0, 13)}`,
+          ]
+          await Promise.all(kvKeys.map(k => env.RATE_LIMIT_KV.delete(k).catch(() => {})))
+          deleted.kv_keys = kvKeys
+        }
+
+        await logAdminAction(env, admin.userId, 'flush_radar_cache', 'user', user_id || 'all', { flush_all_users })
+        return new Response(JSON.stringify({ ok: true, deleted }), { status: 200, headers: corsHeaders })
+      }
+
       // ── Revenue stats ─────────────────────────────────────────────────────────
       if (body.action === 'admin_revenue_stats') {
         try {
@@ -1565,7 +1334,8 @@ export default {
 
       // ── Subscription events log ───────────────────────────────────────────────
       if (body.action === 'admin_subscription_events') {
-        const { offset = 0, limit = 25, event_type = 'all' } = body
+        const { offset: rawOff = 0, limit: rawLim = 25, event_type = 'all' } = body
+        const { offset, limit } = clampPage(rawOff, rawLim, { maxLimit: 100 })
         try {
           const res = await supabaseServiceFetch(env, 'rpc/get_subscription_events_paged', {
             method: 'POST',
@@ -1581,7 +1351,8 @@ export default {
 
       // ── Payments log ─────────────────────────────────────────────────────────
       if (body.action === 'admin_payments_log') {
-        const { offset = 0, limit = 25 } = body
+        const { offset: rawOff = 0, limit: rawLim = 25 } = body
+        const { offset, limit } = clampPage(rawOff, rawLim, { maxLimit: 100 })
         try {
           const res = await supabaseServiceFetch(env, 'rpc/get_payments_paged', {
             method: 'POST',
@@ -1597,23 +1368,20 @@ export default {
 
       // ── Product Intelligence — overview + funnel + trend + AI breakdown ────────
       if (body.action === 'admin_analytics_overview') {
-        try {
-          const rpcPost = (fn, params = {}) => supabaseServiceFetch(env, `rpc/${fn}`, {
-            method: 'POST', body: JSON.stringify(params),
-          })
-          const [overviewRes, funnelRes, trendRes, aiRes] = await Promise.all([
-            rpcPost('get_product_overview'),
-            rpcPost('get_product_funnel'),
-            rpcPost('get_weekly_activity_trend', { p_weeks: 8 }),
-            rpcPost('get_ai_feature_breakdown_30d'),
-          ])
-          const [overview, funnel, trend, ai_features] = await Promise.all([
-            overviewRes.json(), funnelRes.json(), trendRes.json(), aiRes.json(),
-          ])
-          return new Response(JSON.stringify({ ok: true, overview, funnel, trend, ai_features }), { status: 200, headers: corsHeaders })
-        } catch (e) {
-          return new Response(JSON.stringify({ ok: false, error: e.message }), { status: 500, headers: corsHeaders })
+        const rpcSafe = async (fn, params = {}) => {
+          try {
+            const res = await supabaseServiceFetch(env, `rpc/${fn}`, { method: 'POST', body: JSON.stringify(params) })
+            if (!res.ok) { console.warn(`[ADMIN] RPC ${fn} returned ${res.status}`); return null }
+            return res.json()
+          } catch (e) { console.warn(`[ADMIN] RPC ${fn} failed:`, e?.message); return null }
         }
+        const [overview, funnel, trend, ai_features] = await Promise.all([
+          rpcSafe('get_product_overview'),
+          rpcSafe('get_product_funnel'),
+          rpcSafe('get_weekly_activity_trend', { p_weeks: 8 }),
+          rpcSafe('get_ai_feature_breakdown_30d'),
+        ])
+        return new Response(JSON.stringify({ ok: true, overview, funnel, trend, ai_features }), { status: 200, headers: corsHeaders })
       }
 
       // ── GA4 Data API — runFunnelReport ───────────────────────────────────────
@@ -1631,6 +1399,8 @@ export default {
         } catch { /* cache miss is silent */ }
         try {
           const creds = JSON.parse(env.GA4_CREDENTIALS_JSON)
+          if (!creds?.client_email || !creds?.private_key || !creds?.token_uri)
+            return new Response(JSON.stringify({ ok: false, error: 'GA4_CREDENTIALS_JSON falta campos requeridos (client_email, private_key, token_uri)' }), { status: 500, headers: corsHeaders })
           const token = await getGa4AccessToken(creds)
           const GA4_PROPERTY = '534867380'
           // Updated funnel: starts from questionnaire entry so top-of-funnel is always visible
@@ -2013,12 +1783,6 @@ export default {
         const appToken = request.headers.get('X-App-Token')
         if (appToken !== env.APP_TOKEN) return new Response(JSON.stringify({ error: { message: 'Unauthorized' } }), { status: 401, headers: corsHeaders })
       }
-      const ip = request.headers.get('CF-Connecting-IP') || 'unknown'
-      const rl = await checkRateLimit(env, ip, 'job_recommendations')
-      if (!rl.ok) return new Response(
-        JSON.stringify({ error: { message: `Límite de IA alcanzado (${rl.limit}/hora). Intentá en 60 minutos.` } }),
-        { status: 429, headers: corsHeaders }
-      )
       return handleAiJobRecommendations(body, request, env, ctx, corsHeaders, callGeminiApi, logAiUsage)
     }
 
@@ -2100,225 +1864,273 @@ export default {
 // RADAR LABORAL — Inlined from job_recommendations.js
 // ══════════════════════════════════════════════════════════════════════════════
 
-// ── Constants ─────────────────────────────────────────────────────────────────
-
-const JOB_KV_TTL_SECS   = 7_200   // 2-hour KV cache for raw query results
-const JOB_DB_TTL_HOURS  = 24      // job_cache table TTL
-const JOB_SEARCH_TTL_SECS = 7_200 // job_searches row TTL (mirrors KV)
-
-// Rate limits: job searches per user per day.
-// Free users get 5/day, premium get 30/day.
-// Key format: "jrl:{user_id_or_ip}:{YYYY-MM-DD}"
-const JOB_SEARCH_LIMIT_FREE    = 5
-const JOB_SEARCH_LIMIT_PREMIUM = 30
-
-// Max jobs to send to Gemini in a single matching call (token budget guard).
-// At ~500 tokens/job snippet, 40 jobs ≈ 20 K tokens input — well within Flash Lite limits.
-const MAX_JOBS_FOR_AI_MATCHING = 40
-
-// Max description length stored in job_cache (chars). Prevents >8 KB JSONB blobs.
-const MAX_DESC_CHARS = 6_000
-
-// ══════════════════════════════════════════════════════════════════════════════
-// SECTION 1 — Job Data Normalization
-// ══════════════════════════════════════════════════════════════════════════════
-
-/**
- * Unified normalized job schema.
- * Every source-specific normalizer returns this shape.
- *
- * @typedef {{
- *   source:          string,
- *   external_id:     string,
- *   title:           string,
- *   company:         string,
- *   description:     string|null,
- *   location:        string|null,
- *   remote:          boolean,
- *   url:             string,
- *   salary_min:      number|null,
- *   salary_max:      number|null,
- *   currency:        string|null,
- *   skills_required: string[],
- *   seniority:       string,
- *   industry:        string|null,
- *   posted_at:       string|null,   // ISO 8601
- * }} NormalizedJob
- */
-
-function truncateDesc(text) {
-  if (!text) return null
-  return text.length > MAX_DESC_CHARS ? text.slice(0, MAX_DESC_CHARS) + '…' : text
-}
-
-function normalizeSeniority(raw = '') {
-  const s = (raw || '').toLowerCase()
-  if (s.includes('junior') || s.includes('jr') || s.includes('entry'))       return 'Junior'
-  if (s.includes('semi senior') || s.includes('ssr') || s.includes('mid'))   return 'Semi Senior'
-  if (s.includes('senior') || s.includes('sr'))                               return 'Senior'
-  if (s.includes('lead') || s.includes('manager') || s.includes('head'))     return 'Lead'
-  return 'No especificado'
-}
-
-// RemoteOK — https://remoteok.com/api
-// Returns: [{id, position, company, description, tags, date, url, ...}]
-function normalizeRemoteOK(raw) {
-  if (!raw || raw.legal) return []  // first element is a disclaimer object
-  return raw
-    .filter(j => j && j.id && j.position)
-    .map(j => ({
-      source:          'remoteok',
-      external_id:     String(j.id),
-      title:           j.position || '',
-      company:         j.company  || '',
-      description:     truncateDesc(j.description),
-      location:        j.location || 'Remote',
-      remote:          true,
-      url:             j.url || `https://remoteok.com/remote-jobs/${j.id}`,
-      salary_min:      j.salary_min  ? parseInt(j.salary_min,  10) : null,
-      salary_max:      j.salary_max  ? parseInt(j.salary_max,  10) : null,
-      currency:        j.salary_min  ? 'USD' : null,
-      skills_required: Array.isArray(j.tags) ? j.tags.slice(0, 15) : [],
-      seniority:       normalizeSeniority(j.position),
-      industry:        null,
-      posted_at:       j.date ? new Date(j.date * 1000).toISOString() : null,
-    }))
-}
-
-// Remotive — https://remotive.com/api/remote-jobs
-// Returns: {jobs: [{id, title, company_name, description, tags, job_type, candidate_required_location, url, publication_date}]}
-function normalizeRemotive(raw) {
-  if (!raw?.jobs) return []
-  return raw.jobs.map(j => ({
-    source:          'remotive',
-    external_id:     String(j.id),
-    title:           j.title        || '',
-    company:         j.company_name || '',
-    description:     truncateDesc(j.description),
-    location:        j.candidate_required_location || 'Worldwide',
-    remote:          true,
-    url:             j.url || '',
-    salary_min:      null,
-    salary_max:      null,
-    currency:        null,
-    skills_required: Array.isArray(j.tags) ? j.tags.slice(0, 15) : [],
-    seniority:       normalizeSeniority(j.title),
-    industry:        j.category || null,
-    posted_at:       j.publication_date || null,
-  }))
-}
-
-// Arbeitnow (free, no key) — https://www.arbeitnow.com/api/job-board-api
-// Returns: {data: [{slug, title, company_name, description, tags, remote, location, url, created_at}]}
-function normalizeArbeitnow(raw) {
-  if (!raw?.data) return []
-  return raw.data.map(j => ({
-    source:          'arbeitnow',
-    external_id:     j.slug || String(j.id || Math.random()),
-    title:           j.title        || '',
-    company:         j.company_name || '',
-    description:     truncateDesc(j.description),
-    location:        j.location || (j.remote ? 'Remote' : null),
-    remote:          !!j.remote,
-    url:             j.url || '',
-    salary_min:      null,
-    salary_max:      null,
-    currency:        null,
-    skills_required: Array.isArray(j.tags) ? j.tags.slice(0, 15) : [],
-    seniority:       normalizeSeniority(j.title),
-    industry:        null,
-    posted_at:       j.created_at || null,
-  }))
-}
-
-// Jooble — https://jooble.org/api/{key}  (POST, requires JOOBLE_KEY env var)
-// Returns: {jobs: [{id, title, snippet, salary, location, company, updated, link}]}
-// Coverage: agrega Bumeran, Computrabajo, ZonaJobs, InfoJobs Argentina — mejor cobertura LATAM local
-function normalizeJooble(raw) {
-  if (!raw?.jobs) return []
-  return raw.jobs.map(j => ({
-    source:          'jooble',
-    external_id:     String(j.id),
-    title:           (j.title   || '').trim(),
-    company:         (j.company || '').trim(),
-    description:     truncateDesc(j.snippet),
-    location:        j.location || null,
-    remote:          /remote|remoto/.test((j.location || j.title || '').toLowerCase()),
-    url:             j.link || '',
-    salary_min:      null,
-    salary_max:      null,
-    currency:        null,
-    skills_required: [],
-    seniority:       normalizeSeniority(j.title),
-    industry:        null,
-    posted_at:       j.updated || null,
-  }))
-}
-
-// Adzuna — https://api.adzuna.com/v1/api/jobs/{country}/search/1
-// Returns: {results: [{id, title, company:{display_name}, description, salary_min, salary_max, location:{display_name}, redirect_url, created, category:{label}}]}
-function normalizeAdzuna(raw) {
-  if (!raw?.results) return []
-  return raw.results.map(j => ({
-    source:          'adzuna',
-    external_id:     String(j.id),
-    title:           j.title || '',
-    company:         j.company?.display_name || '',
-    description:     truncateDesc(j.description),
-    location:        j.location?.display_name || null,
-    remote:          (j.title || j.description || '').toLowerCase().includes('remote'),
-    url:             j.redirect_url || '',
-    salary_min:      j.salary_min ? Math.round(j.salary_min) : null,
-    salary_max:      j.salary_max ? Math.round(j.salary_max) : null,
-    currency:        j.salary_min ? 'ARS' : null,  // Adzuna AR returns ARS
-    skills_required: [],  // Adzuna doesn't include tags — extracted by AI later
-    seniority:       normalizeSeniority(j.title),
-    industry:        j.category?.label || null,
-    posted_at:       j.created || null,
-  }))
-}
-
-/**
- * Master normalizer — dispatches to source-specific function.
- * Returns an empty array on unknown source rather than throwing.
- */
-function normalizeJobs(source, rawData) {
-  switch (source) {
-    case 'remoteok':   return normalizeRemoteOK(rawData)
-    case 'remotive':   return normalizeRemotive(rawData)
-    case 'arbeitnow':  return normalizeArbeitnow(rawData)
-    case 'adzuna':     return normalizeAdzuna(rawData)
-    case 'jooble':     return normalizeJooble(rawData)
-    default:           return []
-  }
-}
 
 
 // ══════════════════════════════════════════════════════════════════════════════
 // SECTION 2 — Job Source Fetchers
 // ══════════════════════════════════════════════════════════════════════════════
 
+// ── ATS Company Registry ─────────────────────────────────────────────────────
+// Companies with confirmed public ATS boards. Slugs verified at 2026-05.
+// To fix a slug without redeploying: set KV["ats:registry:overrides"] =
+//   JSON.stringify({ greenhouse: { "bad-slug": "correct-slug" } })
+const ATS_COMPANIES = {
+  greenhouse: [
+    { slug: 'mercadolibre', name: 'Mercado Libre',  country: 'AR', industries: ['tech','ecommerce','fintech'], tags: ['backend','frontend','data','mobile','devops'] },
+    { slug: 'auth0',        name: 'Auth0 / Okta',   country: 'US', industries: ['tech','security'],            tags: ['backend','devops','security'] },
+    { slug: 'rappi',        name: 'Rappi',           country: 'CO', industries: ['tech','delivery'],            tags: ['backend','data','mobile','devops'] },
+    { slug: 'etermax',      name: 'Etermax',         country: 'AR', industries: ['tech','gaming'],              tags: ['backend','mobile','data'] },
+    { slug: 'pomelo',       name: 'Pomelo',          country: 'AR', industries: ['fintech'],                    tags: ['backend','mobile','data','security'] },
+    { slug: 'bitso',        name: 'Bitso',           country: 'MX', industries: ['fintech','crypto'],           tags: ['backend','security','data'] },
+    { slug: 'globant',      name: 'Globant',         country: 'AR', industries: ['tech','consulting'],          tags: ['backend','frontend','data','devops','qa'] },
+  ],
+  lever: [
+    { slug: 'despegar',    name: 'Despegar',     country: 'AR', industries: ['tech','travel'],          tags: ['backend','frontend','data'] },
+    { slug: 'mural',       name: 'MURAL',        country: 'AR', industries: ['tech','saas'],            tags: ['frontend','backend','design','product'] },
+    { slug: 'ripio',       name: 'Ripio',        country: 'AR', industries: ['fintech','crypto'],       tags: ['backend','mobile'] },
+    { slug: 'tiendanube',  name: 'Tienda Nube',  country: 'AR', industries: ['tech','ecommerce'],      tags: ['backend','frontend','data'] },
+    { slug: 'satellogic',  name: 'Satellogic',   country: 'AR', industries: ['tech','aerospace'],      tags: ['backend','data','ml','python'] },
+    { slug: 'lemon',       name: 'Lemon',        country: 'AR', industries: ['fintech','crypto'],      tags: ['backend','mobile'] },
+  ],
+  smartrecruiters: [
+    // Note: SmartRecruiters company identifiers are case-sensitive — verify slugs at
+    // https://api.smartrecruiters.com/v1/companies/{slug}/postings
+    { slug: 'globant',       name: 'Globant',                country: 'AR', industries: ['tech','consulting'], tags: ['backend','frontend','data','devops','qa'] },
+    { slug: 'deliveryhero',  name: 'PedidosYa / DH',        country: 'AR', industries: ['tech','delivery'],   tags: ['backend','data','mobile','devops'] },
+  ],
+  ashby: [
+    // US tech companies actively hiring LATAM remote — include salary data (Ashby exposes it)
+    { slug: 'linear',   name: 'Linear',   country: 'US', industries: ['tech','saas'],    tags: ['backend','frontend'] },
+    { slug: 'vercel',   name: 'Vercel',   country: 'US', industries: ['tech','devtools'], tags: ['backend','devops','frontend'] },
+  ],
+  workable: [
+    { slug: 'uala',      name: 'Ualá',      country: 'AR', industries: ['fintech'],           tags: ['backend','mobile','data','security'] },
+    { slug: 'aivo',      name: 'Aivo',      country: 'AR', industries: ['tech','ai'],          tags: ['backend','frontend','ml','data'] },
+    { slug: 'lemontech', name: 'Lemontech', country: 'CL', industries: ['tech','legaltech'],   tags: ['backend','frontend','devops'] },
+    { slug: 'modo',      name: 'MODO',      country: 'AR', industries: ['fintech'],            tags: ['backend','mobile'] },
+    { slug: 'mango-dsp', name: 'Mango DSP', country: 'AR', industries: ['tech','marketing'],   tags: ['backend','data','devops'] },
+  ],
+  teamtailor: [
+    { slug: 'global66',           name: 'Global66',          country: 'CL', industries: ['fintech'],     tags: ['backend','mobile','data'] },
+    { slug: 'knauf-south-america', name: 'Knauf South Am.',  country: 'AR', industries: ['manufacturing'], tags: ['backend','data','devops'] },
+    { slug: 'quala',              name: 'Quala',             country: 'CO', industries: ['fmcg'],         tags: ['data','backend','marketing'] },
+  ],
+  recruitee: [
+    { slug: 'baufest',    name: 'Baufest',      country: 'AR', industries: ['tech','consulting'], tags: ['backend','frontend','qa','devops'] },
+    { slug: 'n5now',      name: 'N5',           country: 'AR', industries: ['fintech','tech'],    tags: ['backend','data','mobile'] },
+    { slug: 'practia',    name: 'Practia',      country: 'AR', industries: ['tech','consulting'], tags: ['backend','devops','data','frontend'] },
+  ],
+  personio: [
+    { slug: 'factorial',  name: 'Factorial HR', country: 'ES', industries: ['tech','hr'],         tags: ['backend','frontend','devops','data'] },
+    { slug: 'typeform',   name: 'Typeform',     country: 'ES', industries: ['tech','saas'],       tags: ['backend','frontend','data'] },
+    { slug: 'jobandtalent', name: 'Job&Talent', country: 'ES', industries: ['hr','tech'],         tags: ['backend','data','mobile'] },
+  ],
+  workday: [
+    { slug: 'accenture', name: 'Accenture',  country: 'AR', industries: ['tech','consulting'],  tags: ['backend','frontend','data','devops','qa'],    cxsUrl: 'https://accenture.wd3.myworkdayjobs.com/wday/cxs/accenture/AccentureCareers/jobs' },
+    { slug: 'sap',       name: 'SAP',        country: 'AR', industries: ['tech','enterprise'],  tags: ['backend','data','devops','frontend'],         cxsUrl: 'https://sap.wd3.myworkdayjobs.com/wday/cxs/sap/SAP_Global/jobs' },
+    { slug: 'pwc-ar',    name: 'PwC',        country: 'AR', industries: ['consulting','fintech'], tags: ['data','backend','fintech'],                 cxsUrl: 'https://pwc.wd3.myworkdayjobs.com/wday/cxs/pwc/Global_Campus_Experienced/jobs' },
+  ],
+}
+
+// Score companies against user profile and select top N per ATS type
+function selectAtsCompanies(userProfile, maxPerAts = 5) {
+  const profileLower = (userProfile || '').toLowerCase()
+  const tagSignals = {
+    fintech:   ['fintech','payments','banking','crypto','blockchain'],
+    ecommerce: ['ecommerce','marketplace','retail'],
+    data:      ['data','sql','python','analytics','ml','machine learning','bi'],
+    backend:   ['backend','api','node','java','python','golang','microservices'],
+    frontend:  ['frontend','react','vue','angular','javascript','typescript'],
+    mobile:    ['mobile','ios','android','swift','kotlin','react native','flutter'],
+    devops:    ['devops','kubernetes','docker','aws','gcp','azure','terraform'],
+    design:    ['ux','ui','design','figma','product design'],
+    ml:        ['machine learning','ml','nlp','pytorch','tensorflow','data science'],
+    security:  ['security','ciberseguridad','cybersecurity','infosec'],
+  }
+  const activeSignals = Object.entries(tagSignals)
+    .filter(([, kws]) => kws.some(kw => profileLower.includes(kw)))
+    .map(([tag]) => tag)
+
+  const selected = {}
+  for (const [atsType, companies] of Object.entries(ATS_COMPANIES)) {
+    const scored = companies.map(c => ({
+      ...c,
+      _score: activeSignals.length
+        ? (c.tags || []).filter(t => activeSignals.includes(t)).length
+        : 1,
+    })).filter(c => c._score > 0).sort((a, b) => b._score - a._score).slice(0, maxPerAts)
+    if (scored.length) selected[atsType] = scored
+  }
+  return selected
+}
+
+// KV slug-override (fix a broken slug without redeploying)
+async function getAtsSlugOverride(atsType, slug, env) {
+  if (!env.RATE_LIMIT_KV) return null
+  try {
+    const raw = await env.RATE_LIMIT_KV.get('ats:registry:overrides')
+    if (!raw) return null
+    return JSON.parse(raw)?.[atsType]?.[slug] || null
+  } catch { return null }
+}
+
+// Date-keyed ATS board KV cache (one board = one entry per calendar day)
+async function getAtsBoardFromKV(env, atsType, slug) {
+  if (!env.RATE_LIMIT_KV) return null
+  const date = new Date().toISOString().slice(0, 10)
+  try {
+    const raw = await env.RATE_LIMIT_KV.get(`ats:${atsType}:${slug}:${date}`)
+    return raw ? JSON.parse(raw) : null
+  } catch { return null }
+}
+
+async function putAtsBoardToKV(env, atsType, slug, jobs) {
+  if (!env.RATE_LIMIT_KV || !jobs.length) return
+  const date = new Date().toISOString().slice(0, 10)
+  try {
+    await env.RATE_LIMIT_KV.put(`ats:${atsType}:${slug}:${date}`, JSON.stringify(jobs), { expirationTtl: ATS_KV_TTL_SECS })
+  } catch (e) { console.warn(`[KV] putAtsBoardToKV failed for ${atsType}:${slug}: ${e?.message}`) }
+}
+
+// Fetch a single ATS company board (KV-cached, date-keyed)
+async function fetchAtsCompanyBoard(atsType, company, env) {
+  const cached = await getAtsBoardFromKV(env, atsType, company.slug)
+  if (cached) return cached
+
+  const slugOverride = await getAtsSlugOverride(atsType, company.slug, env)
+  const slug = slugOverride || company.slug
+  const ctrl = new AbortController()
+  const tid  = setTimeout(() => ctrl.abort(), 4_000)
+  const UA   = 'OptimizaLK/2.0 (job-aggregator; https://optimizalinkedin.com)'
+
+  let jobs = []
+  try {
+    let r, raw
+    if (atsType === 'greenhouse') {
+      r = await fetch(`https://boards-api.greenhouse.io/v1/boards/${slug}/jobs?content=true`, {
+        headers: { 'User-Agent': UA, Accept: 'application/json' }, signal: ctrl.signal,
+      })
+      if (r.ok) { raw = await r.json(); jobs = normalizeGreenhouse(raw.jobs || [], { ...company, slug }) }
+      else console.warn(`[greenhouse] HTTP ${r.status} for ${slug}`)
+    }
+    else if (atsType === 'lever') {
+      r = await fetch(`https://api.lever.co/v0/postings/${slug}?mode=json`, {
+        headers: { 'User-Agent': UA }, signal: ctrl.signal,
+      })
+      if (r.ok) { raw = await r.json(); jobs = normalizeLever(Array.isArray(raw) ? raw : [], { ...company, slug }) }
+      else console.warn(`[lever] HTTP ${r.status} for ${slug}`)
+    }
+    else if (atsType === 'smartrecruiters') {
+      r = await fetch(`https://api.smartrecruiters.com/v1/companies/${slug}/postings?limit=100`, {
+        headers: { 'User-Agent': UA }, signal: ctrl.signal,
+      })
+      if (r.ok) { raw = await r.json(); jobs = normalizeSmartRecruiters(raw, { ...company, slug }) }
+      else console.warn(`[smartrecruiters] HTTP ${r.status} for ${slug}`)
+    }
+    else if (atsType === 'ashby') {
+      r = await fetch(`https://api.ashbyhq.com/posting-api/job-board/${slug}?includeCompensation=true`, {
+        headers: { 'User-Agent': UA }, signal: ctrl.signal,
+      })
+      if (r.ok) { raw = await r.json(); jobs = normalizeAshby(raw, { ...company, slug }) }
+      else console.warn(`[ashby] HTTP ${r.status} for ${slug}`)
+    }
+    else if (atsType === 'workable') {
+      r = await fetch(`https://apply.workable.com/api/v1/widget/accounts/${slug}`, {
+        headers: { 'User-Agent': UA, Accept: 'application/json' }, signal: ctrl.signal,
+      })
+      if (r.ok) { raw = await r.json(); jobs = normalizeWorkable(raw, { ...company, slug }) }
+      else console.warn(`[workable] HTTP ${r.status} for ${slug}`)
+    }
+    else if (atsType === 'teamtailor') {
+      r = await fetch(`https://${slug}.teamtailor.com/jobs.json`, {
+        headers: { 'User-Agent': UA, Accept: 'application/json' }, signal: ctrl.signal,
+      })
+      if (r.ok) { raw = await r.json(); jobs = normalizeTeamtailor(raw, { ...company, slug }) }
+      else console.warn(`[teamtailor] HTTP ${r.status} for ${slug}`)
+    }
+    else if (atsType === 'recruitee') {
+      r = await fetch(`https://${slug}.recruitee.com/api/offers/`, {
+        headers: { 'User-Agent': UA, Accept: 'application/json' }, signal: ctrl.signal,
+      })
+      if (r.ok) { raw = await r.json(); jobs = normalizeRecruitee(raw, { ...company, slug }) }
+      else console.warn(`[recruitee] HTTP ${r.status} for ${slug}`)
+    }
+    else if (atsType === 'personio') {
+      const tld = company.personioTld || 'com'
+      r = await fetch(`https://${slug}.jobs.personio.${tld}/search.json`, {
+        headers: { 'User-Agent': UA, Accept: 'application/json' }, signal: ctrl.signal,
+      })
+      if (r.ok) { raw = await r.json(); jobs = normalizePersonio(raw, { ...company, slug }) }
+      else console.warn(`[personio] HTTP ${r.status} for ${slug}`)
+    }
+    else if (atsType === 'workday') {
+      const cxsUrl = company.cxsUrl
+      if (!cxsUrl) { console.warn(`[workday] missing cxsUrl for ${slug}`) }
+      else {
+        r = await fetch(cxsUrl, {
+          method:  'POST',
+          headers: { 'Content-Type': 'application/json', 'User-Agent': UA },
+          body:    JSON.stringify({ appliedFacets: {}, limit: 50, offset: 0, searchText: '' }),
+          signal:  ctrl.signal,
+        })
+        if (r.ok) { raw = await r.json(); jobs = normalizeWorkday(raw, { ...company, slug, cxsUrl }) }
+        else console.warn(`[workday] HTTP ${r.status} for ${slug}`)
+      }
+    }
+    if (jobs.length) await putAtsBoardToKV(env, atsType, slug, jobs)
+  } catch (err) {
+    console.warn(`[ats:${atsType}:${slug}] ${err.name === 'AbortError' ? 'timeout' : err.message}`)
+  } finally { clearTimeout(tid) }
+
+  return jobs
+}
+
+// Fetch all relevant ATS company boards based on user profile, filter by query relevance
+async function fetchAtsCompanies(queries, userProfile, env) {
+  const selected = selectAtsCompanies(userProfile, 5)
+  const allFetches = []
+  for (const [atsType, companies] of Object.entries(selected)) {
+    for (const company of companies) {
+      allFetches.push(
+        fetchAtsCompanyBoard(atsType, company, env)
+          .then(jobs => ({ atsType, company: company.name, jobs }))
+          .catch(() => ({ atsType, company: '', jobs: [] }))
+      )
+    }
+  }
+  const results = await Promise.allSettled(allFetches)
+  const allJobs = []
+  for (const r of results) {
+    if (r.status === 'fulfilled') allJobs.push(...(r.value.jobs || []))
+  }
+  if (!allJobs.length) return []
+
+  // Local keyword filter — only keep jobs matching at least one query keyword
+  const queryKws = queries.join(' ').toLowerCase().split(/\s+/).filter(w => w.length > 3)
+  return allJobs.filter(job => {
+    const jobText = [job.title, job.description, ...(job.skills_required || [])].join(' ').toLowerCase()
+    return queryKws.length === 0 || queryKws.some(kw => jobText.includes(kw))
+  })
+}
+
+
 /**
- * Fetch from a single job source with a 10 s timeout.
+ * Fetch from a single aggregator source with a 10 s timeout.
  * Returns { source, jobs: NormalizedJob[] } or { source, jobs: [], error }.
- * Never throws — a failed source degrades gracefully.
  */
-async function fetchJobSource(source, query, location, remoteOk, env) {
+async function fetchJobSource(source, query, location, remoteOk, env, candidateLocation = null) {
   const ctrl = new AbortController()
   const tid  = setTimeout(() => ctrl.abort(), 10_000)
   const q    = encodeURIComponent(query)
+  const UA   = 'OptimizaLK/2.0 (job-search-bot; https://optimizalinkedin.com)'
 
   try {
     let url, raw
 
     if (source === 'remoteok') {
-      // RemoteOK filters by tag — use first word of query as tag
-      const tag = encodeURIComponent(query.split(' ')[0].toLowerCase())
+      const tag = encodeURIComponent(query.split(' ').slice(0, 2).join('-').toLowerCase())
       url = `https://remoteok.com/api?tags=${tag}&limit=30`
-      const r = await fetch(url, {
-        headers: { 'User-Agent': 'OptimizaLK/2.0 (job-search-bot; https://optimizalinkedin.com)' },
-        signal: ctrl.signal,
-      })
+      const r = await fetch(url, { headers: { 'User-Agent': UA }, signal: ctrl.signal })
       raw = await r.json()
       return { source, jobs: normalizeJobs(source, raw) }
     }
@@ -2330,9 +2142,9 @@ async function fetchJobSource(source, query, location, remoteOk, env) {
       return { source, jobs: normalizeJobs(source, raw) }
     }
 
-    if (source === 'arbeitnow') {
-      // Free tier, no auth — searches by query string
-      url = `https://www.arbeitnow.com/api/job-board-api?search=${q}`
+    if (source === 'jobicy') {
+      // LATAM-focused remote jobs (replaces arbeitnow which was European)
+      url = `https://jobicy.com/api/v2/remote-jobs?geo=latam&tag=${q}&count=50`
       const r = await fetch(url, { signal: ctrl.signal })
       raw = await r.json()
       return { source, jobs: normalizeJobs(source, raw) }
@@ -2342,8 +2154,9 @@ async function fetchJobSource(source, query, location, remoteOk, env) {
       if (!env.ADZUNA_APP_ID || !env.ADZUNA_APP_KEY) {
         return { source, jobs: [], error: 'adzuna_not_configured' }
       }
-      // 'ar' = Argentina; fallback to 'us' if you want broader results
-      const country = location?.toLowerCase().includes('arg') ? 'ar' : 'us'
+      // Adzuna doesn't support 'ar' (Argentina) — closest LATAM coverage is 'br' (Brazil)
+      // Fallback to 'us' for remote-only searches where geo doesn't matter
+      const country = location?.toLowerCase().includes('arg') ? 'br' : 'us'
       url = `https://api.adzuna.com/v1/api/jobs/${country}/search/1`
         + `?app_id=${env.ADZUNA_APP_ID}&app_key=${env.ADZUNA_APP_KEY}`
         + `&what=${q}&results_per_page=30&content-type=application/json`
@@ -2354,20 +2167,50 @@ async function fetchJobSource(source, query, location, remoteOk, env) {
     }
 
     if (source === 'jooble') {
-      if (!env.JOOBLE_KEY) {
-        return { source, jobs: [], error: 'jooble_not_configured' }
-      }
+      if (!env.JOOBLE_KEY) return { source, jobs: [], error: 'jooble_not_configured' }
       const r = await fetch(`https://jooble.org/api/${env.JOOBLE_KEY}`, {
-        method:  'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'User-Agent':   'OptimizaLK/2.0 (job-search-bot; https://optimizalinkedin.com)',
-        },
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'User-Agent': UA },
         body:   JSON.stringify({ keywords: query, location: location || 'Argentina', page: '1' }),
         signal: ctrl.signal,
       })
       raw = await r.json()
       return { source, jobs: normalizeJobs(source, raw) }
+    }
+
+    if (source === 'getonboard') {
+      url = `https://www.getonbrd.com/api/v0/jobs?query=${q}&per_page=30`
+      const r = await fetch(url, { headers: { 'Accept': 'application/json' }, signal: ctrl.signal })
+      raw = await r.json()
+      return { source, jobs: normalizeJobs(source, raw) }
+    }
+
+    if (source === 'himalayas') {
+      const base = `https://himalayas.app/jobs/api?q=${q}&limit=20`
+      url = remoteOk ? base : `${base}&countries=argentina`
+      const r = await fetch(url, { headers: { 'Accept': 'application/json', 'User-Agent': UA }, signal: ctrl.signal })
+      raw = await r.json()
+      return { source, jobs: normalizeJobs(source, raw) }
+    }
+
+    if (source === 'serper') {
+      if (!env.SERPER_API_KEY) {
+        console.log('[SERPER] skipped — SERPER_API_KEY not configured in this environment')
+        return { source, jobs: [], error: 'serper_not_configured' }
+      }
+      const geoParams = serperGeoConfig(candidateLocation)
+      const serperT0 = Date.now()
+      console.log(`[SERPER] START query="${query}" geo=${geoParams.gl}/${geoParams.location}`)
+      const r = await fetch('https://google.serper.dev/jobs', {
+        method:  'POST',
+        headers: { 'X-API-KEY': env.SERPER_API_KEY, 'Content-Type': 'application/json', 'User-Agent': UA },
+        body:    JSON.stringify({ q: query, ...geoParams, num: 20 }),
+        signal:  ctrl.signal,
+      })
+      raw = await r.json()
+      const serperJobs = normalizeJobs(source, raw)
+      console.log(`[SERPER] status=${r.status} results=${serperJobs.length} latency=${Date.now()-serperT0}ms`)
+      return { source, jobs: serperJobs }
     }
 
     return { source, jobs: [], error: 'unknown_source' }
@@ -2379,46 +2222,51 @@ async function fetchJobSource(source, query, location, remoteOk, env) {
   }
 }
 
+
 /**
- * Fetch jobs from multiple sources in parallel, dedup by (source, external_id).
- * Returns { jobs: NormalizedJob[], sourceErrors: {[source]: string} }
+ * Fetch from all aggregators + ATS company boards in parallel.
+ * Deduplicates with 3-level strategy; ATS version wins over aggregator on URL match.
+ * @param {string} userProfile - Used to select relevant ATS companies (no AI cost)
+ * @param {string|null} candidateLocation - Auto-detected from profile text; drives Serper geo
  */
-async function fetchAllSources(queries, location, remoteOk, env) {
-  // Determine which sources to hit based on remoteOk flag
-  // Jooble is included when JOOBLE_KEY is configured — best coverage for local LATAM jobs
-  const remoteSources = ['remoteok', 'remotive', 'arbeitnow', 'adzuna']
-  const localSources  = ['adzuna', 'arbeitnow']
-  if (env.JOOBLE_KEY) {
-    remoteSources.push('jooble')
-    localSources.push('jooble')
-  }
+async function fetchAllSources(queries, location, remoteOk, env, userProfile = '', candidateLocation = null) {
+  const remoteSources = ['remoteok', 'remotive', 'jobicy', 'adzuna', 'getonboard', 'himalayas']
+  const localSources  = ['adzuna', 'jobicy', 'getonboard', 'himalayas']
+  if (env.JOOBLE_KEY)     { remoteSources.push('jooble');  localSources.push('jooble')  }
+  if (env.SERPER_API_KEY) { remoteSources.push('serper');  localSources.push('serper')  }
   const sources = remoteOk ? remoteSources : localSources
 
-  // Fan out: one fetch per (source × query). For 2 queries × 4 sources = 8 parallel fetches.
-  const fetchPromises = sources.flatMap(source =>
-    queries.map(q => fetchJobSource(source, q, location, remoteOk, env))
-  )
-  const results = await Promise.all(fetchPromises)
+  console.log(`[RADAR:sources] remoteOk=${!!remoteOk} active=[${sources.join(',')}] queries=${JSON.stringify(queries)}`)
 
-  // Deduplicate: first occurrence of (source, external_id) wins
-  const seen   = new Set()
-  const jobs   = []
-  const errors = {}
+  // Run aggregators + ATS boards in parallel
+  const [aggregatorResults, atsJobs] = await Promise.all([
+    Promise.all(sources.flatMap(source => queries.map(q => fetchJobSource(source, q, location, remoteOk, env, candidateLocation)))),
+    fetchAtsCompanies(queries, userProfile, env),
+  ])
 
-  for (const result of results) {
-    if (result.error) {
-      errors[result.source] = errors[result.source] || result.error
-    }
+  // Collect aggregator jobs + per-source result counts
+  const errors         = {}
+  const sourceCounts   = {}
+  const rawAggregatorJobs = []
+  for (const result of aggregatorResults) {
+    if (result.error) errors[result.source] = errors[result.source] || result.error
+    if (result.jobs.length) sourceCounts[result.source] = (sourceCounts[result.source] || 0) + result.jobs.length
     for (const job of result.jobs) {
-      const key = `${job.source}::${job.external_id}`
-      if (!seen.has(key) && job.url && job.title) {
-        seen.add(key)
-        jobs.push(job)
-      }
+      if (job.url && job.title) rawAggregatorJobs.push(job)
     }
   }
+  if (atsJobs.length) sourceCounts['ats'] = atsJobs.length
 
-  return { jobs, sourceErrors: errors }
+  // Merge and 3-level dedup (ATS takes priority over aggregator on URL collision)
+  const allJobs = deduplicateJobs([...rawAggregatorJobs, ...atsJobs])
+
+  console.log(`[RADAR:sources] aggregator=${rawAggregatorJobs.length} ats=${atsJobs.length} deduped=${allJobs.length} perSource=${JSON.stringify(sourceCounts)}`)
+  if (sources.includes('serper') && !sourceCounts['serper']) {
+    console.log('[SERPER] returned 0 jobs — check quota, API key validity, or search terms')
+  }
+  if (Object.keys(errors).length) console.warn('[RADAR:sources] errors:', JSON.stringify(errors))
+
+  return { jobs: allJobs, sourceErrors: errors, sourcesUsed: sources, sourceCounts }
 }
 
 
@@ -2450,7 +2298,10 @@ async function getJobsFromKV(env, queryHash) {
   try {
     const raw = await env.RATE_LIMIT_KV.get(`jobs:${queryHash}`)
     return raw ? JSON.parse(raw) : null
-  } catch { return null }
+  } catch (err) {
+    console.warn(`[KV] getJobsFromKV parse error for hash ${queryHash}: ${err.message}`)
+    return null
+  }
 }
 
 async function putJobsToKV(env, queryHash, jobs) {
@@ -2461,7 +2312,146 @@ async function putJobsToKV(env, queryHash, jobs) {
       JSON.stringify(jobs),
       { expirationTtl: JOB_KV_TTL_SECS }
     )
-  } catch { /* non-fatal */ }
+  } catch (err) {
+    console.warn(`[KV] putJobsToKV failed for hash ${queryHash}: ${err.message}`)
+  }
+}
+
+// ── jrec: per-user AI score cache ─────────────────────────────────────────────
+// Key: "jrec:{userId}:{queryHash}" — personalised scores keyed by user + query.
+// Prevents repeat Gemini calls when the same user re-runs the same search within 2 h.
+// Stores: { recommendations, total_jobs_analyzed }
+// Live-fetch period tracking: guarantees all sources (Serper + Jooble + ATS) are called
+// exactly once per period — daily for premium, monthly for free.
+// When the flag is absent the first search bypasses ALL caches (radarCache, jrecCache, jobsKV)
+// and triggers a full live fetch. Subsequent searches within the same period use cache normally.
+function _liveFetchKey(userId, isPremium) {
+  return isPremium
+    ? `live_fetch:${userId}:${new Date().toISOString().slice(0, 10)}`   // daily key  YYYY-MM-DD
+    : `live_fetch:${userId}:${new Date().toISOString().slice(0, 7)}`    // monthly key YYYY-MM
+}
+async function hasLiveFetchedThisPeriod(env, userId, isPremium) {
+  if (!env.RATE_LIMIT_KV || !userId) return false
+  return !!(await env.RATE_LIMIT_KV.get(_liveFetchKey(userId, isPremium)).catch(() => null))
+}
+function markLiveFetchedThisPeriod(env, userId, isPremium) {
+  if (!env.RATE_LIMIT_KV || !userId) return
+  const key = _liveFetchKey(userId, isPremium)
+  let ttlSecs
+  if (isPremium) {
+    const midnight = new Date(); midnight.setUTCHours(24, 0, 0, 0)
+    ttlSecs = Math.max(60, Math.floor((midnight.getTime() - Date.now()) / 1000) + 300)
+  } else {
+    const firstNextMonth = new Date()
+    firstNextMonth.setUTCMonth(firstNextMonth.getUTCMonth() + 1, 1)
+    firstNextMonth.setUTCHours(0, 0, 0, 0)
+    ttlSecs = Math.max(60, Math.floor((firstNextMonth.getTime() - Date.now()) / 1000) + 300)
+  }
+  env.RATE_LIMIT_KV.put(key, '1', { expirationTtl: ttlSecs }).catch(() => {})
+}
+
+async function getJrecFromKV(env, userId, queryHash) {
+  if (!env.RATE_LIMIT_KV || !userId) return null
+  try {
+    const raw = await env.RATE_LIMIT_KV.get(`jrec:${userId}:${queryHash}:${JREC_PROMPT_VERSION}`)
+    return raw ? JSON.parse(raw) : null
+  } catch (err) {
+    console.warn(`[KV] getJrecFromKV parse error for user ${userId}: ${err.message}`)
+    return null
+  }
+}
+
+async function putJrecToKV(env, userId, queryHash, payload, ttlSecs = JREC_KV_TTL_SECS) {
+  if (!env.RATE_LIMIT_KV || !userId) return
+  try {
+    await env.RATE_LIMIT_KV.put(
+      `jrec:${userId}:${queryHash}:${JREC_PROMPT_VERSION}`,
+      JSON.stringify(payload),
+      { expirationTtl: ttlSecs }
+    )
+  } catch (err) {
+    console.warn(`[KV] putJrecToKV failed for user ${userId}: ${err.message}`)
+  }
+}
+
+// ── Profile hash — identifies same profile across searches (16 hex chars) ────
+async function computeProfileHash(profileText) {
+  const normalized = (profileText || '')
+    .toLowerCase()
+    .replace(/[^a-z0-9\s]/g, '')
+    .split(/\s+/)
+    .filter(w => w.length > 3)
+    .sort()
+    .join('|')
+    .slice(0, 2000)
+  const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(normalized))
+  return Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2, '0')).join('').slice(0, 16)
+}
+
+// ── radar_search_history helpers ─────────────────────────────────────────────
+async function getRadarCache(env, userId, profileHash, queryHash) {
+  if (!userId || !env.SUPABASE_SERVICE_ROLE_KEY) return null
+  try {
+    const res = await fetch(
+      `${env.SUPABASE_URL}/rest/v1/radar_search_history`
+      + `?user_id=eq.${userId}&profile_hash=eq.${profileHash}&query_hash=eq.${queryHash}`
+      + `&expires_at=gte.${new Date().toISOString()}&select=results,top_score,match_count,created_at&limit=1`,
+      { headers: { apikey: env.SUPABASE_SERVICE_ROLE_KEY, Authorization: `Bearer ${env.SUPABASE_SERVICE_ROLE_KEY}` } }
+    )
+    const rows = await res.json().catch(() => [])
+    return Array.isArray(rows) && rows[0]?.results ? rows[0] : null
+  } catch (err) {
+    console.warn(`[DB] getRadarCache error for user ${userId}: ${err.message}`)
+    return null
+  }
+}
+
+async function putRadarCache(env, ctx, userId, profileHash, queryHash, recommendations, isPremium) {
+  if (!userId || !recommendations.length || !env.SUPABASE_SERVICE_ROLE_KEY) return
+  const ttlMs   = isPremium ? 25 * 3_600_000 : 32 * 86_400_000  // premium: 25h | free: 32d (covers full period)
+  const expires = new Date(Date.now() + ttlMs).toISOString()
+  const row = {
+    user_id:      userId,
+    profile_hash: profileHash,
+    query_hash:   queryHash,
+    results:      recommendations,
+    top_score:    Math.max(...recommendations.map(r => r.match_score || 0)),
+    match_count:  recommendations.length,
+    search_type:  'fresh',
+    expires_at:   expires,
+  }
+  const upsert = fetch(`${env.SUPABASE_URL}/rest/v1/radar_search_history`, {
+    method:  'POST',
+    headers: {
+      apikey:          env.SUPABASE_SERVICE_ROLE_KEY,
+      Authorization:   `Bearer ${env.SUPABASE_SERVICE_ROLE_KEY}`,
+      'Content-Type':  'application/json',
+      Prefer:          'resolution=merge-duplicates',
+    },
+    body: JSON.stringify(row),
+  }).catch(() => {})
+  if (ctx?.waitUntil) ctx.waitUntil(upsert)
+  else upsert.catch(err => console.warn('[RADAR] putRadarCache: ctx missing, upsert fire-and-forget:', err?.message))
+}
+
+// Fetch the user's most recent radar search, ignoring query hash and expiry.
+// Used to silently serve stale-but-valid results when premium daily limit is reached.
+async function getLatestRadarHistory(env, userId) {
+  if (!userId || !env.SUPABASE_SERVICE_ROLE_KEY) return null
+  try {
+    const res = await fetch(
+      `${env.SUPABASE_URL}/rest/v1/radar_search_history`
+      + `?user_id=eq.${userId}&results=not.is.null`
+      + `&order=created_at.desc&limit=1`
+      + `&select=results,top_score,match_count,created_at`,
+      { headers: { apikey: env.SUPABASE_SERVICE_ROLE_KEY, Authorization: `Bearer ${env.SUPABASE_SERVICE_ROLE_KEY}` } }
+    )
+    const rows = await res.json().catch(() => [])
+    return Array.isArray(rows) && rows[0]?.results?.length ? rows[0] : null
+  } catch (err) {
+    console.warn(`[DB] getLatestRadarHistory error for user ${userId}: ${err.message}`)
+    return null
+  }
 }
 
 /**
@@ -2469,27 +2459,247 @@ async function putJobsToKV(env, queryHash, jobs) {
  * Returns an array of { id, source, external_id } objects (the saved rows).
  * Uses ON CONFLICT DO UPDATE to refresh fetched_at + expires_at on re-fetch.
  */
+// ── Sprint 5: Adaptive Expansion helpers ─────────────────────────────────────
+
+// Returns true when initial results are too weak to satisfy a user.
+function shouldTriggerExpansion(recommendations) {
+  if (!recommendations.length) return true
+  const topScore = recommendations[0]?.match_score ?? 0
+  const hqCount  = recommendations.filter(r => (r.match_score ?? 0) >= 7.0).length
+  return topScore < EXPANSION_THRESHOLD || hqCount < EXPANSION_MIN_HQ
+}
+
+// Lightweight Gemini call (50–80 output tokens) that suggests 1–2 alternative
+// search terms not covered by the user's initial queries.
+// Async Gemini call for richer profession metadata — runs in parallel with job fetch.
+// Returns { profession, family, subfamilies, seniority_label, seniority_level, industries } or null.
+async function extractDominantProfession(env, profileText) {
+  const geminiKeys = (env.GEMINI_API_KEYS || env.GEMINI_API_KEY || '').split(',').map(k => k.trim()).filter(Boolean)
+  if (!geminiKeys.length) return null
+  const prompt = `Analyze this professional profile and extract the dominant professional classification.
+
+PROFILE:
+"${(profileText || '').slice(0, 1500)}"
+
+PROFESSIONAL FAMILIES: HR/Personas | Finanzas | Tecnología | Marketing/Growth | Operaciones | Ventas/BD | Legal/Compliance | Management General
+
+SENIORITY LEVELS: 1=Junior/Trainee | 2=Semi Senior/Analista | 3=Senior/Especialista | 4=Lead/Jefe/Coordinador | 5=Gerente/Manager/Director | 6=VP/C-Level/Head of
+
+Respond ONLY with JSON (no markdown):
+{"profession":"Gerente de RRHH","family":"HR/Personas","subfamilies":["Talent","HRBP","Compensaciones"],"seniority_label":"Gerencial","seniority_level":5,"industries":["Fintech","Retail"],"is_senior":true}`
+
+  try {
+    const ctrl = new AbortController()
+    const tid  = setTimeout(() => ctrl.abort(), 8_000)
+    let res = null
+    for (let ki = 0; ki < geminiKeys.length; ki++) {
+      res = await fetch(
+        `https://generativelanguage.googleapis.com/v1beta/models/${DEFAULT_MODEL}:generateContent?key=${geminiKeys[ki]}`,
+        {
+          method: 'POST', headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ contents: [{ role: 'user', parts: [{ text: prompt }] }], generationConfig: { temperature: 0.1, maxOutputTokens: 300, thinkingConfig: { thinkingBudget: 0 } } }),
+          signal: ctrl.signal,
+        }
+      )
+      if (res.status !== 429) break
+    }
+    clearTimeout(tid)
+    if (!res?.ok) return null
+    const d    = await res.json()
+    const raw  = d?.candidates?.[0]?.content?.parts?.[0]?.text || ''
+    const parsed = JSON.parse(raw.replace(/^```json\n?|\n?```$/g, '').trim())
+    if (parsed?.family) console.log(`[RADAR] professionMeta: ${parsed.profession} | ${parsed.family} | lvl=${parsed.seniority_level}`)
+    return parsed
+  } catch (err) {
+    console.warn(`[RADAR] extractDominantProfession failed: ${err.message}`)
+    return null
+  }
+}
+
+async function expandSearchTerms(env, profileText, existingQueries, professionInfo = null) {
+  const geminiKeys = (env.GEMINI_API_KEYS || env.GEMINI_API_KEY || '')
+    .split(',').map(k => k.trim()).filter(Boolean)
+  if (!geminiKeys.length) return []
+
+  const familyCtx = professionInfo?.family
+    ? `DETECTED FAMILY: ${professionInfo.family} | SENIORITY LEVEL: ${professionInfo.seniority_level}\nIMPORTANT: Generate ONLY titles within the ${professionInfo.family} family. Do NOT cross into other professional families.`
+    : 'Step 1: Identify the professional family. Step 2: Stay STRICTLY within that family.'
+  const seniorityCtx = (professionInfo?.seniority_level || 0) >= 5
+    ? 'SENIORITY: Management/Director level — titles must reflect this seniority.'
+    : ''
+
+  const prompt = `Profile: "${(profileText || '').slice(0, 600)}"
+Existing searches (DO NOT repeat or use close variations): ${JSON.stringify(existingQueries)}
+
+${familyCtx}
+${seniorityCtx}
+
+Generate 5 DIFFERENT alternative job titles WITHIN the same professional family that:
+- Are NOT semantic duplicates of the existing searches above
+- Mix languages: if existing = Spanish → include English equivalents, and vice versa
+- Cover different sub-specialties within the family (e.g. for HR: compensation, L&D, HRBP, talent, ops)
+- Are realistic and searchable on LinkedIn/Bumeran LATAM
+
+Respond ONLY with JSON (no markdown): {"family":"HR/Personas","terms":["HRBP","People Operations Lead","Talent Partner","Compensation Manager","HR Generalist"]}`
+
+  try {
+    const controller = new AbortController()
+    const tid = setTimeout(() => controller.abort(), 5_000)
+    let res = null
+    for (let ki = 0; ki < geminiKeys.length; ki++) {
+      res = await fetch(
+        `https://generativelanguage.googleapis.com/v1beta/models/${DEFAULT_MODEL}:generateContent?key=${geminiKeys[ki]}`,
+        {
+          method: 'POST', headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ contents: [{ role: 'user', parts: [{ text: prompt }] }], generationConfig: { temperature: 0.3, maxOutputTokens: 300, thinkingConfig: { thinkingBudget: 0 } } }),
+          signal: controller.signal,
+        }
+      )
+      if (res.status !== 429) break
+      console.warn(`[RADAR:expansion] expandSearchTerms key_${ki+1} returned 429 — trying next key`)
+    }
+    clearTimeout(tid)
+    if (!res.ok) {
+      console.warn(`[RADAR:expansion] expandSearchTerms Gemini HTTP ${res.status}`)
+      return []
+    }
+    const d      = await res.json()
+    const raw    = d?.candidates?.[0]?.content?.parts?.[0]?.text || ''
+    const parsed = JSON.parse(raw.replace(/^```json\n?|\n?```$/g, '').trim())
+    const arr    = parsed?.terms || (Array.isArray(parsed) ? parsed : [])
+    return Array.isArray(arr) ? arr.slice(0, 5).filter(s => typeof s === 'string' && s.trim()) : []
+  } catch (err) {
+    console.warn(`[RADAR:expansion] expandSearchTerms failed: ${err.message}`)
+    return []
+  }
+}
+
+// Full expansion pass: generate new terms → fetch jobs → deduplicate → AI score.
+// Returns { recommendations: [...], count: N } or null if nothing new found.
+async function expandWithSearch(env, ctx, cleanQueries, location, remoteOk, profileText, existingHashes, requestedN, candidateLocation = null, professionInfo = null) {
+  const newTerms = await expandSearchTerms(env, profileText, cleanQueries, professionInfo)
+  if (!newTerms.length) return null
+
+  const { jobs: rawExpanded } = await fetchAllSources(
+    newTerms.slice(0, 3), location, remoteOk, env, String(profileText), candidateLocation
+  )
+  const newJobs = rawExpanded
+    .filter(j => !existingHashes.has(canonicalJobHash(j)))
+    .slice(0, 15)
+  if (!newJobs.length) return null
+
+  const batchJobs  = newJobs.slice(0, 12)
+  const contents   = buildMatchingContents(String(profileText).slice(0, 2000), batchJobs, candidateLocation, professionInfo, 12)
+  const geminiKeys = (env.GEMINI_API_KEYS || env.GEMINI_API_KEY || '')
+    .split(',').map(k => k.trim()).filter(Boolean)
+  if (!geminiKeys.length) return null
+
+  let aiResult = null
+  try {
+    const controller = new AbortController()
+    const tid = setTimeout(() => controller.abort(), EXPANSION_GEMINI_MS)
+    // Rotate through keys on 429 so a rate-limited first key doesn't kill expansion scoring.
+    let aiRes = null
+    for (let ki = 0; ki < geminiKeys.length; ki++) {
+      aiRes = await fetch(
+        `https://generativelanguage.googleapis.com/v1beta/models/${DEFAULT_MODEL}:generateContent?key=${geminiKeys[ki]}`,
+        {
+          method:  'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({
+            system_instruction: { parts: [{ text: JOB_MATCHING_SYSTEM_PROMPT }] },
+            contents,
+            generationConfig:   { temperature: 0.2, maxOutputTokens: 2048, thinkingConfig: { thinkingBudget: 0 } },
+          }),
+          signal: controller.signal,
+        }
+      )
+      if (aiRes.status !== 429) break
+      console.warn(`[RADAR:expansion] scoring key_${ki+1} returned 429 — trying next key`)
+    }
+    clearTimeout(tid)
+    if (aiRes.ok) {
+      const d   = await aiRes.json()
+      const raw = d?.candidates?.[0]?.content?.parts?.[0]?.text || ''
+      aiResult = JSON.parse(raw.replace(/^```json\n?|\n?```$/g, '').trim())
+    } else {
+      console.warn(`[RADAR:expansion] scoring Gemini HTTP ${aiRes.status}`)
+    }
+  } catch (err) {
+    console.warn(`[RADAR:expansion] scoring failed: ${err.message}`)
+    return null
+  }
+
+  if (!aiResult?.matches) return null
+
+  const expandedRecs = (aiResult.matches || [])
+    .map(m => {
+      const job = batchJobs[m.job_index]
+      if (!job) return null
+      const gs = geoCompatibilityScore(job.location, job.remote, candidateLocation)
+      const geoPenalty = (!candidateLocation || job.remote || gs >= 0.9) ? 0 : Math.min(0.5, (0.9 - gs) * 1.25)
+      return { ...m, _adjusted: (m.match_score || 0) - geoPenalty, _geo_score: gs }
+    })
+    .filter(Boolean)
+    .sort((a, b) => b._adjusted - a._adjusted)
+    .slice(0, requestedN)
+    .map(m => {
+      const job = batchJobs[m.job_index]
+      if (!job) return null
+      return {
+        job,
+        match_score:    Number((m.match_score || 0).toFixed(2)),
+        match_type:     m.match_type || null,
+        strengths:      Array.isArray(m.strengths) ? m.strengths.slice(0, 3) : [],
+        gaps:           Array.isArray(m.gaps)       ? m.gaps.slice(0, 2)     : [],
+        summary:        String(m.summary || ''),
+        rec_id:         null,
+        from_expansion: true,
+        geo_score:      m._geo_score,
+      }
+    }).filter(Boolean)
+
+  if (batchJobs.length) {
+    upsertJobsRaw(env, ctx, batchJobs)
+    upsertJobsNormalized(env, ctx, batchJobs)
+    upsertJobsAiEnriched(env, ctx, aiResult.matches || [], batchJobs)
+  }
+
+  return { recommendations: expandedRecs, count: expandedRecs.length }
+}
+
+
 async function upsertJobsToSupabase(env, ctx, jobs) {
   if (!jobs.length) return []
-  const rows = jobs.map(j => ({
-    source:          j.source,
-    external_id:     j.external_id,
-    title:           j.title,
-    company:         j.company,
-    description:     j.description,
-    location:        j.location,
-    remote:          j.remote,
-    url:             j.url,
-    salary_min:      j.salary_min,
-    salary_max:      j.salary_max,
-    currency:        j.currency,
-    skills_required: j.skills_required,
-    seniority:       j.seniority,
-    industry:        j.industry,
-    posted_at:       j.posted_at,
-    fetched_at:      new Date().toISOString(),
-    expires_at:      new Date(Date.now() + JOB_DB_TTL_HOURS * 3_600_000).toISOString(),
-  }))
+  const ATS_SOURCES = ATS_SOURCE_SET
+  const now = new Date()
+  const rows = jobs.map(j => {
+    const isAts   = ATS_SOURCES.has(j.source)
+    const ttlHours = isAts ? ATS_DB_TTL_HOURS : JOB_DB_TTL_HOURS
+    return {
+      source:          j.source,
+      external_id:     j.external_id,
+      canonical_hash:  canonicalJobHash(j),
+      title:           j.title,
+      company:         j.company,
+      description:     j.description,
+      location:        j.location,
+      remote:          j.remote,
+      url:             j.url,
+      apply_url:       j.apply_url || null,
+      company_slug:    j.company_slug || null,
+      ats_type:        j.ats_type || null,
+      salary_min:      j.salary_min,
+      salary_max:      j.salary_max,
+      currency:        j.currency,
+      skills_required: j.skills_required,
+      seniority:       j.seniority,
+      industry:        j.industry,
+      posted_at:       j.posted_at,
+      fetched_at:      now.toISOString(),
+      expires_at:      new Date(now.getTime() + ttlHours * 3_600_000).toISOString(),
+    }
+  })
 
   const upsertFetch = fetch(`${env.SUPABASE_URL}/rest/v1/job_cache`, {
     method:  'POST',
@@ -2508,6 +2718,111 @@ async function upsertJobsToSupabase(env, ctx, jobs) {
   // Return the input jobs directly so we can proceed with AI matching immediately
   // without waiting for Supabase confirmation (optimistic path)
   return jobs
+}
+
+
+// ── Sprint 4: write to jobs_raw (source provenance) ──────────────────────────
+async function upsertJobsRaw(env, ctx, jobs) {
+  if (!jobs.length) return
+  const now = new Date().toISOString()
+  const rows = jobs.map(j => ({
+    source:         j.source,
+    source_id:      String(j.external_id || j.id || ''),
+    company_slug:   j.company_slug || null,
+    canonical_hash: canonicalJobHash(j),
+    title:          j.title,
+    company:        j.company,
+    location:       j.location || null,
+    remote_ok:      j.remote || false,
+    url:            j.url,
+    posted_at:      j.posted_at || null,
+    fetched_at:     now,
+  })).filter(r => r.source_id)
+  if (!rows.length) return
+  const p = fetch(`${env.SUPABASE_URL}/rest/v1/jobs_raw`, {
+    method:  'POST',
+    headers: {
+      apikey:         env.SUPABASE_SERVICE_ROLE_KEY,
+      Authorization:  `Bearer ${env.SUPABASE_SERVICE_ROLE_KEY}`,
+      'Content-Type': 'application/json',
+      Prefer:         'resolution=ignore-duplicates,return=minimal',
+    },
+    body: JSON.stringify(rows),
+  }).catch(() => null)
+  if (ctx?.waitUntil) ctx.waitUntil(p)
+}
+
+// ── Sprint 4: upsert to jobs_normalized (deduplicated index) ─────────────────
+async function upsertJobsNormalized(env, ctx, jobs) {
+  if (!jobs.length) return
+  const now = new Date()
+  const ATS_SOURCES = ATS_SOURCE_SET
+  const rows = jobs.map(j => {
+    const ttlHours = ATS_SOURCES.has(j.source) ? ATS_DB_TTL_HOURS : JOB_DB_TTL_HOURS
+    return {
+      canonical_hash:  canonicalJobHash(j),
+      title:           j.title,
+      company:         j.company,
+      location:        j.location || null,
+      remote_ok:       j.remote   || false,
+      description_md:  (j.description || '').slice(0, 1000),
+      url:             j.url,
+      apply_url:       j.apply_url || null,
+      salary_min:      j.salary_min      || null,
+      salary_max:      j.salary_max      || null,
+      salary_currency: j.currency        || null,
+      source:          j.source,
+      posted_at:       j.posted_at       || null,
+      last_seen_at:    now.toISOString(),
+      expires_at:      new Date(now.getTime() + ttlHours * 3_600_000).toISOString(),
+      active:          true,
+    }
+  })
+  const p = fetch(`${env.SUPABASE_URL}/rest/v1/jobs_normalized`, {
+    method:  'POST',
+    headers: {
+      apikey:         env.SUPABASE_SERVICE_ROLE_KEY,
+      Authorization:  `Bearer ${env.SUPABASE_SERVICE_ROLE_KEY}`,
+      'Content-Type': 'application/json',
+      Prefer:         'resolution=merge-duplicates,return=minimal',
+    },
+    body: JSON.stringify(rows),
+  }).catch(() => null)
+  if (ctx?.waitUntil) ctx.waitUntil(p)
+}
+
+// ── Sprint 4: upsert AI enrichment after scoring ──────────────────────────────
+async function upsertJobsAiEnriched(env, ctx, topMatches, jobPool) {
+  if (!topMatches.length) return
+  const now = new Date().toISOString()
+  const rows = topMatches.map(m => {
+    const job = jobPool[m.job_index]
+    if (!job) return null
+    const family = inferProfessionFamily(job.title)
+    if (!family && !job.seniority && !job.industry && !(job.skills_required?.length)) return null
+    return {
+      canonical_hash:    canonicalJobHash(job),
+      seniority:         job.seniority   || null,
+      profession_family: family          || null,
+      industry:          job.industry    || null,
+      skills_required:   job.skills_required || [],
+      skills_nice:       [],
+      enriched_at:       now,
+      model_version:     JREC_PROMPT_VERSION,
+    }
+  }).filter(Boolean)
+  if (!rows.length) return
+  const p = fetch(`${env.SUPABASE_URL}/rest/v1/jobs_ai_enriched`, {
+    method:  'POST',
+    headers: {
+      apikey:         env.SUPABASE_SERVICE_ROLE_KEY,
+      Authorization:  `Bearer ${env.SUPABASE_SERVICE_ROLE_KEY}`,
+      'Content-Type': 'application/json',
+      Prefer:         'resolution=merge-duplicates,return=minimal',
+    },
+    body: JSON.stringify(rows),
+  }).catch(() => null)
+  if (ctx?.waitUntil) ctx.waitUntil(p)
 }
 
 /**
@@ -2540,70 +2855,6 @@ async function saveJobSearch(env, ctx, userId, queryHash, queries, location, rem
 }
 
 
-// ══════════════════════════════════════════════════════════════════════════════
-// SECTION 4 — AI Matching Prompt
-// ══════════════════════════════════════════════════════════════════════════════
-
-/**
- * Build the Gemini system prompt for job matching.
- * Stored here in the worker, never sent to the client.
- */
-const JOB_MATCHING_SYSTEM_PROMPT = `Sos un sistema de matching laboral experto para el mercado argentino y latinoamericano.
-Recibís:
-1. El perfil profesional del candidato (experiencia, habilidades, seniority, industria, objetivos).
-2. Una lista de avisos laborales numerados.
-
-TU TAREA: Para cada aviso, calculá un match_score del 0 al 10 basado en:
-- Alineación de habilidades técnicas (peso 40%)
-- Seniority y años de experiencia (peso 25%)
-- Industria y tipo de rol (peso 20%)
-- Condiciones (remoto/presencial, ubicación) (peso 15%)
-
-REGLAS:
-- Solo incluí avisos con match_score >= 5.0.
-- Máximo 10 resultados, ordenados por score descendente.
-- strengths: array de 2-3 fortalezas específicas del candidato para ese aviso.
-- gaps: array de 1-2 brechas concretas (no inventes — si no hay brechas reales, dejá vacío).
-- summary: 1 oración concisa en español rioplatense explicando el match.
-- ANTI-ALUCINACIÓN: nunca inventes skills ni experiencias que no aparezcan en el perfil.
-
-Respondé SOLO en JSON válido, sin markdown, sin texto fuera del JSON:
-{
-  "matches": [
-    {
-      "job_index": 0,
-      "match_score": 7.5,
-      "strengths": ["string", "string"],
-      "gaps": ["string"],
-      "summary": "string"
-    }
-  ]
-}`
-
-/**
- * Build the user-facing Gemini contents array for job matching.
- * Truncates job descriptions to 400 chars each to control token usage.
- */
-function buildMatchingContents(profileText, jobs) {
-  const jobList = jobs.slice(0, MAX_JOBS_FOR_AI_MATCHING).map((j, i) => {
-    const desc = j.description
-      ? j.description.slice(0, 400).replace(/\s+/g, ' ')
-      : '(sin descripción)'
-    return `[${i}] ${j.title} | ${j.company} | ${j.location || 'No especificado'} | ${j.remote ? 'Remoto' : 'Presencial'}
-Skills: ${(j.skills_required || []).join(', ') || 'No especificado'}
-Seniority: ${j.seniority}
-Descripción: ${desc}`
-  }).join('\n\n')
-
-  return [
-    {
-      role: 'user',
-      parts: [{
-        text: `PERFIL DEL CANDIDATO:\n${profileText}\n\nAVISOS LABORALES:\n${jobList}`,
-      }],
-    },
-  ]
-}
 
 
 // ══════════════════════════════════════════════════════════════════════════════
@@ -2612,29 +2863,46 @@ Descripción: ${desc}`
 
 /**
  * Check and increment job search rate limit.
- * Free users: 5/day | Premium users: 30/day
- * Key format: "jrl:{user_id_or_ip}:{YYYY-MM-DD}"
+ * Premium users: 1 fresh search/day (cached re-visits bypass this entirely)
+ * Free/anonymous: 1 fresh search/month
+ * Key format:
+ *   premium → "jrl:p:{identity}:{YYYY-MM-DD}"
+ *   free    → "jrl:f:{identity}:{YYYY-MM}"
  *
- * Returns { ok: boolean, count: number, limit: number }
+ * Returns { ok: boolean, count: number, limit: number, nextReset: string }
  */
 async function checkJobSearchRateLimit(env, userId, ip, isPremium) {
-  if (!env.RATE_LIMIT_KV) return { ok: true, count: 0, limit: 99 }
+  if (!env.RATE_LIMIT_KV) return { ok: true, count: 0, limit: 99, nextReset: null }
 
-  const today     = new Date().toISOString().slice(0, 10)   // 'YYYY-MM-DD'
-  const identity  = userId || ip                             // user_id preferred; IP fallback
-  const kvKey     = `jrl:${identity}:${today}`
-  const limit     = isPremium ? JOB_SEARCH_LIMIT_PREMIUM : JOB_SEARCH_LIMIT_FREE
+  const identity = userId || ip
+  const now      = new Date()
 
-  const current = parseInt((await env.RATE_LIMIT_KV.get(kvKey)) || '0', 10)
-  if (current >= limit) return { ok: false, count: current, limit }
-
-  // Expires at end of calendar day (UTC)
-  const midnight = new Date()
-  midnight.setUTCHours(24, 0, 0, 0)
-  const ttlSecs = Math.floor((midnight.getTime() - Date.now()) / 1000)
-  await env.RATE_LIMIT_KV.put(kvKey, String(current + 1), { expirationTtl: ttlSecs })
-
-  return { ok: true, count: current + 1, limit }
+  if (isPremium) {
+    const day    = now.toISOString().slice(0, 10)
+    const kvKey  = `jrl:p:${identity}:${day}`
+    const current = parseInt((await env.RATE_LIMIT_KV.get(kvKey)) || '0', 10)
+    if (current >= JOB_SEARCH_LIMIT_PREMIUM) {
+      const midnight = new Date(); midnight.setUTCHours(24, 0, 0, 0)
+      return { ok: false, count: current, limit: JOB_SEARCH_LIMIT_PREMIUM, nextReset: midnight.toISOString() }
+    }
+    const midnight = new Date(); midnight.setUTCHours(24, 0, 0, 0)
+    const ttlSecs = Math.floor((midnight.getTime() - Date.now()) / 1000)
+    await env.RATE_LIMIT_KV.put(kvKey, String(current + 1), { expirationTtl: ttlSecs })
+    return { ok: true, count: current + 1, limit: JOB_SEARCH_LIMIT_PREMIUM, nextReset: midnight.toISOString() }
+  } else {
+    // Free users: 1/month
+    const month   = now.toISOString().slice(0, 7)  // 'YYYY-MM'
+    const kvKey   = `jrl:f:${identity}:${month}`
+    const current = parseInt((await env.RATE_LIMIT_KV.get(kvKey)) || '0', 10)
+    if (current >= JOB_SEARCH_LIMIT_FREE) {
+      const firstNextMonth = new Date(now.getFullYear(), now.getMonth() + 1, 1)
+      return { ok: false, count: current, limit: JOB_SEARCH_LIMIT_FREE, nextReset: firstNextMonth.toISOString() }
+    }
+    const firstNextMonth = new Date(now.getFullYear(), now.getMonth() + 1, 1)
+    const ttlSecs = Math.floor((firstNextMonth.getTime() - Date.now()) / 1000)
+    await env.RATE_LIMIT_KV.put(kvKey, String(current + 1), { expirationTtl: ttlSecs })
+    return { ok: true, count: current + 1, limit: JOB_SEARCH_LIMIT_FREE, nextReset: firstNextMonth.toISOString() }
+  }
 }
 
 
@@ -2813,8 +3081,12 @@ async function handleAiJobRecommendations(body, request, env, ctx, corsHeaders, 
     )
   }
 
-  const ip          = request.headers.get('CF-Connecting-IP') || 'unknown'
-  const requestedN  = Math.min(Math.max(parseInt(count, 10) || 10, 1), 20)
+  const ip               = request.headers.get('CF-Connecting-IP') || 'unknown'
+  const requestedN       = Math.min(Math.max(parseInt(count, 10) || 10, 1), 20)
+  const candidateLocation = extractCandidateLocation(String(profile_text))
+  // Synchronous profession detection — instant, no Gemini needed for query building
+  const professionInfoSync = detectProfessionFamilySync(String(profile_text))
+  if (professionInfoSync) console.log(`[RADAR] professionSync: family=${professionInfoSync.family} seniority=${professionInfoSync.seniority_level} isSenior=${professionInfoSync.is_senior}`)
 
   // ── Premium check ──────────────────────────────────────────────────────────
   let isPremium = false
@@ -2827,41 +3099,155 @@ async function handleAiJobRecommendations(body, request, env, ctx, corsHeaders, 
       const pRows = await pRes.json()
       const p     = pRows?.[0]
       isPremium   = p?.es_premium && p?.premium_hasta && new Date(p.premium_hasta) > new Date()
-    } catch { /* default false */ }
+    } catch (e) { console.warn(`[RADAR] premium check failed for user ${user_id}: ${e?.message} — defaulting to free`) }
+  }
+
+  // ── Build queries — headhunter mode for premium (built here so all hashes use same queries) ──
+  const baseQueriesRaw = queries.map(q => String(q).trim().slice(0, 100)).filter(Boolean).slice(0, 3)
+  const headhunterActive = isPremium && !!professionInfoSync
+  // Build cleanQueries here (before ALL cache lookups) so every cache layer uses the same hash.
+  const cleanQueries = headhunterActive
+    ? buildHeadhunterQueries(professionInfoSync, baseQueriesRaw, true)
+    : baseQueriesRaw
+  if (headhunterActive) console.log(`[RADAR] headhunterQueries: ${JSON.stringify(cleanQueries)}`)
+
+  console.log(`[RADAR] START user=${user_id||'anon'} premium=${isPremium} remoteOk=${!!remote_ok} queries=${JSON.stringify(baseQueriesRaw)} location=${location||'—'}`)
+
+  // ── Live-fetch gate: guarantees ALL sources are called once per period ─────
+  // liveFetched=false → first search of period → bypass ALL caches → full live fetch
+  // liveFetched=true  → period already fetched → caches serve normally
+  // Premium: once/day | Free: once/month
+  const liveFetched = user_id ? await hasLiveFetchedThisPeriod(env, user_id, isPremium) : true
+  console.log(`[RADAR] liveFetched=${liveFetched} period=${isPremium?'daily':'monthly'} user=${user_id||'anon'}`)
+
+  const profileHash = user_id ? await computeProfileHash(String(profile_text)) : null
+  const queryHash = user_id ? await hashQueryParams(cleanQueries, location, remote_ok) : null
+
+  if (liveFetched && user_id && profileHash && queryHash) {
+    const radarCache = await getRadarCache(env, user_id, profileHash, queryHash)
+    if (radarCache?.results?.length) {
+      console.log(`[RADAR] radarCache HIT — returning ${radarCache.results.length} cached recs`)
+      // Recover sourcesUsed from the KV metadata written at fetch time.
+      let radarCachedSources = []
+      try {
+        const metaRaw = env.RATE_LIMIT_KV ? await env.RATE_LIMIT_KV.get(`jobs_meta:${queryHash}`) : null
+        if (metaRaw) radarCachedSources = JSON.parse(metaRaw)
+      } catch (e) { console.warn('[RADAR] radarCache: failed to recover sourcesUsed from KV:', e?.message) }
+      // Derive expansion fields from cached results so the frontend shows correct badges
+      const cachedExpansionCount = radarCache.results.filter(r => r.from_expansion).length
+      return new Response(
+        JSON.stringify({
+          ok:                  true,
+          recommendations:     radarCache.results,
+          total_jobs_analyzed: radarCache.match_count || radarCache.results.length,
+          from_cache:          true,
+          cached_today:        true,
+          cache_timestamp:     radarCache.created_at,
+          quota_remaining:     0,
+          expansion_used:      cachedExpansionCount > 0,
+          expansion_count:     cachedExpansionCount,
+          expansion_available: false,
+          candidate_location:  null,
+          pipeline_stats: {
+            cache_hit:      'radar',
+            premium_mode:   isPremium,
+            sources_used:   radarCachedSources,
+            expansion_used: cachedExpansionCount > 0,
+          },
+        }),
+        { status: 200, headers: corsHeaders }
+      )
+    }
   }
 
   // ── Rate limit ─────────────────────────────────────────────────────────────
   const rl = await checkJobSearchRateLimit(env, user_id, ip, isPremium)
+  console.log(`[RADAR] rateLimit ok=${rl.ok} count=${rl.count}/${rl.limit} isPremium=${isPremium} identity=${user_id||ip}`)
   if (!rl.ok) {
+    if (isPremium && user_id) {
+      // Premium users over limit: silently serve most recent search from history.
+      // This preserves the "radar is always working" UX — no wall, no "volvé mañana".
+      const historyRow = await getLatestRadarHistory(env, user_id)
+      if (historyRow?.results?.length) {
+        const histExpansionCount = historyRow.results.filter(r => r.from_expansion).length
+        console.log(`[RADAR] daily limit hit — serving history for premium ${user_id}, ${historyRow.results.length} results from ${historyRow.created_at}`)
+        return new Response(
+          JSON.stringify({
+            ok:                  true,
+            recommendations:     historyRow.results,
+            total_jobs_analyzed: historyRow.match_count || historyRow.results.length,
+            from_cache:          true,
+            cached_today:        false,
+            served_from_history: true,
+            cache_timestamp:     historyRow.created_at,
+            quota_remaining:     0,
+            expansion_used:      histExpansionCount > 0,
+            expansion_count:     histExpansionCount,
+            expansion_available: false,
+            pipeline_stats:      { cache_hit: 'history', premium_mode: true },
+          }),
+          { status: 200, headers: corsHeaders }
+        )
+      }
+    }
+    // Free users, or premium with no history at all — return 429
     return new Response(
       JSON.stringify({
         error: isPremium
-          ? `Límite diario de recomendaciones alcanzado (${rl.limit}/día para Premium).`
-          : `Límite diario alcanzado (${rl.limit}/día para usuarios gratuitos). Actualizá a Premium para ${JOB_SEARCH_LIMIT_PREMIUM} búsquedas/día.`,
+          ? `Exploraste todo lo disponible hoy. Volvé mañana para una nueva búsqueda.`
+          : `Usaste tu búsqueda de este mes. Se renueva el 1 del próximo mes.`,
         quota_remaining: 0,
+        next_reset:      rl.nextReset,
       }),
       { status: 429, headers: corsHeaders }
     )
   }
 
+  // Kick off deep profession extraction async — runs in parallel with job fetch (~2-4s each)
+  const professionMetaPromise = extractDominantProfession(env, String(profile_text).slice(0, 2000))
+
   // ── Fetch jobs (hits cache layers before live APIs) ────────────────────────
-  const cleanQueries = queries.map(q => String(q).trim().slice(0, 100)).filter(Boolean).slice(0, 3)
-  const queryHash    = await hashQueryParams(cleanQueries, location, remote_ok)
   let   jobs         = []
   let   fromCache    = false
 
-  const kvCached = await getJobsFromKV(env, queryHash)
+  // KV_SOURCES_KEY stores the sourcesUsed alongside jobs so cache hits can report it accurately.
+  // Format stored in KV: { jobs: NormalizedJob[], sourcesUsed: string[] }
+  const KV_SOURCES_KEY = `jobs_meta:${queryHash}`
+
+  let sourcesUsed  = []
+  let sourceCounts = {}
+  // Skip job KV cache when period hasn't been live-fetched yet → all sources called live.
+  const kvCached = liveFetched ? await getJobsFromKV(env, queryHash) : null
   if (kvCached) {
     jobs      = kvCached
     fromCache = true
+    // Attempt to recover persisted sourcesUsed so pipeline_stats is not empty on cache hits.
+    try {
+      const metaRaw = env.RATE_LIMIT_KV ? await env.RATE_LIMIT_KV.get(KV_SOURCES_KEY) : null
+      if (metaRaw) sourcesUsed = JSON.parse(metaRaw)
+    } catch (e) { console.warn(`[RADAR] sourcesUsed KV recovery failed: ${e?.message} — reporting [] for pipeline_stats`) }
+    console.log(`[RADAR] jobsCache HIT — ${jobs.length} jobs from KV, sources=[${sourcesUsed.join(',')}] (Serper NOT called — served from cache)`)
   } else {
-    // Live fetch (same logic as job_search action)
-    const { jobs: freshJobs } = await fetchAllSources(cleanQueries, location, remote_ok, env)
-    if (freshJobs.length) {
-      jobs = freshJobs
-      await putJobsToKV(env, queryHash, freshJobs)
-      await upsertJobsToSupabase(env, ctx, freshJobs)
+    // Live fetch — pass profile_text so ATS companies are selected by relevance
+    const fetchResult = await fetchAllSources(cleanQueries, location, remote_ok, env, String(profile_text), candidateLocation)
+    sourcesUsed  = fetchResult.sourcesUsed || []
+    sourceCounts = fetchResult.sourceCounts || {}
+    if (fetchResult.jobs.length) {
+      jobs = fetchResult.jobs
+      await putJobsToKV(env, queryHash, jobs)
+      // Persist sourcesUsed alongside the job TTL so future cache hits can report it.
+      if (env.RATE_LIMIT_KV && sourcesUsed.length) {
+        env.RATE_LIMIT_KV.put(KV_SOURCES_KEY, JSON.stringify(sourcesUsed), { expirationTtl: JOB_KV_TTL_SECS }).catch(() => {})
+      }
+      await upsertJobsToSupabase(env, ctx, jobs)
+      upsertJobsRaw(env, ctx, jobs)
+      upsertJobsNormalized(env, ctx, jobs)
+    } else if (fetchResult.sourceErrors && Object.keys(fetchResult.sourceErrors).length) {
+      console.warn(`[RADAR] live fetch returned 0 jobs. Source errors: ${JSON.stringify(fetchResult.sourceErrors)}`)
     }
+    console.log(`[RADAR] jobsCache MISS — fetched ${jobs.length} live jobs, sources=[${sourcesUsed.join(',')}]`)
+    // Live fetch completed — all sources were called. Mark period so subsequent searches use cache.
+    if (user_id) markLiveFetchedThisPeriod(env, user_id, isPremium)
   }
 
   if (!jobs.length) {
@@ -2877,58 +3263,133 @@ async function handleAiJobRecommendations(body, request, env, ctx, corsHeaders, 
     )
   }
 
+  // ── Pre-filter: family-aware (zero tokens) → top N candidates ──────────────
+  const maxJobsForGemini = isPremium ? MAX_JOBS_PREMIUM : MAX_JOBS_FREE
+  const preFiltered = applyPreFilter(jobs, String(profile_text), maxJobsForGemini, professionInfoSync)
+  const jobPool     = preFiltered.length > 0 ? preFiltered : jobs.slice(0, maxJobsForGemini)
+  console.log(`[RADAR] preFilter ${jobs.length} → ${jobPool.length} jobs to Gemini (maxJobs=${maxJobsForGemini} premium=${isPremium})`)
+
+  // ── jrec: per-user AI score cache — skipped until period live-fetch is done ──
+  if (liveFetched && user_id) {
+    const jrecCached = await getJrecFromKV(env, user_id, queryHash)
+    if (jrecCached?.recommendations?.length) {
+      console.log(`[RADAR] jrecCache HIT — ${jrecCached.recommendations.length} recs, skipping Gemini`)
+      // sourcesUsed is already populated above (either from KV_SOURCES_KEY or live fetch path)
+      const jrecExpansionCount = jrecCached.recommendations.filter(r => r.from_expansion).length
+      return new Response(
+        JSON.stringify({
+          ok:                  true,
+          recommendations:     jrecCached.recommendations,
+          total_jobs_analyzed: jrecCached.total_jobs_analyzed || 0,
+          from_cache:          true,
+          quota_remaining:     rl.limit - rl.count,
+          expansion_used:      jrecExpansionCount > 0,
+          expansion_count:     jrecExpansionCount,
+          expansion_available: false,
+          candidate_location:  null,
+          pipeline_stats: {
+            cache_hit:       'jrec',
+            premium_mode:    isPremium,
+            sources_used:    sourcesUsed,
+            from_jobs_cache: fromCache,
+            expansion_used:  jrecExpansionCount > 0,
+          },
+        }),
+        { status: 200, headers: corsHeaders }
+      )
+    }
+  }
+
   // ── AI Matching via Gemini ─────────────────────────────────────────────────
-  const jobPool    = jobs.slice(0, MAX_JOBS_FOR_AI_MATCHING)
-  const contents   = buildMatchingContents(String(profile_text).slice(0, 3000), jobPool)
+  const startMs      = Date.now()
+  // Await async profession metadata — should be done by now (ran in parallel with job fetch)
+  const professionMeta = await professionMetaPromise.catch(() => null)
+  const profInfo     = professionMeta || professionInfoSync  // prefer richer Gemini metadata
+  if (professionMeta) console.log(`[RADAR] professionMeta resolved: ${professionMeta.profession} | ${professionMeta.family} | lvl=${professionMeta.seniority_level}`)
+
+  const contents   = buildMatchingContents(String(profile_text).slice(0, 3000), jobPool, candidateLocation, profInfo, maxJobsForGemini)
+  // thinkingBudget:0 disables Flash Lite's default thinking mode, cutting latency from 15-30s to 3-5s.
+  // Premium: 8192 output tokens (50 jobs × ~150 chars + headroom); free: 4096
   const geminiBody = {
     system_instruction: { parts: [{ text: JOB_MATCHING_SYSTEM_PROMPT }] },
     contents,
-    generationConfig:   { temperature: 0.2, maxOutputTokens: 2048 },
+    generationConfig:   { temperature: 0.2, maxOutputTokens: isPremium ? 8192 : 4096, thinkingConfig: { thinkingBudget: 0 } },
   }
 
-  const startMs  = Date.now()
-  let   aiResult = null
-  let   aiError  = null
+  let aiResult = null
+  let aiError  = null
 
-  try {
-    const aiRes = await callGeminiApi(env, ctx, geminiBody, corsHeaders, {
-      feature: 'job_matching_batch',
-      userId:  user_id || null,
-    })
-    // callGeminiApi returns a Response; we need to parse it for our logic
-    if (aiRes.status === 200) {
-      const aiData = await aiRes.clone().json()
-      const raw    = aiData?.candidates?.[0]?.content?.parts?.[0]?.text || ''
-      try {
-        aiResult = JSON.parse(raw.replace(/^```json\n?|\n?```$/g, '').trim())
-      } catch {
-        aiError = 'ai_parse_error'
+  // Two attempts with decreasing timeouts. thinkingBudget:0 means Flash Lite responds in 3-5s;
+  // 20s/15s outer guards are safety nets for overloaded API slots.
+  // Each apiPromise is registered with ctx.waitUntil so its internal logAiUsage call survives
+  // even if the outer race fires and the response is sent before Gemini finishes.
+  const GEMINI_ATTEMPTS = [{ ms: 20_000 }, { ms: 15_000 }]
+  for (let attempt = 0; attempt < GEMINI_ATTEMPTS.length; attempt++) {
+    if (aiResult?.matches?.length) break
+    const t0 = Date.now()
+    try {
+      const apiPromise = callGeminiApi(env, ctx, geminiBody, corsHeaders, { feature: 'job_matching_batch', userId: user_id || null })
+      if (ctx?.waitUntil) ctx.waitUntil(apiPromise.catch(() => {}))
+      const aiRes = await Promise.race([
+        apiPromise,
+        new Promise((_, rej) => setTimeout(() => rej(new Error('gemini_match_timeout')), GEMINI_ATTEMPTS[attempt].ms)),
+      ])
+      if (aiRes.status === 200) {
+        const aiData = await aiRes.clone().json()
+        const raw    = aiData?.candidates?.[0]?.content?.parts?.[0]?.text || ''
+        const clean  = raw.replace(/^```json\n?|\n?```$/g, '').trim()
+        try {
+          aiResult = JSON.parse(clean)
+          aiError  = null
+          console.log(`[RADAR] Gemini attempt ${attempt+1}/${GEMINI_ATTEMPTS.length} — latency=${Date.now()-t0}ms result=ok matches=${aiResult?.matches?.length||0}`)
+        } catch {
+          // Partial parse recovery: strip the truncated last object by cutting at the last complete },
+          const lastComma = clean.lastIndexOf('},')
+          if (lastComma > 10) {
+            try {
+              const partial = JSON.parse(clean.slice(0, lastComma + 1) + ']}')
+              if (partial?.matches?.length) {
+                aiResult = partial
+                aiError  = null
+                console.log(`[RADAR] Gemini attempt ${attempt+1}/${GEMINI_ATTEMPTS.length} — latency=${Date.now()-t0}ms result=partial_recovery matches=${aiResult.matches.length}`)
+                break
+              }
+            } catch { /* ignore */ }
+          }
+          aiError = 'ai_parse_error'
+          console.warn(`[RADAR] Gemini attempt ${attempt+1}/${GEMINI_ATTEMPTS.length} — latency=${Date.now()-t0}ms result=parse_error preview="${raw.slice(0, 200)}"`)
+        }
+      } else {
+        aiError = `ai_http_${aiRes.status}`
+        console.warn(`[RADAR] Gemini attempt ${attempt+1}/${GEMINI_ATTEMPTS.length} — latency=${Date.now()-t0}ms result=http_${aiRes.status}`)
       }
-    } else {
-      aiError = `ai_http_${aiRes.status}`
+    } catch (e) {
+      aiError = e.message
+      console.warn(`[RADAR] Gemini attempt ${attempt+1}/${GEMINI_ATTEMPTS.length} — latency=${Date.now()-t0}ms result=${e.message}`)
     }
-  } catch (e) {
-    aiError = e.message
   }
 
-  // ── Fallback: AI failed — return top jobs sorted by recency ───────────────
-  if (!aiResult?.matches || aiError) {
-    // Check for cached recommendations from a previous session
+  // ── Fallback: AI failed — heuristic scoring so cards always show a score ──
+  if (!aiResult?.matches?.length || aiError) {
+    // Tier 1: try cached recommendations from a SAME-QUERY previous session (queryHash-validated)
     if (user_id) {
       try {
+        // Only serve recs from last 48h so we don't surface month-old unrelated searches
+        const since = new Date(Date.now() - 48 * 3_600_000).toISOString()
         const cachedRecs = await fetch(
           `${env.SUPABASE_URL}/rest/v1/job_recommendations`
-          + `?user_id=eq.${user_id}&status=neq.dismissed`
+          + `?user_id=eq.${user_id}&status=neq.dismissed&created_at=gte.${since}`
           + `&order=match_score.desc&limit=${requestedN}`
-          + `&select=id,title,company,location,remote,url,match_score,strengths,gaps,summary,source,status`,
+          + `&select=id,title,company,location,remote,url,match_score,match_type,strengths,gaps,summary,source,status`,
           { headers: { apikey: env.SUPABASE_SERVICE_ROLE_KEY, Authorization: `Bearer ${env.SUPABASE_SERVICE_ROLE_KEY}` } }
         )
         const prevRecs = await cachedRecs.json()
         if (Array.isArray(prevRecs) && prevRecs.length > 0) {
+          console.log(`[RADAR] Gemini fallback tier1 — serving ${prevRecs.length} recs from last 48h`)
           return new Response(
             JSON.stringify({
               ok:                  true,
-              recommendations:     prevRecs.map(r => ({ job: r, match_score: r.match_score, strengths: r.strengths, gaps: r.gaps, summary: r.summary, rec_id: r.id })),
+              recommendations:     prevRecs.map(r => ({ job: r, match_score: r.match_score, match_type: r.match_type || null, strengths: r.strengths, gaps: r.gaps, summary: r.summary, rec_id: r.id })),
               total_jobs_analyzed: 0,
               from_cache:          true,
               fallback:            true,
@@ -2938,18 +3399,35 @@ async function handleAiJobRecommendations(body, request, env, ctx, corsHeaders, 
             { status: 200, headers: corsHeaders }
           )
         }
-      } catch { /* no previous recs — fall through */ }
+      } catch (err) {
+        console.warn(`[RADAR] fallback prev-recs fetch failed: ${err.message}`)
+      }
     }
 
-    // No cached recs either — return top jobs without scores
-    const fallbackRecs = jobPool.slice(0, requestedN).map(j => ({
-      job:         j,
-      match_score: null,
-      strengths:   [],
-      gaps:        [],
-      summary:     'Puntuación no disponible — servicio de IA temporalmente no disponible.',
-      rec_id:      null,
-    }))
+    // Tier 2: heuristic keyword scoring — always yields a visible score on cards
+    const profileWords = new Set(
+      String(profile_text).toLowerCase().split(/\W+/).filter(w => w.length > 3)
+    )
+    const fallbackRecs = jobPool.slice(0, requestedN).map(j => {
+      const jobWords = `${j.title} ${(j.skills_required || []).join(' ')}`.toLowerCase().split(/\W+/)
+      const overlap  = jobWords.filter(w => w.length > 3 && profileWords.has(w)).length
+      const daysOld  = j.posted_at ? (Date.now() - new Date(j.posted_at).getTime()) / 86_400_000 : 30
+      const score    = Math.round(Math.min(7.5, 5.5 + Math.min(overlap, 10) * 0.15 + (daysOld < 7 ? 0.3 : 0)) * 10) / 10
+      // Heuristic match_type based on keyword overlap (no AI — approximate only)
+      const matchType = overlap >= 8 ? 'Directo' : overlap >= 5 ? 'Adyacente' : overlap >= 3 ? 'Transferible' : 'Exploratorio'
+      const co       = j.company || 'esta empresa'
+      return {
+        job:            j,
+        match_score:    score,
+        match_type:     matchType,
+        strengths:      [],
+        gaps:           [],
+        summary:        `Oportunidad en ${co} — análisis detallado en la próxima búsqueda.`,
+        rec_id:         null,
+        ai_fallback:    true,
+      }
+    }).sort((a, b) => b.match_score - a.match_score)
+    console.log(`[RADAR] Gemini fallback tier2 — heuristic scoring ${fallbackRecs.length} recs, aiError=${aiError}`)
     return new Response(
       JSON.stringify({
         ok:                  true,
@@ -2965,20 +3443,44 @@ async function handleAiJobRecommendations(body, request, env, ctx, corsHeaders, 
   }
 
   // ── Build final recommendations from AI matches ────────────────────────────
+  // geo_score blends into the ranking when candidateLocation is known.
+  // Gemini already applies geo penalties via the system prompt, but it can miss nuances
+  // when the location signal is weak. We apply a conservative JS-side geo adjustment
+  // (max ±0.5) as a tiebreaker — not a full re-score — to surface geographically
+  // viable jobs higher within similar score bands.
+  const geoAdjust = (job, geminiScore) => {
+    if (!candidateLocation || job.remote) return geminiScore
+    const gs = geoCompatibilityScore(job.location, job.remote, candidateLocation)
+    // gs=1.0 → +0, gs=0.95 → +0, gs=0.6 → -0.2, gs=0.45 → -0.35, gs=0.15 → -0.5
+    if (gs >= 0.9) return geminiScore
+    const penalty = Math.min(0.5, (0.9 - gs) * 1.25)
+    return Math.max(0, geminiScore - penalty)
+  }
+
   const topMatches = (aiResult.matches || [])
-    .sort((a, b) => b.match_score - a.match_score)
+    .map(m => {
+      const job = jobPool[m.job_index]
+      if (!job) return null
+      const geoScore = geoCompatibilityScore(job.location, job.remote, candidateLocation)
+      const adjustedScore = geoAdjust(job, m.match_score || 0)
+      return { ...m, _adjusted_score: adjustedScore, _geo_score: geoScore }
+    })
+    .filter(Boolean)
+    .sort((a, b) => b._adjusted_score - a._adjusted_score)
     .slice(0, requestedN)
 
-  const recommendations = topMatches.map(m => {
+  let recommendations = topMatches.map(m => {
     const job = jobPool[m.job_index]
     if (!job) return null
     return {
       job,
       match_score: Number((m.match_score || 0).toFixed(2)),
+      match_type:  m.match_type || null,
       strengths:   Array.isArray(m.strengths) ? m.strengths.slice(0, 3) : [],
       gaps:        Array.isArray(m.gaps)       ? m.gaps.slice(0, 2)     : [],
       summary:     String(m.summary || ''),
-      rec_id:      null,  // populated after Supabase insert below
+      rec_id:      null,
+      geo_score:   m._geo_score,
     }
   }).filter(Boolean)
 
@@ -2992,6 +3494,7 @@ async function handleAiJobRecommendations(body, request, env, ctx, corsHeaders, 
       remote:      r.job.remote,
       url:         r.job.url,
       match_score: r.match_score,
+      match_type:  r.match_type || null,
       strengths:   r.strengths,
       gaps:        r.gaps,
       summary:     r.summary,
@@ -2999,55 +3502,158 @@ async function handleAiJobRecommendations(body, request, env, ctx, corsHeaders, 
       status:      'new',
     }))
 
-    const saveRecs = fetch(`${env.SUPABASE_URL}/rest/v1/job_recommendations`, {
-      method:  'POST',
-      headers: {
-        apikey:         env.SUPABASE_SERVICE_ROLE_KEY,
-        Authorization:  `Bearer ${env.SUPABASE_SERVICE_ROLE_KEY}`,
-        'Content-Type': 'application/json',
-        Prefer:         'return=representation',
-      },
-      body: JSON.stringify(recRows),
-    }).then(async r => {
-      const saved = await r.json()
-      // Backfill rec_id into the response (used by frontend for status updates)
-      if (Array.isArray(saved)) {
-        saved.forEach((row, i) => {
-          if (recommendations[i]) recommendations[i].rec_id = row.id
-        })
-      }
-    }).catch(() => {})
-
-    if (ctx?.waitUntil) ctx.waitUntil(saveRecs)
-
-    // Also save to historial for the user's history tab
-    const historialRow = {
-      user_id,
-      tipo:      'job_recommendations',
-      titulo:    `Recomendaciones para: ${cleanQueries.join(', ')}`,
-      datos:     {
-        queries:       cleanQueries,
-        location:      location || null,
-        remote_ok:     !!remote_ok,
-        match_count:   recommendations.length,
-        top_match:     recommendations[0]
-          ? { title: recommendations[0].job.title, company: recommendations[0].job.company, score: recommendations[0].match_score }
-          : null,
-        generated_at:  new Date().toISOString(),
-      },
+    // Fire-and-forget: rec_ids will be null on first render (save-to-kanban falls back to createCard)
+    if (ctx?.waitUntil) {
+      ctx.waitUntil(
+        fetch(`${env.SUPABASE_URL}/rest/v1/job_recommendations`, {
+          method:  'POST',
+          headers: {
+            apikey:         env.SUPABASE_SERVICE_ROLE_KEY,
+            Authorization:  `Bearer ${env.SUPABASE_SERVICE_ROLE_KEY}`,
+            'Content-Type': 'application/json',
+            Prefer:         'return=minimal',
+          },
+          body: JSON.stringify(recRows),
+        }).catch(() => {})
+      )
     }
-    const saveHistorial = fetch(`${env.SUPABASE_URL}/rest/v1/historial`, {
-      method:  'POST',
-      headers: {
-        apikey:         env.SUPABASE_SERVICE_ROLE_KEY,
-        Authorization:  `Bearer ${env.SUPABASE_SERVICE_ROLE_KEY}`,
-        'Content-Type': 'application/json',
-        Prefer:         'return=minimal',
-      },
-      body: JSON.stringify(historialRow),
-    }).catch(() => {})
-    if (ctx?.waitUntil) ctx.waitUntil(saveHistorial)
+
   }
+
+  // Sprint 4: persist initial AI enrichment (fire-and-forget)
+  upsertJobsAiEnriched(env, ctx, topMatches, jobPool)
+
+  // Sprint 5: Adaptive Expansion — Premium-only second-pass search
+  let expansionAvailable = false
+  let expansionUsed      = false
+  let expansionCount     = 0
+
+  // Premium always expands; free expands only when threshold not met (shows upsell)
+  const needsExpansion = isPremium || shouldTriggerExpansion(recommendations)
+  console.log(`[RADAR] expansion needsExpansion=${needsExpansion} isPremium=${isPremium} topScore=${recommendations[0]?.match_score?.toFixed(1)||0}`)
+  if (needsExpansion) {
+    if (isPremium) {
+      try {
+        const expStartMs      = Date.now()
+        const _expTimedOut    = {}  // sentinel to distinguish timeout from null result
+        console.log(`[RADAR] expansion START — generating alternative terms... serperConfigured=${!!env.SERPER_API_KEY}`)
+        const existingHashes = new Set(jobPool.map(j => canonicalJobHash(j)))
+        const expandResult   = await Promise.race([
+          expandWithSearch(env, ctx, cleanQueries, location, remote_ok, String(profile_text), existingHashes, requestedN, candidateLocation, profInfo),
+          new Promise(r => setTimeout(() => r(_expTimedOut), EXPANSION_TIMEOUT_MS)),
+        ])
+        const expMs = Date.now() - expStartMs
+        if (expandResult === _expTimedOut) {
+          console.warn(`[RADAR] expansion TIMEOUT — exceeded ${EXPANSION_TIMEOUT_MS}ms (expMs=${expMs})`)
+        } else if (expandResult?.recommendations?.length) {
+          // Merge: union of original + expansion, re-rank by match_score
+          const seenHashes = new Set()
+          const merged = [...recommendations, ...expandResult.recommendations]
+            .sort((a, b) => (b.match_score || 0) - (a.match_score || 0))
+            .filter(r => {
+              const h = canonicalJobHash(r.job)
+              if (seenHashes.has(h)) return false
+              seenHashes.add(h)
+              return true
+            })
+            .slice(0, requestedN)
+          recommendations  = merged
+          expansionUsed    = true
+          expansionCount   = expandResult.count
+          console.log(`[RADAR] expansion OK — +${expansionCount} new jobs merged, final=${recommendations.length} expansionMs=${expMs}`)
+        } else {
+          console.log(`[RADAR] expansion returned 0 new results expansionMs=${expMs}`)
+        }
+      } catch (err) {
+        console.warn(`[RADAR] expansion error: ${err.message}`)
+      }
+    } else {
+      expansionAvailable = true   // tells frontend to show upsell
+    }
+  }
+
+  // Build historialRow here — after expansion — so needsExpansion + expansionUsed are final
+  const historialRow = {
+    user_id,
+    tipo:   'job_recommendations',
+    titulo: `Recomendaciones para: ${cleanQueries.join(', ')}`,
+    datos:  {
+      queries:             cleanQueries,
+      location:            location || null,
+      remote_ok:           !!remote_ok,
+      match_count:         recommendations.length,
+      top_match:           recommendations[0]
+        ? { title: recommendations[0].job.title, company: recommendations[0].job.company, score: recommendations[0].match_score }
+        : null,
+      candidate_location:  candidateLocation || null,
+      expansion_triggered: needsExpansion,
+      expansion_applied:   expansionUsed,
+      geo_filter_applied:  !!candidateLocation,
+      total_jobs_analyzed: jobPool.length,
+      generated_at:        new Date().toISOString(),
+    },
+  }
+
+  // Persist historial (dedup: patch today's row if exists, else insert)
+  if (user_id && ctx?.waitUntil) {
+    const saveHistorial = (async () => {
+      try {
+        const today = new Date().toISOString().slice(0, 10)
+        const existRes = await fetch(
+          `${env.SUPABASE_URL}/rest/v1/historial`
+          + `?user_id=eq.${user_id}&tipo=eq.job_recommendations`
+          + `&created_at=gte.${today}T00:00:00Z`
+          + `&order=created_at.desc&limit=1&select=id`,
+          { headers: { apikey: env.SUPABASE_SERVICE_ROLE_KEY, Authorization: `Bearer ${env.SUPABASE_SERVICE_ROLE_KEY}` } }
+        )
+        const existing = await existRes.json().catch(() => [])
+        if (Array.isArray(existing) && existing[0]?.id) {
+          await fetch(
+            `${env.SUPABASE_URL}/rest/v1/historial?id=eq.${existing[0].id}`,
+            {
+              method: 'PATCH',
+              headers: {
+                apikey: env.SUPABASE_SERVICE_ROLE_KEY,
+                Authorization: `Bearer ${env.SUPABASE_SERVICE_ROLE_KEY}`,
+                'Content-Type': 'application/json',
+                Prefer: 'return=minimal',
+              },
+              body: JSON.stringify({ titulo: historialRow.titulo, datos: historialRow.datos }),
+            }
+          )
+        } else {
+          await fetch(`${env.SUPABASE_URL}/rest/v1/historial`, {
+            method:  'POST',
+            headers: {
+              apikey: env.SUPABASE_SERVICE_ROLE_KEY,
+              Authorization: `Bearer ${env.SUPABASE_SERVICE_ROLE_KEY}`,
+              'Content-Type': 'application/json',
+              Prefer: 'return=minimal',
+            },
+            body: JSON.stringify(historialRow),
+          })
+        }
+      } catch (err) {
+        console.warn(`[RADAR] saveHistorial failed for user ${user_id}: ${err.message}`)
+      }
+    })()
+    ctx.waitUntil(saveHistorial)
+  }
+
+  // Cache AI scores in KV and radar_search_history (Supabase, cross-device)
+  // TTL mirrors the live-fetch period: 25h for premium (daily), 32 days for free (monthly)
+  const jrecTtlSecs = isPremium ? 25 * 3_600 : 32 * 86_400
+  if (user_id && ctx?.waitUntil) {
+    ctx.waitUntil(putJrecToKV(env, user_id, queryHash, {
+      recommendations,
+      total_jobs_analyzed: jobPool.length,
+    }, jrecTtlSecs))
+    if (profileHash) {
+      putRadarCache(env, ctx, user_id, profileHash, queryHash, recommendations, isPremium)
+    }
+  }
+
+  console.log(`[RADAR] DONE recs=${recommendations.length} totalAnalyzed=${jobPool.length} expansionUsed=${expansionUsed} expansionCount=${expansionCount} totalMs=${Date.now()-startMs}`)
 
   return new Response(
     JSON.stringify({
@@ -3055,7 +3661,33 @@ async function handleAiJobRecommendations(body, request, env, ctx, corsHeaders, 
       recommendations,
       total_jobs_analyzed: jobPool.length,
       from_cache:          fromCache,
+      cached_today:        false,
+      cache_timestamp:     new Date().toISOString(),
       quota_remaining:     rl.limit - rl.count,
+      expansion_available: expansionAvailable,
+      expansion_used:      expansionUsed,
+      expansion_count:     expansionCount,
+      expansion_searched:  needsExpansion && isPremium,
+      candidate_location:  candidateLocation || null,
+      profession_context:  profInfo ? { family: profInfo.family, seniority_level: profInfo.seniority_level, profession: profInfo.profession || profInfo.family } : null,
+      pipeline_stats: {
+        premium_mode:        isPremium,
+        sources_used:        sourcesUsed,
+        sources_count:       sourcesUsed.length,    // frontend reads this for "N fuentes"
+        total_evaluated:     jobPool.length,         // frontend reads this for "N avisos evaluados"
+        source_counts:       sourceCounts,          // per-source job counts (empty on cache hit)
+        serper_configured:   !!env.SERPER_API_KEY,  // env var present
+        serper_in_sources:   sourcesUsed.includes('serper'),  // actually attempted this run
+        serper_returned:     sourceCounts['serper'] || 0,     // jobs returned by Serper
+        jobs_fetched:        jobs.length,
+        jobs_to_gemini:      jobPool.length,
+        from_jobs_cache:     fromCache,
+        expansion_triggered: needsExpansion,
+        expansion_used:      expansionUsed,
+        expansion_count:     expansionCount,
+        candidate_location:  candidateLocation || null,
+        total_ms:            Date.now() - startMs,
+      },
     }),
     { status: 200, headers: corsHeaders }
   )
@@ -3108,30 +3740,60 @@ async function handleJobSaveToKanban(body, request, env, ctx, corsHeaders, verif
     )
   }
 
-  // Resolve columna_id: use provided, or fall back to user's first kanban column
+  // Resolve columna_id: prefer "Radar Laboral" column, fallback to first by orden
   let targetColumnaId = columna_id || null
   if (!targetColumnaId) {
     const colRes = await fetch(
-      `${env.SUPABASE_URL}/rest/v1/kanban_columnas?user_id=eq.${user.id}&order=orden.asc&limit=1&select=id`,
+      `${env.SUPABASE_URL}/rest/v1/kanban_columnas?user_id=eq.${user.id}&order=orden.asc&select=id,nombre`,
       { headers: { apikey: env.SUPABASE_SERVICE_ROLE_KEY, Authorization: `Bearer ${env.SUPABASE_SERVICE_ROLE_KEY}` } }
     )
     const cols = await colRes.json()
-    targetColumnaId = cols?.[0]?.id || null
+    const radarCol = Array.isArray(cols) ? cols.find(c => c.nombre === 'Radar Laboral') : null
+    targetColumnaId = radarCol?.id || cols?.[0]?.id || null
+  }
+
+  // Dedup: check by URL first, fall back to company+title for URL-less jobs
+  {
+    const normalizedEmpresa = (rec.company || '').slice(0, 100).trim()
+    const normalizedPuesto  = (rec.title   || '').slice(0, 100).trim()
+    const dupQuery = rec.url
+      ? `user_id=eq.${user.id}&link_aviso=eq.${encodeURIComponent(rec.url)}&select=id&limit=1`
+      : `user_id=eq.${user.id}&empresa=eq.${encodeURIComponent(normalizedEmpresa)}&puesto=eq.${encodeURIComponent(normalizedPuesto)}&select=id&limit=1`
+    const dupRes = await fetch(
+      `${env.SUPABASE_URL}/rest/v1/postulaciones?${dupQuery}`,
+      { headers: { apikey: env.SUPABASE_SERVICE_ROLE_KEY, Authorization: `Bearer ${env.SUPABASE_SERVICE_ROLE_KEY}` } }
+    )
+    const dups = await dupRes.json().catch(() => [])
+    if (Array.isArray(dups) && dups[0]?.id) {
+      return new Response(
+        JSON.stringify({ ok: true, already_exists: true, postulacion_id: dups[0].id, columna_id: targetColumnaId }),
+        { status: 200, headers: corsHeaders }
+      )
+    }
   }
 
   // Build postulaciones row — pre-filled from recommendation data
+  const atsKeywords = Array.isArray(rec.strengths) && rec.strengths.length
+    ? rec.strengths.slice(0, 10).join(', ')
+    : null
+  const adaptationNotes = Array.isArray(rec.gaps) && rec.gaps.length
+    ? rec.gaps.join(' | ')
+    : null
+
   const postulacion = {
-    user_id:          user.id,
-    columna_id:       targetColumnaId,
-    empresa:          rec.company.slice(0, 100),
-    puesto:           rec.title.slice(0, 100),
-    link_aviso:       rec.url || null,
-    fecha_aplicacion: new Date().toISOString().slice(0, 10),
-    notas:            rec.summary || null,
-    job_description:  null,  // will be filled if user triggers CV adapter later
-    seniority:        null,
-    cv_data:          null,  // populated when user adapts their CV for this job
-    orden:            0,
+    user_id:           user.id,
+    columna_id:        targetColumnaId,
+    empresa:           (rec.company || '').slice(0, 100),
+    puesto:            (rec.title   || '').slice(0, 100),
+    link_aviso:        rec.url || null,
+    fecha_aplicacion:  new Date().toISOString().slice(0, 10),
+    notas:             rec.summary || null,
+    job_description:   null,
+    seniority:         null,
+    ats_keywords:      atsKeywords,
+    adaptation_notes:  adaptationNotes,
+    cv_data:           null,
+    orden:             0,
   }
 
   try {
@@ -3165,7 +3827,7 @@ async function handleJobSaveToKanban(body, request, env, ctx, corsHeaders, verif
     if (ctx?.waitUntil) ctx.waitUntil(updateRec)
 
     return new Response(
-      JSON.stringify({ ok: true, postulacion_id: postId, columna_id: targetColumnaId }),
+      JSON.stringify({ ok: true, already_exists: false, postulacion_id: postId, columna_id: targetColumnaId }),
       { status: 200, headers: corsHeaders }
     )
   } catch (e) {

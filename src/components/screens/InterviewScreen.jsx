@@ -6,7 +6,7 @@ export default function InterviewScreen({ interviewQsLoading, dynamicInterviewQs
   const isIndustryPersonalized = !dynamicInterviewQs && !!industryQs
 
   return (
-    <div className="step-transition space-y-7">
+    <div className="step-transition space-y-7 max-w-2xl mx-auto">
       <Logo />
 
       {/* Personalization badge */}

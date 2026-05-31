@@ -7,7 +7,7 @@ export default function OnboardingScreen({ result, setStep }) {
   const scoreColor = score >= 7 ? '#059669' : score >= 5 ? '#6366f1' : '#d97706'
 
   return (
-    <div className="step-transition flex flex-col items-center text-center space-y-6 pt-4 pb-8">
+    <div className="step-transition flex flex-col items-center text-center space-y-6 pt-4 pb-8 max-w-2xl mx-auto">
 
       {/* Step badge */}
       <span className="text-[10px] font-bold uppercase tracking-widest px-3 py-1 rounded-full"

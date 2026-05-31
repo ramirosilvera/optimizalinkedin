@@ -397,6 +397,7 @@ export default function App() {
         premium_hasta: perfil?.premium_hasta || null,
       }
       applySession(data.access_token, data.refresh_token, userData)
+      loadHistorial()  // populate WelcomeScreen "Seguí con tu preparación" on login
       checkAdminStatus(data.access_token)
       setAuthEmail('')
       setAuthPassword('')
@@ -598,12 +599,14 @@ export default function App() {
     } catch { /* silencioso */ }
   }
 
-  // Saves a CV version only if content changed since last save (prevents export duplicates)
-  const saveCvToHistorial = (cv, titulo) => {
+  // Saves a CV version only if content changed since last save (prevents export duplicates).
+  // Embeds quality assessment as _quality so it can be restored next session without re-scoring.
+  const saveCvToHistorial = (cv, titulo, quality = null) => {
     const hash = cv ? JSON.stringify(cv).slice(0, 400) : null
     if (!hash || hash === lastSavedCvHashRef.current) return
     lastSavedCvHashRef.current = hash
-    saveToHistorial('cv', cv, titulo, null)
+    const datos = quality ? { ...cv, _quality: quality } : cv
+    saveToHistorial('cv', datos, titulo, quality?.score ?? null)
   }
 
   const addToast = (msg, type = 'success', duration = 4000) => {
@@ -697,21 +700,31 @@ export default function App() {
         const latestAnalisis = historial.find(i => i.tipo === 'analisis')
         if (latestAnalisis) setResult(latestAnalisis.datos)
         else setResult(null)
-        setCvFinalData(item.datos)
-        setCvDraft(item.datos)
+        const cvDatos = item.datos
+        setCvFinalData(cvDatos)
+        setCvDraft(cvDatos)
+        setCvQuality(cvDatos?._quality || null)
         // Use refs (always-current) so photo is never stale even if closure timing is off.
         // The reactive useEffect will also re-run when cvFinalData/profilePhoto settle.
-        setCvPreviewHtml(buildCvHtml(item.datos, profilePhotoRef.current, profilePhotoMimeRef.current, cvTemplate || 'clasico'))
+        setCvPreviewHtml(buildCvHtml(cvDatos, profilePhotoRef.current, profilePhotoMimeRef.current, cvTemplate || 'clasico'))
         setCvStage('done')
         setShowCvPreview(true)
         setStep(STEPS.CV)
         break
       }
-      case 'entrevista':
-        setInterviewFeedback(item.datos?.feedback || item.datos)
+      case 'entrevista': {
+        const ef = item.datos?.feedback
+        if (ef) {
+          setInterviewFeedback(ef)
+        } else if (item.datos?.summary) {
+          setInterviewFeedback({ ...item.datos.summary, puntaje_entrevista: item.datos.summary.score ?? item.puntaje })
+        } else {
+          setInterviewFeedback(item.datos)
+        }
         setInterviewAnswers(item.datos?.respuestas || [])
         setStep(STEPS.INTERVIEW_FEEDBACK)
         break
+      }
       default:
         break
     }
@@ -720,21 +733,36 @@ export default function App() {
   // Hydrates result, cvFinalData, and interviewFeedback from historial, then navigates to MODE_SELECT.
   // Called when a returning PRO user clicks "Seguir con tu preparación" and result is not yet in session.
   const resumePreparation = () => {
-    const analisisItem = historial.find(i => i.tipo === 'analisis')
-    const cvItem = historial.find(i => i.tipo === 'cv')
+    const analisisItem  = historial.find(i => i.tipo === 'analisis')
+    const cvItem        = historial.find(i => i.tipo === 'cv')
     const interviewItem = historial.find(i => i.tipo === 'entrevista')
+    const starItem      = historial.find(i => i.tipo === 'star')
 
     if (analisisItem) setResult(analisisItem.datos)
 
     if (cvItem) {
-      setCvFinalData(cvItem.datos)
-      setCvDraft(cvItem.datos)
-      setCvStage('done')  // triggers useEffect at line 1147 to rebuild cvPreviewHtml
+      const cvDatos = cvItem.datos
+      setCvFinalData(cvDatos)
+      setCvDraft(cvDatos)
+      setCvQuality(cvDatos?._quality || null)
+      setCvStage('done')  // triggers useEffect to rebuild cvPreviewHtml
     }
 
     if (interviewItem) {
-      setInterviewFeedback(interviewItem.datos?.feedback || interviewItem.datos)
+      const ef = interviewItem.datos?.feedback
+      if (ef) {
+        setInterviewFeedback(ef)
+      } else if (interviewItem.datos?.summary) {
+        setInterviewFeedback({ ...interviewItem.datos.summary, puntaje_entrevista: interviewItem.datos.summary.score ?? interviewItem.puntaje })
+      } else {
+        setInterviewFeedback(interviewItem.datos)
+      }
       setInterviewAnswers(interviewItem.datos?.respuestas || [])
+    }
+
+    if (starItem && starItem.puntaje != null) {
+      const lastQ = starItem.datos?.preguntas?.slice(-1)[0]
+      setStarFeedback(lastQ?.feedback_star || { puntaje: starItem.puntaje })
     }
 
     setStep(STEPS.MODE_SELECT)
@@ -1016,8 +1044,8 @@ export default function App() {
         // Fire side-effects in parallel — they don't affect the skeleton gate
         checkAdminStatus(data.access_token)
         loadLinkedinProfile()
-        // Await historial for PRO users: skeleton stays until data is ready
-        if (userData.es_premium) await loadHistorial()
+        // Await historial for all logged-in users so WelcomeScreen shows "Seguí con tu preparación"
+        await loadHistorial()
         setSessionChecked(true)
       })
       .catch(() => { clearSession(); setSessionChecked(true) })
@@ -1063,6 +1091,7 @@ export default function App() {
           applySession(accessToken, refreshToken || '', userObj)
           setAuthSuccess('linkedin_needs_premium')
         }
+        loadHistorial()  // populate WelcomeScreen "Seguí con tu preparación" on login
         checkAdminStatus(accessToken)
         setShowAuthModal(true)
         trackEvent('auth_linkedin_supabase', { type })
@@ -2135,7 +2164,7 @@ Generá el feedback en este JSON exacto:
       const titulo = variant === 'optimizado'
         ? `CV optimizado — ${newData.nombre || 'CV'}`
         : newData.nombre || 'CV'
-      saveCvToHistorial(newData, titulo)
+      saveCvToHistorial(newData, titulo, cvQuality)
       if (user?.es_premium) {
         setCvSuccess('✓ Versión guardada en historial')
         setTimeout(() => setCvSuccess(''), 3000)
@@ -2147,7 +2176,7 @@ Generá el feedback en este JSON exacto:
   const saveCvSnapshot = () => {
     if (!cvFinalData) return
     const titulo = cvFinalData.nombre || 'CV guardado'
-    saveCvToHistorial(cvFinalData, titulo)
+    saveCvToHistorial(cvFinalData, titulo, cvQuality)
     if (user?.es_premium) {
       setCvSuccess('✓ Versión guardada')
       setTimeout(() => setCvSuccess(''), 3000)
@@ -2237,7 +2266,7 @@ Generá el feedback en este JSON exacto:
         setCvVariant(null)
         setCvStage('done')
         setCvBaselineScore(quality?.score ?? null)
-        saveCvToHistorial(cv, cv.nombre || 'CV base')
+        saveCvToHistorial(cv, cv.nombre || 'CV base', quality)
         setCvPreviewHtml(buildCvHtml(cv, profilePhotoRef.current, profilePhotoMimeRef.current, cvTemplate))
         setShowCvPreview(true)
       } else {
@@ -2297,7 +2326,7 @@ Generá el feedback en este JSON exacto:
       setCvFinalData(cv)
       setCvVariant(null)
       setCvStage('done')
-      saveCvToHistorial(cv, cv.nombre || 'CV base')
+      saveCvToHistorial(cv, cv.nombre || 'CV base', quality)
       setCvPreviewHtml(buildCvHtml(cv, profilePhotoRef.current, profilePhotoMimeRef.current, cvTemplate))
       setShowCvPreview(true)
       trackEvent('cv_regenerated', { answered_count: Object.keys(gapAnswers).length })
@@ -2331,7 +2360,7 @@ Generá el feedback en este JSON exacto:
     setCvFinalData(adaptedCv)
     setCvVariant({ empresa: empresa || null, cargo: cargo || null })
     if (adaptedQuality) setCvQuality(adaptedQuality)
-    saveCvToHistorial(adaptedCv, empresa ? `CV adaptado — ${empresa}` : 'CV adaptado')
+    saveCvToHistorial(adaptedCv, empresa ? `CV adaptado — ${empresa}` : 'CV adaptado', adaptedQuality)
     setCvPreviewHtml(buildCvHtml(adaptedCv, profilePhotoRef.current, profilePhotoMimeRef.current, cvTemplate))
     setShowCvPreview(true)
     setShowJobModal(false)
@@ -2825,7 +2854,7 @@ Generá el feedback en este JSON exacto:
       />}
 
       {/* ── Barra de usuario ── */}
-      <div className="w-full max-w-xl mb-2 flex justify-end items-center gap-1.5 flex-wrap">
+      <div className="w-full max-w-5xl mb-2 flex justify-end items-center gap-1.5 flex-wrap">
         {checkingPremium && (
           <span className="text-xs font-medium px-2.5 py-1 rounded-full animate-pulse"
             style={{ background: 'rgba(0,119,181,0.10)', color: '#0077B5' }}>
@@ -2891,7 +2920,7 @@ Generá el feedback en este JSON exacto:
         )}
       </div>
 
-      <div className="w-full max-w-xl">
+      <div className="w-full max-w-5xl">
 
         {/* ── Journey progress indicator ── */}
         {step > STEPS.WELCOME && step !== STEPS.MODE_SELECT && step !== STEPS.REPORT && step !== STEPS.JOB_RECOMMENDATIONS && (() => {
@@ -3376,6 +3405,7 @@ Generá el feedback en este JSON exacto:
             setShowJobModal={setShowJobModal}
             setJobCvForAdapter={setJobCvForAdapter}
             setJobPosting={setJobPosting}
+            addToast={addToast}
           />
         )}
 
@@ -3389,9 +3419,16 @@ Generá el feedback en este JSON exacto:
             cvFinalData={cvFinalData}
             trackingColumnas={trackingColumnas}
             createCard={createCard}
+            loadTracking={loadTracking}
+            addToast={addToast}
             setStep={setStep}
             setShowPremiumModal={setShowPremiumModal}
             setShowJobModal={setShowJobModal}
+            setJobCvForAdapter={setJobCvForAdapter}
+            setJobPosting={setJobPosting}
+            setJobResult={setJobResult}
+            setJobError={setJobError}
+            resetInterview={resetInterview}
             setInterviewJobContext={setInterviewJobContext}
             generatePersonalizedInterviewQs={generatePersonalizedInterviewQs}
             onBack={() => setStep(STEPS.MODE_SELECT)}
