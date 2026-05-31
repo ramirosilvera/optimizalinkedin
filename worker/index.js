@@ -17,7 +17,7 @@ import {
 import { serperGeoConfig, geoCompatibilityScore } from './src/utils/geo.js'
 import {
   normalizeRemoteOK, normalizeRemotive, normalizeJobicy, normalizeJooble, normalizeAdzuna,
-  normalizeGetOnBoard, normalizeHimalayas, normalizeWorkable, normalizeTeamtailor,
+  normalizeGetOnBoard, normalizeHimalayas, normalizeArbeitnow, normalizeWorkable, normalizeTeamtailor,
   normalizeRecruitee, normalizePersonio, normalizeWorkday, normalizeSerper,
   normalizeGreenhouse, normalizeLever, normalizeSmartRecruiters, normalizeAshby,
   normalizeJobs,
@@ -2158,14 +2158,14 @@ async function fetchJobSource(source, query, location, remoteOk, env, candidateL
 
     if (source === 'remoteok') {
       const tag = encodeURIComponent(query.split(' ').slice(0, 2).join('-').toLowerCase())
-      url = `https://remoteok.com/api?tags=${tag}&limit=30`
+      url = `https://remoteok.com/api?tags=${tag}&limit=50`
       const r = await fetch(url, { headers: { 'User-Agent': UA }, signal: ctrl.signal })
       raw = await r.json()
       return { source, jobs: normalizeJobs(source, raw) }
     }
 
     if (source === 'remotive') {
-      url = `https://remotive.com/api/remote-jobs?search=${q}&limit=30`
+      url = `https://remotive.com/api/remote-jobs?search=${q}&limit=50`
       const r = await fetch(url, { signal: ctrl.signal })
       raw = await r.json()
       return { source, jobs: normalizeJobs(source, raw) }
@@ -2173,7 +2173,7 @@ async function fetchJobSource(source, query, location, remoteOk, env, candidateL
 
     if (source === 'jobicy') {
       // LATAM-focused remote jobs (replaces arbeitnow which was European)
-      url = `https://jobicy.com/api/v2/remote-jobs?geo=latam&tag=${q}&count=50`
+      url = `https://jobicy.com/api/v2/remote-jobs?geo=latam&tag=${q}&count=100`
       const r = await fetch(url, { signal: ctrl.signal })
       raw = await r.json()
       return { source, jobs: normalizeJobs(source, raw) }
@@ -2208,14 +2208,14 @@ async function fetchJobSource(source, query, location, remoteOk, env, candidateL
     }
 
     if (source === 'getonboard') {
-      url = `https://www.getonbrd.com/api/v0/jobs?query=${q}&per_page=30`
+      url = `https://www.getonbrd.com/api/v0/jobs?query=${q}&per_page=50`
       const r = await fetch(url, { headers: { 'Accept': 'application/json' }, signal: ctrl.signal })
       raw = await r.json()
       return { source, jobs: normalizeJobs(source, raw) }
     }
 
     if (source === 'himalayas') {
-      const base = `https://himalayas.app/jobs/api?q=${q}&limit=20`
+      const base = `https://himalayas.app/jobs/api?q=${q}&limit=50`
       url = remoteOk ? base : `${base}&countries=argentina`
       const r = await fetch(url, { headers: { 'Accept': 'application/json', 'User-Agent': UA }, signal: ctrl.signal })
       raw = await r.json()
@@ -2233,7 +2233,7 @@ async function fetchJobSource(source, query, location, remoteOk, env, candidateL
       const r = await fetch('https://google.serper.dev/jobs', {
         method:  'POST',
         headers: { 'X-API-KEY': env.SERPER_API_KEY, 'Content-Type': 'application/json', 'User-Agent': UA },
-        body:    JSON.stringify({ q: query, ...geoParams, num: 20 }),
+        body:    JSON.stringify({ q: query, ...geoParams, num: 30 }),
         signal:  ctrl.signal,
       })
       raw = await r.json()
@@ -3135,7 +3135,10 @@ async function handleAiJobRecommendations(body, request, env, ctx, corsHeaders, 
   }
 
   // ── Build queries — headhunter mode for premium (built here so all hashes use same queries) ──
-  const baseQueriesRaw = queries.map(q => String(q).trim().slice(0, 100)).filter(Boolean).slice(0, 3)
+  const baseQueriesRaw = queries
+    .map(q => String(q).trim().replace(/[|;()\[\]]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 100))
+    .filter(Boolean)
+    .slice(0, 5)
   const headhunterActive = isPremium && !!professionInfoSync
   // Build cleanQueries here (before ALL cache lookups) so every cache layer uses the same hash.
   const cleanQueries = headhunterActive
@@ -3345,7 +3348,7 @@ async function handleAiJobRecommendations(body, request, env, ctx, corsHeaders, 
   const geminiBody = {
     system_instruction: { parts: [{ text: JOB_MATCHING_SYSTEM_PROMPT }] },
     contents,
-    generationConfig:   { temperature: 0.2, maxOutputTokens: isPremium ? 8192 : 4096, thinkingConfig: { thinkingBudget: 0 } },
+    generationConfig:   { temperature: 0.3, maxOutputTokens: isPremium ? 12288 : 8192, thinkingConfig: { thinkingBudget: 0 } },
   }
 
   let aiResult = null
@@ -3444,7 +3447,7 @@ async function handleAiJobRecommendations(body, request, env, ctx, corsHeaders, 
       const jobWords = `${j.title} ${(j.skills_required || []).join(' ')}`.toLowerCase().split(/\W+/)
       const overlap  = jobWords.filter(w => w.length > 3 && profileWords.has(w)).length
       const daysOld  = j.posted_at ? (Date.now() - new Date(j.posted_at).getTime()) / 86_400_000 : 30
-      const score    = Math.round(Math.min(7.5, 5.5 + Math.min(overlap, 10) * 0.15 + (daysOld < 7 ? 0.3 : 0)) * 10) / 10
+      const score    = Math.round(Math.min(6.5, 4.5 + Math.min(overlap, 10) * 0.2 + (daysOld < 7 ? 0.3 : 0) + (daysOld < 1 ? 0.2 : 0)) * 10) / 10
       // Heuristic match_type based on keyword overlap (no AI — approximate only)
       const matchType = overlap >= 8 ? 'Directo' : overlap >= 5 ? 'Adyacente' : overlap >= 3 ? 'Transferible' : 'Exploratorio'
       const co       = j.company || 'esta empresa'

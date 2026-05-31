@@ -171,13 +171,13 @@ REGLAS ANTI-ATS
 ❌ NO asumir cambio de carrera si el perfil no lo indica explícitamente.
 
 ━━━━━━━━━━━━━━━━━━━━━━━
-ESCALA Y DISTRIBUCIÓN ESPERADA (de 50 avisos)
+ESCALA Y DISTRIBUCIÓN ESPERADA
 ━━━━━━━━━━━━━━━━━━━━━━━
 
-9–10: Excelente fit. Candidato claramente apto. (1-3 de 50)
-8–8.9: Muy buen fit, brechas menores tolerables. (2-5 de 50)
-7–7.9: Buen fit razonable, lógica profesional sólida. (3-7 de 50)
-6–6.9: Fit parcial. Familia correcta, brecha notable de sub-área o seniority. (2-5 de 50)
+9–10: Excelente fit. Candidato claramente apto. (~3-5% del batch)
+8–8.9: Muy buen fit, brechas menores tolerables. (~5-10% del batch)
+7–7.9: Buen fit razonable, lógica profesional sólida. (~10-15% del batch)
+6–6.9: Fit parcial. Familia correcta, brecha notable de sub-área o seniority. (~5-10% del batch)
 5–5.9: Solo si hay lógica profesional clara. Familia adyacente con transferencia documentada.
 <5: NO incluir.
 
@@ -213,7 +213,7 @@ Formato exacto:
 export function buildMatchingContents(profileText, jobs, candidateLocation = null, professionMeta = null, maxJobs = MAX_JOBS_FREE) {
   const jobList = jobs.slice(0, maxJobs).map((j, i) => {
     const desc = j.description
-      ? extractRelevantSection(j.description, 400)
+      ? extractRelevantSection(j.description, 700)
       : '(sin descripción)'
     const isAts = ['greenhouse','lever','smartrecruiters','ashby'].includes(j.source)
     return `[${i}] ${j.title} | ${j.company}${isAts ? ' ✓' : ''} | ${j.location || 'No especificado'} | ${j.remote ? 'Remoto 100%' : 'Presencial/Híbrido'}
