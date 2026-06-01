@@ -3365,6 +3365,14 @@ async function handleAiJobRecommendations(body, request, env, ctx, corsHeaders, 
   let aiResult = null
   let aiError  = null
 
+  // Diagnostic log: fires BEFORE Gemini is called — confirms code reaches this section
+  // This row appears in ai_usage_logs regardless of Gemini outcome; paired with job_matching_batch row.
+  logAiUsage(env, ctx, {
+    type: 'failure', feature: 'job_matching_attempt', userId: user_id || null,
+    model: DEFAULT_MODEL, durationMs: Date.now() - startMs, statusCode: 0,
+    errorType: 'attempting', retryCount: 0,
+  })
+
   // Two attempts with decreasing timeouts. thinkingBudget:0 means Flash Lite responds in 3-5s;
   // 20s/15s outer guards are safety nets for overloaded API slots.
   // Each apiPromise is registered with ctx.waitUntil so its internal logAiUsage call survives
