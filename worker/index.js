@@ -29,6 +29,9 @@ import {
   inferProfessionFamily, extractCandidateLocation,
   detectProfessionFamilySync, buildHeadhunterQueries,
 } from './src/jobs/profession.js'
+import { extractProfileIntelligence } from './src/radar/profileIntelligence.js'
+import { enrichJobs } from './src/radar/enrichment.js'
+import { rerankTop10 } from './src/radar/reranking.js'
 
 async function checkRateLimit(env, ip, actionKey) {
   if (!env.RATE_LIMIT_KV) return { ok: true }
@@ -1908,64 +1911,69 @@ export default {
 //   JSON.stringify({ greenhouse: { "bad-slug": "correct-slug" } })
 const ATS_COMPANIES = {
   greenhouse: [
-    { slug: 'mercadolibre', name: 'Mercado Libre',  country: 'AR', industries: ['tech','ecommerce','fintech'], tags: ['backend','frontend','data','mobile','devops'] },
-    { slug: 'auth0',        name: 'Auth0 / Okta',   country: 'US', industries: ['tech','security'],            tags: ['backend','devops','security'] },
-    { slug: 'rappi',        name: 'Rappi',           country: 'CO', industries: ['tech','delivery'],            tags: ['backend','data','mobile','devops'] },
-    { slug: 'etermax',      name: 'Etermax',         country: 'AR', industries: ['tech','gaming'],              tags: ['backend','mobile','data'] },
-    { slug: 'pomelo',       name: 'Pomelo',          country: 'AR', industries: ['fintech'],                    tags: ['backend','mobile','data','security'] },
-    { slug: 'bitso',        name: 'Bitso',           country: 'MX', industries: ['fintech','crypto'],           tags: ['backend','security','data'] },
-    { slug: 'globant',      name: 'Globant',         country: 'AR', industries: ['tech','consulting'],          tags: ['backend','frontend','data','devops','qa'] },
+    { slug: 'mercadolibre', name: 'Mercado Libre',  country: 'AR', families: ['Tecnología','Marketing/Growth','Operaciones','Finanzas'],  tags: ['backend','frontend','data','mobile','devops'] },
+    { slug: 'auth0',        name: 'Auth0 / Okta',   country: 'US', families: ['Tecnología'],                                               tags: ['backend','devops','security'] },
+    { slug: 'rappi',        name: 'Rappi',           country: 'CO', families: ['Tecnología','Operaciones','Marketing/Growth'],              tags: ['backend','data','mobile','devops'] },
+    { slug: 'etermax',      name: 'Etermax',         country: 'AR', families: ['Tecnología'],                                              tags: ['backend','mobile','data'] },
+    { slug: 'pomelo',       name: 'Pomelo',          country: 'AR', families: ['Tecnología','Finanzas'],                                   tags: ['backend','mobile','data','security'] },
+    { slug: 'bitso',        name: 'Bitso',           country: 'MX', families: ['Tecnología','Finanzas'],                                   tags: ['backend','security','data'] },
+    { slug: 'globant',      name: 'Globant',         country: 'AR', families: ['Tecnología'],                                              tags: ['backend','frontend','data','devops','qa'] },
+    { slug: 'wellhub',      name: 'Wellhub',         country: 'BR', families: ['HR/Personas','Marketing/Growth','Tecnología'],             tags: ['backend','frontend','data','hr'] },
+    { slug: 'dlocal',       name: 'dLocal',          country: 'UY', families: ['Tecnología','Finanzas'],                                   tags: ['backend','data','security','fintech'] },
+    { slug: 'nuvemshop',    name: 'Nuvemshop',       country: 'AR', families: ['Tecnología','Marketing/Growth','Operaciones'],             tags: ['backend','frontend','data','mobile'] },
+    { slug: 'brex',         name: 'Brex',            country: 'US', families: ['Finanzas','Tecnología','Ventas/BD'],                       tags: ['backend','data','fintech'] },
   ],
   lever: [
-    { slug: 'despegar',    name: 'Despegar',     country: 'AR', industries: ['tech','travel'],          tags: ['backend','frontend','data'] },
-    { slug: 'mural',       name: 'MURAL',        country: 'AR', industries: ['tech','saas'],            tags: ['frontend','backend','design','product'] },
-    { slug: 'ripio',       name: 'Ripio',        country: 'AR', industries: ['fintech','crypto'],       tags: ['backend','mobile'] },
-    { slug: 'tiendanube',  name: 'Tienda Nube',  country: 'AR', industries: ['tech','ecommerce'],      tags: ['backend','frontend','data'] },
-    { slug: 'satellogic',  name: 'Satellogic',   country: 'AR', industries: ['tech','aerospace'],      tags: ['backend','data','ml','python'] },
-    { slug: 'lemon',       name: 'Lemon',        country: 'AR', industries: ['fintech','crypto'],      tags: ['backend','mobile'] },
+    { slug: 'despegar',    name: 'Despegar',     country: 'AR', families: ['Tecnología','Marketing/Growth','Operaciones'],  tags: ['backend','frontend','data'] },
+    { slug: 'mural',       name: 'MURAL',        country: 'AR', families: ['Tecnología'],                                  tags: ['frontend','backend','design','product'] },
+    { slug: 'ripio',       name: 'Ripio',        country: 'AR', families: ['Tecnología','Finanzas'],                       tags: ['backend','mobile'] },
+    { slug: 'tiendanube',  name: 'Tienda Nube',  country: 'AR', families: ['Tecnología','Marketing/Growth'],               tags: ['backend','frontend','data'] },
+    { slug: 'satellogic',  name: 'Satellogic',   country: 'AR', families: ['Tecnología'],                                  tags: ['backend','data','ml','python'] },
+    { slug: 'lemon',       name: 'Lemon',        country: 'AR', families: ['Tecnología','Finanzas'],                       tags: ['backend','mobile'] },
+    { slug: 'kavak',       name: 'Kavak',        country: 'MX', families: ['Tecnología','Operaciones','Ventas/BD'],        tags: ['backend','data','mobile','devops'] },
   ],
   smartrecruiters: [
-    // Note: SmartRecruiters company identifiers are case-sensitive — verify slugs at
-    // https://api.smartrecruiters.com/v1/companies/{slug}/postings
-    { slug: 'globant',       name: 'Globant',                country: 'AR', industries: ['tech','consulting'], tags: ['backend','frontend','data','devops','qa'] },
-    { slug: 'deliveryhero',  name: 'PedidosYa / DH',        country: 'AR', industries: ['tech','delivery'],   tags: ['backend','data','mobile','devops'] },
+    { slug: 'globant',       name: 'Globant',         country: 'AR', families: ['Tecnología'],                                   tags: ['backend','frontend','data','devops','qa'] },
+    { slug: 'deliveryhero',  name: 'PedidosYa / DH',  country: 'AR', families: ['Tecnología','Operaciones','Marketing/Growth'], tags: ['backend','data','mobile','devops'] },
   ],
   ashby: [
-    // US tech companies actively hiring LATAM remote — include salary data (Ashby exposes it)
-    { slug: 'linear',   name: 'Linear',   country: 'US', industries: ['tech','saas'],    tags: ['backend','frontend'] },
-    { slug: 'vercel',   name: 'Vercel',   country: 'US', industries: ['tech','devtools'], tags: ['backend','devops','frontend'] },
+    { slug: 'linear',    name: 'Linear',    country: 'US', families: ['Tecnología'],                                        tags: ['backend','frontend'] },
+    { slug: 'vercel',    name: 'Vercel',    country: 'US', families: ['Tecnología'],                                        tags: ['backend','devops','frontend'] },
+    { slug: 'remote',    name: 'Remote.com',country: 'US', families: ['HR/Personas','Operaciones','Ventas/BD','Tecnología'], tags: ['backend','frontend','hr','sales'] },
+    { slug: 'rippling',  name: 'Rippling',  country: 'US', families: ['HR/Personas','Finanzas','Tecnología'],               tags: ['backend','frontend','hr','fintech'] },
+    { slug: 'deel',      name: 'Deel',      country: 'US', families: ['HR/Personas','Finanzas','Legal/Compliance','Tecnología'], tags: ['backend','frontend','hr','legal','fintech'] },
   ],
   workable: [
-    { slug: 'uala',      name: 'Ualá',      country: 'AR', industries: ['fintech'],           tags: ['backend','mobile','data','security'] },
-    { slug: 'aivo',      name: 'Aivo',      country: 'AR', industries: ['tech','ai'],          tags: ['backend','frontend','ml','data'] },
-    { slug: 'lemontech', name: 'Lemontech', country: 'CL', industries: ['tech','legaltech'],   tags: ['backend','frontend','devops'] },
-    { slug: 'modo',      name: 'MODO',      country: 'AR', industries: ['fintech'],            tags: ['backend','mobile'] },
-    { slug: 'mango-dsp', name: 'Mango DSP', country: 'AR', industries: ['tech','marketing'],   tags: ['backend','data','devops'] },
+    { slug: 'uala',      name: 'Ualá',      country: 'AR', families: ['Finanzas','Tecnología','Operaciones'],              tags: ['backend','mobile','data','security'] },
+    { slug: 'aivo',      name: 'Aivo',      country: 'AR', families: ['Tecnología','Ventas/BD'],                           tags: ['backend','frontend','ml','data'] },
+    { slug: 'lemontech', name: 'Lemontech', country: 'CL', families: ['Tecnología','Legal/Compliance'],                    tags: ['backend','frontend','devops'] },
+    { slug: 'modo',      name: 'MODO',      country: 'AR', families: ['Finanzas','Tecnología'],                            tags: ['backend','mobile'] },
+    { slug: 'mango-dsp', name: 'Mango DSP', country: 'AR', families: ['Marketing/Growth','Tecnología'],                    tags: ['backend','data','devops'] },
   ],
   teamtailor: [
-    { slug: 'global66',           name: 'Global66',          country: 'CL', industries: ['fintech'],     tags: ['backend','mobile','data'] },
-    { slug: 'knauf-south-america', name: 'Knauf South Am.',  country: 'AR', industries: ['manufacturing'], tags: ['backend','data','devops'] },
-    { slug: 'quala',              name: 'Quala',             country: 'CO', industries: ['fmcg'],         tags: ['data','backend','marketing'] },
+    { slug: 'global66',            name: 'Global66',         country: 'CL', families: ['Finanzas','Tecnología'],               tags: ['backend','mobile','data'] },
+    { slug: 'knauf-south-america', name: 'Knauf South Am.',  country: 'AR', families: ['Operaciones','Tecnología'],            tags: ['backend','data','devops'] },
+    { slug: 'quala',               name: 'Quala',            country: 'CO', families: ['Operaciones','Marketing/Growth'],      tags: ['data','backend','marketing'] },
   ],
   recruitee: [
-    { slug: 'baufest',    name: 'Baufest',      country: 'AR', industries: ['tech','consulting'], tags: ['backend','frontend','qa','devops'] },
-    { slug: 'n5now',      name: 'N5',           country: 'AR', industries: ['fintech','tech'],    tags: ['backend','data','mobile'] },
-    { slug: 'practia',    name: 'Practia',      country: 'AR', industries: ['tech','consulting'], tags: ['backend','devops','data','frontend'] },
+    { slug: 'baufest',    name: 'Baufest',  country: 'AR', families: ['Tecnología'],            tags: ['backend','frontend','qa','devops'] },
+    { slug: 'n5now',      name: 'N5',       country: 'AR', families: ['Finanzas','Tecnología'], tags: ['backend','data','mobile'] },
+    { slug: 'practia',    name: 'Practia',  country: 'AR', families: ['Tecnología'],            tags: ['backend','devops','data','frontend'] },
   ],
   personio: [
-    { slug: 'factorial',  name: 'Factorial HR', country: 'ES', industries: ['tech','hr'],         tags: ['backend','frontend','devops','data'] },
-    { slug: 'typeform',   name: 'Typeform',     country: 'ES', industries: ['tech','saas'],       tags: ['backend','frontend','data'] },
-    { slug: 'jobandtalent', name: 'Job&Talent', country: 'ES', industries: ['hr','tech'],         tags: ['backend','data','mobile'] },
+    { slug: 'factorial',    name: 'Factorial HR',  country: 'ES', families: ['HR/Personas','Tecnología'],         tags: ['backend','frontend','devops','data','hr'] },
+    { slug: 'typeform',     name: 'Typeform',      country: 'ES', families: ['Tecnología','Marketing/Growth'],    tags: ['backend','frontend','data'] },
+    { slug: 'jobandtalent', name: 'Job&Talent',    country: 'ES', families: ['HR/Personas','Operaciones'],        tags: ['backend','data','mobile','hr'] },
   ],
   workday: [
-    { slug: 'accenture', name: 'Accenture',  country: 'AR', industries: ['tech','consulting'],  tags: ['backend','frontend','data','devops','qa'],    cxsUrl: 'https://accenture.wd3.myworkdayjobs.com/wday/cxs/accenture/AccentureCareers/jobs' },
-    { slug: 'sap',       name: 'SAP',        country: 'AR', industries: ['tech','enterprise'],  tags: ['backend','data','devops','frontend'],         cxsUrl: 'https://sap.wd3.myworkdayjobs.com/wday/cxs/sap/SAP_Global/jobs' },
-    { slug: 'pwc-ar',    name: 'PwC',        country: 'AR', industries: ['consulting','fintech'], tags: ['data','backend','fintech'],                 cxsUrl: 'https://pwc.wd3.myworkdayjobs.com/wday/cxs/pwc/Global_Campus_Experienced/jobs' },
+    { slug: 'accenture', name: 'Accenture', country: 'AR', families: ['all'],                                  tags: ['backend','frontend','data','devops','qa'],    cxsUrl: 'https://accenture.wd3.myworkdayjobs.com/wday/cxs/accenture/AccentureCareers/jobs' },
+    { slug: 'sap',       name: 'SAP',       country: 'AR', families: ['Tecnología','Ventas/BD','Finanzas'],     tags: ['backend','data','devops','frontend'],         cxsUrl: 'https://sap.wd3.myworkdayjobs.com/wday/cxs/sap/SAP_Global/jobs' },
+    { slug: 'pwc-ar',    name: 'PwC',       country: 'AR', families: ['Finanzas','Legal/Compliance','all'],     tags: ['data','backend','fintech'],                  cxsUrl: 'https://pwc.wd3.myworkdayjobs.com/wday/cxs/pwc/Global_Campus_Experienced/jobs' },
   ],
 }
 
 // Score companies against user profile and select top N per ATS type
-function selectAtsCompanies(userProfile, maxPerAts = 5) {
+function selectAtsCompanies(userProfile, maxPerAts = 5, professionFamily = null) {
   const profileLower = (userProfile || '').toLowerCase()
   const tagSignals = {
     fintech:   ['fintech','payments','banking','crypto','blockchain'],
@@ -1978,6 +1986,12 @@ function selectAtsCompanies(userProfile, maxPerAts = 5) {
     design:    ['ux','ui','design','figma','product design'],
     ml:        ['machine learning','ml','nlp','pytorch','tensorflow','data science'],
     security:  ['security','ciberseguridad','cybersecurity','infosec'],
+    hr:        ['rrhh','recursos humanos','talent','people','hr','nómina','payroll','recruiting'],
+    finance:   ['finanzas','controller','fp&a','tesorería','contable','auditor','presupuesto'],
+    marketing: ['marketing','growth','brand','performance','seo','sem','community','content'],
+    sales:     ['ventas','sales','comercial','account executive','business development'],
+    operations:['operaciones','operations','supply chain','logística','logistics','procurement'],
+    legal:     ['legal','compliance','abogado','counsel','contratos','regulatory'],
   }
   const activeSignals = Object.entries(tagSignals)
     .filter(([, kws]) => kws.some(kw => profileLower.includes(kw)))
@@ -1985,12 +1999,25 @@ function selectAtsCompanies(userProfile, maxPerAts = 5) {
 
   const selected = {}
   for (const [atsType, companies] of Object.entries(ATS_COMPANIES)) {
-    const scored = companies.map(c => ({
-      ...c,
-      _score: activeSignals.length
+    const scored = companies.map(c => {
+      let score = activeSignals.length
         ? (c.tags || []).filter(t => activeSignals.includes(t)).length
-        : 1,
-    })).filter(c => c._score > 0).sort((a, b) => b._score - a._score).slice(0, maxPerAts)
+        : 1
+
+      // Family-aware boost/penalty
+      if (professionFamily && c.families) {
+        if (c.families.includes('all') || c.families.includes(professionFamily)) {
+          score += 5
+        } else {
+          score -= 2  // mild penalty (don't zero out — may still have cross-functional roles)
+        }
+      }
+
+      return { ...c, _score: Math.max(0, score) }
+    })
+    .filter(c => c._score > 0)
+    .sort((a, b) => b._score - a._score)
+    .slice(0, maxPerAts)
     if (scored.length) selected[atsType] = scored
   }
   return selected
@@ -2116,8 +2143,8 @@ async function fetchAtsCompanyBoard(atsType, company, env) {
 }
 
 // Fetch all relevant ATS company boards based on user profile, filter by query relevance
-async function fetchAtsCompanies(queries, userProfile, env) {
-  const selected = selectAtsCompanies(userProfile, 5)
+async function fetchAtsCompanies(queries, userProfile, env, professionFamily = null) {
+  const selected = selectAtsCompanies(userProfile, 5, professionFamily)
   const allFetches = []
   for (const [atsType, companies] of Object.entries(selected)) {
     for (const company of companies) {
@@ -2267,7 +2294,7 @@ async function fetchJobSource(source, query, location, remoteOk, env, candidateL
  * @param {string} userProfile - Used to select relevant ATS companies (no AI cost)
  * @param {string|null} candidateLocation - Auto-detected from profile text; drives Serper geo
  */
-async function fetchAllSources(queries, location, remoteOk, env, userProfile = '', candidateLocation = null) {
+async function fetchAllSources(queries, location, remoteOk, env, userProfile = '', candidateLocation = null, professionFamily = null) {
   const remoteSources = ['remoteok', 'remotive', 'jobicy', 'adzuna', 'getonboard', 'himalayas', 'arbeitnow']
   const localSources  = ['adzuna', 'jobicy', 'getonboard', 'himalayas', 'arbeitnow']
   if (env.JOOBLE_KEY)     { remoteSources.push('jooble');  localSources.push('jooble')  }
@@ -2279,7 +2306,7 @@ async function fetchAllSources(queries, location, remoteOk, env, userProfile = '
   // Run aggregators + ATS boards in parallel
   const [aggregatorResults, atsJobs] = await Promise.all([
     Promise.all(sources.flatMap(source => queries.map(q => fetchJobSource(source, q, location, remoteOk, env, candidateLocation)))),
-    fetchAtsCompanies(queries, userProfile, env),
+    fetchAtsCompanies(queries, userProfile, env, professionFamily),
   ])
 
   // Collect aggregator jobs + per-source result counts
@@ -2512,51 +2539,6 @@ function shouldTriggerExpansion(recommendations) {
 
 // Lightweight Gemini call (50–80 output tokens) that suggests 1–2 alternative
 // search terms not covered by the user's initial queries.
-// Async Gemini call for richer profession metadata — runs in parallel with job fetch.
-// Returns { profession, family, subfamilies, seniority_label, seniority_level, industries } or null.
-async function extractDominantProfession(env, profileText) {
-  const geminiKeys = (env.GEMINI_API_KEYS || env.GEMINI_API_KEY || '').split(',').map(k => k.trim()).filter(Boolean)
-  if (!geminiKeys.length) return null
-  const prompt = `Analyze this professional profile and extract the dominant professional classification.
-
-PROFILE:
-"${(profileText || '').slice(0, 1500)}"
-
-PROFESSIONAL FAMILIES: HR/Personas | Finanzas | Tecnología | Marketing/Growth | Operaciones | Ventas/BD | Legal/Compliance | Management General
-
-SENIORITY LEVELS: 1=Junior/Trainee | 2=Semi Senior/Analista | 3=Senior/Especialista | 4=Lead/Jefe/Coordinador | 5=Gerente/Manager/Director | 6=VP/C-Level/Head of
-
-Respond ONLY with JSON (no markdown):
-{"profession":"Gerente de RRHH","family":"HR/Personas","subfamilies":["Talent","HRBP","Compensaciones"],"seniority_label":"Gerencial","seniority_level":5,"industries":["Fintech","Retail"],"is_senior":true}`
-
-  try {
-    const ctrl = new AbortController()
-    const tid  = setTimeout(() => ctrl.abort(), 8_000)
-    let res = null
-    for (let ki = 0; ki < geminiKeys.length; ki++) {
-      res = await fetch(
-        `https://generativelanguage.googleapis.com/v1beta/models/${DEFAULT_MODEL}:generateContent?key=${geminiKeys[ki]}`,
-        {
-          method: 'POST', headers: { 'content-type': 'application/json' },
-          body: JSON.stringify({ contents: [{ role: 'user', parts: [{ text: prompt }] }], generationConfig: { temperature: 0.1, maxOutputTokens: 300, thinkingConfig: { thinkingBudget: 0 } } }),
-          signal: ctrl.signal,
-        }
-      )
-      if (res.status !== 429) break
-    }
-    clearTimeout(tid)
-    if (!res?.ok) return null
-    const d    = await res.json()
-    const raw  = d?.candidates?.[0]?.content?.parts?.[0]?.text || ''
-    const parsed = JSON.parse(raw.replace(/^```json\n?|\n?```$/g, '').trim())
-    if (parsed?.family) console.log(`[RADAR] professionMeta: ${parsed.profession} | ${parsed.family} | lvl=${parsed.seniority_level}`)
-    return parsed
-  } catch (err) {
-    console.warn(`[RADAR] extractDominantProfession failed: ${err.message}`)
-    return null
-  }
-}
-
 async function expandSearchTerms(env, profileText, existingQueries, professionInfo = null) {
   const geminiKeys = (env.GEMINI_API_KEYS || env.GEMINI_API_KEY || '')
     .split(',').map(k => k.trim()).filter(Boolean)
@@ -3248,7 +3230,7 @@ async function handleAiJobRecommendations(body, request, env, ctx, corsHeaders, 
   }
 
   // Kick off deep profession extraction async — runs in parallel with job fetch (~2-4s each)
-  const professionMetaPromise = extractDominantProfession(env, String(profile_text).slice(0, 2000))
+  const professionMetaPromise = extractProfileIntelligence(String(profile_text), user_id, env, ctx)
 
   // ── Fetch jobs (hits cache layers before live APIs) ────────────────────────
   let   jobs         = []
@@ -3273,7 +3255,7 @@ async function handleAiJobRecommendations(body, request, env, ctx, corsHeaders, 
     console.log(`[RADAR] jobsCache HIT — ${jobs.length} jobs from KV, sources=[${sourcesUsed.join(',')}] (Serper NOT called — served from cache)`)
   } else {
     // Live fetch — pass profile_text so ATS companies are selected by relevance
-    const fetchResult = await fetchAllSources(cleanQueries, location, remote_ok, env, String(profile_text), candidateLocation)
+    const fetchResult = await fetchAllSources(cleanQueries, location, remote_ok, env, String(profile_text), candidateLocation, professionInfoSync?.family || null)
     sourcesUsed  = fetchResult.sourcesUsed || []
     sourceCounts = fetchResult.sourceCounts || {}
     if (fetchResult.jobs.length) {
@@ -3306,6 +3288,9 @@ async function handleAiJobRecommendations(body, request, env, ctx, corsHeaders, 
       { status: 200, headers: corsHeaders }
     )
   }
+
+  // Phase 3: Enrich jobs — clean HTML, infer industry, refine seniority
+  jobs = enrichJobs(jobs)
 
   // ── Pre-filter: family-aware (zero tokens) → top N candidates ──────────────
   // 25 jobs × 700 chars = ~18KB — safe payload for Flash Lite with thinkingBudget:0
@@ -3365,38 +3350,7 @@ async function handleAiJobRecommendations(body, request, env, ctx, corsHeaders, 
   let aiResult = null
   let aiError  = null
 
-  // Awaited diagnostic insert — captures HTTP status from Supabase so we can see it in pipeline_stats
-  let diagLogHttp = null
-  if (env.SUPABASE_SERVICE_ROLE_KEY && env.SUPABASE_URL) {
-    try {
-      const diagRes = await fetch(`${env.SUPABASE_URL}/rest/v1/ai_usage_logs`, {
-        method: 'POST',
-        headers: {
-          apikey: env.SUPABASE_SERVICE_ROLE_KEY,
-          Authorization: `Bearer ${env.SUPABASE_SERVICE_ROLE_KEY}`,
-          'Content-Type': 'application/json',
-          Prefer: 'return=minimal',
-        },
-        body: JSON.stringify({
-          user_id:     user_id || null,
-          feature:     'job_matching_attempt',
-          model:       DEFAULT_MODEL,
-          status_code: 0,
-          error_type:  'attempting',
-          retry_count: 0,
-          duration_ms: Date.now() - startMs,
-        }),
-      })
-      diagLogHttp = diagRes.status
-      if (!diagRes.ok) {
-        const diagBody = await diagRes.text().catch(() => '')
-        console.warn(`[RADAR] diagLog INSERT failed: HTTP ${diagRes.status} — ${diagBody.slice(0, 200)}`)
-      }
-    } catch (e) {
-      diagLogHttp = -1
-      console.warn(`[RADAR] diagLog INSERT threw: ${e?.message}`)
-    }
-  }
+  const diagLogHttp = null
 
   // Two attempts with decreasing timeouts. thinkingBudget:0 means Flash Lite responds in 3-5s;
   // 20s/15s outer guards are safety nets for overloaded API slots.
@@ -3529,7 +3483,7 @@ async function handleAiJobRecommendations(body, request, env, ctx, corsHeaders, 
     return Math.max(0, geminiScore - penalty)
   }
 
-  const minQualityScore = 0  // TEST MODE: accept all AI results regardless of score
+  const minQualityScore = 5.0
   const topMatches = (aiResult.matches || [])
     .map(m => {
       const job = jobPool[m.job_index]
@@ -3557,6 +3511,25 @@ async function handleAiJobRecommendations(body, request, env, ctx, corsHeaders, 
       geo_score:   m._geo_score,
     }
   }).filter(Boolean)
+
+  // Phase 5: Re-rank top-10 from top-50 when enough high-quality candidates exist
+  let rerankingStats = { triggered: false, candidates_eligible: recommendations.length, selected: recommendations.length, alta_count: 0 }
+  if (recommendations.length >= 15 && profInfo) {
+    try {
+      const reranked = await rerankTop10(recommendations, profInfo, env, ctx)
+      if (reranked.length >= 5) {
+        recommendations = reranked
+        rerankingStats = {
+          triggered:           true,
+          candidates_eligible: rerankingStats.candidates_eligible,
+          selected:            reranked.length,
+          alta_count:          reranked.filter(r => r.priority === 'alta').length,
+        }
+      }
+    } catch (err) {
+      console.warn(`[RADAR] reranking failed (non-fatal): ${err.message}`)
+    }
+  }
 
   // ── Persist recommendations to Supabase (fire-and-forget) ─────────────────
   if (user_id && recommendations.length) {
@@ -3603,7 +3576,7 @@ async function handleAiJobRecommendations(body, request, env, ctx, corsHeaders, 
   let expansionCount     = 0
 
   // Expansion runs for all users — free gets full quality on their 1x/month search
-  const needsExpansion = false  // TEST MODE: expansion disabled to isolate Gemini call
+  const needsExpansion = shouldTriggerExpansion(recommendations)
   console.log(`[RADAR] expansion needsExpansion=${needsExpansion} isPremium=${isPremium} topScore=${recommendations[0]?.match_score?.toFixed(1)||0}`)
   if (needsExpansion) {
     try {
@@ -3761,6 +3734,7 @@ async function handleAiJobRecommendations(body, request, env, ctx, corsHeaders, 
         ai_error:            null,
         diag_log_http:       diagLogHttp,
         total_ms:            Date.now() - startMs,
+        reranking_stats:     rerankingStats,
       },
     }),
     { status: 200, headers: corsHeaders }
