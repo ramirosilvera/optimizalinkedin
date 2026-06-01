@@ -3431,39 +3431,6 @@ async function handleAiJobRecommendations(body, request, env, ctx, corsHeaders, 
 
   // ── Fallback: AI failed — heuristic scoring so cards always show a score ──
   if (!aiResult?.matches?.length || aiError) {
-    // Tier 1: try cached recommendations from a SAME-QUERY previous session (queryHash-validated)
-    if (user_id) {
-      try {
-        // Only serve recs from last 48h so we don't surface month-old unrelated searches
-        const since = new Date(Date.now() - 48 * 3_600_000).toISOString()
-        const cachedRecs = await fetch(
-          `${env.SUPABASE_URL}/rest/v1/job_recommendations`
-          + `?user_id=eq.${user_id}&status=neq.dismissed&created_at=gte.${since}`
-          + `&order=match_score.desc&limit=${requestedN}`
-          + `&select=id,title,company,location,remote,url,match_score,match_type,strengths,gaps,summary,source,status`,
-          { headers: { apikey: env.SUPABASE_SERVICE_ROLE_KEY, Authorization: `Bearer ${env.SUPABASE_SERVICE_ROLE_KEY}` } }
-        )
-        const prevRecs = await cachedRecs.json()
-        if (Array.isArray(prevRecs) && prevRecs.length > 0) {
-          console.log(`[RADAR] Gemini fallback tier1 — serving ${prevRecs.length} recs from last 48h`)
-          return new Response(
-            JSON.stringify({
-              ok:                  true,
-              recommendations:     prevRecs.map(r => ({ job: r, match_score: r.match_score, match_type: r.match_type || null, strengths: r.strengths, gaps: r.gaps, summary: r.summary, rec_id: r.id })),
-              total_jobs_analyzed: 0,
-              from_cache:          true,
-              fallback:            true,
-              fallback_reason:     aiError || 'ai_unavailable',
-              quota_remaining:     rl.limit - rl.count,
-            }),
-            { status: 200, headers: corsHeaders }
-          )
-        }
-      } catch (err) {
-        console.warn(`[RADAR] fallback prev-recs fetch failed: ${err.message}`)
-      }
-    }
-
     // Tier 2: heuristic keyword scoring — always yields a visible score on cards
     const LATAM_RE = /argentina|brasil|chile|colombia|m[eé]xico|per[uú]|uruguay|paraguay|bolivia|ecuador|venezuela|latinoam[eé]rica|latam|remoto|remote/i
     const profileWords = new Set(
@@ -3535,7 +3502,7 @@ async function handleAiJobRecommendations(body, request, env, ctx, corsHeaders, 
     return Math.max(0, geminiScore - penalty)
   }
 
-  const minQualityScore = 6.5  // same bar for all — no second-class results
+  const minQualityScore = 0  // TEST MODE: accept all AI results regardless of score
   const topMatches = (aiResult.matches || [])
     .map(m => {
       const job = jobPool[m.job_index]
@@ -3609,7 +3576,7 @@ async function handleAiJobRecommendations(body, request, env, ctx, corsHeaders, 
   let expansionCount     = 0
 
   // Expansion runs for all users — free gets full quality on their 1x/month search
-  const needsExpansion = shouldTriggerExpansion(recommendations)
+  const needsExpansion = false  // TEST MODE: expansion disabled to isolate Gemini call
   console.log(`[RADAR] expansion needsExpansion=${needsExpansion} isPremium=${isPremium} topScore=${recommendations[0]?.match_score?.toFixed(1)||0}`)
   if (needsExpansion) {
     try {
