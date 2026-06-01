@@ -3365,13 +3365,38 @@ async function handleAiJobRecommendations(body, request, env, ctx, corsHeaders, 
   let aiResult = null
   let aiError  = null
 
-  // Diagnostic log: fires BEFORE Gemini is called — confirms code reaches this section
-  // This row appears in ai_usage_logs regardless of Gemini outcome; paired with job_matching_batch row.
-  logAiUsage(env, ctx, {
-    type: 'failure', feature: 'job_matching_attempt', userId: user_id || null,
-    model: DEFAULT_MODEL, durationMs: Date.now() - startMs, statusCode: 0,
-    errorType: 'attempting', retryCount: 0,
-  })
+  // Awaited diagnostic insert — captures HTTP status from Supabase so we can see it in pipeline_stats
+  let diagLogHttp = null
+  if (env.SUPABASE_SERVICE_ROLE_KEY && env.SUPABASE_URL) {
+    try {
+      const diagRes = await fetch(`${env.SUPABASE_URL}/rest/v1/ai_usage_logs`, {
+        method: 'POST',
+        headers: {
+          apikey: env.SUPABASE_SERVICE_ROLE_KEY,
+          Authorization: `Bearer ${env.SUPABASE_SERVICE_ROLE_KEY}`,
+          'Content-Type': 'application/json',
+          Prefer: 'return=minimal',
+        },
+        body: JSON.stringify({
+          user_id:     user_id || null,
+          feature:     'job_matching_attempt',
+          model:       DEFAULT_MODEL,
+          status_code: 0,
+          error_type:  'attempting',
+          retry_count: 0,
+          duration_ms: Date.now() - startMs,
+        }),
+      })
+      diagLogHttp = diagRes.status
+      if (!diagRes.ok) {
+        const diagBody = await diagRes.text().catch(() => '')
+        console.warn(`[RADAR] diagLog INSERT failed: HTTP ${diagRes.status} — ${diagBody.slice(0, 200)}`)
+      }
+    } catch (e) {
+      diagLogHttp = -1
+      console.warn(`[RADAR] diagLog INSERT threw: ${e?.message}`)
+    }
+  }
 
   // Two attempts with decreasing timeouts. thinkingBudget:0 means Flash Lite responds in 3-5s;
   // 20s/15s outer guards are safety nets for overloaded API slots.
@@ -3473,6 +3498,7 @@ async function handleAiJobRecommendations(body, request, env, ctx, corsHeaders, 
         fallback_reason:     aiError,
         quota_remaining:     rl.limit - rl.count,
         pipeline_stats: {
+          worker_version:  WORKER_VERSION,
           premium_mode:    isPremium,
           sources_used:    sourcesUsed,
           sources_count:   sourcesUsed.length,
@@ -3481,6 +3507,7 @@ async function handleAiJobRecommendations(body, request, env, ctx, corsHeaders, 
           from_jobs_cache: fromCache,
           kv_configured:   !!env.RATE_LIMIT_KV,
           ai_error:        aiError,
+          diag_log_http:   diagLogHttp,
         },
       }),
       { status: 200, headers: corsHeaders }
@@ -3714,6 +3741,7 @@ async function handleAiJobRecommendations(body, request, env, ctx, corsHeaders, 
       candidate_location:  candidateLocation || null,
       profession_context:  profInfo ? { family: profInfo.family, seniority_level: profInfo.seniority_level, profession: profInfo.profession || profInfo.family } : null,
       pipeline_stats: {
+        worker_version:      WORKER_VERSION,
         premium_mode:        isPremium,
         sources_used:        sourcesUsed,
         sources_count:       sourcesUsed.length,    // frontend reads this for "N fuentes"
@@ -3731,6 +3759,7 @@ async function handleAiJobRecommendations(body, request, env, ctx, corsHeaders, 
         candidate_location:  candidateLocation || null,
         kv_configured:       !!env.RATE_LIMIT_KV,
         ai_error:            null,
+        diag_log_http:       diagLogHttp,
         total_ms:            Date.now() - startMs,
       },
     }),
