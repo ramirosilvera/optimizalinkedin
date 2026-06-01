@@ -3408,8 +3408,12 @@ async function handleAiJobRecommendations(body, request, env, ctx, corsHeaders, 
     }
   }
 
-  // ── Fallback: AI failed — heuristic scoring so cards always show a score ──
-  if (!aiResult?.matches?.length || aiError) {
+  console.log(`[RADAR] Gemini done — aiError=${aiError||'none'} matchesReturned=${aiResult?.matches?.length||0} profFamily=${profInfo?.family||'unknown'} profSrc=${profInfo?.extraction_method||'none'}`)
+
+  // ── Fallback: Gemini had a real error (timeout / HTTP 4xx-5xx / parse failure) ──
+  // NOTE: empty matches (Gemini ran OK but scored all jobs < 5.0) is NOT a failure —
+  // in that case we fall through so expansion can try alternative search terms.
+  if (aiError) {
     // Tier 2: heuristic keyword scoring — always yields a visible score on cards
     const LATAM_RE = /argentina|brasil|chile|colombia|m[eé]xico|per[uú]|uruguay|paraguay|bolivia|ecuador|venezuela|latinoam[eé]rica|latam|remoto|remote/i
     const profileWords = new Set(
@@ -3452,16 +3456,19 @@ async function handleAiJobRecommendations(body, request, env, ctx, corsHeaders, 
         fallback_reason:     aiError,
         quota_remaining:     rl.limit - rl.count,
         pipeline_stats: {
-          worker_version:  WORKER_VERSION,
-          premium_mode:    isPremium,
-          sources_used:    sourcesUsed,
-          sources_count:   sourcesUsed.length,
-          jobs_fetched:    jobs.length,
-          jobs_to_gemini:  jobPool.length,
-          from_jobs_cache: fromCache,
-          kv_configured:   !!env.RATE_LIMIT_KV,
-          ai_error:        aiError,
-          diag_log_http:   diagLogHttp,
+          worker_version:       WORKER_VERSION,
+          premium_mode:         isPremium,
+          sources_used:         sourcesUsed,
+          sources_count:        sourcesUsed.length,
+          jobs_fetched:         jobs.length,
+          jobs_to_gemini:       jobPool.length,
+          from_jobs_cache:      fromCache,
+          kv_configured:        !!env.RATE_LIMIT_KV,
+          ai_error:             aiError,
+          diag_log_http:        diagLogHttp,
+          profession_family:    profInfo?.family || null,
+          profession_seniority: profInfo?.seniority_level || null,
+          profession_source:    profInfo?.extraction_method || (professionInfoSync ? 'sync_v1' : null),
         },
       }),
       { status: 200, headers: corsHeaders }
@@ -3730,11 +3737,15 @@ async function handleAiJobRecommendations(body, request, env, ctx, corsHeaders, 
         expansion_used:      expansionUsed,
         expansion_count:     expansionCount,
         candidate_location:  candidateLocation || null,
-        kv_configured:       !!env.RATE_LIMIT_KV,
-        ai_error:            null,
-        diag_log_http:       diagLogHttp,
-        total_ms:            Date.now() - startMs,
-        reranking_stats:     rerankingStats,
+        kv_configured:        !!env.RATE_LIMIT_KV,
+        ai_error:             aiError || null,
+        diag_log_http:        diagLogHttp,
+        total_ms:             Date.now() - startMs,
+        reranking_stats:      rerankingStats,
+        profession_family:    profInfo?.family || null,
+        profession_seniority: profInfo?.seniority_level || null,
+        profession_source:    profInfo?.extraction_method || (professionInfoSync ? 'sync_v1' : null),
+        gemini_matched:       aiResult?.matches?.length || 0,
       },
     }),
     { status: 200, headers: corsHeaders }
