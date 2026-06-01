@@ -3293,9 +3293,8 @@ async function handleAiJobRecommendations(body, request, env, ctx, corsHeaders, 
   jobs = enrichJobs(jobs)
 
   // ── Pre-filter: family-aware (zero tokens) → top N candidates ──────────────
-  // 25 jobs × 700 chars = ~18KB — safe payload for Flash Lite with thinkingBudget:0
-  // Full pool of 80 is pre-filtered; Gemini only sees the top-ranked 25 candidates
-  const maxJobsForGemini = 25
+  // 15 jobs × 700 chars = ~11KB — reduced from 25 to cut Gemini latency and timeout risk
+  const maxJobsForGemini = 15
   const preFiltered = applyPreFilter(jobs, String(profile_text), maxJobsForGemini, professionInfoSync)
   const jobPool     = preFiltered.length > 0 ? preFiltered : jobs.slice(0, maxJobsForGemini)
   console.log(`[RADAR] preFilter ${jobs.length} → ${jobPool.length} jobs to Gemini (maxJobs=${maxJobsForGemini} premium=${isPremium})`)
@@ -3490,7 +3489,7 @@ async function handleAiJobRecommendations(body, request, env, ctx, corsHeaders, 
     return Math.max(0, geminiScore - penalty)
   }
 
-  const minQualityScore = 5.0
+  const minQualityScore = 4.0
   const topMatches = (aiResult.matches || [])
     .map(m => {
       const job = jobPool[m.job_index]

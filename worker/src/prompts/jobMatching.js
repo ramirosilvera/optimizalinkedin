@@ -185,7 +185,7 @@ ESCALA Y DISTRIBUCIÓN ESPERADA
 OUTPUT
 ━━━━━━━━━━━━━━━━━━━━━━━
 
-Solo incluir: match_score >= 5.0
+Solo incluir: match_score >= 4.0
 Máximo: 15 resultados | Orden: score descendente
 
 match_type: "Directo" | "Adyacente" | "Transferible" | "Exploratorio"

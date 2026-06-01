@@ -1104,6 +1104,7 @@ export default function JobRecommendationsScreen({
   const [pipelineStats, setPipelineStats]     = useState(null)   // { sources_count, total_evaluated }
   const [serperActive, setSerperActive]       = useState(false)  // Google Jobs ran this search
   const [expansionSearched, setExpSearched]  = useState(false)  // deep search ran for this user
+  const [debugInfo, setDebugInfo]             = useState(null)   // visible diagnostic when AI fails
 
   // ── Analytics session refs ─────────────────────────────────────────────────
   // Track how many cards the user has seen and saved in this session
@@ -1264,6 +1265,16 @@ export default function JobRecommendationsScreen({
       setPipelineStats(data.pipeline_stats || null)
       setSerperActive(data.pipeline_stats?.serper_in_sources || false)
       setExpSearched(data.expansion_searched || false)
+      const hasFallback = data.fallback || (data.recommendations || []).some(r => r.ai_fallback)
+      setDebugInfo(hasFallback || data.pipeline_stats?.ai_error ? {
+        ai_error:          data.pipeline_stats?.ai_error || null,
+        profession_family: data.pipeline_stats?.profession_family || null,
+        profession_source: data.pipeline_stats?.profession_source || null,
+        gemini_matched:    data.pipeline_stats?.gemini_matched ?? null,
+        worker_version:    data.pipeline_stats?.worker_version || null,
+        total_ms:          data.pipeline_stats?.total_ms || null,
+        is_fallback:       hasFallback,
+      } : null)
       setLoadState('done')
 
       // 3. SEARCH COMPLETED — rich params enable source-level attribution and
@@ -1807,6 +1818,29 @@ export default function JobRecommendationsScreen({
                       </span>
                     )}
                   </div>
+                </div>
+              </div>
+            )}
+
+            {/* Debug panel — visible diagnostic when AI matching fails */}
+            {debugInfo && (
+              <div style={{ background: '#fff8e1', border: '1px solid #ffc107', borderRadius: 10, padding: '10px 14px', fontSize: 12 }}>
+                <p style={{ fontWeight: 700, color: '#e65100', margin: '0 0 6px 0', fontSize: 13 }}>
+                  ⚠️ {debugInfo.ai_error ? 'Error en análisis de IA' : 'IA corrió pero no encontró matches suficientes'}
+                </p>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 4, color: '#555' }}>
+                  <p style={{ margin: 0 }}>
+                    <b>Error:</b> {debugInfo.ai_error || 'Ninguno — Gemini devolvió 0 resultados con score ≥ 4.0'}
+                  </p>
+                  <p style={{ margin: 0 }}>
+                    <b>Familia profesional detectada:</b> {debugInfo.profession_family || '❌ No detectada (perfil muy corto o genérico)'}
+                  </p>
+                  <p style={{ margin: 0 }}>
+                    <b>Fuente detección:</b> {debugInfo.profession_source || 'ninguna'} &nbsp;|&nbsp;
+                    <b>Matches Gemini:</b> {debugInfo.gemini_matched ?? '?'} &nbsp;|&nbsp;
+                    <b>Worker:</b> {debugInfo.worker_version || '?'} &nbsp;|&nbsp;
+                    <b>Tiempo:</b> {debugInfo.total_ms ? `${Math.round(debugInfo.total_ms / 1000)}s` : '?'}
+                  </p>
                 </div>
               </div>
             )}

@@ -43,7 +43,7 @@ Respondé SOLO JSON válido (sin markdown, sin texto extra):
  */
 export async function rerankTop10(scoredJobs, profileIntelligence, env, ctx) {
   const candidates = scoredJobs
-    .filter(j => (j.match_score || 0) >= 5.0)
+    .filter(j => (j.match_score || 0) >= 4.0)
     .sort((a, b) => (b.match_score || 0) - (a.match_score || 0))
     .slice(0, 50)
 
