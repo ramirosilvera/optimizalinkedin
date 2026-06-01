@@ -64,7 +64,7 @@ export const JOB_SEARCH_TTL_SECS = 1_800
 export const ATS_KV_TTL_SECS     = 79_200
 export const ATS_DB_TTL_HOURS    = 40
 export const JREC_KV_TTL_SECS    = 3_600
-export const JREC_PROMPT_VERSION = 'v14'   // bumped: maxJobsForGemini 35→25, maxOutputTokens 12288→8192, diagnostic logs
+export const JREC_PROMPT_VERSION = 'v15'   // bumped: new 6-phase pipeline (profileIntelligence, enrichment, re-ranking, family-aware ATS)
 
 export const JOB_SEARCH_LIMIT_FREE    = 1
 export const JOB_SEARCH_LIMIT_PREMIUM = 5
