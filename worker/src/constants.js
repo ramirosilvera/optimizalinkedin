@@ -1,7 +1,8 @@
 // ── Core worker constants ─────────────────────────────────────────────────────
 export const WORKER_VERSION     = '2.0.0'
-export const ALLOWED_MODELS     = new Set(['gemini-2.5-flash-lite'])
+export const ALLOWED_MODELS     = new Set(['gemini-2.5-flash-lite', 'gemini-2.5-flash'])
 export const DEFAULT_MODEL      = 'gemini-2.5-flash-lite'
+export const PREMIUM_MATCH_MODEL = 'gemini-2.5-flash'  // better reasoning for premium job matching
 export const GEMINI_TIMEOUT_MS  = 55_000
 export const MAX_BODY_BYTES     = 2 * 1024 * 1024
 export const GEMINI_MAX_RETRIES = 2
@@ -63,7 +64,7 @@ export const JOB_SEARCH_TTL_SECS = 1_800
 export const ATS_KV_TTL_SECS     = 79_200
 export const ATS_DB_TTL_HOURS    = 40
 export const JREC_KV_TTL_SECS    = 3_600
-export const JREC_PROMPT_VERSION = 'v10'   // bumped: 700-char descriptions, temp 0.3, arbeitnow source
+export const JREC_PROMPT_VERSION = 'v11'   // bumped: maxJobsForGemini 35/20, premium model flash, min score 6.5
 
 export const JOB_SEARCH_LIMIT_FREE    = 1
 export const JOB_SEARCH_LIMIT_PREMIUM = 5

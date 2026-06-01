@@ -1,5 +1,5 @@
 import {
-  WORKER_VERSION, ALLOWED_MODELS, DEFAULT_MODEL, GEMINI_TIMEOUT_MS, MAX_BODY_BYTES,
+  WORKER_VERSION, ALLOWED_MODELS, DEFAULT_MODEL, PREMIUM_MATCH_MODEL, GEMINI_TIMEOUT_MS, MAX_BODY_BYTES,
   GEMINI_MAX_RETRIES, ATS_SOURCE_SET, ALLOWED_ORIGINS, WORKER_NOTIFICATION_URL, BACK_URL,
   GEMINI_QUOTA, RATE_LIMITS, DAILY_IP_CAP, UUID_RE, ADMIN_ACTION_LIMITS,
   JOB_KV_TTL_SECS, JOB_DB_TTL_HOURS, JOB_SEARCH_TTL_SECS, ATS_KV_TTL_SECS, ATS_DB_TTL_HOURS,
@@ -52,7 +52,8 @@ async function checkRateLimit(env, ip, actionKey) {
 }
 
 // ── Gemini API helper ─────────────────────────────────────────────────────────
-async function callGeminiApi(env, ctx, geminiBody, corsHeaders, { feature = 'unknown', userId = null } = {}) {
+async function callGeminiApi(env, ctx, geminiBody, corsHeaders, { feature = 'unknown', userId = null, model = null } = {}) {
+  const modelName = model || DEFAULT_MODEL
   const startMs = Date.now()
   const controller = new AbortController()
   const timeoutId = setTimeout(() => controller.abort(), GEMINI_TIMEOUT_MS)
@@ -66,7 +67,7 @@ async function callGeminiApi(env, ctx, geminiBody, corsHeaders, { feature = 'unk
     // Phase 1: rotate through keys on 429 (note: all keys share the same GCP project quota)
     for (let i = 0; i < geminiKeys.length; i++) {
       res = await fetch(
-        `https://generativelanguage.googleapis.com/v1beta/models/${DEFAULT_MODEL}:generateContent?key=${geminiKeys[i]}`,
+        `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${geminiKeys[i]}`,
         { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(geminiBody), signal: controller.signal }
       )
       if (res.status !== 429) { usedKeyIndex = i; break }
@@ -78,7 +79,7 @@ async function callGeminiApi(env, ctx, geminiBody, corsHeaders, { feature = 'unk
       await new Promise(r => setTimeout(r, (attempt + 1) * 1500))
       const key = geminiKeys[attempt % geminiKeys.length]
       res = await fetch(
-        `https://generativelanguage.googleapis.com/v1beta/models/${DEFAULT_MODEL}:generateContent?key=${key}`,
+        `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${key}`,
         { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(geminiBody), signal: controller.signal }
       )
       retryCount++
@@ -3307,7 +3308,9 @@ async function handleAiJobRecommendations(body, request, env, ctx, corsHeaders, 
   }
 
   // ── Pre-filter: family-aware (zero tokens) → top N candidates ──────────────
-  const maxJobsForGemini = isPremium ? MAX_JOBS_PREMIUM : MAX_JOBS_FREE
+  // 35/20 caps Gemini input to ~24KB/14KB (35×700 chars) — well within 20s timeout
+  // Full pool (MAX_JOBS_PREMIUM/FREE) is already fetched; pre-filter picks the best N
+  const maxJobsForGemini = isPremium ? 35 : 20
   const preFiltered = applyPreFilter(jobs, String(profile_text), maxJobsForGemini, professionInfoSync)
   const jobPool     = preFiltered.length > 0 ? preFiltered : jobs.slice(0, maxJobsForGemini)
   console.log(`[RADAR] preFilter ${jobs.length} → ${jobPool.length} jobs to Gemini (maxJobs=${maxJobsForGemini} premium=${isPremium})`)
@@ -3371,7 +3374,7 @@ async function handleAiJobRecommendations(body, request, env, ctx, corsHeaders, 
     if (aiResult?.matches?.length) break
     const t0 = Date.now()
     try {
-      const apiPromise = callGeminiApi(env, ctx, geminiBody, corsHeaders, { feature: 'job_matching_batch', userId: user_id || null })
+      const apiPromise = callGeminiApi(env, ctx, geminiBody, corsHeaders, { feature: 'job_matching_batch', userId: user_id || null, model: isPremium ? PREMIUM_MATCH_MODEL : DEFAULT_MODEL })
       if (ctx?.waitUntil) ctx.waitUntil(apiPromise.catch(() => {}))
       const aiRes = await Promise.race([
         apiPromise,
@@ -3452,28 +3455,36 @@ async function handleAiJobRecommendations(body, request, env, ctx, corsHeaders, 
     }
 
     // Tier 2: heuristic keyword scoring — always yields a visible score on cards
+    const LATAM_RE = /argentina|brasil|chile|colombia|m[eé]xico|per[uú]|uruguay|paraguay|bolivia|ecuador|venezuela|latinoam[eé]rica|latam|remoto|remote/i
     const profileWords = new Set(
       String(profile_text).toLowerCase().split(/\W+/).filter(w => w.length > 3)
     )
-    const fallbackRecs = jobPool.slice(0, requestedN).map(j => {
-      const jobWords = `${j.title} ${(j.skills_required || []).join(' ')}`.toLowerCase().split(/\W+/)
-      const overlap  = jobWords.filter(w => w.length > 3 && profileWords.has(w)).length
-      const daysOld  = j.posted_at ? (Date.now() - new Date(j.posted_at).getTime()) / 86_400_000 : 30
-      const score    = Math.round(Math.min(6.5, 4.5 + Math.min(overlap, 10) * 0.2 + (daysOld < 7 ? 0.3 : 0) + (daysOld < 1 ? 0.2 : 0)) * 10) / 10
-      // Heuristic match_type based on keyword overlap (no AI — approximate only)
-      const matchType = overlap >= 8 ? 'Directo' : overlap >= 5 ? 'Adyacente' : overlap >= 3 ? 'Transferible' : 'Exploratorio'
-      const co       = j.company || 'esta empresa'
-      return {
-        job:            j,
-        match_score:    score,
-        match_type:     matchType,
-        strengths:      [],
-        gaps:           [],
-        summary:        `Oportunidad en ${co} — análisis detallado en la próxima búsqueda.`,
-        rec_id:         null,
-        ai_fallback:    true,
-      }
-    }).sort((a, b) => b.match_score - a.match_score)
+    const fallbackRecs = jobPool
+      .filter(j => {
+        // Drop presencial non-LATAM jobs (e.g. Berlin in-office) when we know candidate location
+        if (!j.remote && candidateLocation && !LATAM_RE.test(j.location || '')) return false
+        return true
+      })
+      .slice(0, requestedN)
+      .map(j => {
+        const jobWords = `${j.title} ${(j.skills_required || []).join(' ')}`.toLowerCase().split(/\W+/)
+        const overlap  = jobWords.filter(w => w.length > 3 && profileWords.has(w)).length
+        const daysOld  = j.posted_at ? (Date.now() - new Date(j.posted_at).getTime()) / 86_400_000 : 30
+        const score    = Math.round(Math.min(6.5, 4.5 + Math.min(overlap, 10) * 0.2 + (daysOld < 7 ? 0.3 : 0) + (daysOld < 1 ? 0.2 : 0)) * 10) / 10
+        // Heuristic match_type based on keyword overlap (no AI — approximate only)
+        const matchType = overlap >= 8 ? 'Directo' : overlap >= 5 ? 'Adyacente' : overlap >= 3 ? 'Transferible' : 'Exploratorio'
+        const co       = j.company || 'esta empresa'
+        return {
+          job:            j,
+          match_score:    score,
+          match_type:     matchType,
+          strengths:      [],
+          gaps:           [],
+          summary:        `Oportunidad en ${co} — análisis detallado en la próxima búsqueda.`,
+          rec_id:         null,
+          ai_fallback:    true,
+        }
+      }).sort((a, b) => b.match_score - a.match_score)
     console.log(`[RADAR] Gemini fallback tier2 — heuristic scoring ${fallbackRecs.length} recs, aiError=${aiError}`)
     return new Response(
       JSON.stringify({
@@ -3504,6 +3515,7 @@ async function handleAiJobRecommendations(body, request, env, ctx, corsHeaders, 
     return Math.max(0, geminiScore - penalty)
   }
 
+  const minQualityScore = isPremium ? 6.5 : 5.0
   const topMatches = (aiResult.matches || [])
     .map(m => {
       const job = jobPool[m.job_index]
@@ -3513,6 +3525,7 @@ async function handleAiJobRecommendations(body, request, env, ctx, corsHeaders, 
       return { ...m, _adjusted_score: adjustedScore, _geo_score: geoScore }
     })
     .filter(Boolean)
+    .filter(m => m._adjusted_score >= minQualityScore)
     .sort((a, b) => b._adjusted_score - a._adjusted_score)
     .slice(0, requestedN)
 
