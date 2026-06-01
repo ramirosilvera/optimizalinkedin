@@ -29,6 +29,9 @@ import {
   inferProfessionFamily, extractCandidateLocation,
   detectProfessionFamilySync, buildHeadhunterQueries,
 } from './src/jobs/profession.js'
+import { extractProfileIntelligence } from './src/radar/profileIntelligence.js'
+import { enrichJobs } from './src/radar/enrichment.js'
+import { rerankTop10 } from './src/radar/reranking.js'
 
 async function checkRateLimit(env, ip, actionKey) {
   if (!env.RATE_LIMIT_KV) return { ok: true }
@@ -3248,7 +3251,7 @@ async function handleAiJobRecommendations(body, request, env, ctx, corsHeaders, 
   }
 
   // Kick off deep profession extraction async — runs in parallel with job fetch (~2-4s each)
-  const professionMetaPromise = extractDominantProfession(env, String(profile_text).slice(0, 2000))
+  const professionMetaPromise = extractProfileIntelligence(String(profile_text), user_id, env, ctx)
 
   // ── Fetch jobs (hits cache layers before live APIs) ────────────────────────
   let   jobs         = []
@@ -3306,6 +3309,9 @@ async function handleAiJobRecommendations(body, request, env, ctx, corsHeaders, 
       { status: 200, headers: corsHeaders }
     )
   }
+
+  // Phase 3: Enrich jobs — clean HTML, infer industry, refine seniority
+  jobs = enrichJobs(jobs)
 
   // ── Pre-filter: family-aware (zero tokens) → top N candidates ──────────────
   // 25 jobs × 700 chars = ~18KB — safe payload for Flash Lite with thinkingBudget:0
@@ -3365,38 +3371,7 @@ async function handleAiJobRecommendations(body, request, env, ctx, corsHeaders, 
   let aiResult = null
   let aiError  = null
 
-  // Awaited diagnostic insert — captures HTTP status from Supabase so we can see it in pipeline_stats
-  let diagLogHttp = null
-  if (env.SUPABASE_SERVICE_ROLE_KEY && env.SUPABASE_URL) {
-    try {
-      const diagRes = await fetch(`${env.SUPABASE_URL}/rest/v1/ai_usage_logs`, {
-        method: 'POST',
-        headers: {
-          apikey: env.SUPABASE_SERVICE_ROLE_KEY,
-          Authorization: `Bearer ${env.SUPABASE_SERVICE_ROLE_KEY}`,
-          'Content-Type': 'application/json',
-          Prefer: 'return=minimal',
-        },
-        body: JSON.stringify({
-          user_id:     user_id || null,
-          feature:     'job_matching_attempt',
-          model:       DEFAULT_MODEL,
-          status_code: 0,
-          error_type:  'attempting',
-          retry_count: 0,
-          duration_ms: Date.now() - startMs,
-        }),
-      })
-      diagLogHttp = diagRes.status
-      if (!diagRes.ok) {
-        const diagBody = await diagRes.text().catch(() => '')
-        console.warn(`[RADAR] diagLog INSERT failed: HTTP ${diagRes.status} — ${diagBody.slice(0, 200)}`)
-      }
-    } catch (e) {
-      diagLogHttp = -1
-      console.warn(`[RADAR] diagLog INSERT threw: ${e?.message}`)
-    }
-  }
+  const diagLogHttp = null
 
   // Two attempts with decreasing timeouts. thinkingBudget:0 means Flash Lite responds in 3-5s;
   // 20s/15s outer guards are safety nets for overloaded API slots.
@@ -3529,7 +3504,7 @@ async function handleAiJobRecommendations(body, request, env, ctx, corsHeaders, 
     return Math.max(0, geminiScore - penalty)
   }
 
-  const minQualityScore = 0  // TEST MODE: accept all AI results regardless of score
+  const minQualityScore = 5.0
   const topMatches = (aiResult.matches || [])
     .map(m => {
       const job = jobPool[m.job_index]
@@ -3557,6 +3532,16 @@ async function handleAiJobRecommendations(body, request, env, ctx, corsHeaders, 
       geo_score:   m._geo_score,
     }
   }).filter(Boolean)
+
+  // Phase 5: Re-rank top-10 from top-50 when enough high-quality candidates exist
+  if (recommendations.length >= 15 && profInfo) {
+    try {
+      const reranked = await rerankTop10(recommendations, profInfo, env, ctx)
+      if (reranked.length >= 5) recommendations = reranked
+    } catch (err) {
+      console.warn(`[RADAR] reranking failed (non-fatal): ${err.message}`)
+    }
+  }
 
   // ── Persist recommendations to Supabase (fire-and-forget) ─────────────────
   if (user_id && recommendations.length) {
@@ -3603,7 +3588,7 @@ async function handleAiJobRecommendations(body, request, env, ctx, corsHeaders, 
   let expansionCount     = 0
 
   // Expansion runs for all users — free gets full quality on their 1x/month search
-  const needsExpansion = false  // TEST MODE: expansion disabled to isolate Gemini call
+  const needsExpansion = shouldTriggerExpansion(recommendations)
   console.log(`[RADAR] expansion needsExpansion=${needsExpansion} isPremium=${isPremium} topScore=${recommendations[0]?.match_score?.toFixed(1)||0}`)
   if (needsExpansion) {
     try {

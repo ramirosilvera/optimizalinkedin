@@ -424,7 +424,7 @@ function JobCard({
   const saveAttemptRef                        = useRef(false)
   const cardRef                               = useRef(null)
 
-  const { job, match_score, match_type, strengths, gaps, summary, rec_id, geo_score, from_expansion, ai_fallback } = rec
+  const { job, match_score, match_type, strengths, gaps, summary, rec_id, geo_score, from_expansion, ai_fallback, headhunter_note, priority } = rec
 
   // Convert 0–10 scale from API to 0–100 percentage
   const scorePct = match_score != null ? Math.round(match_score * 10) : null
@@ -751,6 +751,11 @@ function JobCard({
                     🧭 Tu zona
                   </span>
                 )}
+                {priority === 'alta' && (
+                  <span style={{ background: '#c2185b', color: '#fff', borderRadius: 4, padding: '2px 7px', fontSize: 11, fontWeight: 700, letterSpacing: 0.5 }}>
+                    🎯 PRIORIDAD ALTA
+                  </span>
+                )}
                 {/* Match type badge — sourced from AI headhunter scoring */}
                 {match_type === 'Directo' && (
                   <span className="px-1.5 py-0.5 rounded text-[10px] font-semibold"
@@ -863,6 +868,14 @@ function JobCard({
           </p>
         )}
 
+        {headhunter_note && !ai_fallback && (
+          <div style={{ display: 'flex', gap: 6, alignItems: 'flex-start', marginTop: 6, padding: '8px 10px', background: 'rgba(194,24,91,0.07)', borderRadius: 6, borderLeft: '3px solid #c2185b' }}>
+            <span style={{ fontSize: 14, flexShrink: 0 }}>🎯</span>
+            <p style={{ margin: 0, fontSize: 12, color: '#c2185b', fontWeight: 500, lineHeight: 1.5 }}>
+              {headhunter_note}
+            </p>
+          </div>
+        )}
         {/* ── Row 3: Strengths (collapsed: 2 max) ── */}
         {!ai_fallback && strengths?.length > 0 && (
           <div className="space-y-1">
