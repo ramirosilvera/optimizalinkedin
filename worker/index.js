@@ -88,7 +88,7 @@ async function callGeminiApi(env, ctx, geminiBody, corsHeaders, { feature = 'unk
     clearTimeout(timeoutId)
     const isTimeout = err.name === 'AbortError'
     logAiUsage(env, ctx, {
-      type: 'failure', feature, userId,
+      type: 'failure', feature, userId, model: modelName,
       durationMs: Date.now() - startMs, statusCode: 504,
       errorType: isTimeout ? 'timeout' : 'network',
       retryCount, apiKeyAlias: `key_${usedKeyIndex + 1}`,
@@ -103,7 +103,7 @@ async function callGeminiApi(env, ctx, geminiBody, corsHeaders, { feature = 'unk
 
   if (res.status === 200) {
     logAiUsage(env, ctx, {
-      type: 'success', feature, userId,
+      type: 'success', feature, userId, model: modelName,
       inputTokens:    data.usageMetadata?.promptTokenCount     ?? null,
       outputTokens:   data.usageMetadata?.candidatesTokenCount ?? null,
       thinkingTokens: data.usageMetadata?.thoughtsTokenCount   ?? null,
@@ -126,7 +126,7 @@ async function callGeminiApi(env, ctx, geminiBody, corsHeaders, { feature = 'unk
       } catch { /* non-fatal */ }
     }
     logAiUsage(env, ctx, {
-      type: 'failure', feature, userId,
+      type: 'failure', feature, userId, model: modelName,
       durationMs: Date.now() - startMs, statusCode: res.status,
       errorType: `http_${res.status}`,
       retryCount, apiKeyAlias: `key_${usedKeyIndex + 1}`,
@@ -261,7 +261,7 @@ function logAiUsage(env, ctx, event) {
     ? {
         user_id:          event.userId          ?? null,
         feature:          event.feature,
-        model:            DEFAULT_MODEL,
+        model:            event.model           ?? DEFAULT_MODEL,
         input_tokens:     event.inputTokens     ?? null,
         output_tokens:    event.outputTokens    ?? null,
         thinking_tokens:  event.thinkingTokens  ?? null,
@@ -276,7 +276,7 @@ function logAiUsage(env, ctx, event) {
     : {
         user_id:          event.userId          ?? null,
         feature:          event.feature,
-        model:            DEFAULT_MODEL,
+        model:            event.model           ?? DEFAULT_MODEL,
         input_tokens:     null,
         output_tokens:    null,
         thinking_tokens:  null,
@@ -3374,7 +3374,9 @@ async function handleAiJobRecommendations(body, request, env, ctx, corsHeaders, 
     if (aiResult?.matches?.length) break
     const t0 = Date.now()
     try {
-      const apiPromise = callGeminiApi(env, ctx, geminiBody, corsHeaders, { feature: 'job_matching_batch', userId: user_id || null, model: PREMIUM_MATCH_MODEL })
+      // Flash-lite responds in 8-12s for 35 jobs (24KB) — well within the 18s inner abort + 20s outer race.
+      // Flash (2.5) takes 15-25s for the same payload and consistently exceeds the outer timeout.
+      const apiPromise = callGeminiApi(env, ctx, geminiBody, corsHeaders, { feature: 'job_matching_batch', userId: user_id || null, model: DEFAULT_MODEL })
       if (ctx?.waitUntil) ctx.waitUntil(apiPromise.catch(() => {}))
       const aiRes = await Promise.race([
         apiPromise,

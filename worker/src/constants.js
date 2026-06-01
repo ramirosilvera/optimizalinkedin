@@ -3,7 +3,7 @@ export const WORKER_VERSION     = '2.0.0'
 export const ALLOWED_MODELS     = new Set(['gemini-2.5-flash-lite', 'gemini-2.5-flash'])
 export const DEFAULT_MODEL      = 'gemini-2.5-flash-lite'
 export const PREMIUM_MATCH_MODEL = 'gemini-2.5-flash'  // better reasoning for premium job matching
-export const GEMINI_TIMEOUT_MS  = 55_000
+export const GEMINI_TIMEOUT_MS  = 18_000  // must be < outer race (20s) so inner abort fires first and logAiUsage runs
 export const MAX_BODY_BYTES     = 2 * 1024 * 1024
 export const GEMINI_MAX_RETRIES = 2
 // Single source of truth — was redefined 4× across upsert/filter functions
@@ -64,7 +64,7 @@ export const JOB_SEARCH_TTL_SECS = 1_800
 export const ATS_KV_TTL_SECS     = 79_200
 export const ATS_DB_TTL_HOURS    = 40
 export const JREC_KV_TTL_SECS    = 3_600
-export const JREC_PROMPT_VERSION = 'v12'   // bumped: equalized free/premium quality — same model, pool, score
+export const JREC_PROMPT_VERSION = 'v13'   // bumped: GEMINI_TIMEOUT_MS 55s→18s, revert to flash-lite (flash too slow for 20s race)
 
 export const JOB_SEARCH_LIMIT_FREE    = 1
 export const JOB_SEARCH_LIMIT_PREMIUM = 5
