@@ -64,13 +64,13 @@ export const JOB_SEARCH_TTL_SECS = 1_800
 export const ATS_KV_TTL_SECS     = 79_200
 export const ATS_DB_TTL_HOURS    = 40
 export const JREC_KV_TTL_SECS    = 3_600
-export const JREC_PROMPT_VERSION = 'v11'   // bumped: maxJobsForGemini 35/20, premium model flash, min score 6.5
+export const JREC_PROMPT_VERSION = 'v12'   // bumped: equalized free/premium quality — same model, pool, score
 
 export const JOB_SEARCH_LIMIT_FREE    = 1
 export const JOB_SEARCH_LIMIT_PREMIUM = 5
 
 export const MAX_JOBS_PREMIUM         = 80
-export const MAX_JOBS_FREE            = 30
+export const MAX_JOBS_FREE            = 80  // same pool as premium — free gets full quality, just 1x/month
 export const MAX_JOBS_FOR_AI_MATCHING = MAX_JOBS_FREE
 
 export const MAX_DESC_CHARS = 6_000

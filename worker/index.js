@@ -3148,7 +3148,7 @@ async function handleAiJobRecommendations(body, request, env, ctx, corsHeaders, 
     .map(q => String(q).trim().replace(/[|;()\[\]]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 100))
     .filter(Boolean)
     .slice(0, 5)
-  const headhunterActive = isPremium && !!professionInfoSync
+  const headhunterActive = !!professionInfoSync  // enabled for all — free gets full quality, just 1x/month
   // Build cleanQueries here (before ALL cache lookups) so every cache layer uses the same hash.
   const cleanQueries = headhunterActive
     ? buildHeadhunterQueries(professionInfoSync, baseQueriesRaw, true)
@@ -3308,9 +3308,9 @@ async function handleAiJobRecommendations(body, request, env, ctx, corsHeaders, 
   }
 
   // ── Pre-filter: family-aware (zero tokens) → top N candidates ──────────────
-  // 35/20 caps Gemini input to ~24KB/14KB (35×700 chars) — well within 20s timeout
-  // Full pool (MAX_JOBS_PREMIUM/FREE) is already fetched; pre-filter picks the best N
-  const maxJobsForGemini = isPremium ? 35 : 20
+  // 35 jobs × 700 chars = ~24KB — well within Gemini Flash 20s timeout
+  // Full pool of 80 is pre-filtered; Gemini only sees the best 35 candidates
+  const maxJobsForGemini = 35
   const preFiltered = applyPreFilter(jobs, String(profile_text), maxJobsForGemini, professionInfoSync)
   const jobPool     = preFiltered.length > 0 ? preFiltered : jobs.slice(0, maxJobsForGemini)
   console.log(`[RADAR] preFilter ${jobs.length} → ${jobPool.length} jobs to Gemini (maxJobs=${maxJobsForGemini} premium=${isPremium})`)
@@ -3359,7 +3359,7 @@ async function handleAiJobRecommendations(body, request, env, ctx, corsHeaders, 
   const geminiBody = {
     system_instruction: { parts: [{ text: JOB_MATCHING_SYSTEM_PROMPT }] },
     contents,
-    generationConfig:   { temperature: 0.3, maxOutputTokens: isPremium ? 12288 : 8192, thinkingConfig: { thinkingBudget: 0 } },
+    generationConfig:   { temperature: 0.3, maxOutputTokens: 12288, thinkingConfig: { thinkingBudget: 0 } },
   }
 
   let aiResult = null
@@ -3374,7 +3374,7 @@ async function handleAiJobRecommendations(body, request, env, ctx, corsHeaders, 
     if (aiResult?.matches?.length) break
     const t0 = Date.now()
     try {
-      const apiPromise = callGeminiApi(env, ctx, geminiBody, corsHeaders, { feature: 'job_matching_batch', userId: user_id || null, model: isPremium ? PREMIUM_MATCH_MODEL : DEFAULT_MODEL })
+      const apiPromise = callGeminiApi(env, ctx, geminiBody, corsHeaders, { feature: 'job_matching_batch', userId: user_id || null, model: PREMIUM_MATCH_MODEL })
       if (ctx?.waitUntil) ctx.waitUntil(apiPromise.catch(() => {}))
       const aiRes = await Promise.race([
         apiPromise,
@@ -3515,7 +3515,7 @@ async function handleAiJobRecommendations(body, request, env, ctx, corsHeaders, 
     return Math.max(0, geminiScore - penalty)
   }
 
-  const minQualityScore = isPremium ? 6.5 : 5.0
+  const minQualityScore = 6.5  // same bar for all — no second-class results
   const topMatches = (aiResult.matches || [])
     .map(m => {
       const job = jobPool[m.job_index]
@@ -3588,47 +3588,43 @@ async function handleAiJobRecommendations(body, request, env, ctx, corsHeaders, 
   let expansionUsed      = false
   let expansionCount     = 0
 
-  // Premium always expands; free expands only when threshold not met (shows upsell)
-  const needsExpansion = isPremium || shouldTriggerExpansion(recommendations)
+  // Expansion runs for all users — free gets full quality on their 1x/month search
+  const needsExpansion = shouldTriggerExpansion(recommendations)
   console.log(`[RADAR] expansion needsExpansion=${needsExpansion} isPremium=${isPremium} topScore=${recommendations[0]?.match_score?.toFixed(1)||0}`)
   if (needsExpansion) {
-    if (isPremium) {
-      try {
-        const expStartMs      = Date.now()
-        const _expTimedOut    = {}  // sentinel to distinguish timeout from null result
-        console.log(`[RADAR] expansion START — generating alternative terms... serperConfigured=${!!env.SERPER_API_KEY}`)
-        const existingHashes = new Set(jobPool.map(j => canonicalJobHash(j)))
-        const expandResult   = await Promise.race([
-          expandWithSearch(env, ctx, cleanQueries, location, remote_ok, String(profile_text), existingHashes, requestedN, candidateLocation, profInfo),
-          new Promise(r => setTimeout(() => r(_expTimedOut), EXPANSION_TIMEOUT_MS)),
-        ])
-        const expMs = Date.now() - expStartMs
-        if (expandResult === _expTimedOut) {
-          console.warn(`[RADAR] expansion TIMEOUT — exceeded ${EXPANSION_TIMEOUT_MS}ms (expMs=${expMs})`)
-        } else if (expandResult?.recommendations?.length) {
-          // Merge: union of original + expansion, re-rank by match_score
-          const seenHashes = new Set()
-          const merged = [...recommendations, ...expandResult.recommendations]
-            .sort((a, b) => (b.match_score || 0) - (a.match_score || 0))
-            .filter(r => {
-              const h = canonicalJobHash(r.job)
-              if (seenHashes.has(h)) return false
-              seenHashes.add(h)
-              return true
-            })
-            .slice(0, requestedN)
-          recommendations  = merged
-          expansionUsed    = true
-          expansionCount   = expandResult.count
-          console.log(`[RADAR] expansion OK — +${expansionCount} new jobs merged, final=${recommendations.length} expansionMs=${expMs}`)
-        } else {
-          console.log(`[RADAR] expansion returned 0 new results expansionMs=${expMs}`)
-        }
-      } catch (err) {
-        console.warn(`[RADAR] expansion error: ${err.message}`)
+    try {
+      const expStartMs      = Date.now()
+      const _expTimedOut    = {}  // sentinel to distinguish timeout from null result
+      console.log(`[RADAR] expansion START — generating alternative terms... serperConfigured=${!!env.SERPER_API_KEY}`)
+      const existingHashes = new Set(jobPool.map(j => canonicalJobHash(j)))
+      const expandResult   = await Promise.race([
+        expandWithSearch(env, ctx, cleanQueries, location, remote_ok, String(profile_text), existingHashes, requestedN, candidateLocation, profInfo),
+        new Promise(r => setTimeout(() => r(_expTimedOut), EXPANSION_TIMEOUT_MS)),
+      ])
+      const expMs = Date.now() - expStartMs
+      if (expandResult === _expTimedOut) {
+        console.warn(`[RADAR] expansion TIMEOUT — exceeded ${EXPANSION_TIMEOUT_MS}ms (expMs=${expMs})`)
+      } else if (expandResult?.recommendations?.length) {
+        // Merge: union of original + expansion, re-rank by match_score
+        const seenHashes = new Set()
+        const merged = [...recommendations, ...expandResult.recommendations]
+          .sort((a, b) => (b.match_score || 0) - (a.match_score || 0))
+          .filter(r => {
+            const h = canonicalJobHash(r.job)
+            if (seenHashes.has(h)) return false
+            seenHashes.add(h)
+            return true
+          })
+          .slice(0, requestedN)
+        recommendations  = merged
+        expansionUsed    = true
+        expansionCount   = expandResult.count
+        console.log(`[RADAR] expansion OK — +${expansionCount} new jobs merged, final=${recommendations.length} expansionMs=${expMs}`)
+      } else {
+        console.log(`[RADAR] expansion returned 0 new results expansionMs=${expMs}`)
       }
-    } else {
-      expansionAvailable = true   // tells frontend to show upsell
+    } catch (err) {
+      console.warn(`[RADAR] expansion error: ${err.message}`)
     }
   }
 

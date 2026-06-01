@@ -35,7 +35,7 @@ import { Spinner } from '../ui'
 //   80–100 → "Altamente Competitivo" — you are a strong differentiator, go for it
 //   60–79  → "Perfil Compatible"    — solid fit, a few gaps you can address
 //   40–59  → "Potencial a Desarrollar" — shown with coaching framing, not dismissal
-//   < 40   → shown to Premium only (gap intelligence); hidden from free users
+//   < 40   → shown to all users — free gets full quality, just 1x/month
 function matchColor(pct) {
   if (pct >= 80) return { stroke: '#16a34a', glow: 'rgba(22,163,74,0.28)',   badge: 'rgba(22,163,74,0.10)',   text: '#15803d', label: 'Altamente Competitivo',  icon: '🏆' }
   if (pct >= 60) return { stroke: '#d97706', glow: 'rgba(217,119,6,0.28)',   badge: 'rgba(217,119,6,0.10)',   text: '#92400e', label: 'Perfil Compatible',       icon: '📈' }
@@ -156,8 +156,7 @@ const LOADING_STAGES = [
   {
     icon: '✨',
     msg: 'Activando expansión IA · Google Jobs · sourcing avanzado',
-    sub: 'Generando términos alternativos y ampliando cobertura con Google Jobs + ATS premium para tu perfil.',
-    premiumOnly: true,
+    sub: 'Generando términos alternativos y ampliando cobertura con Google Jobs + ATS para tu perfil.',
   },
   {
     icon: '📊',
@@ -171,12 +170,12 @@ const LOADING_STAGES = [
   },
 ]
 
-function getVisibleStages(isPremiumUser) {
-  return LOADING_STAGES.filter(s => !s.premiumOnly || isPremiumUser)
+function getVisibleStages() {
+  return LOADING_STAGES
 }
 
-function LoadingStage({ stage, isPremium }) {
-  const visibleStages = getVisibleStages(isPremium)
+function LoadingStage({ stage }) {
+  const visibleStages = getVisibleStages()
   const s = visibleStages[Math.min(stage, visibleStages.length - 1)]
   return (
     <div className="flex flex-col items-center gap-4 py-12 px-4">
@@ -841,11 +840,8 @@ function JobCard({
             )}
           </div>
 
-          {/* Match score ring */}
-          {/* Score < 40 is only shown to premium users — free users see nothing
-              for very-low matches (no value in demoralizing; premium gets the
-              gap map as competition intelligence). */}
-          {scorePct != null && (isPremium || scorePct >= 40) && (
+          {/* Match score ring — shown for all users regardless of score */}
+          {scorePct != null && (
             <div className="shrink-0 flex flex-col items-center gap-0.5">
               <MatchScoreRing score={scorePct} size={52} animated={index < 5} />
               <span className="text-[9px] font-semibold text-center leading-tight" style={{ color: c?.text }}>
@@ -1209,7 +1205,7 @@ export default function JobRecommendationsScreen({
             queries,
             location:     activeFilters.location || undefined,
             remote_ok:    activeFilters.remoteOnly ? true : undefined,
-            count:        isPremium ? 15 : 10,
+            count:        15,
             user_id:      user?.id || undefined,
           }),
         }),
@@ -1711,7 +1707,7 @@ export default function JobRecommendationsScreen({
         {/* ── LOADING STATE ── */}
         {loadState === 'loading' && (
           <>
-            <LoadingStage stage={loadStage} isPremium={isPremium} />
+            <LoadingStage stage={loadStage} />
             {/* Skeleton cards appear progressively after 2 s */}
             {loadStage >= 1 && [1, 2, 3].map(i => <SkeletonCard key={i} />)}
           </>
@@ -1860,11 +1856,7 @@ export default function JobRecommendationsScreen({
 
             {/* Job cards */}
             {filteredRecs.map((rec, i) => {
-              const isBlurred = !isPremium && i >= FREE_VISIBLE
-              // Increment seen count when the card is rendered unblurred.
-              // This runs during render, giving us the high-water mark
-              // without needing an IntersectionObserver.
-              if (!isBlurred && i >= jobsSeenRef.current) {
+              if (i >= jobsSeenRef.current) {
                 jobsSeenRef.current = i + 1
               }
               return (
@@ -1873,144 +1865,35 @@ export default function JobRecommendationsScreen({
                   rec={rec}
                   index={i}
                   isPremium={isPremium}
-                  blurred={isBlurred}
+                  blurred={false}
                   onSave={handleSaveToKanban}
                   onDismiss={handleDismiss}
                   onGoToKanban={() => setStep(STEPS.TRACKING)}
-                  onUpgrade={() => {
-                    // 7. PREMIUM GATE HIT — user tapped a blurred result card.
-                    trackEvent('radar_laboral_premium_gate_hit', {
-                      gate_type:    'results_blur',
-                      position:     i + 1,
-                      match_score:  rec.match_score != null ? Math.round(rec.match_score * 10) : null,
-                      locked_count: recommendations.length - FREE_VISIBLE,
-                    })
-                    // 8. PREMIUM MODAL OPENED from radar blur gate.
-                    trackEvent('radar_laboral_premium_modal_opened', {
-                      trigger: 'radar_blur',
-                    })
-                    setShowPremiumModal(true)
-                  }}
+                  onUpgrade={() => setShowPremiumModal(true)}
                   addToast={addToast}
                 />
               )
             })}
 
-            {/* Freemium upgrade banner — shows real company names from locked results */}
-            {!isPremium && recommendations.length > FREE_VISIBLE && (() => {
-              const lockedRecs = recommendations.slice(FREE_VISIBLE)
-              const ATS_SOURCES = new Set(['greenhouse','lever','smartrecruiters','ashby'])
-              const hasDirectAts = lockedRecs.some(r => ATS_SOURCES.has(r.job?.source))
-              // Get top 3 unique companies from locked results
-              const lockedCompanies = [...new Map(
-                lockedRecs.map(r => [r.job?.company, r])
-              ).values()].slice(0, 3)
-              const extraCount = Math.max(0, new Set(lockedRecs.map(r => r.job?.company)).size - 3)
-              return (
-                <div className="rounded-2xl overflow-hidden"
-                  style={{ background: 'linear-gradient(135deg,#0d2137,#0077B5)', boxShadow: '0 8px 32px rgba(0,119,181,0.28)' }}>
-                  <div className="p-5 text-center space-y-3">
-                    <p className="text-white font-bold text-base leading-snug">
-                      🔒 +{recommendations.length - FREE_VISIBLE} oportunidades directas para vos
-                    </p>
-                    {/* Company list from locked results */}
-                    <div className="rounded-xl p-3 space-y-2" style={{ background: 'rgba(255,255,255,0.10)' }}>
-                      {lockedCompanies.map((r, i) => (
-                        <div key={i} className="flex items-center justify-between">
-                          <div className="flex items-center gap-2">
-                            <div className="w-5 h-5 rounded-md flex items-center justify-center text-[9px] font-bold"
-                              style={{ background: 'rgba(255,255,255,0.20)', color: 'white' }}>
-                              {(r.job?.company || '?')[0].toUpperCase()}
-                            </div>
-                            <span className="text-xs font-semibold text-white">{r.job?.company}</span>
-                          </div>
-                          <span className="text-[10px]" style={{ color: 'rgba(255,255,255,0.55)' }}>
-                            {r.match_score != null ? `${Math.round(r.match_score * 10)}% match` : ''}
-                          </span>
-                        </div>
-                      ))}
-                      {extraCount > 0 && (
-                        <p className="text-[10px] text-center" style={{ color: 'rgba(255,255,255,0.50)' }}>
-                          + {extraCount} empresa{extraCount > 1 ? 's' : ''} más
-                        </p>
-                      )}
-                    </div>
-                    {hasDirectAts && (
-                      <p className="text-xs leading-relaxed" style={{ color: 'rgba(226,232,240,0.78)' }}>
-                        Estas vacantes vienen directo del portal de la empresa — no están en otros portales
-                      </p>
-                    )}
-                    <button
-                      onClick={() => {
-                        trackEvent('radar_laboral_premium_modal_opened', { trigger: 'radar_upgrade_banner' })
-                        setShowPremiumModal(true)
-                      }}
-                      className="w-full px-6 py-3.5 rounded-2xl text-sm font-bold transition-all active:scale-[0.98]"
-                      style={{ background: 'white', color: '#0d2137', boxShadow: '0 2px 8px rgba(0,0,0,0.20)' }}>
-                      Activar acceso completo →
-                    </button>
-                    <p className="text-[11px]" style={{ color: 'rgba(255,255,255,0.40)' }}>
-                      Las oportunidades se actualizan diariamente desde las empresas
-                    </p>
-                  </div>
-                </div>
-              )
-            })()}
-
-            {/* Expansion upsell — Free: show when expansion would have helped */}
-            {expansionAvail && !isPremium && filteredRecs.length > 0 && (
-              <div className="rounded-2xl overflow-hidden"
-                style={{ background: 'linear-gradient(160deg,#0d2137 0%,#0f3a5e 60%,#0077B5 100%)' }}>
-                <div className="p-5 space-y-4">
-                  {/* Header */}
-                  <div className="flex items-start gap-3">
-                    <div className="shrink-0 w-9 h-9 rounded-xl flex items-center justify-center text-lg"
-                      style={{ background: 'rgba(255,255,255,0.12)' }}>
-                      📡
-                    </div>
-                    <div>
-                      <p className="text-white font-bold text-sm leading-snug">
-                        Búsqueda Activa disponible
-                      </p>
-                      <p className="text-xs mt-0.5 leading-relaxed" style={{ color: 'rgba(226,232,240,0.75)' }}>
-                        El Radar detectó que hay más roles compatibles para tu perfil — pero no están en los portales habituales.
-                      </p>
-                    </div>
-                  </div>
-
-                  {/* Benefits */}
-                  <div className="space-y-2 rounded-xl p-3" style={{ background: 'rgba(255,255,255,0.08)' }}>
-                    {[
-                      ['🌐', 'Búsqueda en tiempo real', 'El Radar escanea toda la web cuando los resultados iniciales son bajos'],
-                      ['🎯', 'Términos de búsqueda adaptativos', 'IA que identifica variaciones de tu rol que no sabías que existían'],
-                      ['⚡', 'Resultados sin espera', 'Integrados automáticamente junto a tus matches habituales'],
-                    ].map(([icon, title, desc]) => (
-                      <div key={title} className="flex items-start gap-2.5">
-                        <span className="text-sm shrink-0 mt-0.5">{icon}</span>
-                        <div>
-                          <p className="text-xs font-semibold text-white">{title}</p>
-                          <p className="text-[11px] leading-snug" style={{ color: 'rgba(203,213,225,0.70)' }}>{desc}</p>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-
-                  {/* CTA */}
-                  <button
-                    onClick={() => {
-                      trackEvent('radar_laboral_premium_modal_opened', { trigger: 'expansion_upsell' })
-                      setShowPremiumModal(true)
-                    }}
-                    className="w-full py-3.5 rounded-2xl text-sm font-bold transition-all active:scale-[0.98]"
-                    style={{ background: 'white', color: '#0d2137', boxShadow: '0 2px 12px rgba(0,0,0,0.25)' }}>
-                    Activar Búsqueda Activa →
-                  </button>
-                  <p className="text-center text-[10px]" style={{ color: 'rgba(255,255,255,0.35)' }}>
-                    Premium · Cancelás cuando quieras
-                  </p>
-                </div>
+            {/* Premium conversion banner — frequency pitch, not quality gate */}
+            {!isPremium && recommendations.length > 0 && (
+              <div className="rounded-2xl p-4 text-center space-y-2"
+                style={{ background: 'linear-gradient(135deg,rgba(0,119,181,0.07),rgba(14,165,233,0.10))', border: '1.5px solid rgba(0,119,181,0.18)' }}>
+                <p className="text-sm font-bold" style={{ color: '#0d2137' }}>
+                  📅 Actualizá tu radar mañana con Premium
+                </p>
+                <p className="text-xs leading-relaxed" style={{ color: '#475569' }}>
+                  Con el plan gratuito tenés 1 búsqueda por mes. Premium te da 5 búsquedas diarias para seguir el mercado de cerca — más historial y pipeline de postulaciones.
+                </p>
+                <button
+                  onClick={() => { trackEvent('radar_laboral_premium_modal_opened', { trigger: 'frequency_banner' }); setShowPremiumModal(true) }}
+                  className="px-5 py-2 rounded-xl text-xs font-bold text-white"
+                  style={{ background: 'linear-gradient(135deg,#0d2137,#0077B5)' }}>
+                  Ver Plan Profesional →
+                </button>
               </div>
             )}
+
 
             {/* No results after filtering */}
             {filteredRecs.length === 0 && recommendations.length > 0 && (
@@ -2041,24 +1924,6 @@ export default function JobRecommendationsScreen({
                 <p className="text-sm max-w-xs mx-auto leading-relaxed" style={{ color: '#64748b' }}>
                   Escaneamos las fuentes disponibles pero no encontramos roles con compatibilidad suficiente. Podés ampliar la búsqueda o volver mañana cuando se actualizan los avisos.
                 </p>
-                {/* Expansion upsell when expansion_available=true for free users */}
-                {expansionAvail && !isPremium && (
-                  <div className="rounded-2xl p-4 text-left space-y-2 mx-auto max-w-xs"
-                    style={{ background: 'linear-gradient(135deg,rgba(0,119,181,0.08),rgba(14,165,233,0.12))', border: '1.5px solid rgba(0,119,181,0.22)' }}>
-                    <p className="text-xs font-bold" style={{ color: '#0d2137' }}>
-                      ✨ Búsqueda Activa podría encontrar más
-                    </p>
-                    <p className="text-xs leading-relaxed" style={{ color: '#475569' }}>
-                      Con Premium, el Radar explora fuentes adicionales y títulos alternativos. Puede encontrar roles que los portales normales no muestran.
-                    </p>
-                    <button
-                      onClick={() => { trackEvent('radar_laboral_premium_modal_opened', { trigger: 'empty_state_expansion' }); setShowPremiumModal(true) }}
-                      className="w-full py-2.5 rounded-xl text-xs font-bold text-white"
-                      style={{ background: 'linear-gradient(135deg,#0d2137,#0077B5)' }}>
-                      Activar Búsqueda Activa →
-                    </button>
-                  </div>
-                )}
                 <div className="flex flex-wrap gap-2 justify-center">
                   <button
                     onClick={() => { setFilters(f => ({ ...f, remoteOnly: true })); fetchRecommendations() }}
@@ -2082,18 +1947,18 @@ export default function JobRecommendationsScreen({
               </div>
             )}
 
-            {/* Quota usage footer — hidden for premium when at 0 (served from history, no need to surface limits) */}
+            {/* Quota usage footer */}
             {quotaRemaining !== null && quotaRemaining > 0 && filteredRecs.length > 0 && (
               <p className="text-xs text-center py-4" style={{ color: '#cbd5e1' }}>
                 {isPremium
                   ? `${quotaRemaining} ${quotaRemaining === 1 ? 'búsqueda disponible' : 'búsquedas disponibles'} hoy`
-                  : `${quotaRemaining} búsquedas gratuitas disponibles`}
+                  : `Esta es tu búsqueda gratuita del mes · `}
                 {!isPremium && (
                   <button
                     onClick={() => setShowPremiumModal(true)}
-                    className="ml-2 underline"
+                    className="underline"
                     style={{ color: '#0077B5' }}>
-                    Activar Premium
+                    Premium: 5 búsquedas diarias
                   </button>
                 )}
               </p>

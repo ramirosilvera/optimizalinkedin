@@ -41,10 +41,10 @@ export default function PremiumModal({ user, setShowPremiumModal, subscriptionLo
                 📡 Radar Laboral IA
               </p>
               <p style={{ fontSize: 13, fontWeight: 700, color: 'white', marginBottom: 2 }}>
-                La IA busca oportunidades por vos
+                5 búsquedas diarias · el mercado en tiempo real
               </p>
               <p style={{ fontSize: 11, color: 'rgba(255,255,255,0.55)', lineHeight: 1.4 }}>
-                Analiza el mercado en tiempo real · % de fit · brechas concretas
+                Gratis: 1 búsqueda/mes · Premium: buscás todos los días
               </p>
             </div>
             <span style={{ fontSize: 28, opacity: 0.9, flexShrink: 0 }}>📡</span>
@@ -56,10 +56,10 @@ export default function PremiumModal({ user, setShowPremiumModal, subscriptionLo
 
           <ul className="grid grid-cols-1 sm:grid-cols-2 gap-2">
             {[
-              ['📡', 'Radar Laboral IA', 'Búsqueda inteligente: matching por perfil, empresas objetivo, expansión IA y pipeline de oportunidades.'],
-              ['🏆', 'Entrenamiento continuo', 'Historial ilimitado de entrevistas, STAR y diagnósticos — mejorás de sesión en sesión.'],
-              ['📄', 'CV descargable + versiones', 'Descargá tu CV, guardá versiones adaptadas y exportalas cuando quieras.'],
+              ['📡', 'Radar Laboral · 5x por día', '5 búsquedas diarias vs 1 por mes en el plan gratuito — seguís el mercado de cerca y no te perdés ninguna oportunidad.'],
               ['📍', 'Pipeline de postulaciones', 'Kanban para trackear cada proceso activo y vincular el CV adaptado a cada búsqueda.'],
+              ['🏆', 'Historial de entrenamiento', 'Historial ilimitado de entrevistas, STAR y diagnósticos — mejorás de sesión en sesión.'],
+              ['📄', 'CV descargable + versiones', 'Descargá tu CV, guardá versiones adaptadas y exportalas cuando quieras.'],
               ['💡', 'Informe de preparación', 'Índice evolutivo de competitividad con desglose de todos tus módulos completados.'],
               ['⚡', 'Adaptación táctica ilimitada', 'Adaptá tu CV a cada oferta en segundos con IA. Sin límite de postulaciones.'],
             ].map(([icon, title, desc]) => (
@@ -105,7 +105,7 @@ export default function PremiumModal({ user, setShowPremiumModal, subscriptionLo
             {subscriptionLoading ? 'Procesando...' : 'Activar Plan Profesional → 7 días gratis'}
           </button>
           <p className="text-center text-xs text-slate-400 -mt-1">
-            La versión gratuita es funcional. El Plan Profesional activa el Radar IA, historial, pipeline y entrenamiento continuo.
+            El Radar IA está disponible en el plan gratuito (1 búsqueda/mes). Premium activa 5 búsquedas diarias, historial completo y pipeline de postulaciones.
           </p>
           <button onClick={() => setShowPremiumModal(false)}
             className="w-full py-2 text-sm text-slate-400 text-center">
