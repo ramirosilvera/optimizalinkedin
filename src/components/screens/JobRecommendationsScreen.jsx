@@ -985,7 +985,7 @@ function JobCard({
           {/* Aplicar — link to job URL; dimmed when unavailable */}
           {job.url ? (
             <a href={job.url} target="_blank" rel="noopener noreferrer"
-              onClick={() => trackEvent('job_recommendation_apply', { rec_id, company: job.company })}
+              onClick={() => trackEvent('job_recommendation_apply', { rec_id, company: job.company, priority: rec.priority || null, from_reranking: rec.from_reranking || false })}
               className="flex-1 py-3 rounded-xl text-xs font-semibold text-center transition-all"
               style={{ background: 'rgba(99,102,241,0.10)', color: '#6366f1', border: '1px solid rgba(99,102,241,0.25)' }}>
               Aplicar →

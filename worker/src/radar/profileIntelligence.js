@@ -1,6 +1,6 @@
 // worker/src/radar/profileIntelligence.js
 // Phase 1: Profile Intelligence — converts raw profile text into structured professional context
-// Cached per user+profileHash in KV (7 days TTL) — profiles rarely change between searches
+// Cache layers: KV (7d, device-local) → Supabase (permanent, cross-device) → AI extraction
 
 import { detectProfessionFamilySync, extractCandidateLocation } from '../jobs/profession.js'
 import { extractSkillsFromText } from '../utils/jobHelpers.js'
@@ -40,6 +40,28 @@ function detectModalidad(text) {
   return null
 }
 
+function rowToResult(row) {
+  return {
+    family:              row.family,
+    subfamilies:         row.subfamilies  || [],
+    industries:          row.industries   || [],
+    seniority_level:     row.seniority_level,
+    seniority_label:     row.seniority_label,
+    is_senior:           row.is_senior,
+    profession:          row.profession,
+    familia:             row.family,
+    subfamilias:         row.subfamilies  || [],
+    industrias:          row.industries   || [],
+    skills_tecnicas:     row.skills_tecnicas    || [],
+    ubicacion:           row.ubicacion,
+    modalidad_preferida: row.modalidad_preferida,
+    objetivo_carrera:    row.objetivo_carrera,
+    confidence:          row.confidence,
+    extraction_method:   row.extraction_method,
+    from_cache:          true,
+  }
+}
+
 const EXTRACTION_PROMPT = `Analyze this professional profile and extract the dominant professional classification.
 
 PROFILE:
@@ -54,7 +76,7 @@ Respond ONLY with valid JSON (no markdown, no extra text):
 
 /**
  * Extract structured professional intelligence from a profile text.
- * Results are cached in KV for 7 days — profiles rarely change between sessions.
+ * Cache layers: KV (7d) → Supabase profile_intelligence table → Gemini AI → sync fallback
  *
  * @returns {{ familia, subfamilias, seniority_level, seniority_label, is_senior,
  *             industrias, skills_tecnicas, ubicacion, modalidad_preferida,
@@ -64,7 +86,7 @@ export async function extractProfileIntelligence(profileText, userId, env, ctx) 
   const profileHash = await hashProfileText(profileText)
   const kvKey = `${PROF_KV_PREFIX}:${userId || 'anon'}:${profileHash}`
 
-  // Layer 1: KV cache (7 days)
+  // Layer 1: KV cache — fastest, device-local (7 days)
   if (env.RATE_LIMIT_KV) {
     try {
       const cached = await env.RATE_LIMIT_KV.get(kvKey)
@@ -77,12 +99,39 @@ export async function extractProfileIntelligence(profileText, userId, env, ctx) 
     } catch { /* cache miss — fall through */ }
   }
 
-  // Layer 2: Sync detection (instant, 0 tokens)
+  // Layer 2: Supabase cross-device cache — permanent, survives device/session changes
+  if (userId && env.SUPABASE_URL && env.SUPABASE_SERVICE_ROLE_KEY) {
+    try {
+      const sbRes = await fetch(
+        `${env.SUPABASE_URL}/rest/v1/profile_intelligence?user_id=eq.${userId}&profile_hash=eq.${profileHash}&select=*&limit=1`,
+        {
+          headers: {
+            apikey:        env.SUPABASE_SERVICE_ROLE_KEY,
+            Authorization: `Bearer ${env.SUPABASE_SERVICE_ROLE_KEY}`,
+          },
+        }
+      )
+      if (sbRes.ok) {
+        const rows = await sbRes.json()
+        if (rows?.[0]) {
+          const sbResult = rowToResult(rows[0])
+          // Backfill KV so next request hits layer 1
+          if (env.RATE_LIMIT_KV) {
+            const kvSave = env.RATE_LIMIT_KV.put(kvKey, JSON.stringify(sbResult), { expirationTtl: PROF_KV_TTL_SECS })
+            ctx?.waitUntil ? ctx.waitUntil(kvSave) : kvSave.catch(() => {})
+          }
+          return sbResult
+        }
+      }
+    } catch { /* Supabase miss — fall through */ }
+  }
+
+  // Layer 3: Sync detection (instant, 0 tokens)
   const sync     = detectProfessionFamilySync(profileText)
   const location = extractCandidateLocation(profileText)
   const skills   = extractSkillsFromText(profileText)
 
-  // Layer 3: AI extraction — runs in parallel with job fetch, so adds ~0 wall time
+  // Layer 4: AI extraction — runs in parallel with job fetch, so adds ~0 wall time
   const geminiKeys = (env.GEMINI_API_KEYS || env.GEMINI_API_KEY || '').split(',').map(k => k.trim()).filter(Boolean)
   let aiResult = null
 
@@ -146,9 +195,41 @@ export async function extractProfileIntelligence(profileText, userId, env, ctx) 
     from_cache:          false,
   }
 
+  // Persist to KV (device-local, 7 days)
   if (env.RATE_LIMIT_KV) {
-    const saveOp = env.RATE_LIMIT_KV.put(kvKey, JSON.stringify(result), { expirationTtl: PROF_KV_TTL_SECS })
-    ctx?.waitUntil ? ctx.waitUntil(saveOp) : saveOp.catch(() => {})
+    const kvSave = env.RATE_LIMIT_KV.put(kvKey, JSON.stringify(result), { expirationTtl: PROF_KV_TTL_SECS })
+    ctx?.waitUntil ? ctx.waitUntil(kvSave) : kvSave.catch(() => {})
+  }
+
+  // Persist to Supabase (cross-device, permanent) — fire-and-forget via waitUntil
+  if (userId && env.SUPABASE_URL && env.SUPABASE_SERVICE_ROLE_KEY) {
+    const sbSave = fetch(`${env.SUPABASE_URL}/rest/v1/profile_intelligence`, {
+      method:  'POST',
+      headers: {
+        apikey:          env.SUPABASE_SERVICE_ROLE_KEY,
+        Authorization:   `Bearer ${env.SUPABASE_SERVICE_ROLE_KEY}`,
+        'content-type':  'application/json',
+        Prefer:          'resolution=merge-duplicates',
+      },
+      body: JSON.stringify({
+        user_id:             userId,
+        profile_hash:        profileHash,
+        family:              result.family,
+        subfamilies:         result.subfamilies,
+        industries:          result.industries,
+        seniority_level:     result.seniority_level,
+        seniority_label:     result.seniority_label,
+        is_senior:           result.is_senior,
+        skills_tecnicas:     result.skills_tecnicas,
+        ubicacion:           result.ubicacion,
+        modalidad_preferida: result.modalidad_preferida,
+        objetivo_carrera:    result.objetivo_carrera,
+        profession:          result.profession,
+        confidence:          result.confidence,
+        extraction_method:   result.extraction_method,
+      }),
+    }).catch(e => console.warn('[RADAR:profile] Supabase persist failed:', e.message))
+    ctx?.waitUntil ? ctx.waitUntil(sbSave) : void sbSave
   }
 
   return result
