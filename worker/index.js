@@ -3308,9 +3308,9 @@ async function handleAiJobRecommendations(body, request, env, ctx, corsHeaders, 
   }
 
   // ── Pre-filter: family-aware (zero tokens) → top N candidates ──────────────
-  // 35 jobs × 700 chars = ~24KB — well within Gemini Flash 20s timeout
-  // Full pool of 80 is pre-filtered; Gemini only sees the best 35 candidates
-  const maxJobsForGemini = 35
+  // 25 jobs × 700 chars = ~18KB — safe payload for Flash Lite with thinkingBudget:0
+  // Full pool of 80 is pre-filtered; Gemini only sees the top-ranked 25 candidates
+  const maxJobsForGemini = 25
   const preFiltered = applyPreFilter(jobs, String(profile_text), maxJobsForGemini, professionInfoSync)
   const jobPool     = preFiltered.length > 0 ? preFiltered : jobs.slice(0, maxJobsForGemini)
   console.log(`[RADAR] preFilter ${jobs.length} → ${jobPool.length} jobs to Gemini (maxJobs=${maxJobsForGemini} premium=${isPremium})`)
@@ -3355,11 +3355,11 @@ async function handleAiJobRecommendations(body, request, env, ctx, corsHeaders, 
 
   const contents   = buildMatchingContents(String(profile_text).slice(0, 3000), jobPool, candidateLocation, profInfo, maxJobsForGemini)
   // thinkingBudget:0 disables Flash Lite's default thinking mode, cutting latency from 15-30s to 3-5s.
-  // Premium: 8192 output tokens (50 jobs × ~150 chars + headroom); free: 4096
+  // 25 jobs × ~200 output tokens/match = ~5000 tokens max; 8192 gives comfortable headroom.
   const geminiBody = {
     system_instruction: { parts: [{ text: JOB_MATCHING_SYSTEM_PROMPT }] },
     contents,
-    generationConfig:   { temperature: 0.3, maxOutputTokens: 12288, thinkingConfig: { thinkingBudget: 0 } },
+    generationConfig:   { temperature: 0.3, maxOutputTokens: 8192, thinkingConfig: { thinkingBudget: 0 } },
   }
 
   let aiResult = null
