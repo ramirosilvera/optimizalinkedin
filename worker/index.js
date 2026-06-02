@@ -2574,7 +2574,7 @@ Respond ONLY with JSON (no markdown): {"family":"HR/Personas","terms":["HRBP","P
         `https://generativelanguage.googleapis.com/v1beta/models/${DEFAULT_MODEL}:generateContent?key=${geminiKeys[ki]}`,
         {
           method: 'POST', headers: { 'content-type': 'application/json' },
-          body: JSON.stringify({ contents: [{ role: 'user', parts: [{ text: prompt }] }], generationConfig: { temperature: 0.3, maxOutputTokens: 300, thinkingConfig: { thinkingBudget: 0 } } }),
+          body: JSON.stringify({ contents: [{ role: 'user', parts: [{ text: prompt }] }], generationConfig: { temperature: 0.3, maxOutputTokens: 300 } }),
           signal: controller.signal,
         }
       )
@@ -2632,7 +2632,7 @@ async function expandWithSearch(env, ctx, cleanQueries, location, remoteOk, prof
           body: JSON.stringify({
             system_instruction: { parts: [{ text: JOB_MATCHING_SYSTEM_PROMPT }] },
             contents,
-            generationConfig:   { temperature: 0.2, maxOutputTokens: 2048, thinkingConfig: { thinkingBudget: 0 } },
+            generationConfig:   { temperature: 0.2, maxOutputTokens: 2048 },
           }),
           signal: controller.signal,
         }
@@ -3338,12 +3338,10 @@ async function handleAiJobRecommendations(body, request, env, ctx, corsHeaders, 
   if (professionMeta) console.log(`[RADAR] professionMeta resolved: ${professionMeta.profession} | ${professionMeta.family} | lvl=${professionMeta.seniority_level}`)
 
   const contents   = buildMatchingContents(String(profile_text).slice(0, 3000), jobPool, candidateLocation, profInfo, maxJobsForGemini)
-  // thinkingBudget:0 disables Flash Lite's default thinking mode, cutting latency from 15-30s to 3-5s.
-  // 25 jobs × ~200 output tokens/match = ~5000 tokens max; 8192 gives comfortable headroom.
   const geminiBody = {
     system_instruction: { parts: [{ text: JOB_MATCHING_SYSTEM_PROMPT }] },
     contents,
-    generationConfig:   { temperature: 0.3, maxOutputTokens: 8192, thinkingConfig: { thinkingBudget: 0 } },
+    generationConfig:   { temperature: 0.3, maxOutputTokens: 8192 },
   }
 
   let aiResult = null
@@ -3351,8 +3349,7 @@ async function handleAiJobRecommendations(body, request, env, ctx, corsHeaders, 
 
   const diagLogHttp = null
 
-  // Two attempts with decreasing timeouts. thinkingBudget:0 means Flash Lite responds in 3-5s;
-  // 20s/15s outer guards are safety nets for overloaded API slots.
+  // Two attempts with decreasing timeouts — safety nets for overloaded API slots.
   // Each apiPromise is registered with ctx.waitUntil so its internal logAiUsage call survives
   // even if the outer race fires and the response is sent before Gemini finishes.
   const GEMINI_ATTEMPTS = [{ ms: 20_000 }, { ms: 15_000 }]
