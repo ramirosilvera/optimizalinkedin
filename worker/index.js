@@ -1796,6 +1796,61 @@ export default {
       }
     }
 
+    // ── Gemini API diagnostic endpoint ───────────────────────────────────────────
+    if (body.action === 'ping_gemini') {
+      const geminiKeys = (env.GEMINI_API_KEYS || env.GEMINI_API_KEY || '').split(',').map(k => k.trim()).filter(Boolean)
+      if (!geminiKeys.length) {
+        return new Response(JSON.stringify({ ok: false, error: 'NO_KEYS', detail: 'GEMINI_API_KEYS env var not set or empty' }), { status: 200, headers: corsHeaders })
+      }
+      const results = []
+      for (let ki = 0; ki < Math.min(geminiKeys.length, 3); ki++) {
+        const key = geminiKeys[ki]
+        const maskedKey = key.slice(0, 8) + '...' + key.slice(-4)
+        // Try v1beta with gemini-2.0-flash-lite
+        const models = ['gemini-2.0-flash-lite', 'gemini-1.5-flash-latest']
+        const endpoints = ['v1beta', 'v1']
+        for (const model of models) {
+          for (const ep of endpoints) {
+            try {
+              const ctrl = new AbortController()
+              const tid = setTimeout(() => ctrl.abort(), 10_000)
+              const r = await fetch(
+                `https://generativelanguage.googleapis.com/${ep}/models/${model}:generateContent?key=${key}`,
+                {
+                  method: 'POST',
+                  headers: { 'content-type': 'application/json' },
+                  body: JSON.stringify({
+                    contents: [{ role: 'user', parts: [{ text: 'respond with the single word: ok' }] }],
+                    generationConfig: { temperature: 0, maxOutputTokens: 10 },
+                  }),
+                  signal: ctrl.signal,
+                }
+              )
+              clearTimeout(tid)
+              const respText = await r.text()
+              let respJson = null
+              try { respJson = JSON.parse(respText) } catch {}
+              results.push({
+                key_index: ki, masked_key: maskedKey, model, endpoint: ep,
+                http_status: r.status,
+                ok: r.ok,
+                response_preview: respText.slice(0, 300),
+                gemini_text: respJson?.candidates?.[0]?.content?.parts?.[0]?.text || null,
+                error_message: respJson?.error?.message || null,
+              })
+            } catch (err) {
+              results.push({
+                key_index: ki, masked_key: maskedKey, model, endpoint: ep,
+                http_status: null, ok: false,
+                error_message: err.message,
+              })
+            }
+          }
+        }
+      }
+      return new Response(JSON.stringify({ ok: results.some(r => r.ok), key_count: geminiKeys.length, results }), { status: 200, headers: corsHeaders })
+    }
+
     // ── Radar Laboral — Job Recommendations ──────────────────────────────────────
     if (body.action === 'job_search') {
       const ip = request.headers.get('CF-Connecting-IP') || 'unknown'
