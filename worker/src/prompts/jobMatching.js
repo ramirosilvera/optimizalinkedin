@@ -43,25 +43,41 @@ Respondé SOLO JSON válido sin markdown:
 {"matches":[{"job_index":0,"match_score":7.5,"match_type":"Directo","strengths":["str","str"],"gaps":["str"],"summary":"str"}]}
 `
 
+// Strip HTML tags, collapse whitespace, remove control chars and zero-width chars
+function sanitizeText(text, maxLen) {
+  if (!text) return ''
+  return text
+    .replace(/<[^>]*>/g, ' ')            // strip HTML tags
+    .replace(/&[a-z]+;|&#\d+;/gi, ' ')  // decode HTML entities to space
+    .replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/g, '') // remove control chars
+    .replace(/[​-‍﻿]/g, '')              // remove zero-width chars
+    .replace(/https?:\/\/\S+/g, '')      // remove URLs
+    .replace(/\s+/g, ' ')               // collapse whitespace
+    .trim()
+    .slice(0, maxLen)
+}
+
 export function buildMatchingContents(profileText, jobs, candidateLocation = null, professionMeta = null, maxJobs = MAX_JOBS_FREE) {
   const jobList = jobs.slice(0, maxJobs).map((j, i) => {
-    const desc = j.description
-      ? extractRelevantSection(j.description, 700)
-      : '(sin descripción)'
+    const raw = j.description ? extractRelevantSection(j.description, 1200) : ''
+    const desc = sanitizeText(raw, 400) || '(sin descripción)'
     const isAts = ['greenhouse','lever','smartrecruiters','ashby'].includes(j.source)
-    return `[${i}] ${j.title} | ${j.company}${isAts ? ' ✓' : ''} | ${j.location || 'No especificado'} | ${j.remote ? 'Remoto 100%' : 'Presencial/Híbrido'}
-Skills: ${(j.skills_required || []).join(', ') || 'No especificado'}
-Seniority: ${j.seniority}
-Descripción: ${desc}`
+    const title = sanitizeText(j.title, 80)
+    const company = sanitizeText(j.company, 60)
+    return `[${i}] ${title} | ${company}${isAts ? ' ✓' : ''} | ${j.location || 'N/A'} | ${j.remote ? 'Remoto' : 'Presencial'}
+Skills: ${(j.skills_required || []).slice(0, 8).join(', ') || 'N/A'} | Seniority: ${j.seniority || 'N/A'}
+Desc: ${desc}`
   }).join('\n\n')
 
-  const geoCtx  = candidateLocation ? `\nUBICACIÓN DETECTADA DEL CANDIDATO: ${candidateLocation}` : ''
+  const geoCtx  = candidateLocation ? `\nUBICACIÓN: ${candidateLocation}` : ''
   const profCtx = professionMeta?.family
-    ? `\nPROFESIÓN DOMINANTE DETECTADA: ${professionMeta.profession || professionMeta.family} | FAMILIA: ${professionMeta.family} | SENIORITY: nivel ${professionMeta.seniority_level} (${professionMeta.seniority_label || ''}) | SUB-ÁREAS: ${(professionMeta.subfamilies || []).join(', ') || 'N/A'} | INDUSTRIAS: ${(professionMeta.industries || []).join(', ') || 'N/A'}`
+    ? `\nPROFESIÓN: ${professionMeta.profession || professionMeta.family} | FAMILIA: ${professionMeta.family} | SENIORITY: nivel ${professionMeta.seniority_level} | SUB-ÁREAS: ${(professionMeta.subfamilies || []).slice(0, 4).join(', ') || 'N/A'}`
     : ''
+
+  const cleanProfile = sanitizeText(profileText, 2000)
 
   return [{
     role: 'user',
-    parts: [{ text: `PERFIL DEL CANDIDATO:\n${profileText}${geoCtx}${profCtx}\n\nAVISOS LABORALES:\n${jobList}` }],
+    parts: [{ text: `PERFIL:\n${cleanProfile}${geoCtx}${profCtx}\n\nAVISOS:\n${jobList}` }],
   }]
 }

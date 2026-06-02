@@ -1,5 +1,5 @@
 // ── Core worker constants ─────────────────────────────────────────────────────
-export const WORKER_VERSION     = '2.6.1'
+export const WORKER_VERSION     = '2.6.2'
 export const ALLOWED_MODELS     = new Set(['gemini-2.5-flash-lite', 'gemini-2.5-flash'])
 export const DEFAULT_MODEL      = 'gemini-2.5-flash-lite'
 export const PREMIUM_MATCH_MODEL = 'gemini-2.5-flash'
@@ -64,7 +64,7 @@ export const JOB_SEARCH_TTL_SECS = 1_800
 export const ATS_KV_TTL_SECS     = 79_200
 export const ATS_DB_TTL_HOURS    = 40
 export const JREC_KV_TTL_SECS    = 3_600
-export const JREC_PROMPT_VERSION = 'v24'   // bumped: JOB_MATCHING_SYSTEM_PROMPT compressed 12KB→2KB (65% reduction)
+export const JREC_PROMPT_VERSION = 'v25'   // bumped: sanitizeText on job content — strips HTML/URLs/control chars, desc 700→400 chars
 
 export const JOB_SEARCH_LIMIT_FREE    = 1
 export const JOB_SEARCH_LIMIT_PREMIUM = 5
