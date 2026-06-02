@@ -55,11 +55,11 @@ async function checkRateLimit(env, ip, actionKey) {
 }
 
 // ── Gemini API helper ─────────────────────────────────────────────────────────
-async function callGeminiApi(env, ctx, geminiBody, corsHeaders, { feature = 'unknown', userId = null, model = null } = {}) {
+async function callGeminiApi(env, ctx, geminiBody, corsHeaders, { feature = 'unknown', userId = null, model = null, timeoutMs = null } = {}) {
   const modelName = model || DEFAULT_MODEL
   const startMs = Date.now()
   const controller = new AbortController()
-  const timeoutId = setTimeout(() => controller.abort(), GEMINI_TIMEOUT_MS)
+  const timeoutId = setTimeout(() => controller.abort(), timeoutMs || GEMINI_TIMEOUT_MS)
   const geminiKeys = (env.GEMINI_API_KEYS || env.GEMINI_API_KEY || '').split(',').map(k => k.trim()).filter(Boolean)
 
   let res = null
@@ -3349,8 +3349,8 @@ async function handleAiJobRecommendations(body, request, env, ctx, corsHeaders, 
   jobs = enrichJobs(jobs)
 
   // ── Pre-filter: family-aware (zero tokens) → top N candidates ──────────────
-  // 15 jobs × 700 chars = ~11KB — reduced from 25 to cut Gemini latency and timeout risk
-  const maxJobsForGemini = 15
+  // 10 jobs × 700 chars = ~7KB — reduced to fit within 30s Gemini timeout
+  const maxJobsForGemini = 10
   const preFiltered = applyPreFilter(jobs, String(profile_text), maxJobsForGemini, professionInfoSync)
   const jobPool     = preFiltered.length > 0 ? preFiltered : jobs.slice(0, maxJobsForGemini)
   console.log(`[RADAR] preFilter ${jobs.length} → ${jobPool.length} jobs to Gemini (maxJobs=${maxJobsForGemini} premium=${isPremium})`)
@@ -3397,7 +3397,7 @@ async function handleAiJobRecommendations(body, request, env, ctx, corsHeaders, 
   const geminiBody = {
     system_instruction: { parts: [{ text: JOB_MATCHING_SYSTEM_PROMPT }] },
     contents,
-    generationConfig:   { temperature: 0.3, maxOutputTokens: 4096, thinkingConfig: { thinkingBudget: 0 } },
+    generationConfig:   { temperature: 0.3, maxOutputTokens: 2048, thinkingConfig: { thinkingBudget: 0 } },
   }
 
   let aiResult = null
@@ -3408,14 +3408,15 @@ async function handleAiJobRecommendations(body, request, env, ctx, corsHeaders, 
   // Two attempts with decreasing timeouts — safety nets for overloaded API slots.
   // Each apiPromise is registered with ctx.waitUntil so its internal logAiUsage call survives
   // even if the outer race fires and the response is sent before Gemini finishes.
-  const GEMINI_ATTEMPTS = [{ ms: 20_000 }, { ms: 15_000 }]
+  // Outer race must be > inner callGeminiApi timeout (30s) so logAiUsage runs on abort
+  const GEMINI_ATTEMPTS = [{ ms: 35_000 }, { ms: 32_000 }]
   for (let attempt = 0; attempt < GEMINI_ATTEMPTS.length; attempt++) {
     if (aiResult?.matches?.length) break
     const t0 = Date.now()
     try {
       // Flash-lite responds in 8-12s for 35 jobs (24KB) — well within the 18s inner abort + 20s outer race.
       // Flash (2.5) takes 15-25s for the same payload and consistently exceeds the outer timeout.
-      const apiPromise = callGeminiApi(env, ctx, geminiBody, corsHeaders, { feature: 'job_matching_batch', userId: user_id || null, model: DEFAULT_MODEL })
+      const apiPromise = callGeminiApi(env, ctx, geminiBody, corsHeaders, { feature: 'job_matching_batch', userId: user_id || null, model: DEFAULT_MODEL, timeoutMs: 30_000 })
       if (ctx?.waitUntil) ctx.waitUntil(apiPromise.catch(() => {}))
       const aiRes = await Promise.race([
         apiPromise,
@@ -3521,6 +3522,7 @@ async function handleAiJobRecommendations(body, request, env, ctx, corsHeaders, 
           profession_family:    profInfo?.family || null,
           profession_seniority: profInfo?.seniority_level || null,
           profession_source:    profInfo?.extraction_method || (professionInfoSync ? 'sync_v1' : null),
+          total_ms:             Date.now() - startMs,
         },
       }),
       { status: 200, headers: corsHeaders }
