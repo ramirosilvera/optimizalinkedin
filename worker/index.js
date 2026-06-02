@@ -1800,56 +1800,95 @@ export default {
     if (body.action === 'ping_gemini') {
       const geminiKeys = (env.GEMINI_API_KEYS || env.GEMINI_API_KEY || '').split(',').map(k => k.trim()).filter(Boolean)
       if (!geminiKeys.length) {
-        return new Response(JSON.stringify({ ok: false, error: 'NO_KEYS', detail: 'GEMINI_API_KEYS env var not set or empty' }), { status: 200, headers: corsHeaders })
+        return new Response(JSON.stringify({ ok: false, error: 'NO_KEYS' }), { status: 200, headers: corsHeaders })
       }
-      const results = []
-      // Test only the first key against all candidate models on v1beta
       const key = geminiKeys[0]
       const maskedKey = key.slice(0, 8) + '...' + key.slice(-4)
-      const modelsToTest = [
-        'gemini-2.0-flash',
-        'gemini-2.5-flash',
-        'gemini-2.5-flash-lite',
-        'gemini-2.0-flash-lite',
-        'gemini-1.5-flash',
-        'gemini-1.5-flash-latest',
+      const model = 'gemini-2.5-flash-lite'
+      const TIMEOUT = 15_000
+
+      // Fake job list that mimics the real matching payload size (3 jobs × ~700 chars)
+      const fakeSystemPrompt = `Sos un headhunter digital senior. Evaluá el fit de cada aviso laboral para el candidato y respondé SOLO JSON: {"matches":[{"job_index":0,"match_score":7.5,"match_type":"Directo","strengths":["str"],"gaps":[],"summary":"str"}]}`
+      const fakeJobContent = `PERFIL DEL CANDIDATO:\nGerente de RRHH, 10 años de experiencia en empresas de tecnología. Especialidad en talent acquisition y desarrollo organizacional. Buenos Aires, Argentina.\nPROFESIÓN DOMINANTE DETECTADA: Gerente RRHH | FAMILIA: HR/Personas | SENIORITY: nivel 5\n\nAVISOS LABORALES:\n[0] HR Manager | Empresa Tech | Buenos Aires | Presencial/Híbrido\nSkills: HRIS, Excel, liderazgo\nSeniority: Senior\nDescripción: Buscamos HR Manager para liderar el equipo de personas. Responsable de talent acquisition, desarrollo organizacional, cultura y clima laboral. Experiencia mínima 5 años en posiciones similares.\n\n[1] Head of People | Startup SaaS | Remoto | Remoto 100%\nSkills: Workday, cultura organizacional\nSeniority: Senior/Lead\nDescripción: Startup de 80 personas busca su primera Head of People. Construirás el área desde cero: procesos, políticas, estructura de seniority. Ideal candidato con background en scale-ups.\n\n[2] Data Analyst | Empresa de datos | Buenos Aires | Presencial\nSkills: Python, SQL, Tableau\nSeniority: Semi Senior\nDescripción: Analista de datos para equipo de BI. Construcción de dashboards y modelos predictivos. Experiencia en Python y SQL requerida.`
+
+      const scenarios = [
+        {
+          label: 'A_tiny_no_system_no_thinking',
+          body: {
+            contents: [{ role: 'user', parts: [{ text: 'respond with the single word: ok' }] }],
+            generationConfig: { temperature: 0, maxOutputTokens: 10 },
+          },
+        },
+        {
+          label: 'B_tiny_with_thinkingBudget0_inside_genConfig',
+          body: {
+            contents: [{ role: 'user', parts: [{ text: 'respond with the single word: ok' }] }],
+            generationConfig: { temperature: 0, maxOutputTokens: 10, thinkingConfig: { thinkingBudget: 0 } },
+          },
+        },
+        {
+          label: 'C_tiny_with_system_instruction',
+          body: {
+            system_instruction: { parts: [{ text: fakeSystemPrompt }] },
+            contents: [{ role: 'user', parts: [{ text: 'respond with the single word: ok' }] }],
+            generationConfig: { temperature: 0, maxOutputTokens: 10 },
+          },
+        },
+        {
+          label: 'D_medium_system_plus_jobs_no_thinking',
+          body: {
+            system_instruction: { parts: [{ text: fakeSystemPrompt }] },
+            contents: [{ role: 'user', parts: [{ text: fakeJobContent }] }],
+            generationConfig: { temperature: 0.3, maxOutputTokens: 512 },
+          },
+        },
+        {
+          label: 'E_medium_system_plus_jobs_with_thinkingBudget0',
+          body: {
+            system_instruction: { parts: [{ text: fakeSystemPrompt }] },
+            contents: [{ role: 'user', parts: [{ text: fakeJobContent }] }],
+            generationConfig: { temperature: 0.3, maxOutputTokens: 512, thinkingConfig: { thinkingBudget: 0 } },
+          },
+        },
       ]
-      for (const model of modelsToTest) {
+
+      const results = []
+      for (const scenario of scenarios) {
+        const t0 = Date.now()
         try {
           const ctrl = new AbortController()
-          const tid = setTimeout(() => ctrl.abort(), 10_000)
+          const tid = setTimeout(() => ctrl.abort(), TIMEOUT)
           const r = await fetch(
             `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${key}`,
-            {
-              method: 'POST',
-              headers: { 'content-type': 'application/json' },
-              body: JSON.stringify({
-                contents: [{ role: 'user', parts: [{ text: 'respond with the single word: ok' }] }],
-                generationConfig: { temperature: 0, maxOutputTokens: 10 },
-              }),
-              signal: ctrl.signal,
-            }
+            { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(scenario.body), signal: ctrl.signal }
           )
           clearTimeout(tid)
           const respText = await r.text()
           let respJson = null
           try { respJson = JSON.parse(respText) } catch {}
+          // Extract text from first non-thinking part
+          const parts = respJson?.candidates?.[0]?.content?.parts || []
+          const textPart = parts.find(p => !p.thought)
           results.push({
-            masked_key: maskedKey, model,
+            scenario: scenario.label,
             http_status: r.status,
             ok: r.ok,
-            gemini_text: respJson?.candidates?.[0]?.content?.parts?.[0]?.text || null,
+            latency_ms: Date.now() - t0,
+            gemini_text: textPart?.text?.slice(0, 100) || null,
+            thinking_tokens: respJson?.usageMetadata?.thoughtsTokenCount || 0,
+            output_tokens: respJson?.usageMetadata?.candidatesTokenCount || 0,
             error_message: respJson?.error?.message || null,
           })
         } catch (err) {
           results.push({
-            masked_key: maskedKey, model,
+            scenario: scenario.label,
             http_status: null, ok: false,
-            error_message: err.message,
+            latency_ms: Date.now() - t0,
+            error_message: err.name === 'AbortError' ? `AbortError after ${TIMEOUT}ms` : err.message,
           })
         }
       }
-      return new Response(JSON.stringify({ ok: results.some(r => r.ok), key_count: geminiKeys.length, results }), { status: 200, headers: corsHeaders })
+      return new Response(JSON.stringify({ masked_key: maskedKey, model, results }), { status: 200, headers: corsHeaders })
     }
 
     // ── Radar Laboral — Job Recommendations ──────────────────────────────────────
@@ -2688,7 +2727,7 @@ async function expandWithSearch(env, ctx, cleanQueries, location, remoteOk, prof
           body: JSON.stringify({
             system_instruction: { parts: [{ text: JOB_MATCHING_SYSTEM_PROMPT }] },
             contents,
-            generationConfig:   { temperature: 0.2, maxOutputTokens: 2048, thinkingConfig: { thinkingBudget: 0 } },
+            generationConfig:   { temperature: 0.2, maxOutputTokens: 1024 },
           }),
           signal: controller.signal,
         }
@@ -3397,7 +3436,7 @@ async function handleAiJobRecommendations(body, request, env, ctx, corsHeaders, 
   const geminiBody = {
     system_instruction: { parts: [{ text: JOB_MATCHING_SYSTEM_PROMPT }] },
     contents,
-    generationConfig:   { temperature: 0.3, maxOutputTokens: 2048, thinkingConfig: { thinkingBudget: 0 } },
+    generationConfig:   { temperature: 0.3, maxOutputTokens: 1536 },
   }
 
   let aiResult = null
