@@ -1289,6 +1289,7 @@ export default function JobRecommendationsScreen({
       const hasFallback = data.fallback || (data.recommendations || []).some(r => r.ai_fallback)
       setDebugInfo(hasFallback || data.pipeline_stats?.ai_error ? {
         ai_error:          data.pipeline_stats?.ai_error || null,
+        ai_error_body:     data.pipeline_stats?.ai_error_body || null,
         profession_family: data.pipeline_stats?.profession_family || null,
         profession_source: data.pipeline_stats?.profession_source || null,
         gemini_matched:    data.pipeline_stats?.gemini_matched ?? null,
@@ -1854,6 +1855,11 @@ export default function JobRecommendationsScreen({
                   <p style={{ margin: 0 }}>
                     <b>Error:</b> {debugInfo.ai_error || 'Ninguno — Gemini devolvió 0 resultados con score ≥ 4.0'}
                   </p>
+                  {debugInfo.ai_error_body && (
+                    <p style={{ margin: 0, fontFamily: 'monospace', fontSize: 11, background: '#fff3e0', padding: '4px 6px', borderRadius: 4, wordBreak: 'break-all', whiteSpace: 'pre-wrap' }}>
+                      <b>Detalle error Gemini:</b> {JSON.stringify(debugInfo.ai_error_body, null, 2).slice(0, 500)}
+                    </p>
+                  )}
                   <p style={{ margin: 0 }}>
                     <b>Familia profesional detectada:</b> {debugInfo.profession_family || '❌ No detectada (perfil muy corto o genérico)'}
                   </p>

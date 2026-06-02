@@ -3455,64 +3455,64 @@ async function handleAiJobRecommendations(body, request, env, ctx, corsHeaders, 
     generationConfig:   { temperature: 0.3, maxOutputTokens: 1536 },
   }
 
-  let aiResult = null
-  let aiError  = null
+  let aiResult    = null
+  let aiError     = null
+  let aiErrorBody = null  // full Gemini error body — surfaced in pipeline_stats for debugging
 
-  const diagLogHttp = null
-
-  // Two attempts with decreasing timeouts — safety nets for overloaded API slots.
-  // Each apiPromise is registered with ctx.waitUntil so its internal logAiUsage call survives
-  // even if the outer race fires and the response is sent before Gemini finishes.
-  // Outer race must be > inner callGeminiApi timeout (30s) so logAiUsage runs on abort
-  const GEMINI_ATTEMPTS = [{ ms: 35_000 }, { ms: 32_000 }]
-  for (let attempt = 0; attempt < GEMINI_ATTEMPTS.length; attempt++) {
-    if (aiResult?.matches?.length) break
-    const t0 = Date.now()
-    try {
-      // Flash-lite responds in 8-12s for 35 jobs (24KB) — well within the 18s inner abort + 20s outer race.
-      // Flash (2.5) takes 15-25s for the same payload and consistently exceeds the outer timeout.
-      const apiPromise = callGeminiApi(env, ctx, geminiBody, corsHeaders, { feature: 'job_matching_batch', userId: user_id || null, model: DEFAULT_MODEL, timeoutMs: 30_000 })
-      if (ctx?.waitUntil) ctx.waitUntil(apiPromise.catch(() => {}))
-      const aiRes = await Promise.race([
-        apiPromise,
-        new Promise((_, rej) => setTimeout(() => rej(new Error('gemini_match_timeout')), GEMINI_ATTEMPTS[attempt].ms)),
-      ])
-      if (aiRes.status === 200) {
-        const aiData = await aiRes.clone().json()
-        const raw    = aiData?.candidates?.[0]?.content?.parts?.[0]?.text || ''
-        // Robust extraction: find the JSON object even when Gemini adds text before/after
-        const jsonIdx = raw.indexOf('{"matches"')
-        const clean   = jsonIdx >= 0
-          ? raw.slice(jsonIdx)
-          : raw.replace(/^```json\n?|\n?```$/g, '').trim()
-        try {
-          aiResult = JSON.parse(clean)
-          aiError  = null
-          console.log(`[RADAR] Gemini attempt ${attempt+1}/${GEMINI_ATTEMPTS.length} — latency=${Date.now()-t0}ms result=ok matches=${aiResult?.matches?.length||0}`)
-        } catch {
-          // Partial parse recovery: strip the truncated last object by cutting at the last complete },
-          const lastComma = clean.lastIndexOf('},')
-          if (lastComma > 10) {
-            try {
-              const partial = JSON.parse(clean.slice(0, lastComma + 1) + ']}')
-              if (partial?.matches?.length) {
-                aiResult = partial
-                aiError  = null
-                console.log(`[RADAR] Gemini attempt ${attempt+1}/${GEMINI_ATTEMPTS.length} — latency=${Date.now()-t0}ms result=partial_recovery matches=${aiResult.matches.length}`)
-                break
-              }
-            } catch { /* ignore */ }
+  // Direct fetch — same pattern as ping scenario G (all 7 pass).
+  // Bypasses callGeminiApi retry-on-5xx to eliminate cumulative timeout risk and capture raw errors.
+  {
+    const geminiKeys = (env.GEMINI_API_KEYS || env.GEMINI_API_KEY || '').split(',').map(k => k.trim()).filter(Boolean)
+    if (!geminiKeys.length) {
+      aiError = 'no_gemini_keys'
+    } else {
+      const t0   = Date.now()
+      const ctrl = new AbortController()
+      const tid  = setTimeout(() => ctrl.abort(), 28_000)
+      try {
+        const res = await fetch(
+          `https://generativelanguage.googleapis.com/v1beta/models/${DEFAULT_MODEL}:generateContent?key=${geminiKeys[0]}`,
+          { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(geminiBody), signal: ctrl.signal }
+        )
+        clearTimeout(tid)
+        console.log(`[RADAR] Gemini direct — latency=${Date.now()-t0}ms status=${res.status}`)
+        if (res.status === 200) {
+          const aiData = await res.json()
+          const raw    = aiData?.candidates?.[0]?.content?.parts?.[0]?.text || ''
+          const jsonIdx = raw.indexOf('{"matches"')
+          const clean   = jsonIdx >= 0
+            ? raw.slice(jsonIdx)
+            : raw.replace(/^```json\n?|\n?```$/g, '').trim()
+          try {
+            aiResult = JSON.parse(clean)
+            console.log(`[RADAR] Gemini direct — result=ok matches=${aiResult?.matches?.length||0}`)
+          } catch {
+            const lastComma = clean.lastIndexOf('},')
+            if (lastComma > 10) {
+              try {
+                const partial = JSON.parse(clean.slice(0, lastComma + 1) + ']}')
+                if (partial?.matches?.length) {
+                  aiResult = partial
+                  console.log(`[RADAR] Gemini direct — result=partial_recovery matches=${aiResult.matches.length}`)
+                }
+              } catch { /* ignore */ }
+            }
+            if (!aiResult) {
+              aiError = 'ai_parse_error'
+              console.warn(`[RADAR] Gemini direct — parse_error raw="${raw.slice(0, 300)}"`)
+            }
           }
-          aiError = 'ai_parse_error'
-          console.warn(`[RADAR] Gemini attempt ${attempt+1}/${GEMINI_ATTEMPTS.length} — latency=${Date.now()-t0}ms result=parse_error raw="${raw.slice(0, 300)}"`)
+        } else {
+          const errBody = await res.json().catch(() => null)
+          aiError     = `ai_http_${res.status}`
+          aiErrorBody = errBody
+          console.warn(`[RADAR] Gemini direct — HTTP ${res.status}: ${JSON.stringify(errBody)?.slice(0, 500)}`)
         }
-      } else {
-        aiError = `ai_http_${aiRes.status}`
-        console.warn(`[RADAR] Gemini attempt ${attempt+1}/${GEMINI_ATTEMPTS.length} — latency=${Date.now()-t0}ms result=http_${aiRes.status}`)
+      } catch (err) {
+        clearTimeout(tid)
+        aiError = err.name === 'AbortError' ? 'ai_timeout_28s' : err.message
+        console.warn(`[RADAR] Gemini direct — fetch error: ${aiError}`)
       }
-    } catch (e) {
-      aiError = e.message
-      console.warn(`[RADAR] Gemini attempt ${attempt+1}/${GEMINI_ATTEMPTS.length} — latency=${Date.now()-t0}ms result=${e.message}`)
     }
   }
 
@@ -3573,7 +3573,7 @@ async function handleAiJobRecommendations(body, request, env, ctx, corsHeaders, 
           from_jobs_cache:      fromCache,
           kv_configured:        !!env.RATE_LIMIT_KV,
           ai_error:             aiError,
-          diag_log_http:        diagLogHttp,
+          ai_error_body:        aiErrorBody,
           profession_family:    profInfo?.family || null,
           profession_seniority: profInfo?.seniority_level || null,
           profession_source:    profInfo?.extraction_method || (professionInfoSync ? 'sync_v1' : null),
@@ -3848,7 +3848,7 @@ async function handleAiJobRecommendations(body, request, env, ctx, corsHeaders, 
         candidate_location:  candidateLocation || null,
         kv_configured:        !!env.RATE_LIMIT_KV,
         ai_error:             aiError || null,
-        diag_log_http:        diagLogHttp,
+        ai_error_body:        aiErrorBody,
         total_ms:             Date.now() - startMs,
         reranking_stats:      rerankingStats,
         profession_family:    profInfo?.family || null,
