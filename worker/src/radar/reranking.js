@@ -85,6 +85,7 @@ Seleccioná el TOP 10 más relevante para este candidato específico.`
             system_instruction: { parts: [{ text: RERANKING_SYSTEM_PROMPT }] },
             contents: [{ role: 'user', parts: [{ text: userPrompt }] }],
             generationConfig: { temperature: 0.2, maxOutputTokens: 1024 },
+            thinkingConfig:   { thinkingBudget: 0 },
           }),
           signal: ctrl.signal,
         }

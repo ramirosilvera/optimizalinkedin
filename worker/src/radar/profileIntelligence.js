@@ -150,6 +150,7 @@ export async function extractProfileIntelligence(profileText, userId, env, ctx) 
             body: JSON.stringify({
               contents: [{ role: 'user', parts: [{ text: prompt }] }],
               generationConfig: { temperature: 0.1, maxOutputTokens: 400 },
+              thinkingConfig:   { thinkingBudget: 0 },
             }),
             signal: ctrl.signal,
           }
