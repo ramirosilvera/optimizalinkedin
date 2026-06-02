@@ -2688,8 +2688,7 @@ async function expandWithSearch(env, ctx, cleanQueries, location, remoteOk, prof
           body: JSON.stringify({
             system_instruction: { parts: [{ text: JOB_MATCHING_SYSTEM_PROMPT }] },
             contents,
-            generationConfig:   { temperature: 0.2, maxOutputTokens: 2048 },
-            thinkingConfig:     { thinkingBudget: 0 },
+            generationConfig:   { temperature: 0.2, maxOutputTokens: 2048, thinkingConfig: { thinkingBudget: 0 } },
           }),
           signal: controller.signal,
         }
@@ -3398,8 +3397,7 @@ async function handleAiJobRecommendations(body, request, env, ctx, corsHeaders, 
   const geminiBody = {
     system_instruction: { parts: [{ text: JOB_MATCHING_SYSTEM_PROMPT }] },
     contents,
-    generationConfig:   { temperature: 0.3, maxOutputTokens: 4096 },
-    thinkingConfig:     { thinkingBudget: 0 },
+    generationConfig:   { temperature: 0.3, maxOutputTokens: 4096, thinkingConfig: { thinkingBudget: 0 } },
   }
 
   let aiResult = null
