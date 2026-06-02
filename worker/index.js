@@ -1850,6 +1850,14 @@ export default {
             generationConfig: { temperature: 0.3, maxOutputTokens: 512, thinkingConfig: { thinkingBudget: 0 } },
           },
         },
+        {
+          label: 'F_REAL_system_prompt_fake_jobs',
+          body: {
+            system_instruction: { parts: [{ text: JOB_MATCHING_SYSTEM_PROMPT }] },
+            contents: [{ role: 'user', parts: [{ text: fakeJobContent }] }],
+            generationConfig: { temperature: 0.3, maxOutputTokens: 512 },
+          },
+        },
       ]
 
       const results = []
