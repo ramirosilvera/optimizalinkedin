@@ -1104,6 +1104,9 @@ export default function JobRecommendationsScreen({
   const [pipelineStats, setPipelineStats]     = useState(null)   // { sources_count, total_evaluated }
   const [serperActive, setSerperActive]       = useState(false)  // Google Jobs ran this search
   const [expansionSearched, setExpSearched]  = useState(false)  // deep search ran for this user
+  const [debugInfo, setDebugInfo]             = useState(null)   // visible diagnostic when AI fails
+  const [pingResult, setPingResult]           = useState(null)   // Gemini API key diagnostic
+  const [pinging, setPinging]                 = useState(false)
 
   // ── Analytics session refs ─────────────────────────────────────────────────
   // Track how many cards the user has seen and saved in this session
@@ -1168,6 +1171,24 @@ export default function JobRecommendationsScreen({
   }, [profileText, refineQuery])
 
   // ── Fetch recommendations ──────────────────────────────────────────────────
+  const pingGemini = useCallback(async () => {
+    setPinging(true)
+    setPingResult(null)
+    try {
+      const r = await fetch(WORKER_URL, {
+        method: 'POST',
+        headers: { ...WORKER_HEADERS, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'ping_gemini' }),
+      })
+      const data = await r.json()
+      setPingResult(data)
+    } catch (err) {
+      setPingResult({ ok: false, error: 'FETCH_FAILED', detail: err.message })
+    } finally {
+      setPinging(false)
+    }
+  }, [])
+
   const fetchRecommendations = useCallback(async () => {
     if (!profileText || profileText.trim().length < 50) {
       setLoadState('no_profile')
@@ -1264,6 +1285,18 @@ export default function JobRecommendationsScreen({
       setPipelineStats(data.pipeline_stats || null)
       setSerperActive(data.pipeline_stats?.serper_in_sources || false)
       setExpSearched(data.expansion_searched || false)
+
+      const hasFallback = data.fallback || (data.recommendations || []).some(r => r.ai_fallback)
+      setDebugInfo(hasFallback || data.pipeline_stats?.ai_error ? {
+        ai_error:          data.pipeline_stats?.ai_error || null,
+        profession_family: data.pipeline_stats?.profession_family || null,
+        profession_source: data.pipeline_stats?.profession_source || null,
+        gemini_matched:    data.pipeline_stats?.gemini_matched ?? null,
+        worker_version:    data.pipeline_stats?.worker_version || null,
+        total_ms:          data.pipeline_stats?.total_ms || null,
+        is_fallback:       hasFallback,
+      } : null)
+
       setLoadState('done')
 
       // 3. SEARCH COMPLETED — rich params enable source-level attribution and
@@ -1810,6 +1843,44 @@ export default function JobRecommendationsScreen({
                 </div>
               </div>
             )}
+
+            {/* Debug panel — visible diagnostic when AI matching fails */}
+            {debugInfo && (
+              <div style={{ background: '#fff8e1', border: '1px solid #ffc107', borderRadius: 10, padding: '10px 14px', fontSize: 12 }}>
+                <p style={{ fontWeight: 700, color: '#e65100', margin: '0 0 6px 0', fontSize: 13 }}>
+                  ⚠️ {debugInfo.ai_error ? 'Error en análisis de IA' : 'IA corrió pero no encontró matches suficientes'}
+                </p>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 4, color: '#555' }}>
+                  <p style={{ margin: 0 }}>
+                    <b>Error:</b> {debugInfo.ai_error || 'Ninguno — Gemini devolvió 0 resultados con score ≥ 4.0'}
+                  </p>
+                  <p style={{ margin: 0 }}>
+                    <b>Familia profesional detectada:</b> {debugInfo.profession_family || '❌ No detectada (perfil muy corto o genérico)'}
+                  </p>
+                  <p style={{ margin: 0 }}>
+                    <b>Fuente detección:</b> {debugInfo.profession_source || 'ninguna'} &nbsp;|&nbsp;
+                    <b>Matches Gemini:</b> {debugInfo.gemini_matched ?? '?'} &nbsp;|&nbsp;
+                    <b>Worker:</b> {debugInfo.worker_version || '?'} &nbsp;|&nbsp;
+                    <b>Tiempo:</b> {debugInfo.total_ms ? `${Math.round(debugInfo.total_ms / 1000)}s` : '?'}
+                  </p>
+                  <div style={{ marginTop: 8 }}>
+                    <button
+                      onClick={pingGemini}
+                      disabled={pinging}
+                      style={{ background: '#e65100', color: '#fff', border: 'none', borderRadius: 6, padding: '5px 12px', fontSize: 12, cursor: pinging ? 'default' : 'pointer', opacity: pinging ? 0.7 : 1 }}
+                    >
+                      {pinging ? 'Testeando...' : 'Testear API Key de Gemini'}
+                    </button>
+                    {pingResult && (
+                      <div style={{ marginTop: 6, background: pingResult.ok ? '#e8f5e9' : '#ffebee', border: `1px solid ${pingResult.ok ? '#a5d6a7' : '#ef9a9a'}`, borderRadius: 6, padding: '6px 10px', fontSize: 11, fontFamily: 'monospace', whiteSpace: 'pre-wrap', wordBreak: 'break-all' }}>
+                        {JSON.stringify(pingResult, null, 2)}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+            )}
+
 
             {/* Cached/history banner — neutral UX for both same-day cache and history fallback */}
             {(cachedToday || servedFromHistory) && cacheTimestamp && filteredRecs.length > 0 && (

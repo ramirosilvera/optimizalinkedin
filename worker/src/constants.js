@@ -1,8 +1,8 @@
 // ── Core worker constants ─────────────────────────────────────────────────────
-export const WORKER_VERSION     = '2.3.0'
-export const ALLOWED_MODELS     = new Set(['gemini-2.5-flash-lite', 'gemini-2.5-flash'])
-export const DEFAULT_MODEL      = 'gemini-2.5-flash-lite'
-export const PREMIUM_MATCH_MODEL = 'gemini-2.5-flash'  // better reasoning for premium job matching
+export const WORKER_VERSION     = '2.5.0'
+export const ALLOWED_MODELS     = new Set(['gemini-2.0-flash-lite', 'gemini-2.5-flash-lite', 'gemini-2.5-flash', 'gemini-2.0-flash'])
+export const DEFAULT_MODEL      = 'gemini-2.0-flash-lite'
+export const PREMIUM_MATCH_MODEL = 'gemini-2.0-flash'
 export const GEMINI_TIMEOUT_MS  = 18_000  // must be < outer race (20s) so inner abort fires first and logAiUsage runs
 export const MAX_BODY_BYTES     = 2 * 1024 * 1024
 export const GEMINI_MAX_RETRIES = 2
@@ -64,7 +64,7 @@ export const JOB_SEARCH_TTL_SECS = 1_800
 export const ATS_KV_TTL_SECS     = 79_200
 export const ATS_DB_TTL_HOURS    = 40
 export const JREC_KV_TTL_SECS    = 3_600
-export const JREC_PROMPT_VERSION = 'v14'   // bumped: maxJobsForGemini 35→25, maxOutputTokens 12288→8192, diagnostic logs
+export const JREC_PROMPT_VERSION = 'v17'   // bumped: model 2.5-flash-lite→2.0-flash-lite, removed thinkingConfig
 
 export const JOB_SEARCH_LIMIT_FREE    = 1
 export const JOB_SEARCH_LIMIT_PREMIUM = 5
