@@ -133,6 +133,23 @@ export default function ResultsScreen({
             </button>
           </div>
 
+          {/* Paso 2: Optimizar LinkedIn */}
+          <button
+            onClick={() => { trackEvent('results_scroll_optimize'); document.getElementById('mejorar-perfil')?.scrollIntoView({ behavior: 'smooth', block: 'start' }) }}
+            className="w-full rounded-2xl p-4 text-left transition-all hover:shadow-md active:scale-[0.99] flex items-center gap-3"
+            style={{ background: 'rgba(14,165,233,0.05)', border: '1px solid rgba(14,165,233,0.22)' }}
+          >
+            <span className="text-xl shrink-0">✏️</span>
+            <div className="flex-1 min-w-0">
+              <div className="flex items-center gap-2">
+                <span className="text-[10px] font-bold uppercase tracking-wide px-2 py-0.5 rounded-full"
+                  style={{ background: 'rgba(14,165,233,0.1)', color: '#0ea5e9' }}>Paso 2</span>
+              </div>
+              <p className="text-xs font-bold text-slate-800 mt-0.5">Posicionamiento profesional LinkedIn</p>
+              <p className="text-[10px] text-slate-500">Titular · Resumen · Keywords ATS · ↓ más abajo</p>
+            </div>
+          </button>
+
           {/* Paso 3: CV — acción principal */}
           <button
             onClick={() => { trackEvent('cv_start_from_results', { cv_stage: cvStage }); if (cvStage === 'idle') callGenerateCV({}); setStep(STEPS.CV) }}
@@ -151,23 +168,6 @@ export default function ResultsScreen({
                 </p>
                 <p className="text-[11px] text-white/75 mt-0.5">ATS-compatible · 1 página · listo para enviar</p>
               </div>
-            </div>
-          </button>
-
-          {/* Paso 2: Optimizar LinkedIn */}
-          <button
-            onClick={() => { trackEvent('results_scroll_optimize'); document.getElementById('mejorar-perfil')?.scrollIntoView({ behavior: 'smooth', block: 'start' }) }}
-            className="w-full rounded-2xl p-4 text-left transition-all hover:shadow-md active:scale-[0.99] flex items-center gap-3"
-            style={{ background: 'rgba(14,165,233,0.05)', border: '1px solid rgba(14,165,233,0.22)' }}
-          >
-            <span className="text-xl shrink-0">✏️</span>
-            <div className="flex-1 min-w-0">
-              <div className="flex items-center gap-2">
-                <span className="text-[10px] font-bold uppercase tracking-wide px-2 py-0.5 rounded-full"
-                  style={{ background: 'rgba(14,165,233,0.1)', color: '#0ea5e9' }}>Paso 2</span>
-              </div>
-              <p className="text-xs font-bold text-slate-800 mt-0.5">Posicionamiento profesional LinkedIn</p>
-              <p className="text-[10px] text-slate-500">Titular · Resumen · Keywords ATS · ↓ más abajo</p>
             </div>
           </button>
 

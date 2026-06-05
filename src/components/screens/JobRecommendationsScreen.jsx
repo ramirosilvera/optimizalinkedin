@@ -130,7 +130,7 @@ function SkeletonCard() {
 const LOADING_STAGES = [
   {
     icon: '🌐',
-    msg: 'Conectando con 14 fuentes de empleo en simultáneo',
+    msg: 'Buscando oportunidades en las mejores bolsas de empleo',
     sub: 'ATS corporativos (Greenhouse, Lever, Ashby), Google Jobs, Himalayas y portales LATAM.',
   },
   {
@@ -644,7 +644,7 @@ function JobCard({
               className="text-xs font-bold"
               style={{ color: '#dc2626', opacity: Math.min((Math.abs(swipeDelta) - 30) / 25, 1) }}
             >
-              Ya la vi
+              Descartar
             </span>
             <span className="text-xl" style={{ opacity: Math.min((Math.abs(swipeDelta) - 30) / 25, 1) }}>✕</span>
           </div>

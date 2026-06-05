@@ -77,13 +77,6 @@ function RadarStepCard({
           >
             ↑ Siguiente
           </span>
-          <span style={{
-            fontSize: 10, fontWeight: 700, padding: '2px 8px', borderRadius: 99,
-            background: 'rgba(194,24,91,0.10)', color: AC,
-            border: `1px solid ${AC_BDR}`,
-          }}>
-            Próxima sesión
-          </span>
         </div>
       )}
 
@@ -192,7 +185,7 @@ function RadarStepCard({
                   ? 'Ver oportunidades →'
                   : lastSearchCount != null
                     ? `Revisar ${lastSearchCount} resultados →`
-                    : 'Activar radar →'
+                    : 'Buscar empleos compatibles →'
                 }
               </button>
             ) : (
