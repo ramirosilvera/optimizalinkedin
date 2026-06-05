@@ -1320,9 +1320,11 @@ export default {
           const uid      = targetIds[0]
           const today    = new Date().toISOString().slice(0, 10)
           const month    = new Date().toISOString().slice(0, 7)
+          const weekKey  = (() => { const d = new Date(); const day = d.getUTCDay(); d.setUTCDate(d.getUTCDate() + (day === 0 ? -6 : 1 - day)); d.setUTCHours(0,0,0,0); return d.toISOString().slice(0, 10) })()
           const kvKeys   = [
-            `live_fetch:${uid}:${today}`,   // premium daily
-            `live_fetch:${uid}:${month}`,   // free monthly
+            `live_fetch:${uid}:${today}`,         // premium daily
+            `live_fetch:${uid}:w${weekKey}`,      // free weekly
+            `live_fetch:${uid}:${month}`,         // free monthly (legacy)
             `jobsearch:day:${uid}`,
             `jobsearch:hour:${uid}:${new Date().toISOString().slice(0, 13)}`,
           ]
@@ -2553,10 +2555,20 @@ async function putJobsToKV(env, queryHash, jobs) {
 // exactly once per period — daily for premium, monthly for free.
 // When the flag is absent the first search bypasses ALL caches (radarCache, jrecCache, jobsKV)
 // and triggers a full live fetch. Subsequent searches within the same period use cache normally.
+function _weekMonday(date = new Date()) {
+  const d = new Date(date); const day = d.getUTCDay()
+  d.setUTCDate(d.getUTCDate() + (day === 0 ? -6 : 1 - day)); d.setUTCHours(0, 0, 0, 0)
+  return d
+}
+function _nextMonday(date = new Date()) {
+  const d = new Date(date); const day = d.getUTCDay()
+  d.setUTCDate(d.getUTCDate() + (day === 0 ? 1 : 8 - day)); d.setUTCHours(0, 0, 0, 0)
+  return d
+}
 function _liveFetchKey(userId, isPremium) {
   return isPremium
-    ? `live_fetch:${userId}:${new Date().toISOString().slice(0, 10)}`   // daily key  YYYY-MM-DD
-    : `live_fetch:${userId}:${new Date().toISOString().slice(0, 7)}`    // monthly key YYYY-MM
+    ? `live_fetch:${userId}:${new Date().toISOString().slice(0, 10)}`      // daily  YYYY-MM-DD
+    : `live_fetch:${userId}:w${_weekMonday().toISOString().slice(0, 10)}`  // weekly YYYY-MM-DD of Monday
 }
 async function hasLiveFetchedThisPeriod(env, userId, isPremium) {
   if (!env.RATE_LIMIT_KV || !userId) return false
@@ -2570,10 +2582,7 @@ function markLiveFetchedThisPeriod(env, userId, isPremium) {
     const midnight = new Date(); midnight.setUTCHours(24, 0, 0, 0)
     ttlSecs = Math.max(60, Math.floor((midnight.getTime() - Date.now()) / 1000) + 300)
   } else {
-    const firstNextMonth = new Date()
-    firstNextMonth.setUTCMonth(firstNextMonth.getUTCMonth() + 1, 1)
-    firstNextMonth.setUTCHours(0, 0, 0, 0)
-    ttlSecs = Math.max(60, Math.floor((firstNextMonth.getTime() - Date.now()) / 1000) + 300)
+    ttlSecs = Math.max(60, Math.floor((_nextMonday().getTime() - Date.now()) / 1000) + 300)
   }
   env.RATE_LIMIT_KV.put(key, '1', { expirationTtl: ttlSecs }).catch(() => {})
 }
@@ -2638,7 +2647,7 @@ async function getRadarCache(env, userId, profileHash, queryHash) {
 
 async function putRadarCache(env, ctx, userId, profileHash, queryHash, recommendations, isPremium) {
   if (!userId || !recommendations.length || !env.SUPABASE_SERVICE_ROLE_KEY) return
-  const ttlMs   = isPremium ? 25 * 3_600_000 : 7 * 86_400_000  // premium: 25h | free: 7d
+  const ttlMs   = isPremium ? 48 * 3_600_000 : 7 * 86_400_000  // premium: 48h | free: 7d
   const expires = new Date(Date.now() + ttlMs).toISOString()
   const row = {
     user_id:        userId,
@@ -3078,18 +3087,17 @@ async function checkJobSearchRateLimit(env, userId, ip, isPremium) {
     await env.RATE_LIMIT_KV.put(kvKey, String(current + 1), { expirationTtl: ttlSecs })
     return { ok: true, count: current + 1, limit: JOB_SEARCH_LIMIT_PREMIUM, nextReset: midnight.toISOString() }
   } else {
-    // Free users: 1/month
-    const month   = now.toISOString().slice(0, 7)  // 'YYYY-MM'
-    const kvKey   = `jrl:f:${identity}:${month}`
-    const current = parseInt((await env.RATE_LIMIT_KV.get(kvKey)) || '0', 10)
+    // Free users: 1/week (resets every Monday 00:00 UTC)
+    const weekKey  = _weekMonday().toISOString().slice(0, 10)  // YYYY-MM-DD of this Monday
+    const kvKey    = `jrl:f:${identity}:w${weekKey}`
+    const current  = parseInt((await env.RATE_LIMIT_KV.get(kvKey)) || '0', 10)
+    const nextMon  = _nextMonday()
     if (current >= JOB_SEARCH_LIMIT_FREE) {
-      const firstNextMonth = new Date(now.getFullYear(), now.getMonth() + 1, 1)
-      return { ok: false, count: current, limit: JOB_SEARCH_LIMIT_FREE, nextReset: firstNextMonth.toISOString() }
+      return { ok: false, count: current, limit: JOB_SEARCH_LIMIT_FREE, nextReset: nextMon.toISOString() }
     }
-    const firstNextMonth = new Date(now.getFullYear(), now.getMonth() + 1, 1)
-    const ttlSecs = Math.floor((firstNextMonth.getTime() - Date.now()) / 1000)
+    const ttlSecs = Math.max(60, Math.floor((nextMon.getTime() - Date.now()) / 1000))
     await env.RATE_LIMIT_KV.put(kvKey, String(current + 1), { expirationTtl: ttlSecs })
-    return { ok: true, count: current + 1, limit: JOB_SEARCH_LIMIT_FREE, nextReset: firstNextMonth.toISOString() }
+    return { ok: true, count: current + 1, limit: JOB_SEARCH_LIMIT_FREE, nextReset: nextMon.toISOString() }
   }
 }
 
@@ -3310,7 +3318,7 @@ async function handleAiJobRecommendations(body, request, env, ctx, corsHeaders, 
   // Premium: once/day | Free: once/month
   const liveFetchKey = user_id || ip
   const liveFetched = await hasLiveFetchedThisPeriod(env, liveFetchKey, isPremium)
-  console.log(`[RADAR] liveFetched=${liveFetched} period=${isPremium?'daily':'monthly'} user=${user_id||'anon(ip)'}`)
+  console.log(`[RADAR] liveFetched=${liveFetched} period=${isPremium?'daily':'weekly'} user=${user_id||'anon(ip)'}`)
 
   const profileHash = user_id ? await computeProfileHash(String(profile_text)) : null
   const queryHash = user_id ? await hashQueryParams(cleanQueries, location, remote_ok) : null
@@ -3387,7 +3395,7 @@ async function handleAiJobRecommendations(body, request, env, ctx, corsHeaders, 
       JSON.stringify({
         error: isPremium
           ? `Exploraste todo lo disponible hoy. Volvé mañana para una nueva búsqueda.`
-          : `Usaste tu búsqueda de este mes. Se renueva el 1 del próximo mes.`,
+          : `Usaste tu búsqueda de esta semana. Se renueva el lunes próximo.`,
         quota_remaining: 0,
         next_reset:      rl.nextReset,
       }),
@@ -3857,8 +3865,8 @@ async function handleAiJobRecommendations(body, request, env, ctx, corsHeaders, 
   }
 
   // Cache AI scores in KV and radar_search_history (Supabase, cross-device)
-  // TTL: 25h for premium (daily refresh), 7 days for free
-  const jrecTtlSecs = isPremium ? 25 * 3_600 : 7 * 86_400
+  // TTL: 48h for premium (covers return visits next day), 7 days for free
+  const jrecTtlSecs = isPremium ? 48 * 3_600 : 7 * 86_400
   if (user_id && ctx?.waitUntil) {
     ctx.waitUntil(putJrecToKV(env, user_id, queryHash, {
       recommendations,

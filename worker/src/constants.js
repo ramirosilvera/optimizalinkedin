@@ -1,5 +1,5 @@
 // ── Core worker constants ─────────────────────────────────────────────────────
-export const WORKER_VERSION     = '2.6.9'
+export const WORKER_VERSION     = '2.7.0'
 export const ALLOWED_MODELS     = new Set(['gemini-2.5-flash-lite', 'gemini-2.5-flash'])
 export const DEFAULT_MODEL      = 'gemini-2.5-flash-lite'
 export const PREMIUM_MATCH_MODEL = 'gemini-2.5-flash'
@@ -66,8 +66,8 @@ export const ATS_DB_TTL_HOURS    = 40
 export const JREC_KV_TTL_SECS    = 3_600
 export const JREC_PROMPT_VERSION = 'v25'   // bumped: sanitizeText on job content — strips HTML/URLs/control chars, desc 700→400 chars
 
-export const JOB_SEARCH_LIMIT_FREE    = 1
-export const JOB_SEARCH_LIMIT_PREMIUM = 5
+export const JOB_SEARCH_LIMIT_FREE    = 1   // 1 per week
+export const JOB_SEARCH_LIMIT_PREMIUM = 10  // 10 per day
 
 export const MAX_JOBS_PREMIUM         = 80
 export const MAX_JOBS_FREE            = 80  // same pool as premium — free gets full quality, just 1x/month
