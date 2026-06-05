@@ -2382,19 +2382,21 @@ async function fetchJobSource(source, query, location, remoteOk, env, candidateL
 
       // Try /jobs endpoint first; if 404 (plan doesn't include jobs endpoint), fall back to
       // /search which returns a `jobs` field when Google shows the jobs SERP block.
+      // datePostedRange=lastMonth: filters out stale postings (>30 days) while keeping enough volume.
       let r = await fetch('https://google.serper.dev/jobs', {
         method:  'POST',
         headers: { 'X-API-KEY': env.SERPER_API_KEY, 'Content-Type': 'application/json', 'User-Agent': UA },
-        body:    JSON.stringify({ q: query, ...geoParams, num: 30 }),
+        body:    JSON.stringify({ q: query, ...geoParams, num: 30, datePostedRange: 'lastMonth' }),
         signal:  ctrl.signal,
       })
       let usedSearch = false
       if (r.status === 404) {
         console.warn('[SERPER] /jobs returned 404 — plan may not include jobs endpoint, falling back to /search')
+        // Use query as-is (no " empleos" suffix) — cleaner queries trigger the Jobs SERP block more reliably.
         r = await fetch('https://google.serper.dev/search', {
           method:  'POST',
           headers: { 'X-API-KEY': env.SERPER_API_KEY, 'Content-Type': 'application/json', 'User-Agent': UA },
-          body:    JSON.stringify({ q: `${query} empleos`, ...geoParams, num: 30 }),
+          body:    JSON.stringify({ q: query, ...geoParams, num: 30 }),
           signal:  ctrl.signal,
         })
         usedSearch = true
@@ -2410,7 +2412,7 @@ async function fetchJobSource(source, query, location, remoteOk, env, candidateL
         return { source, jobs: [], error: errCode }
       }
       const serperJobs = normalizeJobs(source, raw)
-      console.log(`[SERPER] status=${r.status} results=${serperJobs.length} latency=${latency}ms endpoint=${usedSearch?'/search':'/jobs'}`)
+      console.log(`[SERPER] status=${r.status} results=${serperJobs.length} latency=${latency}ms endpoint=${usedSearch?'/search':'/jobs (dateRange=lastMonth)'}`)
       if (serperJobs.length === 0) {
         console.warn(`[SERPER] 0 jobs for query="${query}" endpoint=${usedSearch?'/search':'/jobs'} raw keys: ${Object.keys(raw || {}).join(',')}`)
       }
