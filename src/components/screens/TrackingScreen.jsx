@@ -32,21 +32,45 @@ export default function TrackingScreen({
     <>
       <div className="step-transition w-full max-w-6xl mx-auto" style={{ minHeight: '70vh' }}>
         {!user?.es_premium ? (
-          <div className="text-center space-y-5 py-12 px-4">
-            <div className="text-5xl">📍</div>
-            <h2 className="text-xl font-bold" style={{ color: '#0d2137' }}>Seguimiento de Postulaciones</h2>
-            <p className="text-sm max-w-xs mx-auto" style={{ color: '#475569' }}>
-              Organizá todas tus postulaciones en un tablero kanban. Vinculá el CV adaptado a cada oferta y nunca más pierdas el hilo de tu proceso de búsqueda.
-            </p>
-            <button onClick={() => setShowPremiumModal(true)}
-              className="px-6 py-3 rounded-xl text-sm font-semibold text-white"
-              style={{ background: LI_GRADIENT }}>
-              Activar Plan Profesional →
-            </button>
-            <button onClick={() => setStep(STEPS.MODE_SELECT)}
-              className="block mx-auto text-xs mt-2" style={{ color: '#94a3b8' }}>
-              Mi preparación
-            </button>
+          <div className="space-y-5 py-10 px-4 max-w-sm mx-auto">
+            <div className="text-center space-y-2">
+              <div className="text-4xl">📍</div>
+              <h2 className="text-xl font-bold" style={{ color: '#0d2137' }}>Seguimiento de Postulaciones</h2>
+              <p className="text-sm" style={{ color: '#475569' }}>
+                Organizá tu búsqueda activa en un tablero kanban. CV adaptado por oferta, estado de cada proceso y nunca más perder el hilo.
+              </p>
+            </div>
+
+            {/* Kanban preview mockup */}
+            <div className="rounded-2xl overflow-hidden border" style={{ borderColor: 'rgba(0,119,181,0.15)', background: '#f8fafc' }}>
+              <div className="px-3 pt-3 pb-1 flex gap-2 overflow-x-auto" style={{ pointerEvents: 'none', userSelect: 'none', filter: 'blur(1.5px)', opacity: 0.7 }}>
+                {[
+                  { col: 'Por aplicar', color: '#64748b', cards: ['Analista RRHH · Mercado Libre', 'HR Business Partner · Globant'] },
+                  { col: 'Aplicado', color: '#0077B5', cards: ['People Lead · Ualá', 'HRBP · Despegar'] },
+                  { col: 'Entrevista', color: '#059669', cards: ['Talent Acquisition · OLX'] },
+                ].map(({ col, color, cards }) => (
+                  <div key={col} className="shrink-0 w-36 space-y-1.5 pb-2">
+                    <p className="text-[10px] font-bold uppercase tracking-wide px-1" style={{ color }}>{col}</p>
+                    {cards.map(c => (
+                      <div key={c} className="rounded-lg px-2 py-1.5 text-[10px] font-medium text-slate-700 bg-white shadow-sm border" style={{ borderColor: 'rgba(0,0,0,0.06)' }}>{c}</div>
+                    ))}
+                  </div>
+                ))}
+              </div>
+              <div className="text-center py-2 text-[10px] font-semibold" style={{ color: '#94a3b8' }}>Vista previa · activá para usar</div>
+            </div>
+
+            <div className="text-center space-y-2">
+              <button onClick={() => setShowPremiumModal(true)}
+                className="w-full px-6 py-3 rounded-xl text-sm font-semibold text-white"
+                style={{ background: LI_GRADIENT }}>
+                Activar Plan Profesional →
+              </button>
+              <button onClick={() => setStep(STEPS.MODE_SELECT)}
+                className="block mx-auto text-xs" style={{ color: '#94a3b8' }}>
+                Mi preparación
+              </button>
+            </div>
           </div>
         ) : (
           <div className="space-y-4">

@@ -3262,8 +3262,9 @@ async function handleAiJobRecommendations(body, request, env, ctx, corsHeaders, 
   // liveFetched=false → first search of period → bypass ALL caches → full live fetch
   // liveFetched=true  → period already fetched → caches serve normally
   // Premium: once/day | Free: once/month
-  const liveFetched = user_id ? await hasLiveFetchedThisPeriod(env, user_id, isPremium) : true
-  console.log(`[RADAR] liveFetched=${liveFetched} period=${isPremium?'daily':'monthly'} user=${user_id||'anon'}`)
+  const liveFetchKey = user_id || ip
+  const liveFetched = await hasLiveFetchedThisPeriod(env, liveFetchKey, isPremium)
+  console.log(`[RADAR] liveFetched=${liveFetched} period=${isPremium?'daily':'monthly'} user=${user_id||'anon(ip)'}`)
 
   const profileHash = user_id ? await computeProfileHash(String(profile_text)) : null
   const queryHash = user_id ? await hashQueryParams(cleanQueries, location, remote_ok) : null
@@ -3413,7 +3414,7 @@ async function handleAiJobRecommendations(body, request, env, ctx, corsHeaders, 
 
   // ── Pre-filter: family-aware (zero tokens) → top N candidates ──────────────
   // 10 jobs × 700 chars = ~7KB — reduced to fit within 30s Gemini timeout
-  const maxJobsForGemini = 15
+  const maxJobsForGemini = MAX_JOBS_FOR_AI_MATCHING
   const preFiltered = applyPreFilter(jobs, String(profile_text), maxJobsForGemini, professionInfoSync)
   const jobPool     = preFiltered.length > 0 ? preFiltered : jobs.slice(0, maxJobsForGemini)
   console.log(`[RADAR] preFilter ${jobs.length} → ${jobPool.length} jobs to Gemini (maxJobs=${maxJobsForGemini} premium=${isPremium})`)

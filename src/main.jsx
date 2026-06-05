@@ -7,6 +7,13 @@ import App from './App.jsx'
 class ErrorBoundary extends React.Component {
   constructor(props) { super(props); this.state = { error: null } }
   static getDerivedStateFromError(error) { return { error } }
+  componentDidCatch(error) {
+    // Chunk not found after a new deployment (stale index.html) — reload once to get fresh assets
+    if (error?.message?.includes('Importing a module') && !sessionStorage.getItem('_chnk_reload')) {
+      sessionStorage.setItem('_chnk_reload', '1')
+      window.location.reload()
+    }
+  }
   render() {
     if (this.state.error) return (
       <div style={{ padding: 32, fontFamily: 'monospace', color: '#c00', background: '#fff1f0', minHeight: '100vh' }}>
