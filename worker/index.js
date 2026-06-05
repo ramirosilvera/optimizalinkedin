@@ -2377,26 +2377,40 @@ async function fetchJobSource(source, query, location, remoteOk, env, candidateL
       const geoParams = serperGeoConfig(candidateLocation)
       const serperT0 = Date.now()
       console.log(`[SERPER] START query="${query}" geo=${geoParams.gl}/${geoParams.location}`)
-      const r = await fetch('https://google.serper.dev/jobs', {
+
+      // Try /jobs endpoint first; if 404 (plan doesn't include jobs endpoint), fall back to
+      // /search which returns a `jobs` field when Google shows the jobs SERP block.
+      let r = await fetch('https://google.serper.dev/jobs', {
         method:  'POST',
         headers: { 'X-API-KEY': env.SERPER_API_KEY, 'Content-Type': 'application/json', 'User-Agent': UA },
         body:    JSON.stringify({ q: query, ...geoParams, num: 30 }),
         signal:  ctrl.signal,
       })
+      let usedSearch = false
+      if (r.status === 404) {
+        console.warn('[SERPER] /jobs returned 404 — plan may not include jobs endpoint, falling back to /search')
+        r = await fetch('https://google.serper.dev/search', {
+          method:  'POST',
+          headers: { 'X-API-KEY': env.SERPER_API_KEY, 'Content-Type': 'application/json', 'User-Agent': UA },
+          body:    JSON.stringify({ q: `${query} empleos`, ...geoParams, num: 30 }),
+          signal:  ctrl.signal,
+        })
+        usedSearch = true
+      }
+
       raw = await r.json()
       const latency = Date.now() - serperT0
       if (!r.ok) {
-        // HTTP error: quota exhausted (429/402), invalid key (401), or server error (5xx)
         const errCode = r.status === 401 ? 'serper_unauthorized'
           : r.status === 429 || r.status === 402 ? 'serper_quota_exceeded'
           : `serper_http_${r.status}`
-        console.warn(`[SERPER] HTTP ${r.status} — ${errCode} latency=${latency}ms body=${JSON.stringify(raw).slice(0, 200)}`)
+        console.warn(`[SERPER] HTTP ${r.status} — ${errCode} endpoint=${usedSearch?'/search':'/jobs'} latency=${latency}ms body=${JSON.stringify(raw).slice(0, 200)}`)
         return { source, jobs: [], error: errCode }
       }
       const serperJobs = normalizeJobs(source, raw)
-      console.log(`[SERPER] status=${r.status} results=${serperJobs.length} latency=${latency}ms`)
+      console.log(`[SERPER] status=${r.status} results=${serperJobs.length} latency=${latency}ms endpoint=${usedSearch?'/search':'/jobs'}`)
       if (serperJobs.length === 0) {
-        console.warn(`[SERPER] 0 jobs for query="${query}" — raw keys: ${Object.keys(raw || {}).join(',')}`)
+        console.warn(`[SERPER] 0 jobs for query="${query}" endpoint=${usedSearch?'/search':'/jobs'} raw keys: ${Object.keys(raw || {}).join(',')}`)
       }
       return { source, jobs: serperJobs }
     }
