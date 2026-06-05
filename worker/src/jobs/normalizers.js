@@ -285,24 +285,33 @@ export function normalizeWorkday(raw, companyMeta) {
 
 export function normalizeSerper(raw) {
   const jobs = raw?.jobs || []
-  return jobs.map(j => ({
-    source:          'serper',
-    external_id:     j.jobId || `${j.companyName||''}::${j.title||''}::${j.datePosted||''}`,
-    title:           j.title || '',
-    company:         j.companyName || '',
-    description:     truncateDesc((j.highlights?.items || []).join(' ') || j.description || ''),
-    location:        j.location || null,
-    remote:          /remot/i.test(j.location || ''),
-    url:             j.applyLink || (j.link && !j.link.includes('google.com') ? j.link : ''),
-    apply_url:       j.applyLink || null,
-    salary_min:      null, salary_max: null, currency: null,
-    skills_required: [],
-    seniority:       normalizeSeniority(j.title || ''),
-    industry:        null,
-    posted_at:       j.datePosted || null,
-    company_slug:    null,
-    ats_type:        null,
-  }))
+  return jobs.map(j => {
+    // /jobs endpoint: URL lives in relatedLinks; /search fallback: may have j.link or j.applyLink
+    const applyUrl = j.applyLink
+      || (Array.isArray(j.relatedLinks) ? (j.relatedLinks.find(r => r.link && !r.link.includes('google.com'))?.link || '') : '')
+      || (j.link && !j.link.includes('google.com') ? j.link : '')
+    // /jobs endpoint uses jobHighlights[].items; /search fallback may use highlights[].items
+    const highlights = (j.jobHighlights || j.highlights || []).flatMap(h => h.items || []).join(' ')
+    const postedAt = j.datePosted || j.detectedExtensions?.postedAt || null
+    return {
+      source:          'serper',
+      external_id:     j.jobId || `${j.companyName||''}::${j.title||''}::${postedAt||''}`,
+      title:           j.title || '',
+      company:         j.companyName || '',
+      description:     truncateDesc(highlights || j.description || ''),
+      location:        j.location || null,
+      remote:          /remot/i.test(j.location || ''),
+      url:             applyUrl,
+      apply_url:       applyUrl || null,
+      salary_min:      null, salary_max: null, currency: null,
+      skills_required: [],
+      seniority:       normalizeSeniority(j.title || ''),
+      industry:        null,
+      posted_at:       postedAt,
+      company_slug:    null,
+      ats_type:        null,
+    }
+  })
 }
 
 export function normalizeGreenhouse(rawJobs, companyMeta) {
