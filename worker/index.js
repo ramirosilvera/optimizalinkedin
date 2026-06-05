@@ -2406,21 +2406,23 @@ async function fetchJobSource(source, query, location, remoteOk, env, candidateL
  * @param {string|null} candidateLocation - Auto-detected from profile text; drives Serper geo
  */
 async function fetchAllSources(queries, location, remoteOk, env, userProfile = '', candidateLocation = null, professionFamily = null) {
-  // Curated sources — Serper (Google Jobs) is highest signal; getonboard + jobicy give
-  // LATAM-focused complementary coverage. Removed: remoteok/remotive (US-centric),
-  // arbeitnow (European), adzuna/jooble (low LATAM coverage, low ROI per subrequest).
-  // himalayas added for remote searches as a quality English-language remote board.
-  const base   = env.SERPER_API_KEY ? ['serper', 'getonboard', 'jobicy'] : ['getonboard', 'jobicy']
-  const sources = remoteOk ? [...base, 'himalayas'] : base
+  // Curated sources — Serper (Google Jobs) gets the top 2 headhunter queries (highest ROI
+  // per subrequest, returns Google Jobs results that vary by query). Other LATAM-focused
+  // sources each get 1 query. himalayas added for remote-only (English remote board).
+  // Removed: remoteok/remotive (US-centric), arbeitnow (European), adzuna/jooble (low LATAM).
+  const nonSerperSources = remoteOk ? ['getonboard', 'jobicy', 'himalayas'] : ['getonboard', 'jobicy']
+  const serperQueries    = env.SERPER_API_KEY ? queries.slice(0, 2) : []
+  const sources = [...(env.SERPER_API_KEY ? ['serper'] : []), ...nonSerperSources]
 
-  console.log(`[RADAR:sources] remoteOk=${!!remoteOk} active=[${sources.join(',')}] queries=${JSON.stringify(queries)}`)
+  console.log(`[RADAR:sources] remoteOk=${!!remoteOk} active=[${sources.join(',')}] serperQueries=${serperQueries.length} queries=${JSON.stringify(queries.slice(0,2))}`)
 
-  // Run aggregators + ATS boards in parallel.
-  // Each aggregator source gets ONE fetch call (the top headhunter query) — Cloudflare Workers
-  // enforces a 50-subrequest limit per invocation; fan-out across N queries × M sources blows it.
-  // ATS boards receive all queries for LOCAL keyword filtering (no extra API calls per query).
+  // Build parallel fetch calls: Serper × 2 queries, each other source × 1 query
+  // Worst-case: 2 + 4 sources = 6 aggregator fetches (well within 50-subrequest budget).
   const [aggregatorResults, atsJobs] = await Promise.all([
-    Promise.all(sources.map(source => fetchJobSource(source, queries[0], location, remoteOk, env, candidateLocation))),
+    Promise.all([
+      ...serperQueries.map(q => fetchJobSource('serper', q, location, remoteOk, env, candidateLocation)),
+      ...nonSerperSources.map(source => fetchJobSource(source, queries[0], location, remoteOk, env, candidateLocation)),
+    ]),
     fetchAtsCompanies(queries, userProfile, env, professionFamily),
   ])
 
@@ -2718,8 +2720,10 @@ async function expandWithSearch(env, ctx, cleanQueries, location, remoteOk, prof
   const newTerms = await expandSearchTerms(env, profileText, cleanQueries, professionInfo)
   if (!newTerms.length) return null
 
+  // Limit to 1 new term for expansion: Serper still gets 2 queries (if configured)
+  // but the second query is just the same term — net: 1 Serper call + 3 others = 4 fetches total.
   const { jobs: rawExpanded } = await fetchAllSources(
-    newTerms.slice(0, 3), location, remoteOk, env, String(profileText), candidateLocation
+    newTerms.slice(0, 1), location, remoteOk, env, String(profileText), candidateLocation
   )
   const newJobs = rawExpanded
     .filter(j => !existingHashes.has(canonicalJobHash(j)))
@@ -3409,7 +3413,7 @@ async function handleAiJobRecommendations(body, request, env, ctx, corsHeaders, 
 
   // ── Pre-filter: family-aware (zero tokens) → top N candidates ──────────────
   // 10 jobs × 700 chars = ~7KB — reduced to fit within 30s Gemini timeout
-  const maxJobsForGemini = 10
+  const maxJobsForGemini = 15
   const preFiltered = applyPreFilter(jobs, String(profile_text), maxJobsForGemini, professionInfoSync)
   const jobPool     = preFiltered.length > 0 ? preFiltered : jobs.slice(0, maxJobsForGemini)
   console.log(`[RADAR] preFilter ${jobs.length} → ${jobPool.length} jobs to Gemini (maxJobs=${maxJobsForGemini} premium=${isPremium})`)

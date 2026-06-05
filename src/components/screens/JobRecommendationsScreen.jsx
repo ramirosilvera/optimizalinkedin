@@ -1813,7 +1813,11 @@ export default function JobRecommendationsScreen({
                         {[
                           pipelineStats.sources_count ? `Analizadas ${pipelineStats.sources_count} fuentes` : null,
                           pipelineStats.total_evaluated ? `${pipelineStats.total_evaluated.toLocaleString('es-AR')} avisos evaluados` : null,
-                          serperActive ? '🔍 Google Jobs activado' : null,
+                          pipelineStats?.serper_configured
+                            ? (pipelineStats?.serper_returned > 0
+                              ? `🔍 Google Jobs: ${pipelineStats.serper_returned} avisos`
+                              : '⚠️ Google Jobs: sin resultados')
+                            : null,
                         ].filter(Boolean).join(' · ')}
                       </p>
                     ) : totalAnalyzed > filteredRecs.length ? (
