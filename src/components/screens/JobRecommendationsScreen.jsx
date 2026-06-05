@@ -1816,7 +1816,11 @@ export default function JobRecommendationsScreen({
                           pipelineStats?.serper_configured
                             ? (pipelineStats?.serper_returned > 0
                               ? `🔍 Google Jobs: ${pipelineStats.serper_returned} avisos`
-                              : '⚠️ Google Jobs: sin resultados')
+                              : pipelineStats?.serper_error?.includes('quota')
+                                ? '⚠️ Google Jobs: cuota agotada'
+                                : pipelineStats?.serper_error
+                                  ? `⚠️ Google Jobs: error (${pipelineStats.serper_error})`
+                                  : '⚠️ Google Jobs: sin resultados')
                             : null,
                         ].filter(Boolean).join(' · ')}
                       </p>

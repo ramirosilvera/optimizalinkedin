@@ -2384,8 +2384,20 @@ async function fetchJobSource(source, query, location, remoteOk, env, candidateL
         signal:  ctrl.signal,
       })
       raw = await r.json()
+      const latency = Date.now() - serperT0
+      if (!r.ok) {
+        // HTTP error: quota exhausted (429/402), invalid key (401), or server error (5xx)
+        const errCode = r.status === 401 ? 'serper_unauthorized'
+          : r.status === 429 || r.status === 402 ? 'serper_quota_exceeded'
+          : `serper_http_${r.status}`
+        console.warn(`[SERPER] HTTP ${r.status} — ${errCode} latency=${latency}ms body=${JSON.stringify(raw).slice(0, 200)}`)
+        return { source, jobs: [], error: errCode }
+      }
       const serperJobs = normalizeJobs(source, raw)
-      console.log(`[SERPER] status=${r.status} results=${serperJobs.length} latency=${Date.now()-serperT0}ms`)
+      console.log(`[SERPER] status=${r.status} results=${serperJobs.length} latency=${latency}ms`)
+      if (serperJobs.length === 0) {
+        console.warn(`[SERPER] 0 jobs for query="${query}" — raw keys: ${Object.keys(raw || {}).join(',')}`)
+      }
       return { source, jobs: serperJobs }
     }
 
@@ -2439,12 +2451,32 @@ async function fetchAllSources(queries, location, remoteOk, env, userProfile = '
   }
   if (atsJobs.length) sourceCounts['ats'] = atsJobs.length
 
+  // Serper fallback: if headhunter queries returned 0 and there's no quota/auth error,
+  // retry with the base user query (queries[2]+) — headhunter titles can miss Google Jobs index.
+  const serperError = errors['serper']
+  if (serperQueries.length && !sourceCounts['serper'] && !serperError) {
+    const fallbackQuery = queries.find(q => !serperQueries.includes(q))
+    if (fallbackQuery) {
+      console.log(`[SERPER] fallback query="${fallbackQuery}" — headhunter queries returned 0`)
+      const fallback = await fetchJobSource('serper', fallbackQuery, location, remoteOk, env, candidateLocation)
+      if (fallback.error) {
+        errors['serper'] = fallback.error
+      } else if (fallback.jobs.length) {
+        sourceCounts['serper'] = fallback.jobs.length
+        for (const job of fallback.jobs) {
+          if (job.url && job.title) rawAggregatorJobs.push(job)
+        }
+        console.log(`[SERPER] fallback returned ${fallback.jobs.length} jobs`)
+      }
+    }
+  }
+
   // Merge and 3-level dedup (ATS takes priority over aggregator on URL collision)
   const allJobs = deduplicateJobs([...rawAggregatorJobs, ...atsJobs])
 
   console.log(`[RADAR:sources] aggregator=${rawAggregatorJobs.length} ats=${atsJobs.length} deduped=${allJobs.length} perSource=${JSON.stringify(sourceCounts)}`)
   if (sources.includes('serper') && !sourceCounts['serper']) {
-    console.log('[SERPER] returned 0 jobs — check quota, API key validity, or search terms')
+    console.log(`[SERPER] returned 0 jobs — error=${errors['serper'] || 'none'} — check quota, API key validity, or search terms`)
   }
   if (Object.keys(errors).length) console.warn('[RADAR:sources] errors:', JSON.stringify(errors))
 
@@ -3362,6 +3394,7 @@ async function handleAiJobRecommendations(body, request, env, ctx, corsHeaders, 
 
   let sourcesUsed  = []
   let sourceCounts = {}
+  let sourceErrors = {}
   // Skip job KV cache when period hasn't been live-fetched yet → all sources called live.
   const kvCached = liveFetched ? await getJobsFromKV(env, queryHash) : null
   if (kvCached) {
@@ -3378,6 +3411,7 @@ async function handleAiJobRecommendations(body, request, env, ctx, corsHeaders, 
     const fetchResult = await fetchAllSources(cleanQueries, location, remote_ok, env, String(profile_text), candidateLocation, professionInfoSync?.family || null)
     sourcesUsed  = fetchResult.sourcesUsed || []
     sourceCounts = fetchResult.sourceCounts || {}
+    sourceErrors = fetchResult.sourceErrors || {}
     if (fetchResult.jobs.length) {
       jobs = fetchResult.jobs
       await putJobsToKV(env, queryHash, jobs)
@@ -3848,6 +3882,7 @@ async function handleAiJobRecommendations(body, request, env, ctx, corsHeaders, 
         serper_configured:   !!env.SERPER_API_KEY,  // env var present
         serper_in_sources:   sourcesUsed.includes('serper'),  // actually attempted this run
         serper_returned:     sourceCounts['serper'] || 0,     // jobs returned by Serper
+        serper_error:        sourceErrors?.['serper'] || null, // error code if Serper failed (e.g. quota_exceeded)
         jobs_fetched:        jobs.length,
         jobs_to_gemini:      jobPool.length,
         from_jobs_cache:     fromCache,
