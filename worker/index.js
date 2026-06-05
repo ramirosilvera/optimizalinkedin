@@ -2423,13 +2423,13 @@ async function fetchAllSources(queries, location, remoteOk, env, userProfile = '
   // sources each get 1 query. himalayas added for remote-only (English remote board).
   // Removed: remoteok/remotive (US-centric), arbeitnow (European), adzuna/jooble (low LATAM).
   const nonSerperSources = remoteOk ? ['getonboard', 'jobicy', 'himalayas'] : ['getonboard', 'jobicy']
-  const serperQueries    = env.SERPER_API_KEY ? queries.slice(0, 2) : []
+  const serperQueries    = env.SERPER_API_KEY ? queries.slice(0, 3) : []
   const sources = [...(env.SERPER_API_KEY ? ['serper'] : []), ...nonSerperSources]
 
-  console.log(`[RADAR:sources] remoteOk=${!!remoteOk} active=[${sources.join(',')}] serperQueries=${serperQueries.length} queries=${JSON.stringify(queries.slice(0,2))}`)
+  console.log(`[RADAR:sources] remoteOk=${!!remoteOk} active=[${sources.join(',')}] serperQueries=${serperQueries.length} queries=${JSON.stringify(queries.slice(0,3))}`)
 
-  // Build parallel fetch calls: Serper × 2 queries, each other source × 1 query
-  // Worst-case: 2 + 4 sources = 6 aggregator fetches (well within 50-subrequest budget).
+  // Build parallel fetch calls: Serper × 3 queries, each other source × 1 query
+  // Worst-case: 3 + 4 sources = 7 aggregator fetches (well within 50-subrequest budget).
   const [aggregatorResults, atsJobs] = await Promise.all([
     Promise.all([
       ...serperQueries.map(q => fetchJobSource('serper', q, location, remoteOk, env, candidateLocation)),
@@ -2752,10 +2752,10 @@ async function expandWithSearch(env, ctx, cleanQueries, location, remoteOk, prof
   const newTerms = await expandSearchTerms(env, profileText, cleanQueries, professionInfo)
   if (!newTerms.length) return null
 
-  // Limit to 1 new term for expansion: Serper still gets 2 queries (if configured)
-  // but the second query is just the same term — net: 1 Serper call + 3 others = 4 fetches total.
+  // Use 2 expansion terms: Serper gets up to 2 queries — broader coverage when main search
+  // didn't find enough high-scoring matches (topScore < EXPANSION_THRESHOLD).
   const { jobs: rawExpanded } = await fetchAllSources(
-    newTerms.slice(0, 1), location, remoteOk, env, String(profileText), candidateLocation
+    newTerms.slice(0, 2), location, remoteOk, env, String(profileText), candidateLocation
   )
   const newJobs = rawExpanded
     .filter(j => !existingHashes.has(canonicalJobHash(j)))
