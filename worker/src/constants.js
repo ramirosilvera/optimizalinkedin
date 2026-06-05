@@ -1,5 +1,5 @@
 // ── Core worker constants ─────────────────────────────────────────────────────
-export const WORKER_VERSION     = '2.6.4'
+export const WORKER_VERSION     = '2.6.5'
 export const ALLOWED_MODELS     = new Set(['gemini-2.5-flash-lite', 'gemini-2.5-flash'])
 export const DEFAULT_MODEL      = 'gemini-2.5-flash-lite'
 export const PREMIUM_MATCH_MODEL = 'gemini-2.5-flash'

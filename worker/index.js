@@ -2255,7 +2255,7 @@ async function fetchAtsCompanyBoard(atsType, company, env) {
 
 // Fetch all relevant ATS company boards based on user profile, filter by query relevance
 async function fetchAtsCompanies(queries, userProfile, env, professionFamily = null) {
-  const selected = selectAtsCompanies(userProfile, 5, professionFamily)
+  const selected = selectAtsCompanies(userProfile, 2, professionFamily)  // 2/type × 9 types = 18 max uncached fetches
   const allFetches = []
   for (const [atsType, companies] of Object.entries(selected)) {
     for (const company of companies) {
@@ -2414,9 +2414,12 @@ async function fetchAllSources(queries, location, remoteOk, env, userProfile = '
 
   console.log(`[RADAR:sources] remoteOk=${!!remoteOk} active=[${sources.join(',')}] queries=${JSON.stringify(queries)}`)
 
-  // Run aggregators + ATS boards in parallel
+  // Run aggregators + ATS boards in parallel.
+  // Each aggregator source gets ONE fetch call (the top headhunter query) — Cloudflare Workers
+  // enforces a 50-subrequest limit per invocation; fan-out across N queries × M sources blows it.
+  // ATS boards receive all queries for LOCAL keyword filtering (no extra API calls per query).
   const [aggregatorResults, atsJobs] = await Promise.all([
-    Promise.all(sources.flatMap(source => queries.map(q => fetchJobSource(source, q, location, remoteOk, env, candidateLocation)))),
+    Promise.all(sources.map(source => fetchJobSource(source, queries[0], location, remoteOk, env, candidateLocation))),
     fetchAtsCompanies(queries, userProfile, env, professionFamily),
   ])
 
