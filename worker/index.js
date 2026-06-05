@@ -1859,11 +1859,11 @@ export default {
           },
         },
         {
-          label: 'G_REAL_system_10_fake_jobs',
+          label: 'G_REAL_system_10_fake_jobs_4096tokens',
           body: {
             system_instruction: { parts: [{ text: JOB_MATCHING_SYSTEM_PROMPT }] },
             contents: [{ role: 'user', parts: [{ text: `PERFIL DEL CANDIDATO:\nGerente de RRHH, 10 años, tecnología, Buenos Aires.\nPROFESIÓN DOMINANTE DETECTADA: Gerente RRHH | FAMILIA: HR/Personas | SENIORITY: nivel 5\n\nAVISOS LABORALES:\n[0] HR Manager | TechCo | Buenos Aires | Presencial\nSkills: HRIS, liderazgo\nSeniority: Senior\nDescripción: Responsable del área de personas, gestión de equipos, reclutamiento y cultura organizacional.\n\n[1] Head of People | Startup | Remoto | Remoto 100%\nSkills: Workday\nSeniority: Lead\nDescripción: Liderar el equipo de HR desde cero en startup de 80 personas.\n\n[2] Talent Manager | Fintech | CABA | Híbrido\nSkills: LinkedIn Recruiter\nSeniority: Senior\nDescripción: Gestión de procesos de selección end-to-end para perfiles tech y no-tech.\n\n[3] HRBP Senior | Empresa industrial | GBA | Presencial\nSkills: SAP HCM\nSeniority: Senior\nDescripción: Socio estratégico de negocio para unidades industriales, gestión de conflictos y clima.\n\n[4] Gerente RRHH | Retail | CABA | Presencial\nSkills: Nómina, RRHH generalista\nSeniority: Gerente\nDescripción: Gestión integral del área de personas en empresa retail de 500 empleados.\n\n[5] L&D Manager | Consultora | Remoto | Remoto 100%\nSkills: LMS, e-learning\nSeniority: Manager\nDescripción: Diseñar e implementar programas de aprendizaje y desarrollo para clientes corporativos.\n\n[6] Data Analyst | Empresa de datos | Buenos Aires | Presencial\nSkills: Python, SQL\nSeniority: Semi Senior\nDescripción: Análisis de datos para equipos de negocio.\n\n[7] Product Manager | SaaS | Remoto | Remoto 100%\nSkills: Roadmap, Agile\nSeniority: Senior\nDescripción: Gestionar el roadmap de producto para plataforma B2B.\n\n[8] Compensation & Benefits Analyst | Multinacional | CABA | Híbrido\nSkills: Beneficios, compensaciones\nSeniority: Analista\nDescripción: Administración de esquemas de compensación y beneficios para 300 empleados.\n\n[9] HR Operations Specialist | Tech | CABA | Híbrido\nSkills: HRIS, procesos\nSeniority: Semi Senior\nDescripción: Gestión de procesos administrativos de HR, onboarding y sistemas de RRHH.` }] }],
-            generationConfig: { temperature: 0.3, maxOutputTokens: 1536 },
+            generationConfig: { temperature: 0.3, maxOutputTokens: 4096 },
           },
         },
       ]
@@ -3452,7 +3452,7 @@ async function handleAiJobRecommendations(body, request, env, ctx, corsHeaders, 
   const geminiBody = {
     system_instruction: { parts: [{ text: JOB_MATCHING_SYSTEM_PROMPT }] },
     contents,
-    generationConfig:   { temperature: 0.3, maxOutputTokens: 1536 },
+    generationConfig:   { temperature: 0.3, maxOutputTokens: 4096 },
   }
 
   let aiResult    = null
