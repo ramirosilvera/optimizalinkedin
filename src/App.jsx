@@ -2395,9 +2395,11 @@ Generá el feedback en este JSON exacto:
         }
       }
 
-      // Desktop: popup + print dialog → "Guardar como PDF"
-      const printHtml = html.replace('</body>', `<script>window.onload=function(){setTimeout(function(){window.print()},350)}<\/script></body>`)
-      const win = window.open('', '_blank', 'width=900,height=750')
+      // Desktop: popup 830px (794 A4 + scrollbar) + print dialog → "Guardar como PDF"
+      // viewport width=794 ya está fijado en el HTML generado con forExport:true.
+      // 500ms delay: el navegador necesita terminar de renderizar antes del diálogo de impresión.
+      const printHtml = html.replace('</body>', `<script>window.onload=function(){setTimeout(function(){window.print()},500)}<\/script></body>`)
+      const win = window.open('', '_blank', 'width=830,height=1050,scrollbars=yes,resizable=yes')
       if (win) {
         win.document.open(); win.document.write(printHtml); win.document.close()
         dismissToast(loadingId)

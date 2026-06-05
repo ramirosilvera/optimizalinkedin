@@ -139,10 +139,10 @@ export function buildCvHtmlMinimal(cv, photoBase64 = null, photoMime = 'image/jp
 <html lang="es">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="${forExport ? 'width=794' : 'width=device-width, initial-scale=1'}">
 <title>${e(pdfTitle)}</title>
 <style>
-  @page { size: A4; margin: 0; }
+  @page { size: 210mm 297mm; margin: 0; }
   * { box-sizing: border-box; margin: 0; padding: 0; }
   body { font-family: 'Helvetica Neue', Arial, sans-serif; font-size: 9.5pt; color: #111827; line-height: 1.5; width: 210mm; min-height: 297mm; background: white; }
   .cv-wrap { width: 100%; min-height: 100%; padding: 16mm 14mm 14mm; }
@@ -172,10 +172,11 @@ export function buildCvHtmlMinimal(cv, photoBase64 = null, photoMime = 'image/jp
   .edu-inst { font-size: 8.5pt; color: #6B7280; margin-top: 2px; overflow-wrap: break-word; }
   .skills-text { font-size: 8.5pt; color: #374151; line-height: 1.7; overflow-wrap: break-word; }
   @media print {
-    @page { size: A4 portrait; margin: 0; }
+    @page { size: 210mm 297mm; margin: 0; }
     * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
     html, body { margin: 0 !important; padding: 0 !important; width: 210mm !important; }
     .cv-wrap { zoom: 1 !important; transform: none !important; }
+    .section, .exp-item, .edu-item { break-inside: avoid; page-break-inside: avoid; }
   }
 </style>
 </head>
@@ -249,10 +250,10 @@ export function buildCvHtmlEjecutivo(cv, photoBase64 = null, photoMime = 'image/
 <html lang="es">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="${forExport ? 'width=794' : 'width=device-width, initial-scale=1'}">
 <title>${e(pdfTitle)}</title>
 <style>
-  @page { size: A4; margin: 0; }
+  @page { size: 210mm 297mm; margin: 0; }
   * { box-sizing: border-box; margin: 0; padding: 0; }
   body { font-family: 'Helvetica Neue', Arial, sans-serif; font-size: 9.5pt; color: #1e293b; line-height: 1.48; width: 210mm; min-height: 297mm; background: white; }
   .cv-wrap { display: flex; flex-direction: column; width: 210mm; min-height: 297mm; }
@@ -290,10 +291,11 @@ export function buildCvHtmlEjecutivo(cv, photoBase64 = null, photoMime = 'image/
   .prev-role { font-weight: 600; color: #475569; }
   .prev-co { font-style: italic; }
   @media print {
-    @page { size: A4 portrait; margin: 0; }
+    @page { size: 210mm 297mm; margin: 0; }
     * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
     html, body { margin: 0 !important; padding: 0 !important; width: 210mm !important; }
-    .cv-wrap { zoom: 1 !important; transform: none !important; break-inside: avoid; }
+    .cv-wrap { width: 210mm !important; zoom: 1 !important; transform: none !important; }
+    .exp-item, .cl-edu, .cl-section, .cr-section { break-inside: avoid; page-break-inside: avoid; }
   }
 </style>
 </head>
@@ -398,10 +400,10 @@ export function buildCvHtml(cv, photoBase64 = null, photoMime = 'image/jpeg', te
 <html lang="es">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="${forExport ? 'width=794' : 'width=device-width, initial-scale=1'}">
 <title>${e(pdfTitle)}</title>
 <style>
-  @page { size: A4; margin: 0; }
+  @page { size: 210mm 297mm; margin: 0; }
   * { box-sizing: border-box; margin: 0; padding: 0; }
   body {
     font-family: 'Helvetica Neue', Arial, sans-serif;
@@ -604,8 +606,7 @@ export function buildCvHtml(cv, photoBase64 = null, photoMime = 'image/jpeg', te
   .exp-prev-co   { font-style: italic; }
 
   @media print {
-    @page { size: A4 portrait; margin: 0; }
-    /* Forzar colores reales en todos los elementos (sidebar, fondos, etc.) */
+    @page { size: 210mm 297mm; margin: 0; }
     * {
       -webkit-print-color-adjust: exact !important;
       print-color-adjust: exact !important;
@@ -621,6 +622,10 @@ export function buildCvHtml(cv, photoBase64 = null, photoMime = 'image/jpeg', te
       min-height: 297mm !important;
       zoom: 1 !important;
       transform: none !important;
+      /* Sin break-inside en cv-wrap — permite multi-página correctamente */
+    }
+    /* Evitar cortes internos en secciones e ítems individuales */
+    .main-section, .sb-section, .exp-item, .exp-prev, .edu-item {
       break-inside: avoid;
       page-break-inside: avoid;
     }
