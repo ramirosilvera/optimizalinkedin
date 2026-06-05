@@ -2255,7 +2255,7 @@ async function fetchAtsCompanyBoard(atsType, company, env) {
 
 // Fetch all relevant ATS company boards based on user profile, filter by query relevance
 async function fetchAtsCompanies(queries, userProfile, env, professionFamily = null) {
-  const selected = selectAtsCompanies(userProfile, 2, professionFamily)  // 2/type × 9 types = 18 max uncached fetches
+  const selected = selectAtsCompanies(userProfile, 3, professionFamily)  // 3/type × 9 types = 27 max uncached fetches
   const allFetches = []
   for (const [atsType, companies] of Object.entries(selected)) {
     for (const company of companies) {
@@ -2406,11 +2406,12 @@ async function fetchJobSource(source, query, location, remoteOk, env, candidateL
  * @param {string|null} candidateLocation - Auto-detected from profile text; drives Serper geo
  */
 async function fetchAllSources(queries, location, remoteOk, env, userProfile = '', candidateLocation = null, professionFamily = null) {
-  const remoteSources = ['remoteok', 'remotive', 'jobicy', 'adzuna', 'getonboard', 'himalayas', 'arbeitnow']
-  const localSources  = ['adzuna', 'jobicy', 'getonboard', 'himalayas', 'arbeitnow']
-  if (env.JOOBLE_KEY)     { remoteSources.push('jooble');  localSources.push('jooble')  }
-  if (env.SERPER_API_KEY) { remoteSources.push('serper');  localSources.push('serper')  }
-  const sources = remoteOk ? remoteSources : localSources
+  // Curated sources — Serper (Google Jobs) is highest signal; getonboard + jobicy give
+  // LATAM-focused complementary coverage. Removed: remoteok/remotive (US-centric),
+  // arbeitnow (European), adzuna/jooble (low LATAM coverage, low ROI per subrequest).
+  // himalayas added for remote searches as a quality English-language remote board.
+  const base   = env.SERPER_API_KEY ? ['serper', 'getonboard', 'jobicy'] : ['getonboard', 'jobicy']
+  const sources = remoteOk ? [...base, 'himalayas'] : base
 
   console.log(`[RADAR:sources] remoteOk=${!!remoteOk} active=[${sources.join(',')}] queries=${JSON.stringify(queries)}`)
 
