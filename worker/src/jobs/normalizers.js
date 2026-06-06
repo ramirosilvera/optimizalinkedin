@@ -68,25 +68,34 @@ export function normalizeJobicy(raw) {
   }))
 }
 
+const NON_LATAM_RE = /united states|\busa\b|united kingdom|\buk\b|germany|australia|canada|france|india|china|japan|singapore|brasil remote|brazil remote/i
+
 export function normalizeJooble(raw) {
   if (!raw?.jobs) return []
-  return raw.jobs.map(j => ({
-    source:          'jooble',
-    external_id:     String(j.id),
-    title:           (j.title   || '').trim(),
-    company:         (j.company || '').trim(),
-    description:     truncateDesc(j.snippet),
-    location:        j.location || null,
-    remote:          /remote|remoto/.test((j.location || j.title || '').toLowerCase()),
-    url:             j.link || '',
-    apply_url:       j.link || null,
-    salary_min:      null, salary_max: null, currency: null,
-    skills_required: [],
-    seniority:       normalizeSeniority(j.title),
-    industry:        null,
-    posted_at:       j.updated || null,
-    company_slug:    null, ats_type: null,
-  }))
+  return raw.jobs.map(j => {
+    const locStr  = (j.location || '').trim()
+    const hasRemote = /remote|remoto/.test((locStr + ' ' + (j.title || '')).toLowerCase())
+    // Jobs labeled "remote" from non-LATAM countries (e.g. "Remote, USA") are NOT
+    // considered remote for geo-scoring — they'd score 1.0 and crowd out Argentine results.
+    const remote = hasRemote && !NON_LATAM_RE.test(locStr)
+    return {
+      source:          'jooble',
+      external_id:     String(j.id),
+      title:           (j.title   || '').trim(),
+      company:         (j.company || '').trim(),
+      description:     truncateDesc(j.snippet),
+      location:        locStr || null,
+      remote,
+      url:             j.link || '',
+      apply_url:       j.link || null,
+      salary_min:      null, salary_max: null, currency: null,
+      skills_required: [],
+      seniority:       normalizeSeniority(j.title),
+      industry:        null,
+      posted_at:       j.updated || null,
+      company_slug:    null, ats_type: null,
+    }
+  })
 }
 
 export function normalizeAdzuna(raw) {

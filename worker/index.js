@@ -2338,14 +2338,23 @@ async function fetchJobSource(source, query, location, remoteOk, env, candidateL
 
     if (source === 'jooble') {
       if (!env.JOOBLE_KEY) return { source, jobs: [], error: 'jooble_not_configured' }
+      const joobleLocation = candidateLocation || location || 'Argentina'
       const r = await fetch(`https://jooble.org/api/${env.JOOBLE_KEY}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'User-Agent': UA },
-        body:   JSON.stringify({ keywords: query, location: location || 'Argentina', page: '1' }),
+        body:   JSON.stringify({ keywords: query, location: joobleLocation, page: '1' }),
         signal: ctrl.signal,
       })
       raw = await r.json()
-      return { source, jobs: normalizeJobs(source, raw) }
+      const allJooble = normalizeJobs(source, raw)
+      // Filter to Argentina/LATAM: keep jobs with geo score >= 0.30.
+      // This removes US/EU on-site jobs and non-LATAM "remote" jobs that Jooble
+      // mixes in even when querying with location=Argentina.
+      const geoFiltered = candidateLocation
+        ? allJooble.filter(j => geoCompatibilityScore(j.location, j.remote, candidateLocation) >= 0.30)
+        : allJooble
+      console.log(`[JOOBLE] raw=${allJooble.length} geo_filtered=${geoFiltered.length} location="${joobleLocation}"`)
+      return { source, jobs: geoFiltered }
     }
 
     if (source === 'getonboard') {
@@ -2439,11 +2448,14 @@ async function fetchJobSource(source, query, location, remoteOk, env, candidateL
  * @param {string|null} candidateLocation - Auto-detected from profile text; drives Serper geo
  */
 async function fetchAllSources(queries, location, remoteOk, env, userProfile = '', candidateLocation = null, professionFamily = null) {
-  // Curated sources — Serper (Google Jobs) gets the top 2 headhunter queries (highest ROI
-  // per subrequest, returns Google Jobs results that vary by query). Other LATAM-focused
-  // sources each get 1 query. himalayas added for remote-only (English remote board).
-  // Removed: remoteok/remotive (US-centric), arbeitnow (European), adzuna/jooble (low LATAM).
-  const nonSerperSources = remoteOk ? ['getonboard', 'jobicy', 'himalayas'] : ['getonboard', 'jobicy']
+  // Curated sources — Serper (Google Jobs) gets the top 3 headhunter queries (highest ROI
+  // per subrequest). Jooble aggregates Bumeran/ZonaJobs/Computrabajo directly.
+  // Other LATAM-focused sources each get 1 query. himalayas added for remote-only.
+  // Removed: remoteok/remotive (US-centric), arbeitnow (European), adzuna (low LATAM).
+  const joobleActive = !!env.JOOBLE_KEY
+  const nonSerperSources = remoteOk
+    ? ['getonboard', ...(joobleActive ? ['jooble'] : []), 'jobicy', 'himalayas']
+    : ['getonboard', ...(joobleActive ? ['jooble'] : []), 'jobicy']
   const serperQueries    = env.SERPER_API_KEY ? queries.slice(0, 3) : []
   const sources = [...(env.SERPER_API_KEY ? ['serper'] : []), ...nonSerperSources]
 
