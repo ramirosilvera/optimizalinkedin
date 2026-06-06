@@ -1981,6 +1981,13 @@ export default function JobRecommendationsScreen({
                       </p>
                     )}
 
+                    {/* Adzuna note */}
+                    {(pipelineStats.source_counts?.adzuna !== undefined) && (
+                      <p style={{ margin: 0, color: pipelineStats.source_counts.adzuna > 0 ? '#166534' : '#dc2626' }}>
+                        <b>Adzuna:</b> {pipelineStats.source_counts.adzuna} avisos (filtrados por geo &ge;0.30)
+                      </p>
+                    )}
+
                     {/* candidateLocation */}
                     <p style={{ margin: 0, color: '#64748b' }}>
                       <b>candidateLocation detectado:</b> {pipelineStats.candidate_location || '(ninguno — perfil sin ubicación)'}

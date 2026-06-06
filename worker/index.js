@@ -2324,16 +2324,31 @@ async function fetchJobSource(source, query, location, remoteOk, env, candidateL
       if (!env.ADZUNA_APP_ID || !env.ADZUNA_APP_KEY) {
         return { source, jobs: [], error: 'adzuna_not_configured' }
       }
-      // Adzuna doesn't support 'ar' (Argentina) — closest LATAM coverage is 'br' (Brazil)
-      // Fallback to 'us' for remote-only searches where geo doesn't matter
-      const country = location?.toLowerCase().includes('arg') ? 'br' : 'us'
-      url = `https://api.adzuna.com/v1/api/jobs/${country}/search/1`
+      // Try Argentina (ar) first — Adzuna has added AR support.
+      // Fall back to mx (Mexico) as closest LATAM alternative if ar returns error.
+      url = `https://api.adzuna.com/v1/api/jobs/ar/search/1`
         + `?app_id=${env.ADZUNA_APP_ID}&app_key=${env.ADZUNA_APP_KEY}`
         + `&what=${q}&results_per_page=30&content-type=application/json`
-      if (location) url += `&where=${encodeURIComponent(location)}`
-      const r = await fetch(url, { signal: ctrl.signal })
+      let r = await fetch(url, { signal: ctrl.signal })
+      if (!r.ok) {
+        console.warn(`[ADZUNA] ar endpoint HTTP ${r.status} — falling back to mx`)
+        url = `https://api.adzuna.com/v1/api/jobs/mx/search/1`
+          + `?app_id=${env.ADZUNA_APP_ID}&app_key=${env.ADZUNA_APP_KEY}`
+          + `&what=${q}&results_per_page=30&content-type=application/json`
+        r = await fetch(url, { signal: ctrl.signal })
+      }
+      if (!r.ok) {
+        console.warn(`[ADZUNA] HTTP ${r.status} on both ar and mx endpoints`)
+        return { source, jobs: [], error: `adzuna_http_${r.status}` }
+      }
       raw = await r.json()
-      return { source, jobs: normalizeJobs(source, raw) }
+      const allAdzuna = normalizeJobs(source, raw)
+      // Geo filter: keep Argentina/LATAM results, discard unrelated geo
+      const geoFiltered = candidateLocation
+        ? allAdzuna.filter(j => geoCompatibilityScore(j.location, j.remote, candidateLocation) >= 0.30)
+        : allAdzuna
+      console.log(`[ADZUNA] raw=${allAdzuna.length} geo_filtered=${geoFiltered.length}`)
+      return { source, jobs: geoFiltered }
     }
 
     if (source === 'jooble') {
@@ -2481,10 +2496,11 @@ async function fetchAllSources(queries, location, remoteOk, env, userProfile = '
   // per subrequest). Jooble aggregates Bumeran/ZonaJobs/Computrabajo directly.
   // Other LATAM-focused sources each get 1 query. himalayas added for remote-only.
   // Removed: remoteok/remotive (US-centric), arbeitnow (European), adzuna (low LATAM).
-  const joobleActive = !!env.JOOBLE_KEY
+  const joobleActive  = !!env.JOOBLE_KEY
+  const adzunaActive  = !!(env.ADZUNA_APP_ID && env.ADZUNA_APP_KEY)
   const nonSerperSources = remoteOk
-    ? ['getonboard', ...(joobleActive ? ['jooble'] : []), 'jobicy', 'himalayas']
-    : ['getonboard', ...(joobleActive ? ['jooble'] : []), 'jobicy']
+    ? ['getonboard', ...(joobleActive ? ['jooble'] : []), ...(adzunaActive ? ['adzuna'] : []), 'jobicy', 'himalayas']
+    : ['getonboard', ...(joobleActive ? ['jooble'] : []), ...(adzunaActive ? ['adzuna'] : []), 'jobicy']
   const serperQueries    = env.SERPER_API_KEY ? queries.slice(0, 3) : []
   const sources = [...(env.SERPER_API_KEY ? ['serper'] : []), ...nonSerperSources]
 
