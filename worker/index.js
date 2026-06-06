@@ -2338,14 +2338,26 @@ async function fetchJobSource(source, query, location, remoteOk, env, candidateL
 
     if (source === 'jooble') {
       if (!env.JOOBLE_KEY) return { source, jobs: [], error: 'jooble_not_configured' }
-      const joobleLocation = candidateLocation || location || 'Argentina'
+      // Normalize location: Jooble doesn't recognize "CABA" or other abbreviations.
+      // Map common Argentine shorthands → full city name that Jooble indexes correctly.
+      const JOOBLE_LOC_MAP = { 'caba': 'Buenos Aires, Argentina', 'gba': 'Buenos Aires, Argentina', 'rosario': 'Rosario, Argentina', 'córdoba': 'Córdoba, Argentina', 'cordoba': 'Córdoba, Argentina', 'mendoza': 'Mendoza, Argentina' }
+      const rawLoc = (candidateLocation || location || 'Argentina').toLowerCase().trim()
+      const joobleLocation = JOOBLE_LOC_MAP[rawLoc] || (candidateLocation || location || 'Argentina')
       const r = await fetch(`https://jooble.org/api/${env.JOOBLE_KEY}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'User-Agent': UA },
-        body:   JSON.stringify({ keywords: query, location: joobleLocation, page: '1' }),
+        body:   JSON.stringify({ keywords: query, location: joobleLocation, page: 1 }),
         signal: ctrl.signal,
       })
       raw = await r.json()
+      const httpStatus  = r.status
+      const rawKeys     = Object.keys(raw || {}).join(',')
+      const rawJobCount = Array.isArray(raw?.jobs) ? raw.jobs.length : `jobs_field=${raw?.jobs}`
+      if (!r.ok) {
+        console.warn(`[JOOBLE] HTTP ${httpStatus} — keys=${rawKeys} body=${JSON.stringify(raw).slice(0, 200)}`)
+        return { source, jobs: [], error: `jooble_http_${httpStatus}`, jooble_debug: { location_used: joobleLocation, http_status: httpStatus, error: JSON.stringify(raw).slice(0, 300), raw_count: 0, filtered_count: 0, dropped_count: 0, sample_raw: [] } }
+      }
+      console.log(`[JOOBLE] HTTP ${httpStatus} keys=${rawKeys} jobs_field=${rawJobCount} location="${joobleLocation}"`)
       const allJooble = normalizeJobs(source, raw)
       // Filter to Argentina/LATAM: keep jobs with geo score >= 0.30.
       // This removes US/EU on-site jobs and non-LATAM "remote" jobs that Jooble
@@ -2355,6 +2367,8 @@ async function fetchJobSource(source, query, location, remoteOk, env, candidateL
         : allJooble
       const joobleDebug = {
         location_used:    joobleLocation,
+        http_status:      httpStatus,
+        raw_keys:         rawKeys,
         raw_count:        allJooble.length,
         filtered_count:   geoFiltered.length,
         dropped_count:    allJooble.length - geoFiltered.length,
