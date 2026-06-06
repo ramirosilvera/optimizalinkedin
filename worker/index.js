@@ -2453,14 +2453,13 @@ async function fetchJobSource(source, query, location, remoteOk, env, candidateL
       let usedSearch = false
       if (r.status === 404) {
         console.warn('[SERPER] /jobs returned 404 — plan may not include jobs endpoint, falling back to /search')
-        // "ofertas de empleo" prefix is more effective than suffix for triggering
-        // Google's Jobs SERP block. tbs=qdr:m filters to last month.
+        // site: operator forces results from Argentine job boards only — avoids generic pages.
+        // num:20 gives enough candidates to find individual listing URLs (with numeric IDs).
+        const siteFilter = 'site:bumeran.com.ar OR site:zonajobs.com.ar OR site:ar.computrabajo.com'
         r = await fetch('https://google.serper.dev/search', {
           method:  'POST',
           headers: { 'X-API-KEY': env.SERPER_API_KEY, 'Content-Type': 'application/json', 'User-Agent': UA },
-          // num:10 keeps focus on top results where Google's Jobs rich panel appears.
-          // "trabajo" prefix is shorter and more reliably triggers the Jobs SERP block than longer phrases.
-          body:    JSON.stringify({ q: `trabajo ${query}`, ...geoParams, num: 10, tbs: 'qdr:m' }),
+          body:    JSON.stringify({ q: `${query} ${siteFilter}`, ...geoParams, num: 20, tbs: 'qdr:m' }),
           signal:  ctrl.signal,
         })
         usedSearch = true

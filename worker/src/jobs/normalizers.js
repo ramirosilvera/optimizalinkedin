@@ -299,12 +299,24 @@ const AR_JOB_BOARD_DOMAINS = [
 ]
 const BOARD_SUFFIX_RE = /\s*[-|]\s*(bumeran|zonajobs|computrabajo|trabajar|empleateya|multitrabajos|aptitus)[^\s]*/gi
 
+// Individual listing URLs contain a long numeric or alphanumeric ID at the end.
+// Category/search pages (e.g. bumeran.com.ar/empleos-gerente-rrhh.html) don't.
+// Bumeran/ZonaJobs: ends in -NNNNNNN.html (6+ digits)
+// Computrabajo: ends in alphanumeric segment of 6+ chars after last slash
+const INDIVIDUAL_JOB_URL_RE = /-\d{6,}\.html$|\/[a-z0-9]{6,}\??$/i
+
+// These are search-results-page titles, not individual listings
+const SEARCH_TITLE_RE = /^\d[\d.,]* (empleo|trabajo|oferta|aviso)|^(trabajos|empleos|ofertas)\s+de\s|^buscar\s+empleo|resultados\s+de\s+búsqueda/i
+
 function normalizeSerperOrganic(raw) {
   const organic = raw?.organic || []
   return organic
     .filter(r => {
       const link = (r.link || '').toLowerCase()
-      return r.title && r.link && AR_JOB_BOARD_DOMAINS.some(d => link.includes(d))
+      const isBoard = AR_JOB_BOARD_DOMAINS.some(d => link.includes(d))
+      const isIndividual = INDIVIDUAL_JOB_URL_RE.test(r.link || '')
+      const titleOk = r.title && !SEARCH_TITLE_RE.test(r.title)
+      return isBoard && isIndividual && titleOk
     })
     .map(r => {
       const cleanTitle = (r.title || '').replace(BOARD_SUFFIX_RE, '').trim()
@@ -318,6 +330,8 @@ function normalizeSerperOrganic(raw) {
         jobTitle = parts[0]?.trim() || cleanTitle
         company  = parts[1]?.trim() || ''
       }
+      // Reject if cleaned title is still a generic search phrase
+      if (!jobTitle || jobTitle.length < 8 || SEARCH_TITLE_RE.test(jobTitle)) return null
       const remote = /remot/i.test((r.title || '') + ' ' + (r.snippet || ''))
       return {
         source: 'serper', external_id: r.link,
@@ -331,7 +345,7 @@ function normalizeSerperOrganic(raw) {
         industry: null, posted_at: null, company_slug: null, ats_type: null,
       }
     })
-    .filter(j => j.title && j.url)
+    .filter(Boolean)
 }
 
 export function normalizeSerper(raw) {
