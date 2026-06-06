@@ -2445,12 +2445,12 @@ async function fetchJobSource(source, query, location, remoteOk, env, candidateL
       let usedSearch = false
       if (r.status === 404) {
         console.warn('[SERPER] /jobs returned 404 — plan may not include jobs endpoint, falling back to /search')
-        // Suffix "empleo" triggers the Google Jobs SERP block more reliably in /search.
-        // tbs=qdr:m: filter to last month to improve result freshness.
+        // "ofertas de empleo" prefix is more effective than suffix for triggering
+        // Google's Jobs SERP block. tbs=qdr:m filters to last month.
         r = await fetch('https://google.serper.dev/search', {
           method:  'POST',
           headers: { 'X-API-KEY': env.SERPER_API_KEY, 'Content-Type': 'application/json', 'User-Agent': UA },
-          body:    JSON.stringify({ q: `${query} empleo`, ...geoParams, num: 30, tbs: 'qdr:m' }),
+          body:    JSON.stringify({ q: `ofertas de empleo ${query}`, ...geoParams, num: 30, tbs: 'qdr:m' }),
           signal:  ctrl.signal,
         })
         usedSearch = true
@@ -2466,13 +2466,14 @@ async function fetchJobSource(source, query, location, remoteOk, env, candidateL
         return { source, jobs: [], error: errCode }
       }
       const serperJobs = normalizeJobs(source, raw)
-      console.log(`[SERPER] status=${r.status} results=${serperJobs.length} latency=${latency}ms endpoint=${usedSearch?'/search':'/jobs (dateRange=lastMonth)'}`)
+      const serperRawKeys = Object.keys(raw || {}).join(',')
+      const serperRawJobsLen = Array.isArray(raw?.jobs) ? raw.jobs.length : (raw?.jobs === undefined ? 'missing' : raw?.jobs)
+      console.log(`[SERPER] status=${r.status} results=${serperJobs.length} latency=${latency}ms endpoint=${usedSearch?'/search':'/jobs'} rawKeys=${serperRawKeys} rawJobs=${serperRawJobsLen}`)
       if (serperJobs.length === 0) {
-        const rawJobsLen = Array.isArray(raw?.jobs) ? raw.jobs.length : 'missing'
         const firstJobKeys = raw?.jobs?.[0] ? Object.keys(raw.jobs[0]).join(',') : 'n/a'
-        console.warn(`[SERPER] 0 normalized jobs — query="${query}" endpoint=${usedSearch?'/search':'/jobs'} raw.jobs=${rawJobsLen} firstJobKeys=${firstJobKeys} allKeys=${Object.keys(raw||{}).join(',')}`)
+        console.warn(`[SERPER] 0 jobs — query="${query}" rawJobs=${serperRawJobsLen} firstJobKeys=${firstJobKeys} allKeys=${serperRawKeys}`)
       }
-      return { source, jobs: serperJobs }
+      return { source, jobs: serperJobs, serper_raw_keys: serperRawKeys, serper_raw_jobs: serperRawJobsLen }
     }
 
     return { source, jobs: [], error: 'unknown_source' }
@@ -2520,13 +2521,17 @@ async function fetchAllSources(queries, location, remoteOk, env, userProfile = '
   const errors         = {}
   const sourceCounts   = {}
   const rawAggregatorJobs = []
-  let joobleDebug    = null
-  let adzunaCountry  = null
+  let joobleDebug     = null
+  let adzunaCountry   = null
+  let serperRawKeys   = null
+  let serperRawJobs   = null
   for (const result of aggregatorResults) {
     if (result.jooble_debug)    joobleDebug   = result.jooble_debug
     if (result.adzuna_country)  adzunaCountry = result.adzuna_country
+    if (result.serper_raw_keys) { serperRawKeys = result.serper_raw_keys; serperRawJobs = result.serper_raw_jobs }
     if (result.error) errors[result.source] = errors[result.source] || result.error
-    if (result.jobs.length) sourceCounts[result.source] = (sourceCounts[result.source] || 0) + result.jobs.length
+    // Always register the source in sourceCounts (0 if nothing returned) so debug panel shows it
+    sourceCounts[result.source] = (sourceCounts[result.source] || 0) + result.jobs.length
     for (const job of result.jobs) {
       if (job.url && job.title) rawAggregatorJobs.push(job)
     }
@@ -3975,8 +3980,10 @@ async function handleAiJobRecommendations(body, request, env, ctx, corsHeaders, 
         serper_in_sources:   sourcesUsed.includes('serper'),  // actually attempted this run
         serper_returned:     sourceCounts['serper'] || 0,     // jobs returned by Serper
         serper_error:        sourceErrors?.['serper'] || null, // error code if Serper failed (e.g. quota_exceeded)
-        jooble_debug:        joobleDebug,            // detailed Jooble diagnostics (raw/filtered/sample)
-        adzuna_country:      adzunaCountry,          // 'ar' si funcionó Argentina, 'mx' si cayó a fallback
+        jooble_debug:        joobleDebug,
+        adzuna_country:      adzunaCountry,
+        serper_raw_keys:     serperRawKeys,  // keys en la respuesta Serper (saber si vino 'jobs' o no)
+        serper_raw_jobs:     serperRawJobs,  // cantidad de jobs en raw.jobs (antes de normalizar)
         jobs_fetched:        jobs.length,
         jobs_to_gemini:      jobPool.length,
         from_jobs_cache:     fromCache,

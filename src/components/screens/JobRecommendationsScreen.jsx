@@ -1981,6 +1981,23 @@ export default function JobRecommendationsScreen({
                       </p>
                     )}
 
+                    {/* Serper detail */}
+                    {pipelineStats.serper_configured && (
+                      <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: 8, padding: '6px 10px' }}>
+                        <p style={{ margin: 0, fontWeight: 600, color: '#334155' }}>
+                          Serper Google Jobs: <b style={{ color: (pipelineStats.source_counts?.serper || 0) > 0 ? '#166534' : '#dc2626' }}>{pipelineStats.source_counts?.serper ?? 0} avisos</b>
+                        </p>
+                        {pipelineStats.serper_raw_keys && (
+                          <p style={{ margin: '2px 0 0', fontFamily: 'monospace', fontSize: 10, color: '#64748b' }}>
+                            raw keys: {pipelineStats.serper_raw_keys} &nbsp;|&nbsp; raw.jobs: <b>{String(pipelineStats.serper_raw_jobs)}</b>
+                          </p>
+                        )}
+                        {pipelineStats.serper_error && (
+                          <p style={{ margin: '2px 0 0', color: '#dc2626', fontSize: 11 }}>error: {pipelineStats.serper_error}</p>
+                        )}
+                      </div>
+                    )}
+
                     {/* Adzuna note */}
                     {(pipelineStats.source_counts?.adzuna !== undefined || pipelineStats.adzuna_country) && (
                       <p style={{ margin: 0, color: (pipelineStats.source_counts?.adzuna || 0) > 0 ? '#166534' : '#dc2626' }}>
