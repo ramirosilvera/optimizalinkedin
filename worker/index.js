@@ -2567,7 +2567,7 @@ async function fetchAllSources(queries, location, remoteOk, env, userProfile = '
   }
   if (Object.keys(errors).length) console.warn('[RADAR:sources] errors:', JSON.stringify(errors))
 
-  return { jobs: allJobs, sourceErrors: errors, sourcesUsed: sources, sourceCounts, joobleDebug, adzunaCountry }
+  return { jobs: allJobs, sourceErrors: errors, sourcesUsed: sources, sourceCounts, joobleDebug, adzunaCountry, serperRawKeys, serperRawJobs }
 }
 
 
@@ -3490,6 +3490,8 @@ async function handleAiJobRecommendations(body, request, env, ctx, corsHeaders, 
   let sourceErrors = {}
   let joobleDebug   = null
   let adzunaCountry = null
+  let serperRawKeys = null
+  let serperRawJobs = null
   // Skip job KV cache when period hasn't been live-fetched yet → all sources called live.
   const kvCached = liveFetched ? await getJobsFromKV(env, queryHash) : null
   if (kvCached) {
@@ -3509,6 +3511,7 @@ async function handleAiJobRecommendations(body, request, env, ctx, corsHeaders, 
     sourceErrors = fetchResult.sourceErrors || {}
     if (fetchResult.joobleDebug)   joobleDebug   = fetchResult.joobleDebug
     if (fetchResult.adzunaCountry) adzunaCountry = fetchResult.adzunaCountry
+    if (fetchResult.serperRawKeys) { serperRawKeys = fetchResult.serperRawKeys; serperRawJobs = fetchResult.serperRawJobs }
     if (fetchResult.jobs.length) {
       jobs = fetchResult.jobs
       await putJobsToKV(env, queryHash, jobs)
