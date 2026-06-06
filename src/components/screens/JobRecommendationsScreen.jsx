@@ -1986,6 +1986,9 @@ export default function JobRecommendationsScreen({
                       <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: 8, padding: '6px 10px' }}>
                         <p style={{ margin: 0, fontWeight: 600, color: '#334155' }}>
                           Serper Google Jobs: <b style={{ color: (pipelineStats.source_counts?.serper || 0) > 0 ? '#166534' : '#dc2626' }}>{pipelineStats.source_counts?.serper ?? 0} avisos</b>
+                          {(pipelineStats.source_counts?.serper || 0) > 0 && pipelineStats.serper_raw_jobs === 'missing' && (
+                            <span style={{ marginLeft: 6, fontSize: 10, color: '#92400e', background: '#fef3c7', padding: '1px 5px', borderRadius: 4 }}>vía organic AR</span>
+                          )}
                         </p>
                         {pipelineStats.serper_raw_keys && (
                           <p style={{ margin: '2px 0 0', fontFamily: 'monospace', fontSize: 10, color: '#64748b' }}>

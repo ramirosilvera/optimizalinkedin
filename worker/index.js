@@ -2475,10 +2475,11 @@ async function fetchJobSource(source, query, location, remoteOk, env, candidateL
       const serperJobs = normalizeJobs(source, raw)
       const serperRawKeys = Object.keys(raw || {}).join(',')
       const serperRawJobsLen = Array.isArray(raw?.jobs) ? raw.jobs.length : (raw?.jobs === undefined ? 'missing' : raw?.jobs)
-      console.log(`[SERPER] status=${r.status} results=${serperJobs.length} latency=${latency}ms endpoint=${usedSearch?'/search':'/jobs'} rawKeys=${serperRawKeys} rawJobs=${serperRawJobsLen}`)
+      const serperOrganicLen = Array.isArray(raw?.organic) ? raw.organic.length : 0
+      console.log(`[SERPER] status=${r.status} results=${serperJobs.length} latency=${latency}ms endpoint=${usedSearch?'/search':'/jobs'} rawKeys=${serperRawKeys} rawJobs=${serperRawJobsLen} organic=${serperOrganicLen}`)
       if (serperJobs.length === 0) {
         const firstJobKeys = raw?.jobs?.[0] ? Object.keys(raw.jobs[0]).join(',') : 'n/a'
-        console.warn(`[SERPER] 0 jobs — query="${query}" rawJobs=${serperRawJobsLen} firstJobKeys=${firstJobKeys} allKeys=${serperRawKeys}`)
+        console.warn(`[SERPER] 0 jobs — query="${query}" rawJobs=${serperRawJobsLen} organic=${serperOrganicLen} firstJobKeys=${firstJobKeys} allKeys=${serperRawKeys}`)
       }
       return { source, jobs: serperJobs, serper_raw_keys: serperRawKeys, serper_raw_jobs: serperRawJobsLen }
     }

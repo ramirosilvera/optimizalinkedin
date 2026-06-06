@@ -292,8 +292,53 @@ export function normalizeWorkday(raw, companyMeta) {
   })
 }
 
+const AR_JOB_BOARD_DOMAINS = [
+  'bumeran.com.ar', 'zonajobs.com.ar', 'ar.computrabajo.com',
+  'computrabajo.com.ar', 'trabajar.com', 'empleateya.com',
+  'multitrabajos.com.ar', 'aptitus.com.ar',
+]
+const BOARD_SUFFIX_RE = /\s*[-|]\s*(bumeran|zonajobs|computrabajo|trabajar|empleateya|multitrabajos|aptitus)[^\s]*/gi
+
+function normalizeSerperOrganic(raw) {
+  const organic = raw?.organic || []
+  return organic
+    .filter(r => {
+      const link = (r.link || '').toLowerCase()
+      return r.title && r.link && AR_JOB_BOARD_DOMAINS.some(d => link.includes(d))
+    })
+    .map(r => {
+      const cleanTitle = (r.title || '').replace(BOARD_SUFFIX_RE, '').trim()
+      const enMatch = cleanTitle.match(/^(.+?)\s+en\s+(.+)$/i)
+      let jobTitle, company
+      if (enMatch) {
+        jobTitle = enMatch[1].trim()
+        company  = enMatch[2].trim()
+      } else {
+        const parts = cleanTitle.split(/\s*[-|]\s+/)
+        jobTitle = parts[0]?.trim() || cleanTitle
+        company  = parts[1]?.trim() || ''
+      }
+      const remote = /remot/i.test((r.title || '') + ' ' + (r.snippet || ''))
+      return {
+        source: 'serper', external_id: r.link,
+        title: jobTitle, company,
+        description: truncateDesc(r.snippet || ''),
+        location: remote ? 'Remote' : 'Buenos Aires',
+        remote,
+        url: r.link || '', apply_url: r.link || null,
+        salary_min: null, salary_max: null, currency: null,
+        skills_required: [], seniority: normalizeSeniority(jobTitle),
+        industry: null, posted_at: null, company_slug: null, ats_type: null,
+      }
+    })
+    .filter(j => j.title && j.url)
+}
+
 export function normalizeSerper(raw) {
   const jobs = raw?.jobs || []
+  if (jobs.length === 0 && Array.isArray(raw?.organic) && raw.organic.length > 0) {
+    return normalizeSerperOrganic(raw)
+  }
   return jobs.map(j => {
     // /jobs endpoint: URL in relatedLinks (prefer non-google, fall back to any)
     // /search fallback: URL in j.link (often a google.com redirect — accept it, better than nothing)
