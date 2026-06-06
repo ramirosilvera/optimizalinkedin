@@ -1945,7 +1945,8 @@ export default function JobRecommendationsScreen({
                           </p>
                         )}
                         <p style={{ margin: '0 0 8px', color: '#0c4a6e' }}>
-                          Raw API: <b>{pipelineStats.jooble_debug.raw_count}</b> &nbsp;→&nbsp;
+                          totalCount API: <b>{pipelineStats.jooble_debug.total_count ?? '?'}</b> &nbsp;|&nbsp;
+                          Normalizados: <b>{pipelineStats.jooble_debug.raw_count}</b> &nbsp;→&nbsp;
                           Geo filter (&ge;0.30): <b>{pipelineStats.jooble_debug.filtered_count}</b> &nbsp;
                           <span style={{ color: '#dc2626' }}>({pipelineStats.jooble_debug.dropped_count} descartados)</span>
                         </p>

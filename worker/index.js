@@ -2369,6 +2369,7 @@ async function fetchJobSource(source, query, location, remoteOk, env, candidateL
         location_used:    joobleLocation,
         http_status:      httpStatus,
         raw_keys:         rawKeys,
+        total_count:      raw?.totalCount ?? null,
         raw_count:        allJooble.length,
         filtered_count:   geoFiltered.length,
         dropped_count:    allJooble.length - geoFiltered.length,
