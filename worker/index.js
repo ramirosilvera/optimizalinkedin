@@ -2450,7 +2450,7 @@ async function fetchJobSource(source, query, location, remoteOk, env, candidateL
         r = await fetch('https://google.serper.dev/search', {
           method:  'POST',
           headers: { 'X-API-KEY': env.SERPER_API_KEY, 'Content-Type': 'application/json', 'User-Agent': UA },
-          body:    JSON.stringify({ q: `ofertas de empleo ${query}`, ...geoParams, num: 30, tbs: 'qdr:m' }),
+          body:    JSON.stringify({ q: `ofertas de empleo ${query}`, ...geoParams, num: 50, tbs: 'qdr:m', autocorrect: true }),
           signal:  ctrl.signal,
         })
         usedSearch = true
