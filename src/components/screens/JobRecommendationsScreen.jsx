@@ -1929,7 +1929,7 @@ export default function JobRecommendationsScreen({
                     {pipelineStats.jooble_debug ? (
                       <div style={{ background: '#f0f9ff', border: '1px solid #bae6fd', borderRadius: 8, padding: '8px 12px' }}>
                         <p style={{ margin: '0 0 6px', fontWeight: 700, color: '#0369a1' }}>
-                          Jooble — location: <code style={{ fontFamily: 'monospace', background: '#e0f2fe', padding: '1px 5px', borderRadius: 4 }}>{pipelineStats.jooble_debug.location_used}</code>
+                          Jooble [{pipelineStats.jooble_debug.host_used || 'jooble.org'}] — location: <code style={{ fontFamily: 'monospace', background: '#e0f2fe', padding: '1px 5px', borderRadius: 4 }}>{pipelineStats.jooble_debug.location_used}</code>
                           {pipelineStats.jooble_debug.http_status && (
                             <span style={{ marginLeft: 8, fontFamily: 'monospace', fontSize: 11, color: pipelineStats.jooble_debug.http_status === 200 ? '#166534' : '#dc2626' }}>
                               HTTP {pipelineStats.jooble_debug.http_status}

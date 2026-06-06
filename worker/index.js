@@ -2355,13 +2355,17 @@ async function fetchJobSource(source, query, location, remoteOk, env, candidateL
       if (!env.JOOBLE_KEY) return { source, jobs: [], error: 'jooble_not_configured' }
       // Normalize location: Jooble doesn't recognize "CABA" or other abbreviations.
       // Map common Argentine shorthands → full city name that Jooble indexes correctly.
-      const JOOBLE_LOC_MAP = { 'caba': 'Buenos Aires, Argentina', 'gba': 'Buenos Aires, Argentina', 'rosario': 'Rosario, Argentina', 'córdoba': 'Córdoba, Argentina', 'cordoba': 'Córdoba, Argentina', 'mendoza': 'Mendoza, Argentina' }
-      const rawLoc = (candidateLocation || location || 'Argentina').toLowerCase().trim()
-      const joobleLocation = JOOBLE_LOC_MAP[rawLoc] || (candidateLocation || location || 'Argentina')
-      const r = await fetch(`https://jooble.org/api/${env.JOOBLE_KEY}`, {
+      // ar.jooble.org has 38k+ Argentine listings (Bumeran, ZonaJobs, Computrabajo).
+      // API keys are country-specific: register at ar.jooble.org/api/about and set JOOBLE_KEY.
+      // Location format: bare city name without country suffix (Jooble docs use "Kyiv", not "Kyiv, Ukraine").
+      const JOOBLE_LOC_MAP = { 'caba': 'Buenos Aires', 'gba': 'Buenos Aires', 'rosario': 'Rosario', 'córdoba': 'Córdoba', 'cordoba': 'Córdoba', 'mendoza': 'Mendoza', 'buenos aires': 'Buenos Aires' }
+      const rawLoc = (candidateLocation || location || '').toLowerCase().trim()
+      const joobleLocation = JOOBLE_LOC_MAP[rawLoc] || (candidateLocation || location || 'Buenos Aires')
+      const joobleHost = env.JOOBLE_HOST || 'ar.jooble.org'
+      const r = await fetch(`https://${joobleHost}/api/${env.JOOBLE_KEY}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'User-Agent': UA },
-        body:   JSON.stringify({ keywords: query, location: joobleLocation, page: 1 }),
+        body:   JSON.stringify({ keywords: query, location: joobleLocation, page: 1, ResultOnPage: 20 }),
         signal: ctrl.signal,
       })
       raw = await r.json()
@@ -2372,7 +2376,7 @@ async function fetchJobSource(source, query, location, remoteOk, env, candidateL
         console.warn(`[JOOBLE] HTTP ${httpStatus} — keys=${rawKeys} body=${JSON.stringify(raw).slice(0, 200)}`)
         return { source, jobs: [], error: `jooble_http_${httpStatus}`, jooble_debug: { location_used: joobleLocation, http_status: httpStatus, error: JSON.stringify(raw).slice(0, 300), raw_count: 0, filtered_count: 0, dropped_count: 0, sample_raw: [] } }
       }
-      console.log(`[JOOBLE] HTTP ${httpStatus} keys=${rawKeys} jobs_field=${rawJobCount} location="${joobleLocation}"`)
+      console.log(`[JOOBLE] HTTP ${httpStatus} keys=${rawKeys} jobs_field=${rawJobCount} location="${joobleLocation}" host=${joobleHost}`)
       const allJooble = normalizeJobs(source, raw)
       // Filter to Argentina/LATAM: keep jobs with geo score >= 0.30.
       // This removes US/EU on-site jobs and non-LATAM "remote" jobs that Jooble
@@ -2382,6 +2386,7 @@ async function fetchJobSource(source, query, location, remoteOk, env, candidateL
         : allJooble
       const joobleDebug = {
         location_used:    joobleLocation,
+        host_used:        joobleHost,
         http_status:      httpStatus,
         raw_keys:         rawKeys,
         total_count:      raw?.totalCount ?? null,
@@ -2450,7 +2455,9 @@ async function fetchJobSource(source, query, location, remoteOk, env, candidateL
         r = await fetch('https://google.serper.dev/search', {
           method:  'POST',
           headers: { 'X-API-KEY': env.SERPER_API_KEY, 'Content-Type': 'application/json', 'User-Agent': UA },
-          body:    JSON.stringify({ q: `ofertas de empleo ${query}`, ...geoParams, num: 50, tbs: 'qdr:m', autocorrect: true }),
+          // num:10 keeps focus on top results where Google's Jobs rich panel appears.
+          // "trabajo" prefix is shorter and more reliably triggers the Jobs SERP block than longer phrases.
+          body:    JSON.stringify({ q: `trabajo ${query}`, ...geoParams, num: 10, tbs: 'qdr:m' }),
           signal:  ctrl.signal,
         })
         usedSearch = true
