@@ -2353,8 +2353,22 @@ async function fetchJobSource(source, query, location, remoteOk, env, candidateL
       const geoFiltered = candidateLocation
         ? allJooble.filter(j => geoCompatibilityScore(j.location, j.remote, candidateLocation) >= 0.30)
         : allJooble
+      const joobleDebug = {
+        location_used:    joobleLocation,
+        raw_count:        allJooble.length,
+        filtered_count:   geoFiltered.length,
+        dropped_count:    allJooble.length - geoFiltered.length,
+        sample_raw:       allJooble.slice(0, 8).map(j => ({
+          title:    j.title,
+          company:  j.company,
+          location: j.location,
+          remote:   j.remote,
+          geo_score: candidateLocation ? Math.round(geoCompatibilityScore(j.location, j.remote, candidateLocation) * 100) / 100 : null,
+          url:      j.url ? '✓' : '✗',
+        })),
+      }
       console.log(`[JOOBLE] raw=${allJooble.length} geo_filtered=${geoFiltered.length} location="${joobleLocation}"`)
-      return { source, jobs: geoFiltered }
+      return { source, jobs: geoFiltered, jooble_debug: joobleDebug }
     }
 
     if (source === 'getonboard') {
@@ -2475,7 +2489,9 @@ async function fetchAllSources(queries, location, remoteOk, env, userProfile = '
   const errors         = {}
   const sourceCounts   = {}
   const rawAggregatorJobs = []
+  let joobleDebug = null
   for (const result of aggregatorResults) {
+    if (result.jooble_debug) joobleDebug = result.jooble_debug
     if (result.error) errors[result.source] = errors[result.source] || result.error
     if (result.jobs.length) sourceCounts[result.source] = (sourceCounts[result.source] || 0) + result.jobs.length
     for (const job of result.jobs) {
@@ -2513,7 +2529,7 @@ async function fetchAllSources(queries, location, remoteOk, env, userProfile = '
   }
   if (Object.keys(errors).length) console.warn('[RADAR:sources] errors:', JSON.stringify(errors))
 
-  return { jobs: allJobs, sourceErrors: errors, sourcesUsed: sources, sourceCounts }
+  return { jobs: allJobs, sourceErrors: errors, sourcesUsed: sources, sourceCounts, joobleDebug }
 }
 
 
@@ -3434,6 +3450,7 @@ async function handleAiJobRecommendations(body, request, env, ctx, corsHeaders, 
   let sourcesUsed  = []
   let sourceCounts = {}
   let sourceErrors = {}
+  let joobleDebug  = null
   // Skip job KV cache when period hasn't been live-fetched yet → all sources called live.
   const kvCached = liveFetched ? await getJobsFromKV(env, queryHash) : null
   if (kvCached) {
@@ -3451,6 +3468,7 @@ async function handleAiJobRecommendations(body, request, env, ctx, corsHeaders, 
     sourcesUsed  = fetchResult.sourcesUsed || []
     sourceCounts = fetchResult.sourceCounts || {}
     sourceErrors = fetchResult.sourceErrors || {}
+    if (fetchResult.joobleDebug) joobleDebug = fetchResult.joobleDebug
     if (fetchResult.jobs.length) {
       jobs = fetchResult.jobs
       await putJobsToKV(env, queryHash, jobs)
@@ -3922,6 +3940,7 @@ async function handleAiJobRecommendations(body, request, env, ctx, corsHeaders, 
         serper_in_sources:   sourcesUsed.includes('serper'),  // actually attempted this run
         serper_returned:     sourceCounts['serper'] || 0,     // jobs returned by Serper
         serper_error:        sourceErrors?.['serper'] || null, // error code if Serper failed (e.g. quota_exceeded)
+        jooble_debug:        joobleDebug,            // detailed Jooble diagnostics (raw/filtered/sample)
         jobs_fetched:        jobs.length,
         jobs_to_gemini:      jobPool.length,
         from_jobs_cache:     fromCache,
