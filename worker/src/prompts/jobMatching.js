@@ -20,12 +20,13 @@ C2 SUB-ÁREA (25%, máx 2.5): misma sub-área=2.5 | relacionada en familia=1.5�
 
 C3 SENIORITY (15%, máx 1.5): niveles 1=Jr 2=SSr 3=Sr 4=Lead 5=Gerente 6=VP
   Diferencia 0=1.5 | ±1=1.0 | ±2=0.5 | ±3=0.1 | Nivel 5-6→1-2 máx 0.2
+  IMPORTANTE: candidato Gerente/VP (nivel 5-6) en rol Jr/SSr (nivel 1-2) → score total máx 4.5
 
 C4 INDUSTRIA (10%, máx 1.0): misma=1.0 | transferible(Fintech↔SaaS)=0.7 | algo=0.4 | distante=0.1–0.2
 
 C5 SKILLS TÉCNICAS (10%, máx 1.0): solo skills específicas del dominio (HRIS, IFRS, React, Google Ads…). Genéricas=0. Ausencia de "nice to have" no penaliza.
 
-C6 GEO/IDIOMA (5%, máx 0.5, puede ser negativo): remoto/mismo lugar=0 | híbrido distante=-0.2 | presencial distante=-0.3 a -0.5 | inglés fluido requerido no mencionado=-0.4
+C6 GEO/IDIOMA (5%, máx 0.5, puede ser negativo): remoto/mismo lugar=0 | híbrido distante=-0.2 | presencial mismo país distante=-0.4 | presencial otro país=-0.8 | inglés fluido requerido no mencionado=-0.4
 
 CAPS DUROS al score final:
 - Familia adyacente o igual: sin cap

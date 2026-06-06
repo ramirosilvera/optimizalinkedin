@@ -2547,7 +2547,12 @@ async function fetchAllSources(queries, location, remoteOk, env, userProfile = '
       if (job.url && job.title) rawAggregatorJobs.push(job)
     }
   }
-  if (atsJobs.length) sourceCounts['ats'] = atsJobs.length
+  // Apply same geo filter to ATS jobs — without this, on-site Mexico City jobs
+  // reach Gemini unfiltered and can outrank local Argentine results.
+  const filteredAtsJobs = candidateLocation
+    ? atsJobs.filter(j => geoCompatibilityScore(j.location, j.remote, candidateLocation) >= 0.30)
+    : atsJobs
+  if (filteredAtsJobs.length) sourceCounts['ats'] = filteredAtsJobs.length
 
   // Serper fallback: if headhunter queries returned 0 and there's no quota/auth error,
   // retry with the base user query (queries[2]+) — headhunter titles can miss Google Jobs index.
@@ -2570,7 +2575,7 @@ async function fetchAllSources(queries, location, remoteOk, env, userProfile = '
   }
 
   // Merge and 3-level dedup (ATS takes priority over aggregator on URL collision)
-  const allJobs = deduplicateJobs([...rawAggregatorJobs, ...atsJobs])
+  const allJobs = deduplicateJobs([...rawAggregatorJobs, ...filteredAtsJobs])
 
   console.log(`[RADAR:sources] aggregator=${rawAggregatorJobs.length} ats=${atsJobs.length} deduped=${allJobs.length} perSource=${JSON.stringify(sourceCounts)}`)
   if (sources.includes('serper') && !sourceCounts['serper']) {
@@ -3747,9 +3752,10 @@ async function handleAiJobRecommendations(body, request, env, ctx, corsHeaders, 
   const geoAdjust = (job, geminiScore) => {
     if (!candidateLocation || job.remote) return geminiScore
     const gs = geoCompatibilityScore(job.location, job.remote, candidateLocation)
-    // gs=1.0 → +0, gs=0.95 → +0, gs=0.6 → -0.2, gs=0.45 → -0.35, gs=0.15 → -0.5
+    // gs≥0.9 (AR/remote) → no penalty
+    // gs=0.6 (AR adjacent) → -0.6    gs=0.45 (LATAM/MX) → -0.9    gs=0.15 (US/EU) → -1.5
     if (gs >= 0.9) return geminiScore
-    const penalty = Math.min(0.5, (0.9 - gs) * 1.25)
+    const penalty = Math.min(1.5, (0.9 - gs) * 2.0)
     return Math.max(0, geminiScore - penalty)
   }
 
@@ -3764,7 +3770,11 @@ async function handleAiJobRecommendations(body, request, env, ctx, corsHeaders, 
     })
     .filter(Boolean)
     .filter(m => m._adjusted_score >= minQualityScore)
-    .sort((a, b) => b._adjusted_score - a._adjusted_score)
+    .sort((a, b) => {
+      const diff = b._adjusted_score - a._adjusted_score
+      // Within 0.3 points, surface the geographically closer job first
+      return Math.abs(diff) < 0.3 ? b._geo_score - a._geo_score : diff
+    })
     .slice(0, requestedN)
 
   let recommendations = topMatches.map(m => {
