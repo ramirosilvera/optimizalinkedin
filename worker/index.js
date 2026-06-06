@@ -2344,10 +2344,13 @@ async function fetchJobSource(source, query, location, remoteOk, env, candidateL
       }
       raw = await r.json()
       const allAdzuna = normalizeJobs(source, raw)
+      // /ar not supported → falls back to /mx. Mexican on-site jobs are useless for AR candidates.
+      // Only keep remote jobs (geo ≥ 0.80) so we don't surface on-site Mexican roles.
+      const geoThreshold = adzunaCountry === 'ar' ? 0.30 : 0.80
       const geoFiltered = candidateLocation
-        ? allAdzuna.filter(j => geoCompatibilityScore(j.location, j.remote, candidateLocation) >= 0.30)
-        : allAdzuna
-      console.log(`[ADZUNA] country=${adzunaCountry} raw=${allAdzuna.length} geo_filtered=${geoFiltered.length}`)
+        ? allAdzuna.filter(j => geoCompatibilityScore(j.location, j.remote, candidateLocation) >= geoThreshold)
+        : allAdzuna.filter(j => j.remote)
+      console.log(`[ADZUNA] country=${adzunaCountry} threshold=${geoThreshold} raw=${allAdzuna.length} geo_filtered=${geoFiltered.length}`)
       return { source, jobs: geoFiltered, adzuna_country: adzunaCountry }
     }
 
