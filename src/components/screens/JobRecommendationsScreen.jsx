@@ -1982,9 +1982,18 @@ export default function JobRecommendationsScreen({
                     )}
 
                     {/* Adzuna note */}
-                    {(pipelineStats.source_counts?.adzuna !== undefined) && (
-                      <p style={{ margin: 0, color: pipelineStats.source_counts.adzuna > 0 ? '#166534' : '#dc2626' }}>
-                        <b>Adzuna:</b> {pipelineStats.source_counts.adzuna} avisos (filtrados por geo &ge;0.30)
+                    {(pipelineStats.source_counts?.adzuna !== undefined || pipelineStats.adzuna_country) && (
+                      <p style={{ margin: 0, color: (pipelineStats.source_counts?.adzuna || 0) > 0 ? '#166534' : '#dc2626' }}>
+                        <b>Adzuna</b>
+                        {pipelineStats.adzuna_country && (
+                          <span style={{ marginLeft: 6, fontFamily: 'monospace', fontSize: 11,
+                            background: pipelineStats.adzuna_country === 'ar' ? '#dcfce7' : '#fef9c3',
+                            color: pipelineStats.adzuna_country === 'ar' ? '#166534' : '#713f12',
+                            padding: '1px 5px', borderRadius: 4 }}>
+                            /{pipelineStats.adzuna_country}
+                          </span>
+                        )}
+                        {': '}{pipelineStats.source_counts?.adzuna ?? 0} avisos (geo &ge;0.30)
                       </p>
                     )}
 

@@ -2324,14 +2324,15 @@ async function fetchJobSource(source, query, location, remoteOk, env, candidateL
       if (!env.ADZUNA_APP_ID || !env.ADZUNA_APP_KEY) {
         return { source, jobs: [], error: 'adzuna_not_configured' }
       }
-      // Try Argentina (ar) first — Adzuna has added AR support.
-      // Fall back to mx (Mexico) as closest LATAM alternative if ar returns error.
+      // Try Argentina (ar) first. Fall back to mx (Mexico) if ar returns error.
+      let adzunaCountry = 'ar'
       url = `https://api.adzuna.com/v1/api/jobs/ar/search/1`
         + `?app_id=${env.ADZUNA_APP_ID}&app_key=${env.ADZUNA_APP_KEY}`
         + `&what=${q}&results_per_page=30&content-type=application/json`
       let r = await fetch(url, { signal: ctrl.signal })
       if (!r.ok) {
         console.warn(`[ADZUNA] ar endpoint HTTP ${r.status} — falling back to mx`)
+        adzunaCountry = 'mx'
         url = `https://api.adzuna.com/v1/api/jobs/mx/search/1`
           + `?app_id=${env.ADZUNA_APP_ID}&app_key=${env.ADZUNA_APP_KEY}`
           + `&what=${q}&results_per_page=30&content-type=application/json`
@@ -2343,12 +2344,11 @@ async function fetchJobSource(source, query, location, remoteOk, env, candidateL
       }
       raw = await r.json()
       const allAdzuna = normalizeJobs(source, raw)
-      // Geo filter: keep Argentina/LATAM results, discard unrelated geo
       const geoFiltered = candidateLocation
         ? allAdzuna.filter(j => geoCompatibilityScore(j.location, j.remote, candidateLocation) >= 0.30)
         : allAdzuna
-      console.log(`[ADZUNA] raw=${allAdzuna.length} geo_filtered=${geoFiltered.length}`)
-      return { source, jobs: geoFiltered }
+      console.log(`[ADZUNA] country=${adzunaCountry} raw=${allAdzuna.length} geo_filtered=${geoFiltered.length}`)
+      return { source, jobs: geoFiltered, adzuna_country: adzunaCountry }
     }
 
     if (source === 'jooble') {
@@ -2520,9 +2520,11 @@ async function fetchAllSources(queries, location, remoteOk, env, userProfile = '
   const errors         = {}
   const sourceCounts   = {}
   const rawAggregatorJobs = []
-  let joobleDebug = null
+  let joobleDebug    = null
+  let adzunaCountry  = null
   for (const result of aggregatorResults) {
-    if (result.jooble_debug) joobleDebug = result.jooble_debug
+    if (result.jooble_debug)    joobleDebug   = result.jooble_debug
+    if (result.adzuna_country)  adzunaCountry = result.adzuna_country
     if (result.error) errors[result.source] = errors[result.source] || result.error
     if (result.jobs.length) sourceCounts[result.source] = (sourceCounts[result.source] || 0) + result.jobs.length
     for (const job of result.jobs) {
@@ -2560,7 +2562,7 @@ async function fetchAllSources(queries, location, remoteOk, env, userProfile = '
   }
   if (Object.keys(errors).length) console.warn('[RADAR:sources] errors:', JSON.stringify(errors))
 
-  return { jobs: allJobs, sourceErrors: errors, sourcesUsed: sources, sourceCounts, joobleDebug }
+  return { jobs: allJobs, sourceErrors: errors, sourcesUsed: sources, sourceCounts, joobleDebug, adzunaCountry }
 }
 
 
@@ -3481,7 +3483,8 @@ async function handleAiJobRecommendations(body, request, env, ctx, corsHeaders, 
   let sourcesUsed  = []
   let sourceCounts = {}
   let sourceErrors = {}
-  let joobleDebug  = null
+  let joobleDebug   = null
+  let adzunaCountry = null
   // Skip job KV cache when period hasn't been live-fetched yet → all sources called live.
   const kvCached = liveFetched ? await getJobsFromKV(env, queryHash) : null
   if (kvCached) {
@@ -3499,7 +3502,8 @@ async function handleAiJobRecommendations(body, request, env, ctx, corsHeaders, 
     sourcesUsed  = fetchResult.sourcesUsed || []
     sourceCounts = fetchResult.sourceCounts || {}
     sourceErrors = fetchResult.sourceErrors || {}
-    if (fetchResult.joobleDebug) joobleDebug = fetchResult.joobleDebug
+    if (fetchResult.joobleDebug)   joobleDebug   = fetchResult.joobleDebug
+    if (fetchResult.adzunaCountry) adzunaCountry = fetchResult.adzunaCountry
     if (fetchResult.jobs.length) {
       jobs = fetchResult.jobs
       await putJobsToKV(env, queryHash, jobs)
@@ -3972,6 +3976,7 @@ async function handleAiJobRecommendations(body, request, env, ctx, corsHeaders, 
         serper_returned:     sourceCounts['serper'] || 0,     // jobs returned by Serper
         serper_error:        sourceErrors?.['serper'] || null, // error code if Serper failed (e.g. quota_exceeded)
         jooble_debug:        joobleDebug,            // detailed Jooble diagnostics (raw/filtered/sample)
+        adzuna_country:      adzunaCountry,          // 'ar' si funcionó Argentina, 'mx' si cayó a fallback
         jobs_fetched:        jobs.length,
         jobs_to_gemini:      jobPool.length,
         from_jobs_cache:     fromCache,
