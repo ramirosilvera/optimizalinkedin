@@ -286,10 +286,15 @@ export function normalizeWorkday(raw, companyMeta) {
 export function normalizeSerper(raw) {
   const jobs = raw?.jobs || []
   return jobs.map(j => {
-    // /jobs endpoint: URL lives in relatedLinks; /search fallback: may have j.link or j.applyLink
+    // /jobs endpoint: URL in relatedLinks (prefer non-google, fall back to any)
+    // /search fallback: URL in j.link (often a google.com redirect — accept it, better than nothing)
     const applyUrl = j.applyLink
-      || (Array.isArray(j.relatedLinks) ? (j.relatedLinks.find(r => r.link && !r.link.includes('google.com'))?.link || '') : '')
-      || (j.link && !j.link.includes('google.com') ? j.link : '')
+      || (Array.isArray(j.relatedLinks)
+          ? (j.relatedLinks.find(r => r.link && !r.link.includes('google.com'))?.link
+             || j.relatedLinks[0]?.link || '')
+          : '')
+      || j.link  // accept any link including google.com — /search jobs block often only has this
+      || ''
     // /jobs endpoint uses jobHighlights[].items; /search fallback may use highlights[].items
     const highlights = (j.jobHighlights || j.highlights || []).flatMap(h => h.items || []).join(' ')
     const postedAt = j.datePosted || j.detectedExtensions?.postedAt || null

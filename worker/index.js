@@ -2392,11 +2392,12 @@ async function fetchJobSource(source, query, location, remoteOk, env, candidateL
       let usedSearch = false
       if (r.status === 404) {
         console.warn('[SERPER] /jobs returned 404 — plan may not include jobs endpoint, falling back to /search')
-        // Use query as-is (no " empleos" suffix) — cleaner queries trigger the Jobs SERP block more reliably.
+        // Suffix "empleo" triggers the Google Jobs SERP block more reliably in /search.
+        // tbs=qdr:m: filter to last month to improve result freshness.
         r = await fetch('https://google.serper.dev/search', {
           method:  'POST',
           headers: { 'X-API-KEY': env.SERPER_API_KEY, 'Content-Type': 'application/json', 'User-Agent': UA },
-          body:    JSON.stringify({ q: query, ...geoParams, num: 30 }),
+          body:    JSON.stringify({ q: `${query} empleo`, ...geoParams, num: 30, tbs: 'qdr:m' }),
           signal:  ctrl.signal,
         })
         usedSearch = true
@@ -2414,7 +2415,9 @@ async function fetchJobSource(source, query, location, remoteOk, env, candidateL
       const serperJobs = normalizeJobs(source, raw)
       console.log(`[SERPER] status=${r.status} results=${serperJobs.length} latency=${latency}ms endpoint=${usedSearch?'/search':'/jobs (dateRange=lastMonth)'}`)
       if (serperJobs.length === 0) {
-        console.warn(`[SERPER] 0 jobs for query="${query}" endpoint=${usedSearch?'/search':'/jobs'} raw keys: ${Object.keys(raw || {}).join(',')}`)
+        const rawJobsLen = Array.isArray(raw?.jobs) ? raw.jobs.length : 'missing'
+        const firstJobKeys = raw?.jobs?.[0] ? Object.keys(raw.jobs[0]).join(',') : 'n/a'
+        console.warn(`[SERPER] 0 normalized jobs — query="${query}" endpoint=${usedSearch?'/search':'/jobs'} raw.jobs=${rawJobsLen} firstJobKeys=${firstJobKeys} allKeys=${Object.keys(raw||{}).join(',')}`)
       }
       return { source, jobs: serperJobs }
     }
