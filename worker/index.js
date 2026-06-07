@@ -2356,19 +2356,23 @@ async function fetchJobSource(source, query, location, remoteOk, env, candidateL
 
     if (source === 'jooble') {
       if (!env.JOOBLE_KEY) return { source, jobs: [], error: 'jooble_not_configured' }
-      // Normalize location: Jooble doesn't recognize "CABA" or other abbreviations.
-      // Map common Argentine shorthands → full city name that Jooble indexes correctly.
-      // ar.jooble.org has 38k+ Argentine listings (Bumeran, ZonaJobs, Computrabajo).
-      // API keys are country-specific: register at ar.jooble.org/api/about and set JOOBLE_KEY.
-      // Location format: bare city name without country suffix (Jooble docs use "Kyiv", not "Kyiv, Ukraine").
       const JOOBLE_LOC_MAP = { 'caba': 'Buenos Aires', 'gba': 'Buenos Aires', 'rosario': 'Rosario', 'córdoba': 'Córdoba', 'cordoba': 'Córdoba', 'mendoza': 'Mendoza', 'buenos aires': 'Buenos Aires' }
       const rawLoc = (candidateLocation || location || '').toLowerCase().trim()
       const joobleLocation = JOOBLE_LOC_MAP[rawLoc] || (candidateLocation || location || 'Buenos Aires')
       const joobleHost = env.JOOBLE_HOST || 'ar.jooble.org'
+      // Expand common Spanish HR abbreviations — Jooble's index uses full words.
+      // "RRHH" alone can match recruiters (e.g. Werben HR) who publish security roles;
+      // "Recursos Humanos" matches actual HR job titles directly.
+      const joobleQuery = query
+        .replace(/\bRRHH\b/gi, 'Recursos Humanos')
+        .replace(/\bRH\b(?!\w)/gi, 'Recursos Humanos')
+        .replace(/\bBD\b/gi, 'Business Development')
+        .replace(/\bMktg\b/gi, 'Marketing')
+        .trim()
       const r = await fetch(`https://${joobleHost}/api/${env.JOOBLE_KEY}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'User-Agent': UA },
-        body:   JSON.stringify({ keywords: query, location: joobleLocation, page: 1, ResultOnPage: 20 }),
+        body:   JSON.stringify({ keywords: joobleQuery, location: joobleLocation, page: 1, ResultOnPage: 20 }),
         signal: ctrl.signal,
       })
       raw = await r.json()
@@ -2388,7 +2392,7 @@ async function fetchJobSource(source, query, location, remoteOk, env, candidateL
         ? allJooble.filter(j => geoCompatibilityScore(j.location, j.remote, candidateLocation) >= 0.30)
         : allJooble
       const joobleDebug = {
-        query_sent:       query,
+        query_sent:       joobleQuery,
         location_used:    joobleLocation,
         host_used:        joobleHost,
         http_status:      httpStatus,
