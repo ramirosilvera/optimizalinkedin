@@ -1156,8 +1156,17 @@ export default function JobRecommendationsScreen({
   const buildQueries = useCallback(() => {
     if (!profileText) return []
     const SENIORITY_WORDS = new Set(['senior','junior','semi','ssr','lead','staff','head','principal','intern','trainee','sr','jr'])
+    // Regex to detect common CV section headers (Spanish/English LinkedIn export format)
+    const CV_SECTION_RE = /^(información de contacto|información personal|experiencia|educación|educacion|habilidades|aptitudes|certificaciones|idiomas|voluntariado|acerca de|resumen|about|contact|experience|skills|languages|datos personales|perfil|logros|proyectos|referencias|formación|formacion|cursos|publicaciones|extracto|summary|honors|awards|actividades|intereses)$/i
     const titleMatch = profileText.match(/TITULAR PROFESIONAL:\s*([^\n]+)/i)
-      || profileText.match(/^([^\n]{10,80})/m)
+      || (() => {
+        // Scan lines — skip section headers, find first line that looks like a job title
+        for (const line of profileText.split('\n')) {
+          const t = line.trim()
+          if (t.length >= 10 && t.length <= 80 && !CV_SECTION_RE.test(t)) return [null, t]
+        }
+        return null
+      })()
     // Strip LinkedIn formatting characters (pipes, brackets, etc.)
     const raw = (titleMatch?.[1]?.trim() || '').replace(/[|;()\[\]]/g, ' ').replace(/\s+/g, ' ').trim()
     if (!raw) return refineQuery ? [refineQuery] : ['profesional']

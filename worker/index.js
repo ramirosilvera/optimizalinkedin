@@ -3388,9 +3388,11 @@ async function handleAiJobRecommendations(body, request, env, ctx, corsHeaders, 
   }
 
   // ── Build queries — headhunter mode for premium (built here so all hashes use same queries) ──
+  const CV_HEADER_RE = /^(información de contacto|información personal|experiencia|educación|educacion|habilidades|aptitudes|certificaciones|idiomas|datos personales|resumen|acerca de|about|contact|experience|skills|languages|summary|extracto|perfil|formación|formacion)$/i
   const baseQueriesRaw = queries
     .map(q => String(q).trim().replace(/[|;()\[\]]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 100))
     .filter(Boolean)
+    .filter(q => !CV_HEADER_RE.test(q.trim()))  // reject CV section headers (e.g. "Información de Contacto")
     .slice(0, 5)
   const headhunterActive = !!professionInfoSync  // enabled for all — free gets full quality, just 1x/month
   // Build cleanQueries here (before ALL cache lookups) so every cache layer uses the same hash.
