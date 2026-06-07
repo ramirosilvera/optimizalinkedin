@@ -2388,6 +2388,7 @@ async function fetchJobSource(source, query, location, remoteOk, env, candidateL
         ? allJooble.filter(j => geoCompatibilityScore(j.location, j.remote, candidateLocation) >= 0.30)
         : allJooble
       const joobleDebug = {
+        query_sent:       query,
         location_used:    joobleLocation,
         host_used:        joobleHost,
         http_status:      httpStatus,
@@ -2453,13 +2454,11 @@ async function fetchJobSource(source, query, location, remoteOk, env, candidateL
       let usedSearch = false
       if (r.status === 404) {
         console.warn('[SERPER] /jobs returned 404 — plan may not include jobs endpoint, falling back to /search')
-        // site: operator forces results from Argentine job boards only — avoids generic pages.
-        // num:20 gives enough candidates to find individual listing URLs (with numeric IDs).
-        const siteFilter = 'site:bumeran.com.ar OR site:zonajobs.com.ar OR site:ar.computrabajo.com'
+        // num:20 gives enough candidates for organic URL extraction.
         r = await fetch('https://google.serper.dev/search', {
           method:  'POST',
           headers: { 'X-API-KEY': env.SERPER_API_KEY, 'Content-Type': 'application/json', 'User-Agent': UA },
-          body:    JSON.stringify({ q: `${query} ${siteFilter}`, ...geoParams, num: 20, tbs: 'qdr:m' }),
+          body:    JSON.stringify({ q: `trabajo ${query}`, ...geoParams, num: 20, tbs: 'qdr:m' }),
           signal:  ctrl.signal,
         })
         usedSearch = true
