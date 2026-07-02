@@ -97,12 +97,11 @@ async function callGeminiApi(env, ctx, geminiBody, corsHeaders, { feature = 'unk
       retryCount, apiKeyAlias: `key_${usedKeyIndex + 1}`,
     })
     const msg = isTimeout ? 'El servicio de IA tardó demasiado. Intentá de nuevo.' : 'Error de conexión con el servicio de IA.'
-    return new Response(JSON.stringify({ error: msg }), { status: 504, headers: corsHeaders })
+    return new Response(JSON.stringify({ error: { message: msg } }), { status: 504, headers: corsHeaders })
   }
 
-  // Parse body before clearing timeout so abort protection covers the full response
-  const data = await res.json().catch(() => ({ error: 'Respuesta inválida del servicio de IA.' }))
   clearTimeout(timeoutId)
+  const data = await res.json().catch(() => ({ error: 'Respuesta inválida del servicio de IA.' }))
 
   if (res.status === 200) {
     logAiUsage(env, ctx, {
@@ -1975,11 +1974,13 @@ export default {
         return new Response(JSON.stringify({ error: { message: rlMsg } }), { status: 429, headers: corsHeaders })
       }
       const userId = getUserIdFromToken(request)
+      const CV_LONG_ACTIONS = new Set(['generate_cv', 'generate_cv_full', 'optimize_cv', 'cv_optimize_consult', 'job_adapter'])
+      const aiTimeoutMs = CV_LONG_ACTIONS.has(promptKey) ? 25_000 : undefined
       return callGeminiApi(env, ctx, {
         system_instruction: { parts: [{ text: systemPrompt }] },
         contents: body.contents,
         generationConfig: body.generationConfig,
-      }, corsHeaders, { feature: promptKey, userId })
+      }, corsHeaders, { feature: promptKey, userId, timeoutMs: aiTimeoutMs })
     }
 
     // ── Gemini raw proxy (PDF extraction only) ────────────────────────────────
@@ -3477,7 +3478,7 @@ async function handleAiJobRecommendations(body, request, env, ctx, corsHeaders, 
     } else {
       const t0   = Date.now()
       const ctrl = new AbortController()
-      const tid  = setTimeout(() => ctrl.abort(), 28_000)
+      const tid  = setTimeout(() => ctrl.abort(), 22_000)
       try {
         const res = await fetch(
           `https://generativelanguage.googleapis.com/v1beta/models/${DEFAULT_MODEL}:generateContent?key=${geminiKeys[0]}`,

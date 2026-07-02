@@ -77,5 +77,5 @@ export const MAX_DESC_CHARS = 6_000
 
 export const EXPANSION_THRESHOLD  = 8.0
 export const EXPANSION_MIN_HQ     = 3
-export const EXPANSION_TIMEOUT_MS = 30_000
+export const EXPANSION_TIMEOUT_MS = 8_000
 export const EXPANSION_GEMINI_MS  = 8_000
