@@ -62,6 +62,13 @@ async function callGeminiApi(env, ctx, geminiBody, corsHeaders, { feature = 'unk
   const timeoutId = setTimeout(() => controller.abort(), timeoutMs || GEMINI_TIMEOUT_MS)
   const geminiKeys = (env.GEMINI_API_KEYS || env.GEMINI_API_KEY || '').split(',').map(k => k.trim()).filter(Boolean)
 
+  // gemini-2.5 routes requests with system_instruction to a "thinking" backend pool
+  // which is frequently overloaded. Explicitly disabling thinking (thinkingBudget: 0)
+  // forces routing to the non-thinking pool, which has far more capacity.
+  const requestBody = (modelName.startsWith('gemini-2.5') && geminiBody.generationConfig)
+    ? { ...geminiBody, generationConfig: { ...geminiBody.generationConfig, thinkingConfig: { thinkingBudget: 0 } } }
+    : geminiBody
+
   let res = null
   let usedKeyIndex = 0
   let retryCount = 0
@@ -71,7 +78,7 @@ async function callGeminiApi(env, ctx, geminiBody, corsHeaders, { feature = 'unk
     for (let i = 0; i < geminiKeys.length; i++) {
       res = await fetch(
         `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${geminiKeys[i]}`,
-        { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(geminiBody), signal: controller.signal }
+        { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(requestBody), signal: controller.signal }
       )
       if (res.status !== 429) { usedKeyIndex = i; break }
       retryCount++
@@ -84,7 +91,7 @@ async function callGeminiApi(env, ctx, geminiBody, corsHeaders, { feature = 'unk
       const key = geminiKeys[attempt % geminiKeys.length]
       res = await fetch(
         `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${key}`,
-        { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(geminiBody), signal: controller.signal }
+        { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(requestBody), signal: controller.signal }
       )
       retryCount++
     }
@@ -1859,11 +1866,11 @@ export default {
           },
         },
         {
-          label: 'G_REAL_system_10_fake_jobs_4096tokens',
+          label: 'G_REAL_system_10_fake_jobs_thinkingBudget0',
           body: {
             system_instruction: { parts: [{ text: JOB_MATCHING_SYSTEM_PROMPT }] },
             contents: [{ role: 'user', parts: [{ text: `PERFIL DEL CANDIDATO:\nGerente de RRHH, 10 años, tecnología, Buenos Aires.\nPROFESIÓN DOMINANTE DETECTADA: Gerente RRHH | FAMILIA: HR/Personas | SENIORITY: nivel 5\n\nAVISOS LABORALES:\n[0] HR Manager | TechCo | Buenos Aires | Presencial\nSkills: HRIS, liderazgo\nSeniority: Senior\nDescripción: Responsable del área de personas, gestión de equipos, reclutamiento y cultura organizacional.\n\n[1] Head of People | Startup | Remoto | Remoto 100%\nSkills: Workday\nSeniority: Lead\nDescripción: Liderar el equipo de HR desde cero en startup de 80 personas.\n\n[2] Talent Manager | Fintech | CABA | Híbrido\nSkills: LinkedIn Recruiter\nSeniority: Senior\nDescripción: Gestión de procesos de selección end-to-end para perfiles tech y no-tech.\n\n[3] HRBP Senior | Empresa industrial | GBA | Presencial\nSkills: SAP HCM\nSeniority: Senior\nDescripción: Socio estratégico de negocio para unidades industriales, gestión de conflictos y clima.\n\n[4] Gerente RRHH | Retail | CABA | Presencial\nSkills: Nómina, RRHH generalista\nSeniority: Gerente\nDescripción: Gestión integral del área de personas en empresa retail de 500 empleados.\n\n[5] L&D Manager | Consultora | Remoto | Remoto 100%\nSkills: LMS, e-learning\nSeniority: Manager\nDescripción: Diseñar e implementar programas de aprendizaje y desarrollo para clientes corporativos.\n\n[6] Data Analyst | Empresa de datos | Buenos Aires | Presencial\nSkills: Python, SQL\nSeniority: Semi Senior\nDescripción: Análisis de datos para equipos de negocio.\n\n[7] Product Manager | SaaS | Remoto | Remoto 100%\nSkills: Roadmap, Agile\nSeniority: Senior\nDescripción: Gestionar el roadmap de producto para plataforma B2B.\n\n[8] Compensation & Benefits Analyst | Multinacional | CABA | Híbrido\nSkills: Beneficios, compensaciones\nSeniority: Analista\nDescripción: Administración de esquemas de compensación y beneficios para 300 empleados.\n\n[9] HR Operations Specialist | Tech | CABA | Híbrido\nSkills: HRIS, procesos\nSeniority: Semi Senior\nDescripción: Gestión de procesos administrativos de HR, onboarding y sistemas de RRHH.` }] }],
-            generationConfig: { temperature: 0.3, maxOutputTokens: 4096 },
+            generationConfig: { temperature: 0.3, maxOutputTokens: 4096, thinkingConfig: { thinkingBudget: 0 } },
           },
         },
       ]
@@ -2753,7 +2760,7 @@ async function expandWithSearch(env, ctx, cleanQueries, location, remoteOk, prof
           body: JSON.stringify({
             system_instruction: { parts: [{ text: JOB_MATCHING_SYSTEM_PROMPT }] },
             contents,
-            generationConfig:   { temperature: 0.2, maxOutputTokens: 1024 },
+            generationConfig:   { temperature: 0.2, maxOutputTokens: 1024, thinkingConfig: { thinkingBudget: 0 } },
           }),
           signal: controller.signal,
         }
@@ -3463,7 +3470,7 @@ async function handleAiJobRecommendations(body, request, env, ctx, corsHeaders, 
   const geminiBody = {
     system_instruction: { parts: [{ text: JOB_MATCHING_SYSTEM_PROMPT }] },
     contents,
-    generationConfig:   { temperature: 0.3, maxOutputTokens: 4096 },
+    generationConfig:   { temperature: 0.3, maxOutputTokens: 4096, thinkingConfig: { thinkingBudget: 0 } },
   }
 
   let aiResult    = null
