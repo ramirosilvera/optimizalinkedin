@@ -77,9 +77,10 @@ async function callGeminiApi(env, ctx, geminiBody, corsHeaders, { feature = 'unk
       retryCount++
     }
 
-    // Phase 2: retry on 5xx with exponential backoff
+    // Phase 2: retry on 5xx — 503 (capacity) needs longer delay than other 5xx
     for (let attempt = 0; attempt < GEMINI_MAX_RETRIES && res.status >= 500; attempt++) {
-      await new Promise(r => setTimeout(r, (attempt + 1) * 1500))
+      const delayMs = res.status === 503 ? (attempt + 1) * 4000 : (attempt + 1) * 1500
+      await new Promise(r => setTimeout(r, delayMs))
       const key = geminiKeys[attempt % geminiKeys.length]
       res = await fetch(
         `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${key}`,
@@ -1975,7 +1976,7 @@ export default {
       }
       const userId = getUserIdFromToken(request)
       const CV_LONG_ACTIONS = new Set(['generate_cv', 'generate_cv_full', 'optimize_cv', 'cv_optimize_consult', 'job_adapter'])
-      const aiTimeoutMs = CV_LONG_ACTIONS.has(promptKey) ? 25_000 : undefined
+      const aiTimeoutMs = CV_LONG_ACTIONS.has(promptKey) ? 27_000 : 20_000
       return callGeminiApi(env, ctx, {
         system_instruction: { parts: [{ text: systemPrompt }] },
         contents: body.contents,

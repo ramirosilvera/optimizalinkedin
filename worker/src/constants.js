@@ -5,7 +5,7 @@ export const DEFAULT_MODEL      = 'gemini-2.5-flash-lite'
 export const PREMIUM_MATCH_MODEL = 'gemini-2.5-flash'
 export const GEMINI_TIMEOUT_MS  = 18_000  // must be < outer race (20s) so inner abort fires first and logAiUsage runs
 export const MAX_BODY_BYTES     = 2 * 1024 * 1024
-export const GEMINI_MAX_RETRIES = 2
+export const GEMINI_MAX_RETRIES = 3
 // Single source of truth — was redefined 4× across upsert/filter functions
 export const ATS_SOURCE_SET = new Set(['greenhouse','lever','smartrecruiters','ashby','workable','teamtailor','recruitee','personio','workday'])
 export const ALLOWED_ORIGINS = new Set([

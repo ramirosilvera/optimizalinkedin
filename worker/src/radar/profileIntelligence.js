@@ -8,7 +8,7 @@ import { DEFAULT_MODEL } from '../constants.js'
 
 const PROF_KV_TTL_SECS = 7 * 86_400  // 7 days
 const PROF_KV_PREFIX   = 'profv2'
-const PROF_AI_TIMEOUT  = 8_000
+const PROF_AI_TIMEOUT  = 14_000
 
 const SENIORITY_LABELS = {
   1: 'Junior/Trainee',
@@ -141,20 +141,25 @@ export async function extractProfileIntelligence(profileText, userId, env, ctx) 
       const ctrl = new AbortController()
       const tid  = setTimeout(() => ctrl.abort(), PROF_AI_TIMEOUT)
       let res = null
+      const geminiBody = {
+        contents: [{ role: 'user', parts: [{ text: prompt }] }],
+        generationConfig: { temperature: 0.1, maxOutputTokens: 400 },
+      }
       for (let ki = 0; ki < geminiKeys.length; ki++) {
         res = await fetch(
           `https://generativelanguage.googleapis.com/v1beta/models/${DEFAULT_MODEL}:generateContent?key=${geminiKeys[ki]}`,
-          {
-            method:  'POST',
-            headers: { 'content-type': 'application/json' },
-            body: JSON.stringify({
-              contents: [{ role: 'user', parts: [{ text: prompt }] }],
-              generationConfig: { temperature: 0.1, maxOutputTokens: 400 },
-            }),
-            signal: ctrl.signal,
-          }
+          { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(geminiBody), signal: ctrl.signal }
         )
         if (res.status !== 429) break
+      }
+      // Retry once on 503 (capacity spike) with a 4s delay
+      if (res?.status === 503) {
+        await new Promise(r => setTimeout(r, 4000))
+        const key = geminiKeys[0]
+        res = await fetch(
+          `https://generativelanguage.googleapis.com/v1beta/models/${DEFAULT_MODEL}:generateContent?key=${key}`,
+          { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(geminiBody), signal: ctrl.signal }
+        )
       }
       clearTimeout(tid)
       if (res?.ok) {
