@@ -283,26 +283,92 @@ export function normalizeWorkday(raw, companyMeta) {
   })
 }
 
+// Argentine job-board domains that appear in Serper /search organic results
+const AR_JOB_BOARD_DOMAINS = [
+  'bumeran.com.ar', 'zonajobs.com.ar', 'ar.computrabajo.com', 'computrabajo.com.ar',
+  'trabajar.com', 'empleateya.com', 'multitrabajos.com.ar', 'aptitus.com.ar',
+  'indeed.com', 'linkedin.com/jobs',
+]
+// Accepts individual listing URLs (numeric ID or slug), rejects search/list pages
+const INDIVIDUAL_JOB_URL_RE = /-\d{6,}\.html$|\/\d{5,}$|\/[a-z0-9]{8,}\??$/i
+// Rejects titles that are search-result pages, not individual job listings
+const SEARCH_TITLE_RE = /^\d[\d.,]* (empleo|trabajo|oferta|aviso)|^(trabajos|empleos|ofertas)\s+de\s|ver (todos|más)|empleos en\s/i
+
+function normalizeSerperOrganic(raw) {
+  return (raw?.organic || [])
+    .filter(item => {
+      if (!item?.link || !item?.title) return false
+      if (SEARCH_TITLE_RE.test(item.title)) return false
+      if (!AR_JOB_BOARD_DOMAINS.some(d => item.link.includes(d))) return false
+      if (!INDIVIDUAL_JOB_URL_RE.test(item.link)) return false
+      return true
+    })
+    .map(item => {
+      // Split "Job Title en Company" or "Title | Company" or "Title - Company"
+      const sepMatch = item.title.match(/^(.+?)\s+(?:en|at)\s+(.+)$/i)
+        || item.title.match(/^(.+?)\s*[|\-–]\s*(.+)$/)
+      const title   = sepMatch ? sepMatch[1].trim() : item.title
+      const company = sepMatch ? sepMatch[2].trim() : ''
+      return {
+        source:          'serper',
+        external_id:     item.link,
+        title,
+        company,
+        description:     truncateDesc(item.snippet || ''),
+        location:        'Buenos Aires',
+        remote:          /remot/i.test(item.title + (item.snippet || '')),
+        url:             item.link,
+        apply_url:       item.link,
+        salary_min:      null, salary_max: null, currency: null,
+        skills_required: [],
+        seniority:       normalizeSeniority(title),
+        industry:        null,
+        posted_at:       null,
+        company_slug:    null,
+        ats_type:        null,
+      }
+    })
+}
+
 export function normalizeSerper(raw) {
   const jobs = raw?.jobs || []
-  return jobs.map(j => ({
-    source:          'serper',
-    external_id:     j.jobId || `${j.companyName||''}::${j.title||''}::${j.datePosted||''}`,
-    title:           j.title || '',
-    company:         j.companyName || '',
-    description:     truncateDesc((j.highlights?.items || []).join(' ') || j.description || ''),
-    location:        j.location || null,
-    remote:          /remot/i.test(j.location || ''),
-    url:             j.applyLink || (j.link && !j.link.includes('google.com') ? j.link : ''),
-    apply_url:       j.applyLink || null,
-    salary_min:      null, salary_max: null, currency: null,
-    skills_required: [],
-    seniority:       normalizeSeniority(j.title || ''),
-    industry:        null,
-    posted_at:       j.datePosted || null,
-    company_slug:    null,
-    ats_type:        null,
-  }))
+  // Fall back to organic results from /search endpoint when /jobs returns nothing
+  if (jobs.length === 0 && Array.isArray(raw?.organic) && raw.organic.length > 0) {
+    return normalizeSerperOrganic(raw)
+  }
+  return jobs
+    .map(j => {
+      // Real Serper /jobs field names differ from guessed ones:
+      // jobHighlights is an array of {title, items[]} sections (not j.highlights.items)
+      // relatedLinks[] holds the apply URL (not j.applyLink alone)
+      // detectedExtensions.postedAt holds the date (j.datePosted may be absent)
+      const highlights = (j.jobHighlights || j.highlights || []).flatMap(h => h.items || []).join(' ')
+      const applyUrl   = j.applyLink
+        || (Array.isArray(j.relatedLinks)
+          ? (j.relatedLinks.find(r => r.link && !r.link.includes('google.com'))?.link
+              || j.relatedLinks[0]?.link || '')
+          : '')
+        || (j.link && !j.link.includes('google.com') ? j.link : '')
+      return {
+        source:          'serper',
+        external_id:     j.jobId || `${j.companyName||''}::${j.title||''}::${j.datePosted||''}`,
+        title:           j.title || '',
+        company:         j.companyName || '',
+        description:     truncateDesc(highlights || j.description || ''),
+        location:        j.location || null,
+        remote:          /remot/i.test(j.location || ''),
+        url:             applyUrl,
+        apply_url:       applyUrl || null,
+        salary_min:      null, salary_max: null, currency: null,
+        skills_required: [],
+        seniority:       normalizeSeniority(j.title || ''),
+        industry:        null,
+        posted_at:       j.datePosted || j.detectedExtensions?.postedAt || null,
+        company_slug:    null,
+        ats_type:        null,
+      }
+    })
+    .filter(j => j.url && j.title)
 }
 
 export function normalizeGreenhouse(rawJobs, companyMeta) {
