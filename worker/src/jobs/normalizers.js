@@ -287,35 +287,78 @@ export function normalizeWorkday(raw, companyMeta) {
 const AR_JOB_BOARD_DOMAINS = [
   'bumeran.com.ar', 'zonajobs.com.ar', 'ar.computrabajo.com', 'computrabajo.com.ar',
   'trabajar.com', 'empleateya.com', 'multitrabajos.com.ar', 'aptitus.com.ar',
-  'indeed.com', 'linkedin.com/jobs',
+  'indeed.com', 'indeed.com.ar', 'linkedin.com/jobs',
+  'opcionempleo.com.ar', 'getonbrd.com', 'universia.net',
 ]
-// Accepts individual listing URLs (numeric ID or slug), rejects search/list pages
-const INDIVIDUAL_JOB_URL_RE = /-\d{6,}\.html$|\/\d{5,}$|\/[a-z0-9]{8,}\??$/i
+// ATS career-page hosting domains — accept results from these separately with a looser URL check
+const ATS_ORGANIC_DOMAINS = [
+  'hiringroom.com', 'teamtailor.com', 'myworkdayjobs.com',
+  'boards.greenhouse.io', 'job-boards.greenhouse.io', 'greenhouse.io',
+  'jobs.lever.co', 'lever.co', 'jobs.ashbyhq.com', 'ashbyhq.com',
+  'smartrecruiters.com', 'recruitee.com',
+]
+const ATS_TYPE_BY_DOMAIN = {
+  'hiringroom.com':    'hiringroom',
+  'teamtailor.com':   'teamtailor',
+  'myworkdayjobs.com': 'workday',
+  'greenhouse.io':    'greenhouse',
+  'lever.co':         'lever',
+  'ashbyhq.com':      'ashby',
+  'smartrecruiters.com': 'smartrecruiters',
+  'recruitee.com':    'recruitee',
+}
+// Accepts individual listing URLs (numeric ID or long slug), rejects search/list pages
+const INDIVIDUAL_JOB_URL_RE = /-\d{6,}\.html$|\/\d{5,}$|\/[a-z0-9]{8,}\??$|_[A-Za-z]{0,4}-?\d{4,}$/i
+// Accepts ATS-hosted listing URLs: Lever/Ashby hyphenated UUIDs, Greenhouse /jobs/<id>, Workday _JR-####
+const ATS_JOB_URL_RE = /\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}(\/apply)?$|\/jobs?\/[^/]+$|\/\d{5,}$|_[A-Za-z]{0,4}-?\d{4,}$/i
 // Rejects titles that are search-result pages, not individual job listings
 const SEARCH_TITLE_RE = /^\d[\d.,]* (empleo|trabajo|oferta|aviso)|^(trabajos|empleos|ofertas)\s+de\s|ver (todos|más)|empleos en\s/i
+
+function matchedAtsDomain(link) {
+  return ATS_ORGANIC_DOMAINS.find(d => link.includes(d)) || null
+}
+
+function atsTypeFrom(atsDomain) {
+  const key = Object.keys(ATS_TYPE_BY_DOMAIN).find(k => atsDomain.includes(k))
+  return key ? ATS_TYPE_BY_DOMAIN[key] : null
+}
+
+function atsCompanyFrom(link, atsDomain) {
+  try {
+    const u = new URL(link)
+    // Greenhouse/Lever/Ashby: company is first path segment (/company/job-id)
+    if (/greenhouse|lever|ashby/.test(atsDomain)) return u.pathname.split('/').filter(Boolean)[0] || ''
+    // Others (teamtailor, hiringroom, recruitee): company is leftmost subdomain label
+    return u.hostname.split('.')[0] || ''
+  } catch { return '' }
+}
 
 function normalizeSerperOrganic(raw) {
   return (raw?.organic || [])
     .filter(item => {
       if (!item?.link || !item?.title) return false
       if (SEARCH_TITLE_RE.test(item.title)) return false
+      const ats = matchedAtsDomain(item.link)
+      if (ats) return ATS_JOB_URL_RE.test(item.link)
       if (!AR_JOB_BOARD_DOMAINS.some(d => item.link.includes(d))) return false
-      if (!INDIVIDUAL_JOB_URL_RE.test(item.link)) return false
-      return true
+      return INDIVIDUAL_JOB_URL_RE.test(item.link)
     })
     .map(item => {
+      const ats = matchedAtsDomain(item.link)
       // Split "Job Title en Company" or "Title | Company" or "Title - Company"
       const sepMatch = item.title.match(/^(.+?)\s+(?:en|at)\s+(.+)$/i)
         || item.title.match(/^(.+?)\s*[|\-–]\s*(.+)$/)
       const title   = sepMatch ? sepMatch[1].trim() : item.title
-      const company = sepMatch ? sepMatch[2].trim() : ''
+      let company   = sepMatch ? sepMatch[2].trim() : ''
+      const atsType = ats ? atsTypeFrom(ats) : null
+      if (ats && !company) company = atsCompanyFrom(item.link, ats)
       return {
         source:          'serper',
         external_id:     item.link,
         title,
         company,
         description:     truncateDesc(item.snippet || ''),
-        location:        'Buenos Aires',
+        location:        'Argentina',
         remote:          /remot/i.test(item.title + (item.snippet || '')),
         url:             item.link,
         apply_url:       item.link,
@@ -325,7 +368,7 @@ function normalizeSerperOrganic(raw) {
         industry:        null,
         posted_at:       null,
         company_slug:    null,
-        ats_type:        null,
+        ats_type:        atsType,
       }
     })
 }

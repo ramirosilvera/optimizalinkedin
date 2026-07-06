@@ -28,6 +28,7 @@ import {
 import {
   inferProfessionFamily, extractCandidateLocation,
   detectProfessionFamilySync, buildHeadhunterQueries,
+  buildAtsBooleanQuery, buildJobBoardQuery,
 } from './src/jobs/profession.js'
 import { extractProfileIntelligence } from './src/radar/profileIntelligence.js'
 import { enrichJobs } from './src/radar/enrichment.js'
@@ -2295,7 +2296,7 @@ async function fetchAtsCompanies(queries, userProfile, env, professionFamily = n
  * Fetch from a single aggregator source with a 10 s timeout.
  * Returns { source, jobs: NormalizedJob[] } or { source, jobs: [], error }.
  */
-async function fetchJobSource(source, query, location, remoteOk, env, candidateLocation = null) {
+async function fetchJobSource(source, query, location, remoteOk, env, candidateLocation = null, serperMode = 'default') {
   const ctrl = new AbortController()
   const tid  = setTimeout(() => ctrl.abort(), 10_000)
   const q    = encodeURIComponent(query)
@@ -2400,24 +2401,35 @@ async function fetchJobSource(source, query, location, remoteOk, env, candidateL
       const geoParams = serperGeoConfig(candidateLocation)
       const serperT0  = Date.now()
       const serperHdr = { 'X-API-KEY': env.SERPER_API_KEY, 'Content-Type': 'application/json', 'User-Agent': UA }
-      console.log(`[SERPER] START query="${query}" geo=${geoParams.gl}/${geoParams.location}`)
-      let serperRes = await fetch('https://google.serper.dev/jobs', {
-        method:  'POST',
-        headers: serperHdr,
-        body:    JSON.stringify({ q: query, ...geoParams, num: 30 }),
-        signal:  ctrl.signal,
-      })
-      let usedSearch = false
-      // /jobs is not included in all Serper plans — fall back to /search (organic results)
-      if (serperRes.status === 404) {
-        console.warn('[SERPER] /jobs returned 404 — plan limitation, falling back to /search')
+      console.log(`[SERPER] START query="${query}" mode=${serperMode} geo=${geoParams.gl}/${geoParams.location}`)
+      let serperRes, usedSearch = false
+      if (serperMode === 'ats' || serperMode === 'jobboard') {
+        // Boolean/site: operators are silently stripped by /jobs — must hit /search directly, autocorrect off
         serperRes = await fetch('https://google.serper.dev/search', {
           method:  'POST',
           headers: serperHdr,
-          body:    JSON.stringify({ q: `ofertas de empleo ${query}`, ...geoParams, num: 50, tbs: 'qdr:m', autocorrect: true }),
+          body:    JSON.stringify({ q: query, ...geoParams, num: 20, tbs: 'qdr:m', autocorrect: false }),
           signal:  ctrl.signal,
         })
         usedSearch = true
+      } else {
+        serperRes = await fetch('https://google.serper.dev/jobs', {
+          method:  'POST',
+          headers: serperHdr,
+          body:    JSON.stringify({ q: query, ...geoParams, num: 30 }),
+          signal:  ctrl.signal,
+        })
+        // /jobs is not included in all Serper plans — fall back to /search (organic results)
+        if (serperRes.status === 404) {
+          console.warn('[SERPER] /jobs returned 404 — plan limitation, falling back to /search')
+          serperRes = await fetch('https://google.serper.dev/search', {
+            method:  'POST',
+            headers: serperHdr,
+            body:    JSON.stringify({ q: `ofertas de empleo ${query}`, ...geoParams, num: 50, tbs: 'qdr:m', autocorrect: false }),
+            signal:  ctrl.signal,
+          })
+          usedSearch = true
+        }
       }
       if (!serperRes.ok) {
         const errCode = serperRes.status === 401 ? 'serper_unauthorized'
@@ -2430,7 +2442,7 @@ async function fetchJobSource(source, query, location, remoteOk, env, candidateL
       const serperJobs   = normalizeJobs(source, raw)
       const rawJobsLen   = Array.isArray(raw?.jobs) ? raw.jobs.length : (raw?.jobs === undefined ? 'missing' : String(raw?.jobs))
       const rawKeys      = Object.keys(raw || {})
-      console.log(`[SERPER] status=${serperRes.status} usedSearch=${usedSearch} rawJobs=${rawJobsLen} results=${serperJobs.length} latency=${Date.now()-serperT0}ms`)
+      console.log(`[SERPER] status=${serperRes.status} mode=${serperMode} usedSearch=${usedSearch} rawJobs=${rawJobsLen} results=${serperJobs.length} latency=${Date.now()-serperT0}ms`)
       return { source, jobs: serperJobs, serperRawKeys: rawKeys, serperRawJobsLen: rawJobsLen, serperUsedSearch: usedSearch }
     }
 
@@ -2451,24 +2463,30 @@ async function fetchJobSource(source, query, location, remoteOk, env, candidateL
  * @param {string|null} candidateLocation - Auto-detected from profile text; drives Serper geo
  */
 async function fetchAllSources(queries, location, remoteOk, env, userProfile = '', candidateLocation = null, professionFamily = null) {
-  // Curated sources — Serper (Google Jobs) gets the top 2 headhunter queries (highest ROI
-  // per subrequest, returns Google Jobs results that vary by query). Other LATAM-focused
-  // sources each get 1 query. himalayas added for remote-only (English remote board).
+  // Curated sources — Serper runs 3 typed queries from the top headhunter title:
+  //   1. ATS boolean (site:hiringroom.com/teamtailor.com/…) → /search, autocorrect:false (hidden vacancies)
+  //   2. AR job boards (site:bumeran.com.ar/zonajobs.com.ar/…) → /search, autocorrect:false (recall)
+  //   3. Plain title → /jobs first, /search fallback (baseline)
+  // Other LATAM-focused sources each get 1 query. himalayas added for remote-only.
   // Jooble re-added: ar.jooble.org indexes Bumeran/ZonaJobs/Computrabajo — real AR coverage.
-  // Removed dead sources: remoteok/remotive (US-centric), arbeitnow (European), adzuna (no AR API).
   const nonSerperSources = remoteOk
     ? ['getonboard', 'jobicy', 'himalayas', 'jooble']
     : ['getonboard', 'jobicy', 'jooble']
-  const serperQueries    = env.SERPER_API_KEY ? queries.slice(0, 2) : []
+  const topTitle = queries[0] || ''
+  const serperQueries = env.SERPER_API_KEY ? [
+    { q: buildAtsBooleanQuery(topTitle), mode: 'ats'      },
+    { q: buildJobBoardQuery(topTitle),   mode: 'jobboard' },
+    { q: topTitle,                       mode: 'default'  },
+  ] : []
   const sources = [...(env.SERPER_API_KEY ? ['serper'] : []), ...nonSerperSources]
 
-  console.log(`[RADAR:sources] remoteOk=${!!remoteOk} active=[${sources.join(',')}] serperQueries=${serperQueries.length} queries=${JSON.stringify(queries.slice(0,2))}`)
+  console.log(`[RADAR:sources] remoteOk=${!!remoteOk} active=[${sources.join(',')}] serperQueries=${serperQueries.length} topTitle="${topTitle}"`)
 
-  // Build parallel fetch calls: Serper × 2 queries, each other source × 1 query
-  // Worst-case: 2 + 4 sources = 6 aggregator fetches (well within 50-subrequest budget).
+  // Build parallel fetch calls: Serper × 3 typed queries, each other source × 1 query
+  // Worst-case: 3 + 4 sources = 7 aggregator fetches (well within 50-subrequest budget).
   const [aggregatorResults, atsJobs] = await Promise.all([
     Promise.all([
-      ...serperQueries.map(q => fetchJobSource('serper', q, location, remoteOk, env, candidateLocation)),
+      ...serperQueries.map(({ q, mode }) => fetchJobSource('serper', q, location, remoteOk, env, candidateLocation, mode)),
       ...nonSerperSources.map(source => fetchJobSource(source, queries[0], location, remoteOk, env, candidateLocation)),
     ]),
     fetchAtsCompanies(queries, userProfile, env, professionFamily),

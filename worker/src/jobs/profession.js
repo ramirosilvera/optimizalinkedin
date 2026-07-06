@@ -159,3 +159,27 @@ export function buildHeadhunterQueries(professionInfo, baseQueries, isPremium) {
   const fresh = headhunterQueries.filter(q => !lowerBase.has(q.toLowerCase()))
   return [...fresh, ...baseQueries].slice(0, 5)
 }
+
+// ATS hosting domains for boolean site: queries — leads with HiringRoom (dominant AR-local ATS)
+export const ATS_SEARCH_DOMAINS = [
+  'hiringroom.com', 'teamtailor.com', 'myworkdayjobs.com', 'greenhouse.io',
+  'lever.co', 'ashbyhq.com', 'smartrecruiters.com', 'recruitee.com',
+]
+
+const AR_BOARD_SEARCH_DOMAINS = [
+  'bumeran.com.ar', 'zonajobs.com.ar', 'ar.computrabajo.com',
+  'trabajar.com', 'multitrabajos.com.ar', 'linkedin.com/jobs',
+]
+
+const siteOr = (domains) => '(' + domains.map(d => `site:${d}`).join(' OR ') + ')'
+
+// Builds a Google boolean query targeting ATS career-page hosting domains.
+// Must be sent to Serper /search (NOT /jobs) with autocorrect:false — /jobs strips site:/OR operators.
+export function buildAtsBooleanQuery(jobTitle, country = 'Argentina') {
+  return `"${jobTitle}" ${siteOr(ATS_SEARCH_DOMAINS)} ${country}`
+}
+
+// Builds a Google boolean query targeting high-volume Argentine job boards via site: operators.
+export function buildJobBoardQuery(jobTitle, country = 'Argentina') {
+  return `"${jobTitle}" ${siteOr(AR_BOARD_SEARCH_DOMAINS)} ${country}`
+}
