@@ -334,15 +334,26 @@ function atsCompanyFrom(link, atsDomain) {
 }
 
 function normalizeSerperOrganic(raw) {
-  return (raw?.organic || [])
-    .filter(item => {
-      if (!item?.link || !item?.title) return false
-      if (SEARCH_TITLE_RE.test(item.title)) return false
-      const ats = matchedAtsDomain(item.link)
-      if (ats) return ATS_JOB_URL_RE.test(item.link)
-      if (!AR_JOB_BOARD_DOMAINS.some(d => item.link.includes(d))) return false
-      return INDIVIDUAL_JOB_URL_RE.test(item.link)
-    })
+  const organicItems = raw?.organic || []
+  let rejNoLink = 0, rejTitle = 0, rejDomain = 0, rejUrl = 0
+  const filtered = organicItems.filter(item => {
+    if (!item?.link || !item?.title) { rejNoLink++; return false }
+    if (SEARCH_TITLE_RE.test(item.title)) { rejTitle++; return false }
+    const ats = matchedAtsDomain(item.link)
+    if (ats) return true  // ATS domains: domain-level filter is sufficient (site: query already guarantees relevance)
+    if (!AR_JOB_BOARD_DOMAINS.some(d => item.link.includes(d))) { rejDomain++; return false }
+    const ok = INDIVIDUAL_JOB_URL_RE.test(item.link)
+    if (!ok) rejUrl++
+    return ok
+  })
+  if (organicItems.length > 0) {
+    console.log(`[SERPER:organic] total=${organicItems.length} accepted=${filtered.length} rej: noLink=${rejNoLink} searchTitle=${rejTitle} noDomain=${rejDomain} badUrl=${rejUrl}`)
+    if (rejDomain + rejUrl > 0) {
+      const samples = organicItems.filter(i => i?.link && !matchedAtsDomain(i.link) && (!AR_JOB_BOARD_DOMAINS.some(d => i.link.includes(d)) || !INDIVIDUAL_JOB_URL_RE.test(i.link))).slice(0, 3).map(i => i.link)
+      if (samples.length) console.log(`[SERPER:organic] sample rejected links: ${JSON.stringify(samples)}`)
+    }
+  }
+  return filtered
     .map(item => {
       const ats = matchedAtsDomain(item.link)
       // Split "Job Title en Company" or "Title | Company" or "Title - Company"
