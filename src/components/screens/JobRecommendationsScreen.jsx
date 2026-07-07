@@ -1105,6 +1105,7 @@ export default function JobRecommendationsScreen({
   const [serperActive, setSerperActive]       = useState(false)  // Google Jobs ran this search
   const [expansionSearched, setExpSearched]  = useState(false)  // deep search ran for this user
   const [debugInfo, setDebugInfo]             = useState(null)   // visible diagnostic when AI fails
+  const [showSourceDebug, setShowSourceDebug] = useState(false)  // Jooble/source debug panel toggle
   const [pingResult, setPingResult]           = useState(null)   // Gemini API key diagnostic
   const [pinging, setPinging]                 = useState(false)
 
@@ -1155,8 +1156,17 @@ export default function JobRecommendationsScreen({
   const buildQueries = useCallback(() => {
     if (!profileText) return []
     const SENIORITY_WORDS = new Set(['senior','junior','semi','ssr','lead','staff','head','principal','intern','trainee','sr','jr'])
+    // Regex to detect common CV section headers (Spanish/English LinkedIn export format)
+    const CV_SECTION_RE = /^(información de contacto|información personal|experiencia|educación|educacion|habilidades|aptitudes|certificaciones|idiomas|voluntariado|acerca de|resumen|about|contact|experience|skills|languages|datos personales|perfil|logros|proyectos|referencias|formación|formacion|cursos|publicaciones|extracto|summary|honors|awards|actividades|intereses)$/i
     const titleMatch = profileText.match(/TITULAR PROFESIONAL:\s*([^\n]+)/i)
-      || profileText.match(/^([^\n]{10,80})/m)
+      || (() => {
+        // Scan lines — skip section headers, find first line that looks like a job title
+        for (const line of profileText.split('\n')) {
+          const t = line.trim()
+          if (t.length >= 10 && t.length <= 80 && !CV_SECTION_RE.test(t)) return [null, t]
+        }
+        return null
+      })()
     // Strip LinkedIn formatting characters (pipes, brackets, etc.)
     const raw = (titleMatch?.[1]?.trim() || '').replace(/[|;()\[\]]/g, ' ').replace(/\s+/g, ' ').trim()
     if (!raw) return refineQuery ? [refineQuery] : ['profesional']
@@ -1816,7 +1826,11 @@ export default function JobRecommendationsScreen({
                           pipelineStats?.serper_configured
                             ? (pipelineStats?.serper_returned > 0
                               ? `🔍 Google Jobs: ${pipelineStats.serper_returned} avisos`
-                              : '⚠️ Google Jobs: sin resultados')
+                              : pipelineStats?.serper_error?.includes('quota')
+                                ? '⚠️ Google Jobs: cuota agotada'
+                                : pipelineStats?.serper_error
+                                  ? `⚠️ Google Jobs: error (${pipelineStats.serper_error})`
+                                  : '⚠️ Google Jobs: sin resultados')
                             : null,
                         ].filter(Boolean).join(' · ')}
                       </p>
@@ -1891,6 +1905,138 @@ export default function JobRecommendationsScreen({
               </div>
             )}
 
+
+            {/* Source debug panel — Jooble / fuentes */}
+            {pipelineStats && (
+              <div style={{ border: '1px solid #e2e8f0', borderRadius: 10, overflow: 'hidden', fontSize: 12 }}>
+                <button
+                  onClick={() => setShowSourceDebug(v => !v)}
+                  style={{ width: '100%', background: '#f8fafc', border: 'none', padding: '8px 14px', textAlign: 'left', cursor: 'pointer', display: 'flex', justifyContent: 'space-between', alignItems: 'center', color: '#475569', fontWeight: 600, fontSize: 12 }}
+                >
+                  <span>🔬 Debug fuentes</span>
+                  <span style={{ fontSize: 10, color: '#94a3b8' }}>{showSourceDebug ? '▲ cerrar' : '▼ ver'}</span>
+                </button>
+                {showSourceDebug && (
+                  <div style={{ padding: '10px 14px', display: 'flex', flexDirection: 'column', gap: 10, background: '#fff' }}>
+
+                    {/* Per-source counts */}
+                    <div>
+                      <p style={{ margin: '0 0 4px', fontWeight: 700, color: '#334155' }}>Avisos por fuente</p>
+                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                        {Object.entries(pipelineStats.source_counts || {}).map(([src, count]) => (
+                          <span key={src} style={{ background: count > 0 ? '#dcfce7' : '#fee2e2', color: count > 0 ? '#166534' : '#991b1b', borderRadius: 6, padding: '2px 8px', fontFamily: 'monospace', fontSize: 11 }}>
+                            {src}: {count}
+                          </span>
+                        ))}
+                        {!Object.keys(pipelineStats.source_counts || {}).length && (
+                          <span style={{ color: '#94a3b8' }}>sin datos (cache hit)</span>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Jooble detail */}
+                    {pipelineStats.jooble_debug ? (
+                      <div style={{ background: '#f0f9ff', border: '1px solid #bae6fd', borderRadius: 8, padding: '8px 12px' }}>
+                        <p style={{ margin: '0 0 6px', fontWeight: 700, color: '#0369a1' }}>
+                          Jooble [{pipelineStats.jooble_debug.host_used || 'jooble.org'}] — location: <code style={{ fontFamily: 'monospace', background: '#e0f2fe', padding: '1px 5px', borderRadius: 4 }}>{pipelineStats.jooble_debug.location_used}</code>
+                          {pipelineStats.jooble_debug.query_sent && (
+                            <span style={{ marginLeft: 8, fontSize: 10, color: '#7c3aed', background: '#ede9fe', padding: '1px 5px', borderRadius: 4 }}>keywords: "{pipelineStats.jooble_debug.query_sent}"</span>
+                          )}
+                          {pipelineStats.jooble_debug.http_status && (
+                            <span style={{ marginLeft: 8, fontFamily: 'monospace', fontSize: 11, color: pipelineStats.jooble_debug.http_status === 200 ? '#166534' : '#dc2626' }}>
+                              HTTP {pipelineStats.jooble_debug.http_status}
+                            </span>
+                          )}
+                          {pipelineStats.jooble_debug.raw_keys && (
+                            <span style={{ marginLeft: 8, fontSize: 10, color: '#64748b' }}>keys: {pipelineStats.jooble_debug.raw_keys}</span>
+                          )}
+                        </p>
+                        {pipelineStats.jooble_debug.error && (
+                          <p style={{ margin: '0 0 6px', color: '#dc2626', fontFamily: 'monospace', fontSize: 11, wordBreak: 'break-all' }}>
+                            Error: {pipelineStats.jooble_debug.error}
+                          </p>
+                        )}
+                        <p style={{ margin: '0 0 8px', color: '#0c4a6e' }}>
+                          totalCount API: <b>{pipelineStats.jooble_debug.total_count ?? '?'}</b> &nbsp;|&nbsp;
+                          Normalizados: <b>{pipelineStats.jooble_debug.raw_count}</b> &nbsp;→&nbsp;
+                          Geo filter (&ge;0.30): <b>{pipelineStats.jooble_debug.filtered_count}</b> &nbsp;
+                          <span style={{ color: '#dc2626' }}>({pipelineStats.jooble_debug.dropped_count} descartados)</span>
+                        </p>
+                        {pipelineStats.jooble_debug.sample_raw?.length > 0 ? (
+                          <div>
+                            <p style={{ margin: '0 0 4px', fontWeight: 600, color: '#0369a1', fontSize: 11 }}>Primeros 8 resultados RAW (antes del filtro):</p>
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                              {pipelineStats.jooble_debug.sample_raw.map((j, i) => (
+                                <div key={i} style={{ background: j.geo_score !== null && j.geo_score >= 0.30 ? '#f0fdf4' : '#fff1f2', borderRadius: 6, padding: '5px 8px', borderLeft: `3px solid ${j.geo_score !== null && j.geo_score >= 0.30 ? '#22c55e' : '#ef4444'}` }}>
+                                  <span style={{ fontWeight: 600 }}>{j.title}</span>
+                                  {j.company && <span style={{ color: '#64748b' }}> — {j.company}</span>}
+                                  <br />
+                                  <span style={{ fontFamily: 'monospace', fontSize: 10, color: '#475569' }}>
+                                    📍 {j.location || '(sin ubicación)'} &nbsp;
+                                    {j.remote ? '🌐 remote' : ''} &nbsp;
+                                    geo: <b>{j.geo_score ?? '?'}</b> &nbsp;
+                                    url: {j.url}
+                                  </span>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        ) : (
+                          <p style={{ margin: 0, color: '#dc2626', fontWeight: 600 }}>
+                            ❌ Jooble devolvió 0 jobs — revisar API key (JOOBLE_KEY) o respuesta de la API
+                          </p>
+                        )}
+                      </div>
+                    ) : (
+                      <p style={{ margin: 0, color: '#94a3b8' }}>
+                        Jooble no fue llamado en esta búsqueda (cache hit o JOOBLE_KEY no configurada)
+                      </p>
+                    )}
+
+                    {/* Serper detail */}
+                    {pipelineStats.serper_configured && (
+                      <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: 8, padding: '6px 10px' }}>
+                        <p style={{ margin: 0, fontWeight: 600, color: '#334155' }}>
+                          Serper Google Jobs: <b style={{ color: (pipelineStats.source_counts?.serper || 0) > 0 ? '#166534' : '#dc2626' }}>{pipelineStats.source_counts?.serper ?? 0} avisos</b>
+                          {(pipelineStats.source_counts?.serper || 0) > 0 && pipelineStats.serper_raw_jobs === 'missing' && (
+                            <span style={{ marginLeft: 6, fontSize: 10, color: '#92400e', background: '#fef3c7', padding: '1px 5px', borderRadius: 4 }}>vía organic AR</span>
+                          )}
+                        </p>
+                        {pipelineStats.serper_raw_keys && (
+                          <p style={{ margin: '2px 0 0', fontFamily: 'monospace', fontSize: 10, color: '#64748b' }}>
+                            raw keys: {pipelineStats.serper_raw_keys} &nbsp;|&nbsp; raw.jobs: <b>{String(pipelineStats.serper_raw_jobs)}</b>
+                          </p>
+                        )}
+                        {pipelineStats.serper_error && (
+                          <p style={{ margin: '2px 0 0', color: '#dc2626', fontSize: 11 }}>error: {pipelineStats.serper_error}</p>
+                        )}
+                      </div>
+                    )}
+
+                    {/* Adzuna note */}
+                    {(pipelineStats.source_counts?.adzuna !== undefined || pipelineStats.adzuna_country) && (
+                      <p style={{ margin: 0, color: (pipelineStats.source_counts?.adzuna || 0) > 0 ? '#166534' : '#dc2626' }}>
+                        <b>Adzuna</b>
+                        {pipelineStats.adzuna_country && (
+                          <span style={{ marginLeft: 6, fontFamily: 'monospace', fontSize: 11,
+                            background: pipelineStats.adzuna_country === 'ar' ? '#dcfce7' : '#fef9c3',
+                            color: pipelineStats.adzuna_country === 'ar' ? '#166534' : '#713f12',
+                            padding: '1px 5px', borderRadius: 4 }}>
+                            /{pipelineStats.adzuna_country}
+                          </span>
+                        )}
+                        {': '}{pipelineStats.source_counts?.adzuna ?? 0} avisos (geo &ge;0.30)
+                      </p>
+                    )}
+
+                    {/* candidateLocation */}
+                    <p style={{ margin: 0, color: '#64748b' }}>
+                      <b>candidateLocation detectado:</b> {pipelineStats.candidate_location || '(ninguno — perfil sin ubicación)'}
+                    </p>
+                  </div>
+                )}
+              </div>
+            )}
 
             {/* Cached/history banner — neutral UX for both same-day cache and history fallback */}
             {(cachedToday || servedFromHistory) && cacheTimestamp && filteredRecs.length > 0 && (

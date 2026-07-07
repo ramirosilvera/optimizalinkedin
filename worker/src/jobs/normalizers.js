@@ -68,25 +68,34 @@ export function normalizeJobicy(raw) {
   }))
 }
 
+const NON_LATAM_RE = /united states|\busa\b|united kingdom|\buk\b|germany|australia|canada|france|india|china|japan|singapore|brasil remote|brazil remote/i
+
 export function normalizeJooble(raw) {
   if (!raw?.jobs) return []
-  return raw.jobs.map(j => ({
-    source:          'jooble',
-    external_id:     String(j.id),
-    title:           (j.title   || '').trim(),
-    company:         (j.company || '').trim(),
-    description:     truncateDesc(j.snippet),
-    location:        j.location || null,
-    remote:          /remote|remoto/.test((j.location || j.title || '').toLowerCase()),
-    url:             j.link || '',
-    apply_url:       j.link || null,
-    salary_min:      null, salary_max: null, currency: null,
-    skills_required: [],
-    seniority:       normalizeSeniority(j.title),
-    industry:        null,
-    posted_at:       j.updated || null,
-    company_slug:    null, ats_type: null,
-  }))
+  return raw.jobs.map(j => {
+    const locStr  = (j.location || '').trim()
+    const hasRemote = /remote|remoto/.test((locStr + ' ' + (j.title || '')).toLowerCase())
+    // Jobs labeled "remote" from non-LATAM countries (e.g. "Remote, USA") are NOT
+    // considered remote for geo-scoring — they'd score 1.0 and crowd out Argentine results.
+    const remote = hasRemote && !NON_LATAM_RE.test(locStr)
+    return {
+      source:          'jooble',
+      external_id:     String(j.id),
+      title:           (j.title   || '').trim(),
+      company:         (j.company || '').trim(),
+      description:     truncateDesc(j.snippet),
+      location:        locStr || null,
+      remote,
+      url:             j.link || '',
+      apply_url:       j.link || null,
+      salary_min:      null, salary_max: null, currency: null,
+      skills_required: [],
+      seniority:       normalizeSeniority(j.title),
+      industry:        null,
+      posted_at:       j.updated || null,
+      company_slug:    null, ats_type: null,
+    }
+  })
 }
 
 export function normalizeAdzuna(raw) {
@@ -386,43 +395,41 @@ function normalizeSerperOrganic(raw) {
 
 export function normalizeSerper(raw) {
   const jobs = raw?.jobs || []
-  // Fall back to organic results from /search endpoint when /jobs returns nothing
   if (jobs.length === 0 && Array.isArray(raw?.organic) && raw.organic.length > 0) {
     return normalizeSerperOrganic(raw)
   }
-  return jobs
-    .map(j => {
-      // Real Serper /jobs field names differ from guessed ones:
-      // jobHighlights is an array of {title, items[]} sections (not j.highlights.items)
-      // relatedLinks[] holds the apply URL (not j.applyLink alone)
-      // detectedExtensions.postedAt holds the date (j.datePosted may be absent)
-      const highlights = (j.jobHighlights || j.highlights || []).flatMap(h => h.items || []).join(' ')
-      const applyUrl   = j.applyLink
-        || (Array.isArray(j.relatedLinks)
+  return jobs.map(j => {
+    // /jobs endpoint: URL in relatedLinks (prefer non-google, fall back to any)
+    // /search fallback: URL in j.link (often a google.com redirect — accept it, better than nothing)
+    const applyUrl = j.applyLink
+      || (Array.isArray(j.relatedLinks)
           ? (j.relatedLinks.find(r => r.link && !r.link.includes('google.com'))?.link
-              || j.relatedLinks[0]?.link || '')
+             || j.relatedLinks[0]?.link || '')
           : '')
-        || (j.link && !j.link.includes('google.com') ? j.link : '')
-      return {
-        source:          'serper',
-        external_id:     j.jobId || `${j.companyName||''}::${j.title||''}::${j.datePosted||''}`,
-        title:           j.title || '',
-        company:         j.companyName || '',
-        description:     truncateDesc(highlights || j.description || ''),
-        location:        j.location || null,
-        remote:          /remot/i.test(j.location || ''),
-        url:             applyUrl,
-        apply_url:       applyUrl || null,
-        salary_min:      null, salary_max: null, currency: null,
-        skills_required: [],
-        seniority:       normalizeSeniority(j.title || ''),
-        industry:        null,
-        posted_at:       j.datePosted || j.detectedExtensions?.postedAt || null,
-        company_slug:    null,
-        ats_type:        null,
-      }
-    })
-    .filter(j => j.url && j.title)
+      || j.link  // accept any link including google.com — /search jobs block often only has this
+      || ''
+    // /jobs endpoint uses jobHighlights[].items; /search fallback may use highlights[].items
+    const highlights = (j.jobHighlights || j.highlights || []).flatMap(h => h.items || []).join(' ')
+    const postedAt = j.datePosted || j.detectedExtensions?.postedAt || null
+    return {
+      source:          'serper',
+      external_id:     j.jobId || `${j.companyName||''}::${j.title||''}::${postedAt||''}`,
+      title:           j.title || '',
+      company:         j.companyName || '',
+      description:     truncateDesc(highlights || j.description || ''),
+      location:        j.location || null,
+      remote:          /remot/i.test(j.location || ''),
+      url:             applyUrl,
+      apply_url:       applyUrl || null,
+      salary_min:      null, salary_max: null, currency: null,
+      skills_required: [],
+      seniority:       normalizeSeniority(j.title || ''),
+      industry:        null,
+      posted_at:       postedAt,
+      company_slug:    null,
+      ats_type:        null,
+    }
+  })
 }
 
 export function normalizeGreenhouse(rawJobs, companyMeta) {

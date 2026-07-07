@@ -111,10 +111,10 @@ export function buildHeadhunterQueries(professionInfo, baseQueries, isPremium) {
 
   const HEADHUNTER_MAP = {
     'HR/Personas': {
-      3: ['HR Generalist', 'Talent Acquisition Specialist', 'Analista de RRHH Sr', 'People Coordinator', 'HR Specialist'],
-      4: ['HRBP', 'HR Lead', 'Jefe de RRHH', 'People Lead', 'Talent Lead'],
-      5: ['Gerente de RRHH', 'HR Manager', 'Head of People', 'People Manager', 'HR Director', 'Gerente Capital Humano'],
-      6: ['HR Director', 'Chief People Officer', 'VP of People', 'Director de RRHH', 'VP HR'],
+      3: ['Analista de RRHH Sr', 'HR Generalist', 'Talent Acquisition Specialist', 'People Coordinator', 'HR Specialist'],
+      4: ['Jefe de RRHH', 'HRBP', 'HR Lead', 'People Lead', 'Talent Lead'],
+      5: ['Gerente de RRHH', 'Gerente de Recursos Humanos', 'Gerente Capital Humano', 'HR Manager', 'Head of People'],
+      6: ['Director de RRHH', 'HR Director', 'Chief People Officer', 'VP of People', 'VP HR'],
     },
     'Finanzas': {
       3: ['Senior Financial Analyst', 'Analista Financiero Sr', 'FP&A Analyst', 'Treasury Analyst Sr', 'Controller Analyst'],
@@ -172,7 +172,9 @@ export function buildHeadhunterQueries(professionInfo, baseQueries, isPremium) {
 
   const lowerBase = new Set(baseQueries.map(q => q.toLowerCase()))
   const fresh = headhunterQueries.filter(q => !lowerBase.has(q.toLowerCase()))
-  return [...fresh, ...baseQueries].slice(0, 5)
+  // Base queries first so the user's original search terms are always sent to Serper,
+  // then headhunter titles to expand coverage.
+  return [...baseQueries, ...fresh].slice(0, 5)
 }
 
 // ATS hosting domains for boolean site: queries — leads with HiringRoom (dominant AR-local ATS)

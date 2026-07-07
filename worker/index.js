@@ -1328,9 +1328,11 @@ export default {
           const uid      = targetIds[0]
           const today    = new Date().toISOString().slice(0, 10)
           const month    = new Date().toISOString().slice(0, 7)
+          const weekKey  = (() => { const d = new Date(); const day = d.getUTCDay(); d.setUTCDate(d.getUTCDate() + (day === 0 ? -6 : 1 - day)); d.setUTCHours(0,0,0,0); return d.toISOString().slice(0, 10) })()
           const kvKeys   = [
-            `live_fetch:${uid}:${today}`,   // premium daily
-            `live_fetch:${uid}:${month}`,   // free monthly
+            `live_fetch:${uid}:${today}`,         // premium daily
+            `live_fetch:${uid}:w${weekKey}`,      // free weekly
+            `live_fetch:${uid}:${month}`,         // free monthly (legacy)
             `jobsearch:day:${uid}`,
             `jobsearch:hour:${uid}:${new Date().toISOString().slice(0, 13)}`,
           ]
@@ -2342,32 +2344,94 @@ async function fetchJobSource(source, query, location, remoteOk, env, candidateL
       if (!env.ADZUNA_APP_ID || !env.ADZUNA_APP_KEY) {
         return { source, jobs: [], error: 'adzuna_not_configured' }
       }
-      // Adzuna doesn't support 'ar' (Argentina) — closest LATAM coverage is 'br' (Brazil)
-      // Fallback to 'us' for remote-only searches where geo doesn't matter
-      const country = location?.toLowerCase().includes('arg') ? 'br' : 'us'
-      url = `https://api.adzuna.com/v1/api/jobs/${country}/search/1`
+      // Try Argentina (ar) first. Fall back to mx (Mexico) if ar returns error.
+      let adzunaCountry = 'ar'
+      url = `https://api.adzuna.com/v1/api/jobs/ar/search/1`
         + `?app_id=${env.ADZUNA_APP_ID}&app_key=${env.ADZUNA_APP_KEY}`
         + `&what=${q}&results_per_page=30&content-type=application/json`
-      if (location) url += `&where=${encodeURIComponent(location)}`
-      const r = await fetch(url, { signal: ctrl.signal })
+      let r = await fetch(url, { signal: ctrl.signal })
+      if (!r.ok) {
+        console.warn(`[ADZUNA] ar endpoint HTTP ${r.status} — falling back to mx`)
+        adzunaCountry = 'mx'
+        url = `https://api.adzuna.com/v1/api/jobs/mx/search/1`
+          + `?app_id=${env.ADZUNA_APP_ID}&app_key=${env.ADZUNA_APP_KEY}`
+          + `&what=${q}&results_per_page=30&content-type=application/json`
+        r = await fetch(url, { signal: ctrl.signal })
+      }
+      if (!r.ok) {
+        console.warn(`[ADZUNA] HTTP ${r.status} on both ar and mx endpoints`)
+        return { source, jobs: [], error: `adzuna_http_${r.status}` }
+      }
       raw = await r.json()
-      return { source, jobs: normalizeJobs(source, raw) }
+      const allAdzuna = normalizeJobs(source, raw)
+      // /ar not supported → falls back to /mx. Mexican on-site jobs are useless for AR candidates.
+      // Only keep remote jobs (geo ≥ 0.80) so we don't surface on-site Mexican roles.
+      const geoThreshold = adzunaCountry === 'ar' ? 0.30 : 0.80
+      const geoFiltered = candidateLocation
+        ? allAdzuna.filter(j => geoCompatibilityScore(j.location, j.remote, candidateLocation) >= geoThreshold)
+        : allAdzuna.filter(j => j.remote)
+      console.log(`[ADZUNA] country=${adzunaCountry} threshold=${geoThreshold} raw=${allAdzuna.length} geo_filtered=${geoFiltered.length}`)
+      return { source, jobs: geoFiltered, adzuna_country: adzunaCountry }
     }
 
     if (source === 'jooble') {
       if (!env.JOOBLE_KEY) return { source, jobs: [], error: 'jooble_not_configured' }
-      // ar.jooble.org = Argentine index (Bumeran/ZonaJobs/Computrabajo); key registered at ar.jooble.org/api/about
+      const JOOBLE_LOC_MAP = { 'caba': 'Buenos Aires', 'gba': 'Buenos Aires', 'rosario': 'Rosario', 'córdoba': 'Córdoba', 'cordoba': 'Córdoba', 'mendoza': 'Mendoza', 'buenos aires': 'Buenos Aires' }
+      const rawLoc = (candidateLocation || location || '').toLowerCase().trim()
+      const joobleLocation = JOOBLE_LOC_MAP[rawLoc] || (candidateLocation || location || 'Buenos Aires')
+      const joobleHost = env.JOOBLE_HOST || 'ar.jooble.org'
+      // Expand common Spanish HR abbreviations — Jooble's index uses full words.
+      // "RRHH" alone can match recruiters (e.g. Werben HR) who publish security roles;
+      // "Recursos Humanos" matches actual HR job titles directly.
       const joobleQuery = query
-        .replace(/\bRRHH\b/g, 'Recursos Humanos')
-        .replace(/\bHR\b/gi, 'Recursos Humanos')
-      const r = await fetch(`https://ar.jooble.org/api/${env.JOOBLE_KEY}`, {
+        .replace(/\bRRHH\b/gi, 'Recursos Humanos')
+        .replace(/\bRH\b(?!\w)/gi, 'Recursos Humanos')
+        .replace(/\bBD\b/gi, 'Business Development')
+        .replace(/\bMktg\b/gi, 'Marketing')
+        .trim()
+      const r = await fetch(`https://${joobleHost}/api/${env.JOOBLE_KEY}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'User-Agent': UA },
-        body:   JSON.stringify({ keywords: joobleQuery, location: location || 'Buenos Aires', ResultOnPage: 20, page: '1' }),
+        body:   JSON.stringify({ keywords: joobleQuery, location: joobleLocation, page: 1, ResultOnPage: 20 }),
         signal: ctrl.signal,
       })
       raw = await r.json()
-      return { source, jobs: normalizeJobs(source, raw) }
+      const httpStatus  = r.status
+      const rawKeys     = Object.keys(raw || {}).join(',')
+      const rawJobCount = Array.isArray(raw?.jobs) ? raw.jobs.length : `jobs_field=${raw?.jobs}`
+      if (!r.ok) {
+        console.warn(`[JOOBLE] HTTP ${httpStatus} — keys=${rawKeys} body=${JSON.stringify(raw).slice(0, 200)}`)
+        return { source, jobs: [], error: `jooble_http_${httpStatus}`, jooble_debug: { location_used: joobleLocation, http_status: httpStatus, error: JSON.stringify(raw).slice(0, 300), raw_count: 0, filtered_count: 0, dropped_count: 0, sample_raw: [] } }
+      }
+      console.log(`[JOOBLE] HTTP ${httpStatus} keys=${rawKeys} jobs_field=${rawJobCount} location="${joobleLocation}" host=${joobleHost}`)
+      const allJooble = normalizeJobs(source, raw)
+      // Filter to Argentina/LATAM: keep jobs with geo score >= 0.30.
+      // This removes US/EU on-site jobs and non-LATAM "remote" jobs that Jooble
+      // mixes in even when querying with location=Argentina.
+      const geoFiltered = candidateLocation
+        ? allJooble.filter(j => geoCompatibilityScore(j.location, j.remote, candidateLocation) >= 0.30)
+        : allJooble
+      const joobleDebug = {
+        query_sent:       joobleQuery,
+        location_used:    joobleLocation,
+        host_used:        joobleHost,
+        http_status:      httpStatus,
+        raw_keys:         rawKeys,
+        total_count:      raw?.totalCount ?? null,
+        raw_count:        allJooble.length,
+        filtered_count:   geoFiltered.length,
+        dropped_count:    allJooble.length - geoFiltered.length,
+        sample_raw:       allJooble.slice(0, 8).map(j => ({
+          title:    j.title,
+          company:  j.company,
+          location: j.location,
+          remote:   j.remote,
+          geo_score: candidateLocation ? Math.round(geoCompatibilityScore(j.location, j.remote, candidateLocation) * 100) / 100 : null,
+          url:      j.url ? '✓' : '✗',
+        })),
+      }
+      console.log(`[JOOBLE] raw=${allJooble.length} geo_filtered=${geoFiltered.length} location="${joobleLocation}"`)
+      return { source, jobs: geoFiltered, jooble_debug: joobleDebug }
     }
 
     if (source === 'getonboard') {
@@ -2416,7 +2480,7 @@ async function fetchJobSource(source, query, location, remoteOk, env, candidateL
         serperRes = await fetch('https://google.serper.dev/jobs', {
           method:  'POST',
           headers: serperHdr,
-          body:    JSON.stringify({ q: query, ...geoParams, num: 30 }),
+          body:    JSON.stringify({ q: query, ...geoParams, num: 30, datePostedRange: 'lastMonth' }),
           signal:  ctrl.signal,
         })
         // /jobs is not included in all Serper plans — fall back to /search (organic results)
@@ -2439,11 +2503,16 @@ async function fetchJobSource(source, query, location, remoteOk, env, candidateL
         return { source, jobs: [], error: errCode }
       }
       raw = await serperRes.json()
-      const serperJobs   = normalizeJobs(source, raw)
-      const rawJobsLen   = Array.isArray(raw?.jobs) ? raw.jobs.length : (raw?.jobs === undefined ? 'missing' : String(raw?.jobs))
-      const rawKeys      = Object.keys(raw || {})
-      console.log(`[SERPER] status=${serperRes.status} mode=${serperMode} usedSearch=${usedSearch} rawJobs=${rawJobsLen} results=${serperJobs.length} latency=${Date.now()-serperT0}ms`)
-      return { source, jobs: serperJobs, serperRawKeys: rawKeys, serperRawJobsLen: rawJobsLen, serperUsedSearch: usedSearch }
+      const serperJobs    = normalizeJobs(source, raw)
+      const rawJobsLen    = Array.isArray(raw?.jobs) ? raw.jobs.length : (raw?.jobs === undefined ? 'missing' : String(raw?.jobs))
+      const rawOrganicLen = Array.isArray(raw?.organic) ? raw.organic.length : 0
+      const rawKeys       = Object.keys(raw || {}).join(',')
+      console.log(`[SERPER] status=${serperRes.status} mode=${serperMode} usedSearch=${usedSearch} rawJobs=${rawJobsLen} organic=${rawOrganicLen} results=${serperJobs.length} latency=${Date.now()-serperT0}ms`)
+      if (serperJobs.length === 0) {
+        const firstJobKeys = raw?.jobs?.[0] ? Object.keys(raw.jobs[0]).join(',') : 'n/a'
+        console.warn(`[SERPER] 0 jobs — mode=${serperMode} query="${query}" rawJobs=${rawJobsLen} organic=${rawOrganicLen} firstJobKeys=${firstJobKeys} allKeys=${rawKeys}`)
+      }
+      return { source, jobs: serperJobs, serper_raw_keys: rawKeys, serper_raw_jobs: rawJobsLen, serper_used_search: usedSearch }
     }
 
     return { source, jobs: [], error: 'unknown_source' }
@@ -2468,10 +2537,12 @@ async function fetchAllSources(queries, location, remoteOk, env, userProfile = '
   //   2. AR job boards (site:bumeran.com.ar/zonajobs.com.ar/…) → /search, autocorrect:false (recall)
   //   3. Plain title → /jobs first, /search fallback (baseline)
   // Other LATAM-focused sources each get 1 query. himalayas added for remote-only.
-  // Jooble re-added: ar.jooble.org indexes Bumeran/ZonaJobs/Computrabajo — real AR coverage.
+  // Jooble aggregates Bumeran/ZonaJobs/Computrabajo — real AR coverage.
+  const joobleActive  = !!env.JOOBLE_KEY
+  const adzunaActive  = !!(env.ADZUNA_APP_ID && env.ADZUNA_APP_KEY)
   const nonSerperSources = remoteOk
-    ? ['getonboard', 'jobicy', 'himalayas', 'jooble']
-    : ['getonboard', 'jobicy', 'jooble']
+    ? ['getonboard', ...(joobleActive ? ['jooble'] : []), ...(adzunaActive ? ['adzuna'] : []), 'jobicy', 'himalayas']
+    : ['getonboard', ...(joobleActive ? ['jooble'] : []), ...(adzunaActive ? ['adzuna'] : []), 'jobicy']
   const topTitle = queries[0] || ''
   const serperQueries = env.SERPER_API_KEY ? [
     { q: buildAtsBooleanQuery(topTitle), mode: 'ats'      },
@@ -2496,34 +2567,60 @@ async function fetchAllSources(queries, location, remoteOk, env, userProfile = '
   const errors         = {}
   const sourceCounts   = {}
   const rawAggregatorJobs = []
+  let joobleDebug      = null
+  let adzunaCountry    = null
   let serperRawKeys    = null
-  let serperRawJobsLen = null
+  let serperRawJobs    = null
   let serperUsedSearch = false
   for (const result of aggregatorResults) {
+    if (result.jooble_debug)    joobleDebug   = result.jooble_debug
+    if (result.adzuna_country)  adzunaCountry = result.adzuna_country
+    if (result.serper_raw_keys) { serperRawKeys = result.serper_raw_keys; serperRawJobs = result.serper_raw_jobs }
+    if (result.serper_used_search) serperUsedSearch = true
     if (result.error) errors[result.source] = errors[result.source] || result.error
-    // Always register attempted sources (even 0-job ones) so UI can show 'serper:0' vs 'not attempted'
+    // Always register the source in sourceCounts (0 if nothing returned) so debug panel shows it
     sourceCounts[result.source] = (sourceCounts[result.source] || 0) + result.jobs.length
-    if (result.source === 'serper') {
-      serperRawKeys    = result.serperRawKeys    ?? serperRawKeys
-      serperRawJobsLen = result.serperRawJobsLen ?? serperRawJobsLen
-      serperUsedSearch = result.serperUsedSearch || serperUsedSearch
-    }
     for (const job of result.jobs) {
       if (job.url && job.title) rawAggregatorJobs.push(job)
     }
   }
-  if (atsJobs.length) sourceCounts['ats'] = atsJobs.length
+  // Apply same geo filter to ATS jobs — without this, on-site Mexico City jobs
+  // reach Gemini unfiltered and can outrank local Argentine results.
+  const filteredAtsJobs = candidateLocation
+    ? atsJobs.filter(j => geoCompatibilityScore(j.location, j.remote, candidateLocation) >= 0.30)
+    : atsJobs
+  if (filteredAtsJobs.length) sourceCounts['ats'] = filteredAtsJobs.length
+
+  // Serper fallback: if headhunter queries returned 0 and there's no quota/auth error,
+  // retry with the base user query (queries[2]+) — headhunter titles can miss Google Jobs index.
+  const serperError = errors['serper']
+  if (serperQueries.length && !sourceCounts['serper'] && !serperError) {
+    const fallbackQuery = queries.find(q => !serperQueries.some(sq => sq.q === q))
+    if (fallbackQuery) {
+      console.log(`[SERPER] fallback query="${fallbackQuery}" — headhunter queries returned 0`)
+      const fallback = await fetchJobSource('serper', fallbackQuery, location, remoteOk, env, candidateLocation)
+      if (fallback.error) {
+        errors['serper'] = fallback.error
+      } else if (fallback.jobs.length) {
+        sourceCounts['serper'] = fallback.jobs.length
+        for (const job of fallback.jobs) {
+          if (job.url && job.title) rawAggregatorJobs.push(job)
+        }
+        console.log(`[SERPER] fallback returned ${fallback.jobs.length} jobs`)
+      }
+    }
+  }
 
   // Merge and 3-level dedup (ATS takes priority over aggregator on URL collision)
-  const allJobs = deduplicateJobs([...rawAggregatorJobs, ...atsJobs])
+  const allJobs = deduplicateJobs([...rawAggregatorJobs, ...filteredAtsJobs])
 
   console.log(`[RADAR:sources] aggregator=${rawAggregatorJobs.length} ats=${atsJobs.length} deduped=${allJobs.length} perSource=${JSON.stringify(sourceCounts)}`)
   if (sources.includes('serper') && !sourceCounts['serper']) {
-    console.log(`[SERPER] returned 0 jobs — error=${errors['serper'] || 'none'} rawJobsLen=${serperRawJobsLen} usedSearch=${serperUsedSearch}`)
+    console.log(`[SERPER] returned 0 jobs — error=${errors['serper'] || 'none'} rawJobs=${serperRawJobs} usedSearch=${serperUsedSearch} — check quota, API key validity, or search terms`)
   }
   if (Object.keys(errors).length) console.warn('[RADAR:sources] errors:', JSON.stringify(errors))
 
-  return { jobs: allJobs, sourceErrors: errors, sourcesUsed: sources, sourceCounts, serperRawKeys, serperRawJobsLen, serperUsedSearch }
+  return { jobs: allJobs, sourceErrors: errors, sourcesUsed: sources, sourceCounts, joobleDebug, adzunaCountry, serperRawKeys, serperRawJobs, serperUsedSearch }
 }
 
 
@@ -2582,10 +2679,20 @@ async function putJobsToKV(env, queryHash, jobs) {
 // exactly once per period — daily for premium, monthly for free.
 // When the flag is absent the first search bypasses ALL caches (radarCache, jrecCache, jobsKV)
 // and triggers a full live fetch. Subsequent searches within the same period use cache normally.
+function _weekMonday(date = new Date()) {
+  const d = new Date(date); const day = d.getUTCDay()
+  d.setUTCDate(d.getUTCDate() + (day === 0 ? -6 : 1 - day)); d.setUTCHours(0, 0, 0, 0)
+  return d
+}
+function _nextMonday(date = new Date()) {
+  const d = new Date(date); const day = d.getUTCDay()
+  d.setUTCDate(d.getUTCDate() + (day === 0 ? 1 : 8 - day)); d.setUTCHours(0, 0, 0, 0)
+  return d
+}
 function _liveFetchKey(userId, isPremium) {
   return isPremium
-    ? `live_fetch:${userId}:${new Date().toISOString().slice(0, 10)}`   // daily key  YYYY-MM-DD
-    : `live_fetch:${userId}:${new Date().toISOString().slice(0, 7)}`    // monthly key YYYY-MM
+    ? `live_fetch:${userId}:${new Date().toISOString().slice(0, 10)}`      // daily  YYYY-MM-DD
+    : `live_fetch:${userId}:w${_weekMonday().toISOString().slice(0, 10)}`  // weekly YYYY-MM-DD of Monday
 }
 async function hasLiveFetchedThisPeriod(env, userId, isPremium) {
   if (!env.RATE_LIMIT_KV || !userId) return false
@@ -2599,10 +2706,7 @@ function markLiveFetchedThisPeriod(env, userId, isPremium) {
     const midnight = new Date(); midnight.setUTCHours(24, 0, 0, 0)
     ttlSecs = Math.max(60, Math.floor((midnight.getTime() - Date.now()) / 1000) + 300)
   } else {
-    const firstNextMonth = new Date()
-    firstNextMonth.setUTCMonth(firstNextMonth.getUTCMonth() + 1, 1)
-    firstNextMonth.setUTCHours(0, 0, 0, 0)
-    ttlSecs = Math.max(60, Math.floor((firstNextMonth.getTime() - Date.now()) / 1000) + 300)
+    ttlSecs = Math.max(60, Math.floor((_nextMonday().getTime() - Date.now()) / 1000) + 300)
   }
   env.RATE_LIMIT_KV.put(key, '1', { expirationTtl: ttlSecs }).catch(() => {})
 }
@@ -2667,7 +2771,7 @@ async function getRadarCache(env, userId, profileHash, queryHash) {
 
 async function putRadarCache(env, ctx, userId, profileHash, queryHash, recommendations, isPremium) {
   if (!userId || !recommendations.length || !env.SUPABASE_SERVICE_ROLE_KEY) return
-  const ttlMs   = isPremium ? 25 * 3_600_000 : 7 * 86_400_000  // premium: 25h | free: 7d
+  const ttlMs   = isPremium ? 48 * 3_600_000 : 7 * 86_400_000  // premium: 48h | free: 7d
   const expires = new Date(Date.now() + ttlMs).toISOString()
   const row = {
     user_id:        userId,
@@ -2795,10 +2899,10 @@ async function expandWithSearch(env, ctx, cleanQueries, location, remoteOk, prof
   const newTerms = await expandSearchTerms(env, profileText, cleanQueries, professionInfo)
   if (!newTerms.length) return null
 
-  // Limit to 1 new term for expansion: Serper still gets 2 queries (if configured)
-  // but the second query is just the same term — net: 1 Serper call + 3 others = 4 fetches total.
+  // Use 2 expansion terms: Serper gets up to 2 queries — broader coverage when main search
+  // didn't find enough high-scoring matches (topScore < EXPANSION_THRESHOLD).
   const { jobs: rawExpanded } = await fetchAllSources(
-    newTerms.slice(0, 1), location, remoteOk, env, String(profileText), candidateLocation
+    newTerms.slice(0, 2), location, remoteOk, env, String(profileText), candidateLocation
   )
   const newJobs = rawExpanded
     .filter(j => !existingHashes.has(canonicalJobHash(j)))
@@ -3107,18 +3211,17 @@ async function checkJobSearchRateLimit(env, userId, ip, isPremium) {
     await env.RATE_LIMIT_KV.put(kvKey, String(current + 1), { expirationTtl: ttlSecs })
     return { ok: true, count: current + 1, limit: JOB_SEARCH_LIMIT_PREMIUM, nextReset: midnight.toISOString() }
   } else {
-    // Free users: 1/month
-    const month   = now.toISOString().slice(0, 7)  // 'YYYY-MM'
-    const kvKey   = `jrl:f:${identity}:${month}`
-    const current = parseInt((await env.RATE_LIMIT_KV.get(kvKey)) || '0', 10)
+    // Free users: 1/week (resets every Monday 00:00 UTC)
+    const weekKey  = _weekMonday().toISOString().slice(0, 10)  // YYYY-MM-DD of this Monday
+    const kvKey    = `jrl:f:${identity}:w${weekKey}`
+    const current  = parseInt((await env.RATE_LIMIT_KV.get(kvKey)) || '0', 10)
+    const nextMon  = _nextMonday()
     if (current >= JOB_SEARCH_LIMIT_FREE) {
-      const firstNextMonth = new Date(now.getFullYear(), now.getMonth() + 1, 1)
-      return { ok: false, count: current, limit: JOB_SEARCH_LIMIT_FREE, nextReset: firstNextMonth.toISOString() }
+      return { ok: false, count: current, limit: JOB_SEARCH_LIMIT_FREE, nextReset: nextMon.toISOString() }
     }
-    const firstNextMonth = new Date(now.getFullYear(), now.getMonth() + 1, 1)
-    const ttlSecs = Math.floor((firstNextMonth.getTime() - Date.now()) / 1000)
+    const ttlSecs = Math.max(60, Math.floor((nextMon.getTime() - Date.now()) / 1000))
     await env.RATE_LIMIT_KV.put(kvKey, String(current + 1), { expirationTtl: ttlSecs })
-    return { ok: true, count: current + 1, limit: JOB_SEARCH_LIMIT_FREE, nextReset: firstNextMonth.toISOString() }
+    return { ok: true, count: current + 1, limit: JOB_SEARCH_LIMIT_FREE, nextReset: nextMon.toISOString() }
   }
 }
 
@@ -3320,9 +3423,11 @@ async function handleAiJobRecommendations(body, request, env, ctx, corsHeaders, 
   }
 
   // ── Build queries — headhunter mode for premium (built here so all hashes use same queries) ──
+  const CV_HEADER_RE = /^(información de contacto|información personal|experiencia|educación|educacion|habilidades|aptitudes|certificaciones|idiomas|datos personales|resumen|acerca de|about|contact|experience|skills|languages|summary|extracto|perfil|formación|formacion)$/i
   const baseQueriesRaw = queries
     .map(q => String(q).trim().replace(/[|;()\[\]]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 100))
     .filter(Boolean)
+    .filter(q => !CV_HEADER_RE.test(q.trim()))  // reject CV section headers (e.g. "Información de Contacto")
     .slice(0, 5)
   const headhunterActive = !!professionInfoSync  // enabled for all — free gets full quality, just 1x/month
   // Build cleanQueries here (before ALL cache lookups) so every cache layer uses the same hash.
@@ -3339,7 +3444,7 @@ async function handleAiJobRecommendations(body, request, env, ctx, corsHeaders, 
   // Premium: once/day | Free: once/month
   const liveFetchKey = user_id || ip
   const liveFetched = await hasLiveFetchedThisPeriod(env, liveFetchKey, isPremium)
-  console.log(`[RADAR] liveFetched=${liveFetched} period=${isPremium?'daily':'monthly'} user=${user_id||'anon(ip)'}`)
+  console.log(`[RADAR] liveFetched=${liveFetched} period=${isPremium?'daily':'weekly'} user=${user_id||'anon(ip)'}`)
 
   const profileHash = user_id ? await computeProfileHash(String(profile_text)) : null
   const queryHash = user_id ? await hashQueryParams(cleanQueries, location, remote_ok) : null
@@ -3416,7 +3521,7 @@ async function handleAiJobRecommendations(body, request, env, ctx, corsHeaders, 
       JSON.stringify({
         error: isPremium
           ? `Exploraste todo lo disponible hoy. Volvé mañana para una nueva búsqueda.`
-          : `Usaste tu búsqueda de este mes. Se renueva el 1 del próximo mes.`,
+          : `Usaste tu búsqueda de esta semana. Se renueva el lunes próximo.`,
         quota_remaining: 0,
         next_reset:      rl.nextReset,
       }),
@@ -3438,8 +3543,10 @@ async function handleAiJobRecommendations(body, request, env, ctx, corsHeaders, 
   let sourcesUsed      = []
   let sourceCounts     = {}
   let sourceErrors     = {}
+  let joobleDebug      = null
+  let adzunaCountry    = null
   let serperRawKeys    = null
-  let serperRawJobsLen = null
+  let serperRawJobs    = null
   let serperUsedSearch = false
   // Skip job KV cache when period hasn't been live-fetched yet → all sources called live.
   const kvCached = liveFetched ? await getJobsFromKV(env, queryHash) : null
@@ -3455,12 +3562,14 @@ async function handleAiJobRecommendations(body, request, env, ctx, corsHeaders, 
   } else {
     // Live fetch — pass profile_text so ATS companies are selected by relevance
     const fetchResult = await fetchAllSources(cleanQueries, location, remote_ok, env, String(profile_text), candidateLocation, professionInfoSync?.family || null)
-    sourcesUsed       = fetchResult.sourcesUsed    || []
-    sourceCounts      = fetchResult.sourceCounts   || {}
-    serperRawKeys     = fetchResult.serperRawKeys  || null
-    serperRawJobsLen  = fetchResult.serperRawJobsLen ?? null
-    serperUsedSearch  = fetchResult.serperUsedSearch || false
-    sourceErrors      = fetchResult.sourceErrors   || {}
+    sourcesUsed  = fetchResult.sourcesUsed  || []
+    sourceCounts = fetchResult.sourceCounts || {}
+    sourceErrors = fetchResult.sourceErrors || {}
+    if (fetchResult.joobleDebug)        joobleDebug   = fetchResult.joobleDebug
+    if (fetchResult.adzunaCountry)      adzunaCountry = fetchResult.adzunaCountry
+    if (fetchResult.serperRawKeys)      serperRawKeys = fetchResult.serperRawKeys
+    if (fetchResult.serperRawJobs != null) serperRawJobs = fetchResult.serperRawJobs
+    serperUsedSearch = fetchResult.serperUsedSearch || false
     if (fetchResult.jobs.length) {
       jobs = fetchResult.jobs
       await putJobsToKV(env, queryHash, jobs)
@@ -3685,9 +3794,10 @@ async function handleAiJobRecommendations(body, request, env, ctx, corsHeaders, 
   const geoAdjust = (job, geminiScore) => {
     if (!candidateLocation || job.remote) return geminiScore
     const gs = geoCompatibilityScore(job.location, job.remote, candidateLocation)
-    // gs=1.0 → +0, gs=0.95 → +0, gs=0.6 → -0.2, gs=0.45 → -0.35, gs=0.15 → -0.5
+    // gs≥0.9 (AR/remote) → no penalty
+    // gs=0.6 (AR adjacent) → -0.6    gs=0.45 (LATAM/MX) → -0.9    gs=0.15 (US/EU) → -1.5
     if (gs >= 0.9) return geminiScore
-    const penalty = Math.min(0.5, (0.9 - gs) * 1.25)
+    const penalty = Math.min(1.5, (0.9 - gs) * 2.0)
     return Math.max(0, geminiScore - penalty)
   }
 
@@ -3702,7 +3812,11 @@ async function handleAiJobRecommendations(body, request, env, ctx, corsHeaders, 
     })
     .filter(Boolean)
     .filter(m => m._adjusted_score >= minQualityScore)
-    .sort((a, b) => b._adjusted_score - a._adjusted_score)
+    .sort((a, b) => {
+      const diff = b._adjusted_score - a._adjusted_score
+      // Within 0.3 points, surface the geographically closer job first
+      return Math.abs(diff) < 0.3 ? b._geo_score - a._geo_score : diff
+    })
     .slice(0, requestedN)
 
   let recommendations = topMatches.map(m => {
@@ -3892,8 +4006,8 @@ async function handleAiJobRecommendations(body, request, env, ctx, corsHeaders, 
   }
 
   // Cache AI scores in KV and radar_search_history (Supabase, cross-device)
-  // TTL: 25h for premium (daily refresh), 7 days for free
-  const jrecTtlSecs = isPremium ? 25 * 3_600 : 7 * 86_400
+  // TTL: 48h for premium (covers return visits next day), 7 days for free
+  const jrecTtlSecs = isPremium ? 48 * 3_600 : 7 * 86_400
   if (user_id && ctx?.waitUntil) {
     ctx.waitUntil(putJrecToKV(env, user_id, queryHash, {
       recommendations,
@@ -3931,10 +4045,12 @@ async function handleAiJobRecommendations(body, request, env, ctx, corsHeaders, 
         serper_configured:   !!env.SERPER_API_KEY,
         serper_in_sources:   sourcesUsed.includes('serper'),
         serper_returned:     sourceCounts['serper'] || 0,
+        serper_error:        sourceErrors?.['serper'] || null,
         serper_used_search:  serperUsedSearch,
-        serper_error:        sourceErrors['serper'] || null,
+        jooble_debug:        joobleDebug,
+        adzuna_country:      adzunaCountry,
         serper_raw_keys:     serperRawKeys,
-        serper_raw_jobs:     serperRawJobsLen,
+        serper_raw_jobs:     serperRawJobs,
         jobs_fetched:        jobs.length,
         jobs_to_gemini:      jobPool.length,
         from_jobs_cache:     fromCache,
