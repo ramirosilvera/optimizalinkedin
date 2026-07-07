@@ -578,21 +578,68 @@ export default function CvScreen({
                   <div className="space-y-3">
                     <div className="flex items-center justify-between">
                       <p className="text-xs font-semibold uppercase tracking-wide" style={{ color: '#d97706' }}>Experiencia</p>
-                      <button
-                        onClick={() => updateCv({ ...cvFinalData, experiencias: [...(cvFinalData.experiencias || []), { cargo: '', empresa: '', periodo: '', logros: [''] }] })}
-                        className="text-xs px-2 py-1 rounded-lg font-semibold"
-                        style={{ background: 'rgba(245,158,11,0.12)', color: '#d97706', border: '1px solid rgba(245,158,11,0.3)' }}
-                      >+ Agregar</button>
-                    </div>
-                    {(cvFinalData.experiencias || []).map((exp, i) => (
-                      <div key={i} className="rounded-xl p-3 space-y-2 relative bg-white"
-                        style={{ border: '1px solid rgba(0,0,0,0.08)' }}>
+                      <div className="flex gap-1.5 items-center">
+                        {(cvFinalData.experiencias || []).length > 1 && (
+                          <button
+                            onClick={() => {
+                              const periodoKey = p => {
+                                if (!p) return 0
+                                if (/presente|actual|current|hoy/i.test(p)) return 9999
+                                const yrs = p.match(/\d{4}/g)
+                                return yrs ? Math.max(...yrs.map(Number)) : 0
+                              }
+                              const sorted = [...cvFinalData.experiencias].sort((a, b) => periodoKey(b.periodo) - periodoKey(a.periodo))
+                              updateCv({ ...cvFinalData, experiencias: sorted })
+                            }}
+                            className="text-xs px-2 py-1 rounded-lg font-semibold"
+                            style={{ background: 'rgba(245,158,11,0.08)', color: '#92400e', border: '1px solid rgba(245,158,11,0.2)' }}
+                            title="Ordenar por fecha más reciente primero"
+                          >↕ Fecha</button>
+                        )}
                         <button
-                          onClick={() => updateCv({ ...cvFinalData, experiencias: cvFinalData.experiencias.filter((_, idx) => idx !== i) })}
-                          className="absolute top-2 right-2 w-5 h-5 rounded-full flex items-center justify-center text-[10px]"
-                          style={{ background: 'rgba(239,68,68,0.10)', color: '#ef4444' }}
-                        >✕</button>
-                        <div className="grid grid-cols-2 gap-2 pr-6">
+                          onClick={() => updateCv({ ...cvFinalData, experiencias: [...(cvFinalData.experiencias || []), { cargo: '', empresa: '', periodo: '', logros: [''] }] })}
+                          className="text-xs px-2 py-1 rounded-lg font-semibold"
+                          style={{ background: 'rgba(245,158,11,0.12)', color: '#d97706', border: '1px solid rgba(245,158,11,0.3)' }}
+                        >+ Agregar</button>
+                      </div>
+                    </div>
+                    {(cvFinalData.experiencias || []).map((exp, i) => {
+                      const isFirst = i === 0
+                      const isLast = i === (cvFinalData.experiencias || []).length - 1
+                      const moveExp = (from, to) => {
+                        const xs = [...cvFinalData.experiencias]
+                        ;[xs[from], xs[to]] = [xs[to], xs[from]]
+                        updateCv({ ...cvFinalData, experiencias: xs })
+                      }
+                      return (
+                      <div key={i} className="rounded-xl p-3 space-y-2 bg-white"
+                        style={{ border: '1px solid rgba(0,0,0,0.08)' }}>
+                        <div className="flex items-center justify-between">
+                          <span className="text-[10px] text-slate-400 font-medium">#{i + 1}</span>
+                          <div className="flex items-center gap-1">
+                            <button
+                              onClick={() => !isFirst && moveExp(i, i - 1)}
+                              disabled={isFirst}
+                              className="w-6 h-6 rounded-md flex items-center justify-center text-xs"
+                              style={{ background: isFirst ? 'rgba(0,0,0,0.03)' : 'rgba(15,23,42,0.07)', color: isFirst ? '#cbd5e1' : '#475569' }}
+                              title="Mover arriba"
+                            >↑</button>
+                            <button
+                              onClick={() => !isLast && moveExp(i, i + 1)}
+                              disabled={isLast}
+                              className="w-6 h-6 rounded-md flex items-center justify-center text-xs"
+                              style={{ background: isLast ? 'rgba(0,0,0,0.03)' : 'rgba(15,23,42,0.07)', color: isLast ? '#cbd5e1' : '#475569' }}
+                              title="Mover abajo"
+                            >↓</button>
+                            <button
+                              onClick={() => updateCv({ ...cvFinalData, experiencias: cvFinalData.experiencias.filter((_, idx) => idx !== i) })}
+                              className="w-6 h-6 rounded-md flex items-center justify-center text-xs ml-0.5"
+                              style={{ background: 'rgba(239,68,68,0.10)', color: '#ef4444' }}
+                              title="Eliminar"
+                            >✕</button>
+                          </div>
+                        </div>
+                        <div className="grid grid-cols-2 gap-2">
                           <input className="px-2 py-1.5 rounded-lg text-xs border focus:outline-none"
                             style={{ borderColor: 'rgba(0,0,0,0.12)' }}
                             placeholder="Cargo"
@@ -652,7 +699,8 @@ export default function CvScreen({
                           >+ logro</button>
                         </div>
                       </div>
-                    ))}
+                    )
+                    })}
                   </div>
 
                   {/* Educación */}

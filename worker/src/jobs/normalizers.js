@@ -292,60 +292,105 @@ export function normalizeWorkday(raw, companyMeta) {
   })
 }
 
+// Argentine job-board domains that appear in Serper /search organic results
 const AR_JOB_BOARD_DOMAINS = [
-  'bumeran.com.ar', 'zonajobs.com.ar', 'ar.computrabajo.com',
-  'computrabajo.com.ar', 'trabajar.com', 'empleateya.com',
-  'multitrabajos.com.ar', 'aptitus.com.ar',
+  'bumeran.com.ar', 'zonajobs.com.ar', 'ar.computrabajo.com', 'computrabajo.com.ar',
+  'trabajar.com', 'empleateya.com', 'multitrabajos.com.ar', 'aptitus.com.ar',
+  'indeed.com', 'indeed.com.ar', 'linkedin.com/jobs',
+  'opcionempleo.com.ar', 'getonbrd.com', 'universia.net',
 ]
-const BOARD_SUFFIX_RE = /\s*[-|]\s*(bumeran|zonajobs|computrabajo|trabajar|empleateya|multitrabajos|aptitus)[^\s]*/gi
+// ATS career-page hosting domains — accept results from these separately with a looser URL check
+const ATS_ORGANIC_DOMAINS = [
+  'hiringroom.com', 'teamtailor.com', 'myworkdayjobs.com',
+  'boards.greenhouse.io', 'job-boards.greenhouse.io', 'greenhouse.io',
+  'jobs.lever.co', 'lever.co', 'jobs.ashbyhq.com', 'ashbyhq.com',
+  'smartrecruiters.com', 'recruitee.com',
+]
+const ATS_TYPE_BY_DOMAIN = {
+  'hiringroom.com':    'hiringroom',
+  'teamtailor.com':   'teamtailor',
+  'myworkdayjobs.com': 'workday',
+  'greenhouse.io':    'greenhouse',
+  'lever.co':         'lever',
+  'ashbyhq.com':      'ashby',
+  'smartrecruiters.com': 'smartrecruiters',
+  'recruitee.com':    'recruitee',
+}
+// Accepts individual listing URLs (numeric ID or long slug), rejects search/list pages
+const INDIVIDUAL_JOB_URL_RE = /-\d{6,}\.html$|\/\d{5,}$|\/[a-z0-9]{8,}\??$|_[A-Za-z]{0,4}-?\d{4,}$/i
+// Accepts ATS-hosted listing URLs: Lever/Ashby hyphenated UUIDs, Greenhouse /jobs/<id>, Workday _JR-####
+const ATS_JOB_URL_RE = /\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}(\/apply)?$|\/jobs?\/[^/]+$|\/\d{5,}$|_[A-Za-z]{0,4}-?\d{4,}$/i
+// Rejects titles that are search-result pages, not individual job listings
+const SEARCH_TITLE_RE = /^\d[\d.,]* (empleo|trabajo|oferta|aviso)|^(trabajos|empleos|ofertas)\s+de\s|ver (todos|más)|empleos en\s/i
 
-// Individual listing URLs contain a long numeric or alphanumeric ID at the end.
-// Category/search pages (e.g. bumeran.com.ar/empleos-gerente-rrhh.html) don't.
-// Bumeran/ZonaJobs: ends in -NNNNNNN.html (6+ digits)
-// Computrabajo: ends in alphanumeric segment of 6+ chars after last slash
-const INDIVIDUAL_JOB_URL_RE = /-\d{6,}\.html$|\/[a-z0-9]{6,}\??$/i
+function matchedAtsDomain(link) {
+  return ATS_ORGANIC_DOMAINS.find(d => link.includes(d)) || null
+}
 
-// These are search-results-page titles, not individual listings
-const SEARCH_TITLE_RE = /^\d[\d.,]* (empleo|trabajo|oferta|aviso)|^(trabajos|empleos|ofertas)\s+de\s|^buscar\s+empleo|resultados\s+de\s+búsqueda/i
+function atsTypeFrom(atsDomain) {
+  const key = Object.keys(ATS_TYPE_BY_DOMAIN).find(k => atsDomain.includes(k))
+  return key ? ATS_TYPE_BY_DOMAIN[key] : null
+}
+
+function atsCompanyFrom(link, atsDomain) {
+  try {
+    const u = new URL(link)
+    // Greenhouse/Lever/Ashby: company is first path segment (/company/job-id)
+    if (/greenhouse|lever|ashby/.test(atsDomain)) return u.pathname.split('/').filter(Boolean)[0] || ''
+    // Others (teamtailor, hiringroom, recruitee): company is leftmost subdomain label
+    return u.hostname.split('.')[0] || ''
+  } catch { return '' }
+}
 
 function normalizeSerperOrganic(raw) {
-  const organic = raw?.organic || []
-  return organic
-    .filter(r => {
-      const link = (r.link || '').toLowerCase()
-      const isBoard = AR_JOB_BOARD_DOMAINS.some(d => link.includes(d))
-      const isIndividual = INDIVIDUAL_JOB_URL_RE.test(r.link || '')
-      const titleOk = r.title && !SEARCH_TITLE_RE.test(r.title)
-      return isBoard && isIndividual && titleOk
-    })
-    .map(r => {
-      const cleanTitle = (r.title || '').replace(BOARD_SUFFIX_RE, '').trim()
-      const enMatch = cleanTitle.match(/^(.+?)\s+en\s+(.+)$/i)
-      let jobTitle, company
-      if (enMatch) {
-        jobTitle = enMatch[1].trim()
-        company  = enMatch[2].trim()
-      } else {
-        const parts = cleanTitle.split(/\s*[-|]\s+/)
-        jobTitle = parts[0]?.trim() || cleanTitle
-        company  = parts[1]?.trim() || ''
-      }
-      // Reject if cleaned title is still a generic search phrase
-      if (!jobTitle || jobTitle.length < 8 || SEARCH_TITLE_RE.test(jobTitle)) return null
-      const remote = /remot/i.test((r.title || '') + ' ' + (r.snippet || ''))
+  const organicItems = raw?.organic || []
+  let rejNoLink = 0, rejTitle = 0, rejDomain = 0, rejUrl = 0
+  const filtered = organicItems.filter(item => {
+    if (!item?.link || !item?.title) { rejNoLink++; return false }
+    if (SEARCH_TITLE_RE.test(item.title)) { rejTitle++; return false }
+    const ats = matchedAtsDomain(item.link)
+    if (ats) return true  // ATS domains: domain-level filter is sufficient (site: query already guarantees relevance)
+    if (!AR_JOB_BOARD_DOMAINS.some(d => item.link.includes(d))) { rejDomain++; return false }
+    const ok = INDIVIDUAL_JOB_URL_RE.test(item.link)
+    if (!ok) rejUrl++
+    return ok
+  })
+  if (organicItems.length > 0) {
+    console.log(`[SERPER:organic] total=${organicItems.length} accepted=${filtered.length} rej: noLink=${rejNoLink} searchTitle=${rejTitle} noDomain=${rejDomain} badUrl=${rejUrl}`)
+    if (rejDomain + rejUrl > 0) {
+      const samples = organicItems.filter(i => i?.link && !matchedAtsDomain(i.link) && (!AR_JOB_BOARD_DOMAINS.some(d => i.link.includes(d)) || !INDIVIDUAL_JOB_URL_RE.test(i.link))).slice(0, 3).map(i => i.link)
+      if (samples.length) console.log(`[SERPER:organic] sample rejected links: ${JSON.stringify(samples)}`)
+    }
+  }
+  return filtered
+    .map(item => {
+      const ats = matchedAtsDomain(item.link)
+      // Split "Job Title en Company" or "Title | Company" or "Title - Company"
+      const sepMatch = item.title.match(/^(.+?)\s+(?:en|at)\s+(.+)$/i)
+        || item.title.match(/^(.+?)\s*[|\-–]\s*(.+)$/)
+      const title   = sepMatch ? sepMatch[1].trim() : item.title
+      let company   = sepMatch ? sepMatch[2].trim() : ''
+      const atsType = ats ? atsTypeFrom(ats) : null
+      if (ats && !company) company = atsCompanyFrom(item.link, ats)
       return {
-        source: 'serper', external_id: r.link,
-        title: jobTitle, company,
-        description: truncateDesc(r.snippet || ''),
-        location: remote ? 'Remote' : 'Buenos Aires',
-        remote,
-        url: r.link || '', apply_url: r.link || null,
-        salary_min: null, salary_max: null, currency: null,
-        skills_required: [], seniority: normalizeSeniority(jobTitle),
-        industry: null, posted_at: null, company_slug: null, ats_type: null,
+        source:          'serper',
+        external_id:     item.link,
+        title,
+        company,
+        description:     truncateDesc(item.snippet || ''),
+        location:        'Argentina',
+        remote:          /remot/i.test(item.title + (item.snippet || '')),
+        url:             item.link,
+        apply_url:       item.link,
+        salary_min:      null, salary_max: null, currency: null,
+        skills_required: [],
+        seniority:       normalizeSeniority(title),
+        industry:        null,
+        posted_at:       null,
+        company_slug:    null,
+        ats_type:        atsType,
       }
     })
-    .filter(Boolean)
 }
 
 export function normalizeSerper(raw) {

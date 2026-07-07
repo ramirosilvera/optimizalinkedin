@@ -28,6 +28,7 @@ import {
 import {
   inferProfessionFamily, extractCandidateLocation,
   detectProfessionFamilySync, buildHeadhunterQueries,
+  buildAtsBooleanQuery, buildJobBoardQuery,
 } from './src/jobs/profession.js'
 import { extractProfileIntelligence } from './src/radar/profileIntelligence.js'
 import { enrichJobs } from './src/radar/enrichment.js'
@@ -62,6 +63,13 @@ async function callGeminiApi(env, ctx, geminiBody, corsHeaders, { feature = 'unk
   const timeoutId = setTimeout(() => controller.abort(), timeoutMs || GEMINI_TIMEOUT_MS)
   const geminiKeys = (env.GEMINI_API_KEYS || env.GEMINI_API_KEY || '').split(',').map(k => k.trim()).filter(Boolean)
 
+  // gemini-2.5 routes requests with system_instruction to a "thinking" backend pool
+  // which is frequently overloaded. Explicitly disabling thinking (thinkingBudget: 0)
+  // forces routing to the non-thinking pool, which has far more capacity.
+  const requestBody = (modelName.startsWith('gemini-2.5') && geminiBody.generationConfig)
+    ? { ...geminiBody, generationConfig: { ...geminiBody.generationConfig, thinkingConfig: { thinkingBudget: 0 } } }
+    : geminiBody
+
   let res = null
   let usedKeyIndex = 0
   let retryCount = 0
@@ -71,19 +79,20 @@ async function callGeminiApi(env, ctx, geminiBody, corsHeaders, { feature = 'unk
     for (let i = 0; i < geminiKeys.length; i++) {
       res = await fetch(
         `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${geminiKeys[i]}`,
-        { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(geminiBody), signal: controller.signal }
+        { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(requestBody), signal: controller.signal }
       )
       if (res.status !== 429) { usedKeyIndex = i; break }
       retryCount++
     }
 
-    // Phase 2: retry on 5xx with exponential backoff
+    // Phase 2: retry on 5xx — 503 (capacity) needs longer delay than other 5xx
     for (let attempt = 0; attempt < GEMINI_MAX_RETRIES && res.status >= 500; attempt++) {
-      await new Promise(r => setTimeout(r, (attempt + 1) * 1500))
+      const delayMs = res.status === 503 ? (attempt + 1) * 4000 : (attempt + 1) * 1500
+      await new Promise(r => setTimeout(r, delayMs))
       const key = geminiKeys[attempt % geminiKeys.length]
       res = await fetch(
         `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${key}`,
-        { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(geminiBody), signal: controller.signal }
+        { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(requestBody), signal: controller.signal }
       )
       retryCount++
     }
@@ -97,12 +106,11 @@ async function callGeminiApi(env, ctx, geminiBody, corsHeaders, { feature = 'unk
       retryCount, apiKeyAlias: `key_${usedKeyIndex + 1}`,
     })
     const msg = isTimeout ? 'El servicio de IA tardó demasiado. Intentá de nuevo.' : 'Error de conexión con el servicio de IA.'
-    return new Response(JSON.stringify({ error: msg }), { status: 504, headers: corsHeaders })
+    return new Response(JSON.stringify({ error: { message: msg } }), { status: 504, headers: corsHeaders })
   }
 
-  // Parse body before clearing timeout so abort protection covers the full response
-  const data = await res.json().catch(() => ({ error: 'Respuesta inválida del servicio de IA.' }))
   clearTimeout(timeoutId)
+  const data = await res.json().catch(() => ({ error: 'Respuesta inválida del servicio de IA.' }))
 
   if (res.status === 200) {
     logAiUsage(env, ctx, {
@@ -1861,11 +1869,11 @@ export default {
           },
         },
         {
-          label: 'G_REAL_system_10_fake_jobs_4096tokens',
+          label: 'G_REAL_system_10_fake_jobs_thinkingBudget0',
           body: {
             system_instruction: { parts: [{ text: JOB_MATCHING_SYSTEM_PROMPT }] },
             contents: [{ role: 'user', parts: [{ text: `PERFIL DEL CANDIDATO:\nGerente de RRHH, 10 años, tecnología, Buenos Aires.\nPROFESIÓN DOMINANTE DETECTADA: Gerente RRHH | FAMILIA: HR/Personas | SENIORITY: nivel 5\n\nAVISOS LABORALES:\n[0] HR Manager | TechCo | Buenos Aires | Presencial\nSkills: HRIS, liderazgo\nSeniority: Senior\nDescripción: Responsable del área de personas, gestión de equipos, reclutamiento y cultura organizacional.\n\n[1] Head of People | Startup | Remoto | Remoto 100%\nSkills: Workday\nSeniority: Lead\nDescripción: Liderar el equipo de HR desde cero en startup de 80 personas.\n\n[2] Talent Manager | Fintech | CABA | Híbrido\nSkills: LinkedIn Recruiter\nSeniority: Senior\nDescripción: Gestión de procesos de selección end-to-end para perfiles tech y no-tech.\n\n[3] HRBP Senior | Empresa industrial | GBA | Presencial\nSkills: SAP HCM\nSeniority: Senior\nDescripción: Socio estratégico de negocio para unidades industriales, gestión de conflictos y clima.\n\n[4] Gerente RRHH | Retail | CABA | Presencial\nSkills: Nómina, RRHH generalista\nSeniority: Gerente\nDescripción: Gestión integral del área de personas en empresa retail de 500 empleados.\n\n[5] L&D Manager | Consultora | Remoto | Remoto 100%\nSkills: LMS, e-learning\nSeniority: Manager\nDescripción: Diseñar e implementar programas de aprendizaje y desarrollo para clientes corporativos.\n\n[6] Data Analyst | Empresa de datos | Buenos Aires | Presencial\nSkills: Python, SQL\nSeniority: Semi Senior\nDescripción: Análisis de datos para equipos de negocio.\n\n[7] Product Manager | SaaS | Remoto | Remoto 100%\nSkills: Roadmap, Agile\nSeniority: Senior\nDescripción: Gestionar el roadmap de producto para plataforma B2B.\n\n[8] Compensation & Benefits Analyst | Multinacional | CABA | Híbrido\nSkills: Beneficios, compensaciones\nSeniority: Analista\nDescripción: Administración de esquemas de compensación y beneficios para 300 empleados.\n\n[9] HR Operations Specialist | Tech | CABA | Híbrido\nSkills: HRIS, procesos\nSeniority: Semi Senior\nDescripción: Gestión de procesos administrativos de HR, onboarding y sistemas de RRHH.` }] }],
-            generationConfig: { temperature: 0.3, maxOutputTokens: 4096 },
+            generationConfig: { temperature: 0.3, maxOutputTokens: 4096, thinkingConfig: { thinkingBudget: 0 } },
           },
         },
       ]
@@ -1977,11 +1985,13 @@ export default {
         return new Response(JSON.stringify({ error: { message: rlMsg } }), { status: 429, headers: corsHeaders })
       }
       const userId = getUserIdFromToken(request)
+      const CV_LONG_ACTIONS = new Set(['generate_cv', 'generate_cv_full', 'optimize_cv', 'cv_optimize_consult', 'job_adapter'])
+      const aiTimeoutMs = CV_LONG_ACTIONS.has(promptKey) ? 27_000 : 20_000
       return callGeminiApi(env, ctx, {
         system_instruction: { parts: [{ text: systemPrompt }] },
         contents: body.contents,
         generationConfig: body.generationConfig,
-      }, corsHeaders, { feature: promptKey, userId })
+      }, corsHeaders, { feature: promptKey, userId, timeoutMs: aiTimeoutMs })
     }
 
     // ── Gemini raw proxy (PDF extraction only) ────────────────────────────────
@@ -2288,7 +2298,7 @@ async function fetchAtsCompanies(queries, userProfile, env, professionFamily = n
  * Fetch from a single aggregator source with a 10 s timeout.
  * Returns { source, jobs: NormalizedJob[] } or { source, jobs: [], error }.
  */
-async function fetchJobSource(source, query, location, remoteOk, env, candidateLocation = null) {
+async function fetchJobSource(source, query, location, remoteOk, env, candidateLocation = null, serperMode = 'default') {
   const ctrl = new AbortController()
   const tid  = setTimeout(() => ctrl.abort(), 10_000)
   const q    = encodeURIComponent(query)
@@ -2313,8 +2323,18 @@ async function fetchJobSource(source, query, location, remoteOk, env, candidateL
     }
 
     if (source === 'jobicy') {
-      // LATAM-focused remote jobs (replaces arbeitnow which was European)
-      url = `https://jobicy.com/api/v2/remote-jobs?geo=latam&tag=${q}&count=100`
+      // Jobicy tags are single-word slugs — multi-word Spanish queries break the tag param.
+      // Use &tag=hr for HR queries and &tag=management for senior roles; fall back to no tag
+      // so the geo=latam filter still applies. keyword= is used for free-text search.
+      const profFamily = (query || '').toLowerCase()
+      const jobicyTag = /rrhh|recursos humanos|people|talent|hr\b/.test(profFamily) ? 'hr'
+        : /finanz|contabi|treasury|fp&a/.test(profFamily) ? 'finance'
+        : /marketing|growth|seo|sem/.test(profFamily) ? 'marketing'
+        : /ventas|sales|comercial/.test(profFamily) ? 'sales'
+        : /legal|compliance/.test(profFamily) ? 'legal'
+        : ''
+      const tagParam = jobicyTag ? `&tag=${jobicyTag}` : ''
+      url = `https://jobicy.com/api/v2/remote-jobs?geo=latam${tagParam}&count=100`
       const r = await fetch(url, { signal: ctrl.signal })
       raw = await r.json()
       return { source, jobs: normalizeJobs(source, raw) }
@@ -2443,50 +2463,56 @@ async function fetchJobSource(source, query, location, remoteOk, env, candidateL
         return { source, jobs: [], error: 'serper_not_configured' }
       }
       const geoParams = serperGeoConfig(candidateLocation)
-      const serperT0 = Date.now()
-      console.log(`[SERPER] START query="${query}" geo=${geoParams.gl}/${geoParams.location}`)
-
-      // Try /jobs endpoint first; if 404 (plan doesn't include jobs endpoint), fall back to
-      // /search which returns a `jobs` field when Google shows the jobs SERP block.
-      // datePostedRange=lastMonth: filters out stale postings (>30 days) while keeping enough volume.
-      let r = await fetch('https://google.serper.dev/jobs', {
-        method:  'POST',
-        headers: { 'X-API-KEY': env.SERPER_API_KEY, 'Content-Type': 'application/json', 'User-Agent': UA },
-        body:    JSON.stringify({ q: query, ...geoParams, num: 30, datePostedRange: 'lastMonth' }),
-        signal:  ctrl.signal,
-      })
-      let usedSearch = false
-      if (r.status === 404) {
-        console.warn('[SERPER] /jobs returned 404 — plan may not include jobs endpoint, falling back to /search')
-        // num:20 gives enough candidates for organic URL extraction.
-        r = await fetch('https://google.serper.dev/search', {
+      const serperT0  = Date.now()
+      const serperHdr = { 'X-API-KEY': env.SERPER_API_KEY, 'Content-Type': 'application/json', 'User-Agent': UA }
+      console.log(`[SERPER] START query="${query}" mode=${serperMode} geo=${geoParams.gl}/${geoParams.location}`)
+      let serperRes, usedSearch = false
+      if (serperMode === 'ats' || serperMode === 'jobboard') {
+        // Boolean/site: operators are silently stripped by /jobs — must hit /search directly, autocorrect off
+        serperRes = await fetch('https://google.serper.dev/search', {
           method:  'POST',
-          headers: { 'X-API-KEY': env.SERPER_API_KEY, 'Content-Type': 'application/json', 'User-Agent': UA },
-          body:    JSON.stringify({ q: `trabajo ${query}`, ...geoParams, num: 20, tbs: 'qdr:m' }),
+          headers: serperHdr,
+          body:    JSON.stringify({ q: query, ...geoParams, num: 20, tbs: 'qdr:m', autocorrect: false }),
           signal:  ctrl.signal,
         })
         usedSearch = true
+      } else {
+        serperRes = await fetch('https://google.serper.dev/jobs', {
+          method:  'POST',
+          headers: serperHdr,
+          body:    JSON.stringify({ q: query, ...geoParams, num: 30, datePostedRange: 'lastMonth' }),
+          signal:  ctrl.signal,
+        })
+        // /jobs is not included in all Serper plans — fall back to /search (organic results)
+        if (serperRes.status === 404) {
+          console.warn('[SERPER] /jobs returned 404 — plan limitation, falling back to /search')
+          serperRes = await fetch('https://google.serper.dev/search', {
+            method:  'POST',
+            headers: serperHdr,
+            body:    JSON.stringify({ q: `ofertas de empleo ${query}`, ...geoParams, num: 50, tbs: 'qdr:m', autocorrect: false }),
+            signal:  ctrl.signal,
+          })
+          usedSearch = true
+        }
       }
-
-      raw = await r.json()
-      const latency = Date.now() - serperT0
-      if (!r.ok) {
-        const errCode = r.status === 401 ? 'serper_unauthorized'
-          : r.status === 429 || r.status === 402 ? 'serper_quota_exceeded'
-          : `serper_http_${r.status}`
-        console.warn(`[SERPER] HTTP ${r.status} — ${errCode} endpoint=${usedSearch?'/search':'/jobs'} latency=${latency}ms body=${JSON.stringify(raw).slice(0, 200)}`)
+      if (!serperRes.ok) {
+        const errCode = serperRes.status === 401 ? 'serper_unauthorized'
+          : (serperRes.status === 402 || serperRes.status === 429) ? 'serper_quota_exceeded'
+          : `serper_http_${serperRes.status}`
+        console.error(`[SERPER] HTTP ${serperRes.status} — ${errCode}`)
         return { source, jobs: [], error: errCode }
       }
-      const serperJobs = normalizeJobs(source, raw)
-      const serperRawKeys = Object.keys(raw || {}).join(',')
-      const serperRawJobsLen = Array.isArray(raw?.jobs) ? raw.jobs.length : (raw?.jobs === undefined ? 'missing' : raw?.jobs)
-      const serperOrganicLen = Array.isArray(raw?.organic) ? raw.organic.length : 0
-      console.log(`[SERPER] status=${r.status} results=${serperJobs.length} latency=${latency}ms endpoint=${usedSearch?'/search':'/jobs'} rawKeys=${serperRawKeys} rawJobs=${serperRawJobsLen} organic=${serperOrganicLen}`)
+      raw = await serperRes.json()
+      const serperJobs    = normalizeJobs(source, raw)
+      const rawJobsLen    = Array.isArray(raw?.jobs) ? raw.jobs.length : (raw?.jobs === undefined ? 'missing' : String(raw?.jobs))
+      const rawOrganicLen = Array.isArray(raw?.organic) ? raw.organic.length : 0
+      const rawKeys       = Object.keys(raw || {}).join(',')
+      console.log(`[SERPER] status=${serperRes.status} mode=${serperMode} usedSearch=${usedSearch} rawJobs=${rawJobsLen} organic=${rawOrganicLen} results=${serperJobs.length} latency=${Date.now()-serperT0}ms`)
       if (serperJobs.length === 0) {
         const firstJobKeys = raw?.jobs?.[0] ? Object.keys(raw.jobs[0]).join(',') : 'n/a'
-        console.warn(`[SERPER] 0 jobs — query="${query}" rawJobs=${serperRawJobsLen} organic=${serperOrganicLen} firstJobKeys=${firstJobKeys} allKeys=${serperRawKeys}`)
+        console.warn(`[SERPER] 0 jobs — mode=${serperMode} query="${query}" rawJobs=${rawJobsLen} organic=${rawOrganicLen} firstJobKeys=${firstJobKeys} allKeys=${rawKeys}`)
       }
-      return { source, jobs: serperJobs, serper_raw_keys: serperRawKeys, serper_raw_jobs: serperRawJobsLen }
+      return { source, jobs: serperJobs, serper_raw_keys: rawKeys, serper_raw_jobs: rawJobsLen, serper_used_search: usedSearch }
     }
 
     return { source, jobs: [], error: 'unknown_source' }
@@ -2506,25 +2532,32 @@ async function fetchJobSource(source, query, location, remoteOk, env, candidateL
  * @param {string|null} candidateLocation - Auto-detected from profile text; drives Serper geo
  */
 async function fetchAllSources(queries, location, remoteOk, env, userProfile = '', candidateLocation = null, professionFamily = null) {
-  // Curated sources — Serper (Google Jobs) gets the top 3 headhunter queries (highest ROI
-  // per subrequest). Jooble aggregates Bumeran/ZonaJobs/Computrabajo directly.
+  // Curated sources — Serper runs 3 typed queries from the top headhunter title:
+  //   1. ATS boolean (site:hiringroom.com/teamtailor.com/…) → /search, autocorrect:false (hidden vacancies)
+  //   2. AR job boards (site:bumeran.com.ar/zonajobs.com.ar/…) → /search, autocorrect:false (recall)
+  //   3. Plain title → /jobs first, /search fallback (baseline)
   // Other LATAM-focused sources each get 1 query. himalayas added for remote-only.
-  // Removed: remoteok/remotive (US-centric), arbeitnow (European), adzuna (low LATAM).
+  // Jooble aggregates Bumeran/ZonaJobs/Computrabajo — real AR coverage.
   const joobleActive  = !!env.JOOBLE_KEY
   const adzunaActive  = !!(env.ADZUNA_APP_ID && env.ADZUNA_APP_KEY)
   const nonSerperSources = remoteOk
     ? ['getonboard', ...(joobleActive ? ['jooble'] : []), ...(adzunaActive ? ['adzuna'] : []), 'jobicy', 'himalayas']
     : ['getonboard', ...(joobleActive ? ['jooble'] : []), ...(adzunaActive ? ['adzuna'] : []), 'jobicy']
-  const serperQueries    = env.SERPER_API_KEY ? queries.slice(0, 3) : []
+  const topTitle = queries[0] || ''
+  const serperQueries = env.SERPER_API_KEY ? [
+    { q: buildAtsBooleanQuery(topTitle), mode: 'ats'      },
+    { q: buildJobBoardQuery(topTitle),   mode: 'jobboard' },
+    { q: topTitle,                       mode: 'default'  },
+  ] : []
   const sources = [...(env.SERPER_API_KEY ? ['serper'] : []), ...nonSerperSources]
 
-  console.log(`[RADAR:sources] remoteOk=${!!remoteOk} active=[${sources.join(',')}] serperQueries=${serperQueries.length} queries=${JSON.stringify(queries.slice(0,3))}`)
+  console.log(`[RADAR:sources] remoteOk=${!!remoteOk} active=[${sources.join(',')}] serperQueries=${serperQueries.length} topTitle="${topTitle}"`)
 
-  // Build parallel fetch calls: Serper × 3 queries, each other source × 1 query
+  // Build parallel fetch calls: Serper × 3 typed queries, each other source × 1 query
   // Worst-case: 3 + 4 sources = 7 aggregator fetches (well within 50-subrequest budget).
   const [aggregatorResults, atsJobs] = await Promise.all([
     Promise.all([
-      ...serperQueries.map(q => fetchJobSource('serper', q, location, remoteOk, env, candidateLocation)),
+      ...serperQueries.map(({ q, mode }) => fetchJobSource('serper', q, location, remoteOk, env, candidateLocation, mode)),
       ...nonSerperSources.map(source => fetchJobSource(source, queries[0], location, remoteOk, env, candidateLocation)),
     ]),
     fetchAtsCompanies(queries, userProfile, env, professionFamily),
@@ -2534,14 +2567,16 @@ async function fetchAllSources(queries, location, remoteOk, env, userProfile = '
   const errors         = {}
   const sourceCounts   = {}
   const rawAggregatorJobs = []
-  let joobleDebug     = null
-  let adzunaCountry   = null
-  let serperRawKeys   = null
-  let serperRawJobs   = null
+  let joobleDebug      = null
+  let adzunaCountry    = null
+  let serperRawKeys    = null
+  let serperRawJobs    = null
+  let serperUsedSearch = false
   for (const result of aggregatorResults) {
     if (result.jooble_debug)    joobleDebug   = result.jooble_debug
     if (result.adzuna_country)  adzunaCountry = result.adzuna_country
     if (result.serper_raw_keys) { serperRawKeys = result.serper_raw_keys; serperRawJobs = result.serper_raw_jobs }
+    if (result.serper_used_search) serperUsedSearch = true
     if (result.error) errors[result.source] = errors[result.source] || result.error
     // Always register the source in sourceCounts (0 if nothing returned) so debug panel shows it
     sourceCounts[result.source] = (sourceCounts[result.source] || 0) + result.jobs.length
@@ -2560,7 +2595,7 @@ async function fetchAllSources(queries, location, remoteOk, env, userProfile = '
   // retry with the base user query (queries[2]+) — headhunter titles can miss Google Jobs index.
   const serperError = errors['serper']
   if (serperQueries.length && !sourceCounts['serper'] && !serperError) {
-    const fallbackQuery = queries.find(q => !serperQueries.includes(q))
+    const fallbackQuery = queries.find(q => !serperQueries.some(sq => sq.q === q))
     if (fallbackQuery) {
       console.log(`[SERPER] fallback query="${fallbackQuery}" — headhunter queries returned 0`)
       const fallback = await fetchJobSource('serper', fallbackQuery, location, remoteOk, env, candidateLocation)
@@ -2581,11 +2616,11 @@ async function fetchAllSources(queries, location, remoteOk, env, userProfile = '
 
   console.log(`[RADAR:sources] aggregator=${rawAggregatorJobs.length} ats=${atsJobs.length} deduped=${allJobs.length} perSource=${JSON.stringify(sourceCounts)}`)
   if (sources.includes('serper') && !sourceCounts['serper']) {
-    console.log(`[SERPER] returned 0 jobs — error=${errors['serper'] || 'none'} — check quota, API key validity, or search terms`)
+    console.log(`[SERPER] returned 0 jobs — error=${errors['serper'] || 'none'} rawJobs=${serperRawJobs} usedSearch=${serperUsedSearch} — check quota, API key validity, or search terms`)
   }
   if (Object.keys(errors).length) console.warn('[RADAR:sources] errors:', JSON.stringify(errors))
 
-  return { jobs: allJobs, sourceErrors: errors, sourcesUsed: sources, sourceCounts, joobleDebug, adzunaCountry, serperRawKeys, serperRawJobs }
+  return { jobs: allJobs, sourceErrors: errors, sourcesUsed: sources, sourceCounts, joobleDebug, adzunaCountry, serperRawKeys, serperRawJobs, serperUsedSearch }
 }
 
 
@@ -2895,7 +2930,7 @@ async function expandWithSearch(env, ctx, cleanQueries, location, remoteOk, prof
           body: JSON.stringify({
             system_instruction: { parts: [{ text: JOB_MATCHING_SYSTEM_PROMPT }] },
             contents,
-            generationConfig:   { temperature: 0.2, maxOutputTokens: 1024 },
+            generationConfig:   { temperature: 0.2, maxOutputTokens: 1024, thinkingConfig: { thinkingBudget: 0 } },
           }),
           signal: controller.signal,
         }
@@ -3505,13 +3540,14 @@ async function handleAiJobRecommendations(body, request, env, ctx, corsHeaders, 
   // Format stored in KV: { jobs: NormalizedJob[], sourcesUsed: string[] }
   const KV_SOURCES_KEY = `jobs_meta:${queryHash}`
 
-  let sourcesUsed  = []
-  let sourceCounts = {}
-  let sourceErrors = {}
-  let joobleDebug   = null
-  let adzunaCountry = null
-  let serperRawKeys = null
-  let serperRawJobs = null
+  let sourcesUsed      = []
+  let sourceCounts     = {}
+  let sourceErrors     = {}
+  let joobleDebug      = null
+  let adzunaCountry    = null
+  let serperRawKeys    = null
+  let serperRawJobs    = null
+  let serperUsedSearch = false
   // Skip job KV cache when period hasn't been live-fetched yet → all sources called live.
   const kvCached = liveFetched ? await getJobsFromKV(env, queryHash) : null
   if (kvCached) {
@@ -3526,12 +3562,14 @@ async function handleAiJobRecommendations(body, request, env, ctx, corsHeaders, 
   } else {
     // Live fetch — pass profile_text so ATS companies are selected by relevance
     const fetchResult = await fetchAllSources(cleanQueries, location, remote_ok, env, String(profile_text), candidateLocation, professionInfoSync?.family || null)
-    sourcesUsed  = fetchResult.sourcesUsed || []
+    sourcesUsed  = fetchResult.sourcesUsed  || []
     sourceCounts = fetchResult.sourceCounts || {}
     sourceErrors = fetchResult.sourceErrors || {}
-    if (fetchResult.joobleDebug)   joobleDebug   = fetchResult.joobleDebug
-    if (fetchResult.adzunaCountry) adzunaCountry = fetchResult.adzunaCountry
-    if (fetchResult.serperRawKeys) { serperRawKeys = fetchResult.serperRawKeys; serperRawJobs = fetchResult.serperRawJobs }
+    if (fetchResult.joobleDebug)        joobleDebug   = fetchResult.joobleDebug
+    if (fetchResult.adzunaCountry)      adzunaCountry = fetchResult.adzunaCountry
+    if (fetchResult.serperRawKeys)      serperRawKeys = fetchResult.serperRawKeys
+    if (fetchResult.serperRawJobs != null) serperRawJobs = fetchResult.serperRawJobs
+    serperUsedSearch = fetchResult.serperUsedSearch || false
     if (fetchResult.jobs.length) {
       jobs = fetchResult.jobs
       await putJobsToKV(env, queryHash, jobs)
@@ -3615,7 +3653,7 @@ async function handleAiJobRecommendations(body, request, env, ctx, corsHeaders, 
   const geminiBody = {
     system_instruction: { parts: [{ text: JOB_MATCHING_SYSTEM_PROMPT }] },
     contents,
-    generationConfig:   { temperature: 0.3, maxOutputTokens: 4096 },
+    generationConfig:   { temperature: 0.3, maxOutputTokens: 4096, thinkingConfig: { thinkingBudget: 0 } },
   }
 
   let aiResult    = null
@@ -3631,7 +3669,7 @@ async function handleAiJobRecommendations(body, request, env, ctx, corsHeaders, 
     } else {
       const t0   = Date.now()
       const ctrl = new AbortController()
-      const tid  = setTimeout(() => ctrl.abort(), 28_000)
+      const tid  = setTimeout(() => ctrl.abort(), 22_000)
       try {
         const res = await fetch(
           `https://generativelanguage.googleapis.com/v1beta/models/${DEFAULT_MODEL}:generateContent?key=${geminiKeys[0]}`,
@@ -4004,14 +4042,15 @@ async function handleAiJobRecommendations(body, request, env, ctx, corsHeaders, 
         sources_count:       sourcesUsed.length,    // frontend reads this for "N fuentes"
         total_evaluated:     jobPool.length,         // frontend reads this for "N avisos evaluados"
         source_counts:       sourceCounts,          // per-source job counts (empty on cache hit)
-        serper_configured:   !!env.SERPER_API_KEY,  // env var present
-        serper_in_sources:   sourcesUsed.includes('serper'),  // actually attempted this run
-        serper_returned:     sourceCounts['serper'] || 0,     // jobs returned by Serper
-        serper_error:        sourceErrors?.['serper'] || null, // error code if Serper failed (e.g. quota_exceeded)
+        serper_configured:   !!env.SERPER_API_KEY,
+        serper_in_sources:   sourcesUsed.includes('serper'),
+        serper_returned:     sourceCounts['serper'] || 0,
+        serper_error:        sourceErrors?.['serper'] || null,
+        serper_used_search:  serperUsedSearch,
         jooble_debug:        joobleDebug,
         adzuna_country:      adzunaCountry,
-        serper_raw_keys:     serperRawKeys,  // keys en la respuesta Serper (saber si vino 'jobs' o no)
-        serper_raw_jobs:     serperRawJobs,  // cantidad de jobs en raw.jobs (antes de normalizar)
+        serper_raw_keys:     serperRawKeys,
+        serper_raw_jobs:     serperRawJobs,
         jobs_fetched:        jobs.length,
         jobs_to_gemini:      jobPool.length,
         from_jobs_cache:     fromCache,

@@ -67,6 +67,10 @@ export function detectProfessionFamilySync(profileText) {
   if (/\b(rrhh|recursos\s+humanos|human\s+resources|hr\s+manager|hr\s+business\s+partner|hrbp|talent\s+manager|people\s+manager|gerente\s+de\s+rrhh|gerente\s+de\s+personas|capital\s+humano|nómina|payroll|talent\s+acquisition|onboarding|relaciones\s+laborales|hr\s+generalist|especialista\s+de\s+rrhh|analista\s+de\s+rrhh|especialista\s+en\s+recursos\s+humanos|analista\s+de\s+selecci[oó]n|analista\s+de\s+talento|people\s+business\s+partner|reclutamiento|headhunter\s+interno)\b/.test(t))
     return { family: 'HR/Personas', seniority_level, is_senior: seniority_level >= 4 }
 
+  // Security/cybersecurity — checked BEFORE generic Tecnología so security roles get targeted queries
+  if (/\b(seguridad\s+de\s+la\s+informaci[oó]n|information\s+security|ciberseguridad|cybersecurity|cyber\s+security|seguridad\s+inform[aá]tica|security\s+analyst|security\s+engineer|security\s+specialist|soc\s+analyst|soc\s+manager|pentest|penetration\s+test|ethical\s+hack|hacking\s+[eé]tico|ciso|chief\s+information\s+security|gobernanza\s+de\s+seguridad|governance.*risk.*compliance|\bgrc\b|siem|vulnerability\s+management|gesti[oó]n\s+de\s+riesgos\s+ti|riesgos\s+tecnol[oó]gicos|seguridad\s+corporativa|cumplimiento\s+y\s+seguridad)\b/.test(t))
+    return { family: 'Tecnología', subfamilia: 'seguridad', seniority_level, is_senior: seniority_level >= 4 }
+
   if (/\b(software\s+engineer|desarrollador|developer|frontend|backend|fullstack|full.stack|devops|cloud\s+engineer|data\s+engineer|tech\s+lead|engineering\s+manager|ios\s+developer|android\s+dev|mobile\s+dev|arquitecto\s+de\s+software|qa\s+engineer|sre|platform\s+engineer|cto|analista\s+de\s+sistemas|programador|t[eé]cnico\s+en\s+sistemas|especialista\s+en\s+ti|infrastructure\s+engineer|data\s+analyst|ml\s+engineer|machine\s+learning)\b/.test(t))
     return { family: 'Tecnología', seniority_level, is_senior: seniority_level >= 4 }
 
@@ -94,6 +98,16 @@ export function detectProfessionFamilySync(profileText) {
 // Generate targeted headhunter search queries for premium users based on profession + seniority.
 export function buildHeadhunterQueries(professionInfo, baseQueries, isPremium) {
   if (!professionInfo || !isPremium) return baseQueries.slice(0, 3)
+
+  // Subfamilia-specific query maps — override the generic HEADHUNTER_MAP when detected
+  const SUBFAMILIA_MAP = {
+    'seguridad': {
+      3: ['Analista de Seguridad de la Información', 'Information Security Analyst', 'Cybersecurity Specialist', 'Security Engineer', 'SOC Analyst'],
+      4: ['Security Lead', 'Cybersecurity Lead', 'Information Security Lead', 'GRC Lead', 'SOC Lead'],
+      5: ['Information Security Manager', 'Cybersecurity Manager', 'Security Manager', 'CISO', 'Head of Cybersecurity'],
+      6: ['CISO', 'Chief Information Security Officer', 'VP Cybersecurity', 'Head of Information Security'],
+    },
+  }
 
   const HEADHUNTER_MAP = {
     'HR/Personas': {
@@ -146,9 +160,10 @@ export function buildHeadhunterQueries(professionInfo, baseQueries, isPremium) {
     },
   }
 
-  const { family, seniority_level } = professionInfo
+  const { family, subfamilia, seniority_level } = professionInfo
   const lvl = Math.min(6, Math.max(1, seniority_level || 3))
-  const levelMap = HEADHUNTER_MAP[family]
+  const subfamiliaMap = subfamilia ? SUBFAMILIA_MAP[subfamilia] : null
+  const levelMap = subfamiliaMap || HEADHUNTER_MAP[family]
   if (!levelMap) return baseQueries.slice(0, 5)
 
   const availLevels = Object.keys(levelMap).map(Number).sort((a, b) => a - b)
@@ -160,4 +175,28 @@ export function buildHeadhunterQueries(professionInfo, baseQueries, isPremium) {
   // Base queries first so the user's original search terms are always sent to Serper,
   // then headhunter titles to expand coverage.
   return [...baseQueries, ...fresh].slice(0, 5)
+}
+
+// ATS hosting domains for boolean site: queries — leads with HiringRoom (dominant AR-local ATS)
+export const ATS_SEARCH_DOMAINS = [
+  'hiringroom.com', 'teamtailor.com', 'myworkdayjobs.com', 'greenhouse.io',
+  'lever.co', 'ashbyhq.com', 'smartrecruiters.com', 'recruitee.com',
+]
+
+const AR_BOARD_SEARCH_DOMAINS = [
+  'bumeran.com.ar', 'zonajobs.com.ar', 'ar.computrabajo.com',
+  'trabajar.com', 'multitrabajos.com.ar', 'linkedin.com/jobs',
+]
+
+const siteOr = (domains) => '(' + domains.map(d => `site:${d}`).join(' OR ') + ')'
+
+// Builds a Google boolean query targeting ATS career-page hosting domains.
+// Must be sent to Serper /search (NOT /jobs) with autocorrect:false — /jobs strips site:/OR operators.
+export function buildAtsBooleanQuery(jobTitle, country = 'Argentina') {
+  return `"${jobTitle}" ${siteOr(ATS_SEARCH_DOMAINS)} ${country}`
+}
+
+// Builds a Google boolean query targeting high-volume Argentine job boards via site: operators.
+export function buildJobBoardQuery(jobTitle, country = 'Argentina') {
+  return `"${jobTitle}" ${siteOr(AR_BOARD_SEARCH_DOMAINS)} ${country}`
 }
