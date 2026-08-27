@@ -174,8 +174,8 @@ export function buildCvHtmlMinimal(cv, photoBase64 = null, photoMime = 'image/jp
   @media print {
     @page { size: 210mm 297mm; margin: 0; }
     * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
-    html, body { margin: 0 !important; padding: 0 !important; width: 210mm !important; }
-    .cv-wrap { zoom: 1 !important; transform: none !important; }
+    html, body { margin: 0 !important; padding: 0 !important; width: 210mm !important; min-height: 0 !important; }
+    .cv-wrap { zoom: 1 !important; transform: none !important; min-height: 0 !important; }
     .section, .exp-item, .edu-item { break-inside: avoid; page-break-inside: avoid; }
   }
 </style>
@@ -293,8 +293,8 @@ export function buildCvHtmlEjecutivo(cv, photoBase64 = null, photoMime = 'image/
   @media print {
     @page { size: 210mm 297mm; margin: 0; }
     * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
-    html, body { margin: 0 !important; padding: 0 !important; width: 210mm !important; }
-    .cv-wrap { width: 210mm !important; zoom: 1 !important; transform: none !important; }
+    html, body { margin: 0 !important; padding: 0 !important; width: 210mm !important; min-height: 0 !important; }
+    .cv-wrap { width: 210mm !important; zoom: 1 !important; transform: none !important; min-height: 0 !important; }
     .exp-item, .cl-edu, .cl-section, .cr-section { break-inside: avoid; page-break-inside: avoid; }
   }
 </style>
@@ -612,14 +612,16 @@ export function buildCvHtml(cv, photoBase64 = null, photoMime = 'image/jpeg', te
       print-color-adjust: exact !important;
     }
     /* SIN overflow:hidden ni height fijos — en iOS Safari clipa todo → página en blanco */
+    /* min-height: 0 en print — @page fija el tamaño; min-height causa segunda página en blanco */
     html, body {
       margin: 0 !important;
       padding: 0 !important;
       width: 210mm !important;
+      min-height: 0 !important;
     }
     .cv-wrap {
       width: 210mm !important;
-      min-height: 297mm !important;
+      min-height: 0 !important;
       zoom: 1 !important;
       transform: none !important;
       /* Sin break-inside en cv-wrap — permite multi-página correctamente */

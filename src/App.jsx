@@ -2388,28 +2388,31 @@ Generá el feedback en este JSON exacto:
         if (navigator.canShare({ files: [htmlFile] })) {
           await navigator.share({ files: [htmlFile] })
           dismissToast(loadingId)
-          addToast('✓ CV exportado', 'success')
+          addToast('Abrí el archivo → Imprimir → Guardar como PDF', 'success', 7000)
           trackEvent('cv_export_share')
           setCvExportState('idle')
           return
         }
       }
 
-      // Desktop: popup 830px (794 A4 + scrollbar) + print dialog → "Guardar como PDF"
-      // viewport width=794 ya está fijado en el HTML generado con forExport:true.
-      // 500ms delay: el navegador necesita terminar de renderizar antes del diálogo de impresión.
-      const printHtml = html.replace('</body>', `<script>window.onload=function(){setTimeout(function(){window.print()},500)}<\/script></body>`)
-      const win = window.open('', '_blank', 'width=830,height=1050,scrollbars=yes,resizable=yes')
+      // Desktop: blob URL → popup 830px + print dialog → "Guardar como PDF"
+      // Blob URL avoids document.write() (deprecated) and cross-origin restrictions.
+      // window.onload fires after all resources; 400ms extra buffer for CSS paint.
+      const isMobile = /Mobi|Android|iPhone|iPad/i.test(navigator.userAgent)
+      const printHtml = html.replace('</body>', `<script>window.onload=function(){setTimeout(function(){window.print()},400)}<\/script></body>`)
+      const printBlob = new Blob([printHtml], { type: 'text/html; charset=utf-8' })
+      const printUrl  = URL.createObjectURL(printBlob)
+      const win = !isMobile && window.open(printUrl, '_blank', 'width=830,height=1050,scrollbars=yes,resizable=yes')
       if (win) {
-        win.document.open(); win.document.write(printHtml); win.document.close()
+        setTimeout(() => URL.revokeObjectURL(printUrl), 30000)
         dismissToast(loadingId)
-        addToast('✓ CV exportado', 'success')
+        addToast('Se abrió el diálogo de impresión — elegí "Guardar como PDF"', 'success', 6000)
         trackEvent('cv_export_print')
         return
       }
+      URL.revokeObjectURL(printUrl)
 
-      // Popup bloqueado: descarga HTML con instrucción
-      // Blob created here only — never exists on the iOS share path
+      // Popup bloqueado o mobile sin Web Share: descarga HTML con instrucción clara
       const htmlBlob = new Blob([html], { type: 'text/html; charset=utf-8' })
       const a = document.createElement('a')
       a.href = URL.createObjectURL(htmlBlob)
@@ -2417,7 +2420,10 @@ Generá el feedback en este JSON exacto:
       document.body.appendChild(a); a.click(); document.body.removeChild(a)
       setTimeout(() => URL.revokeObjectURL(a.href), 2000)
       dismissToast(loadingId)
-      addToast('Abrí el archivo en Chrome → Ctrl+P → Guardar como PDF', 'success', 8000)
+      const fallbackMsg = isMobile
+        ? 'Abrí el archivo en tu browser → Menú → Imprimir → Guardar como PDF'
+        : 'Abrí el archivo en Chrome → Ctrl+P → Guardar como PDF'
+      addToast(fallbackMsg, 'success', 8000)
       trackEvent('cv_export_html_download')
     } catch (err) {
       dismissToast(loadingId)
